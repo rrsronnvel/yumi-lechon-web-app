@@ -8,6 +8,10 @@
 
 ## Project Structure
 - `LechonSystem.Api/`: The main Web API project.
+  - `Models/`: Domain entities.
+    - `BaseEntity.cs`: Abstract base class with auditing fields.
+    - `ItemCategory.cs`: Entity for item categories.
+    - `ProductCookingProfile.cs`: Entity for cooking profiles.
   - `Program.cs`: Entry point and API route definitions.
   - `appsettings.json`: Configuration settings.
   - `LechonSystem.Api.csproj`: Project dependencies and settings.
