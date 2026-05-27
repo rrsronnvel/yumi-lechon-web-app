@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "9E9Mlzjf0nY=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Cholo\\Desktop\\Yumi's Lechon Web App\\LechonSystem.Api\\LechonSystem.Api.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Cholo\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.8\\microsoft.aspnetcore.openapi.10.0.8.nupkg.sha512",
+    "C:\\Users\\Cholo\\.nuget\\packages\\microsoft.openapi\\2.0.0\\microsoft.openapi.2.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}
