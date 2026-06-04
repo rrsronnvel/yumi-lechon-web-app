@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
+using LechonSystem.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<LechonDbContext>(options =>
     options.UseSqlServer(connectionString));
+    builder.Services.AddScoped<OrderService>();
 // -----------------------------------------------------
 
 builder.Services.AddControllers();
@@ -20,7 +22,9 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+
+app.MapControllers();
+//app.UseHttpsRedirection();
 
 var summaries = new[]
 {
