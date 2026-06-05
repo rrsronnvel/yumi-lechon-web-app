@@ -13,6 +13,7 @@ public class LechonDbContext : DbContext
     public DbSet<ProductCookingProfile> ProductCookingProfiles { get; set; } = null!;
     public DbSet<Order> Orders { get; set; } = null!;
     public DbSet<OrderItem> OrderItems { get; set; } = null!;
+    public DbSet<OrderItemSchedule> OrderItemSchedules { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

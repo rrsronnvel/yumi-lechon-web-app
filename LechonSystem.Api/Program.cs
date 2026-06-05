@@ -9,6 +9,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<LechonDbContext>(options =>
     options.UseSqlServer(connectionString));
     builder.Services.AddScoped<OrderService>();
+    builder.Services.AddScoped<ISchedulingService, SchedulingService>();
 // -----------------------------------------------------
 
 builder.Services.AddControllers();

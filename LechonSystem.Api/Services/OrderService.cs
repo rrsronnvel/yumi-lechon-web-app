@@ -1,56 +1,75 @@
+using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
-using System.Linq;
 
 namespace LechonSystem.Api.Services
 {
-    public class OrderService
+    public interface IOrderService
+    {
+        Task<Order> CreateOrderAsync(CreateOrderRequest request);
+    }
+
+    public class OrderService : IOrderService
     {
         private readonly LechonDbContext _context;
+        private readonly ISchedulingService _schedulingService; // 1. Bring in the Scheduling Service
 
-        // 1. Inject the Database Context
-        public OrderService(LechonDbContext context)
+        // 2. Inject both the Database Context and the Scheduling Service via the constructor
+        public OrderService(LechonDbContext context, ISchedulingService schedulingService)
         {
             _context = context;
+            _schedulingService = schedulingService;
         }
 
-        // 2. The core ingestion method
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
         {
-            // Translate DTO to Domain Entity
-            var newOrder = new Order
+            // Create the Master Container
+            var order = new Order
             {
                 CustomerName = request.CustomerName,
                 ContactNumber = request.ContactNumber,
                 Source = request.Source,
                 TargetDeliveryTime = request.TargetDeliveryTime,
-                
-                // Enforce the initial business rule
-                IsDeliveryDetailsConfirmed = false 
+                IsDeliveryDetailsConfirmed = false // Enforcing our core business rule safeguard!
             };
 
-            // Map the items
-            if (request.Items != null && request.Items.Any())
+            // Build the item detail rows
+            foreach (var itemDto in request.Items)
             {
-                foreach (var item in request.Items)
+                var orderItem = new OrderItem
                 {
-                    newOrder.OrderItems.Add(new OrderItem
-                    {
-                        ItemCategoryId = item.ItemCategoryId,
-                        Quantity = item.Quantity,
-                        // Note: We leave TotalPrice at 0 for now. 
-                        // In Milestone 2, we will look up the BasePrice from the DB here!
-                    });
-                }
+                    ItemCategoryId = itemDto.ItemCategoryId,
+                    Quantity = itemDto.Quantity,
+                    TotalPrice = 0 // In a later sprint, we will securely fetch the real seed price here!
+                };
+                order.OrderItems.Add(orderItem);
             }
 
-            // Save to SQL Server
-            _context.Orders.Add(newOrder);
+            // Save the order and its items first so Entity Framework generates their real Database IDs
+            _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            return newOrder;
+            // 3. Now that the items have real database IDs, loop through them to auto-generate timelines!
+            foreach (var savedItem in order.OrderItems)
+            {
+                // Call our backward-scheduling math engine
+                var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
+                    savedItem.Id, 
+                    order.TargetDeliveryTime, 
+                    savedItem.ItemCategoryId
+                );
+
+                // Add the new schedule to the tracking context
+                _context.OrderItemSchedules.Add(calculatedSchedule);
+            }
+
+            // Save the schedules permanently to the database
+            await _context.SaveChangesAsync();
+
+            return order;
         }
     }
 }
