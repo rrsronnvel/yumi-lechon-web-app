@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
@@ -8,8 +9,9 @@ namespace LechonSystem.Api.Services
 {
     public interface IInventoryService
     {
-        Task<InventoryReservation> CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate);
-        Task CommitReservationAsync(int reservationId);
+        Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate);
+        Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null);
+        Task<int> GetAvailableStockAsync(int itemCategoryId, DateTime date);
     }
 
     public class InventoryService : IInventoryService
@@ -21,34 +23,60 @@ namespace LechonSystem.Api.Services
             _context = context;
         }
 
-        // Action Item: Default new reservations to Pending
-        public async Task<InventoryReservation> CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate)
+        // --- Your existing Reservation State Machine Logic ---
+        public async Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate)
         {
             var reservation = new InventoryReservation
             {
                 OrderId = orderId,
                 ItemCategoryId = itemCategoryId,
                 ReservationDate = reservationDate,
-                Status = ReservationStatus.Pending // The State Machine starts here
+                Status = ReservationStatus.Pending
             };
 
             _context.InventoryReservations.Add(reservation);
             await _context.SaveChangesAsync();
-
-            return reservation;
         }
 
-        // Action Item: Transition them to Committed when downpayment is verified
-        public async Task CommitReservationAsync(int reservationId)
+        // --- New Action Item 1: Log a Ledger Movement ---
+        public async Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null)
         {
-            var reservation = await _context.InventoryReservations.FindAsync(reservationId);
-            
-            // Safety Check: Only lock it if it actually exists and is currently Pending
-            if (reservation != null && reservation.Status == ReservationStatus.Pending)
+            var transaction = new InventoryTransaction
             {
-                reservation.Status = ReservationStatus.Committed; // The State Transition
-                await _context.SaveChangesAsync();
-            }
+                ItemCategoryId = itemCategoryId,
+                Quantity = quantity,
+                Type = type,
+                ReferenceId = referenceId,
+                TransactionDate = DateTime.UtcNow
+            };
+
+            _context.InventoryTransactions.Add(transaction);
+            await _context.SaveChangesAsync();
+        }
+
+        // --- New Action Item 2: Calculate Real-Time Stock Balance ---
+        public async Task<int> GetAvailableStockAsync(int itemCategoryId, DateTime date)
+        {
+            // 1. Calculate Physical On-Hand Stock from the Append-Only Ledger
+            var totalStockIn = await _context.InventoryTransactions
+                .Where(t => t.ItemCategoryId == itemCategoryId && (t.Type == TransactionType.StockIn || t.Type == TransactionType.Adjustment))
+                .SumAsync(t => t.Quantity);
+
+            var totalStockOut = await _context.InventoryTransactions
+                .Where(t => t.ItemCategoryId == itemCategoryId && t.Type == TransactionType.StockOut)
+                .SumAsync(t => t.Quantity);
+
+            int physicalOnHand = totalStockIn - totalStockOut;
+
+            // 2. Calculate Promised/Locked Stock for this target date
+            int totalCommittedReservations = await _context.InventoryReservations
+                .Where(r => r.ItemCategoryId == itemCategoryId 
+                         && r.ReservationDate.Date == date.Date 
+                         && r.Status == ReservationStatus.Committed)
+                .CountAsync();
+
+            // 3. Subtract promised stock from physical stock to get the absolute truth
+            return physicalOnHand - totalCommittedReservations;
         }
     }
 }

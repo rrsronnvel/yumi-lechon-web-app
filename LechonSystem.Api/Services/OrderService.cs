@@ -1,89 +1,111 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore; // <-- Step 3: Added this for FirstOrDefaultAsync
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
 
+
+
 namespace LechonSystem.Api.Services
 {
+    // Step 1: The Menu (Interface) - Only signatures!
     public interface IOrderService
     {
         Task<Order> CreateOrderAsync(CreateOrderRequest request);
+        Task<bool> ConfirmPaymentAsync(int orderId);
+        Task<bool> ConfirmDeliveryDetailsAsync(int orderId);
     }
 
+    // Step 2: The Kitchen (Class) - The actual logic!
     public class OrderService : IOrderService
     {
         private readonly LechonDbContext _context;
-        private readonly ISchedulingService _schedulingService; 
-        // 1. Declare your new state machine service field
+        private readonly ISchedulingService _schedulingService;
         private readonly IInventoryService _inventoryService;
 
-        // 2. Expand constructor parameters to inject the Inventory Service
         public OrderService(
-            LechonDbContext context, 
+            LechonDbContext context,
             ISchedulingService schedulingService,
             IInventoryService inventoryService)
         {
             _context = context;
             _schedulingService = schedulingService;
-            _inventoryService = inventoryService; // Assign it here!
+            _inventoryService = inventoryService;
         }
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
         {
-            // Create the Master Container
             var order = new Order
             {
                 CustomerName = request.CustomerName,
                 ContactNumber = request.ContactNumber,
                 Source = request.Source,
                 TargetDeliveryTime = request.TargetDeliveryTime,
-                IsDeliveryDetailsConfirmed = false // Enforcing our core business rule safeguard!
+                IsDeliveryDetailsConfirmed = false 
             };
 
-            // Build the item detail rows
             foreach (var itemDto in request.Items)
             {
                 var orderItem = new OrderItem
                 {
                     ItemCategoryId = itemDto.ItemCategoryId,
                     Quantity = itemDto.Quantity,
-                    TotalPrice = 0 // In a later sprint, we will securely fetch the real seed price here!
+                    TotalPrice = 0 
                 };
                 order.OrderItems.Add(orderItem);
             }
 
-            // Save the order and its items first so Entity Framework generates their real Database IDs
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            // 3. Loop through saved items to auto-generate timelines AND inventory holds!
             foreach (var savedItem in order.OrderItems)
             {
-                // Call our backward-scheduling math engine
                 var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
-                    savedItem.Id, 
-                    order.TargetDeliveryTime, 
+                    savedItem.Id,
+                    order.TargetDeliveryTime,
                     savedItem.ItemCategoryId
                 );
 
-                // Add the new schedule to the tracking context
                 _context.OrderItemSchedules.Add(calculatedSchedule);
 
-                // --- NEW ARCHITECTURAL HOOK POINT ---
-                // 4. Command the inventory system to safely flag a temporary 'Pending' stock reservation
                 await _inventoryService.CreatePendingReservationAsync(
-                    order.Id, 
-                    savedItem.ItemCategoryId, 
+                    order.Id,
+                    savedItem.ItemCategoryId,
                     order.TargetDeliveryTime
                 );
             }
 
-            // Save both the schedules and the inventory reservations permanently to the database
             await _context.SaveChangesAsync();
-
             return order;
+        }
+
+        // Moved from the Interface to the Class
+        public async Task<bool> ConfirmPaymentAsync(int orderId)
+        {
+            var reservation = await _context.InventoryReservations
+                .FirstOrDefaultAsync(r => r.OrderId == orderId);
+
+            if (reservation == null) return false;
+
+            reservation.ReservationStatus = ReservationStatus.Committed;
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        // Moved from the Interface to the Class
+        public async Task<bool> ConfirmDeliveryDetailsAsync(int orderId)
+        {
+            var order = await _context.Orders.FindAsync(orderId);
+
+            if (order == null) return false;
+
+            order.IsDeliveryDetailsConfirmed = true;
+
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

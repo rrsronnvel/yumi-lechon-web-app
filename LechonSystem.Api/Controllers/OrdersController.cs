@@ -9,10 +9,10 @@ namespace LechonSystem.Api.Controllers
     [ApiController]
     public class OrdersController : ControllerBase
     {
-        private readonly OrderService _orderService;
+        // Step 4: Inject the Interface (IOrderService) instead of the Class
+        private readonly IOrderService _orderService;
 
-        // The server automatically hands us the OrderService because we registered it in Program.cs
-        public OrdersController(OrderService orderService)
+        public OrdersController(IOrderService orderService)
         {
             _orderService = orderService;
         }
@@ -20,11 +20,30 @@ namespace LechonSystem.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateOrder([FromBody] CreateOrderRequest request)
         {
-            // 1. Pass the secure DTO to the service layer for processing
             var newOrder = await _orderService.CreateOrderAsync(request);
-
-            // 2. Return a 200 OK success response back to the React frontend
             return Ok(newOrder);
+        }
+
+        [HttpPatch("{id}/confirm-payment")]
+        public async Task<IActionResult> ConfirmPayment(int id)
+        {
+            var success = await _orderService.ConfirmPaymentAsync(id);
+
+            if (!success)
+                return NotFound($"No pending reservation found for Order ID {id}.");
+
+            return Ok(new { Message = "Payment confirmed and inventory locked successfully." });
+        }
+
+        [HttpPatch("{id}/confirm-delivery")]
+        public async Task<IActionResult> ConfirmDelivery(int id)
+        {
+            var success = await _orderService.ConfirmDeliveryDetailsAsync(id);
+
+            if (!success)
+                return NotFound($"Order ID {id} not found.");
+
+            return Ok(new { Message = "Delivery details officially confirmed." });
         }
     }
 }

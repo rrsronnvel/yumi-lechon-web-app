@@ -19,5 +19,6 @@ namespace LechonSystem.Api.Models
 
         // The current state of this reservation ticket
         public ReservationStatus Status { get; set; } = ReservationStatus.Pending;
+        public ReservationStatus ReservationStatus { get; internal set; }
     }
 }
