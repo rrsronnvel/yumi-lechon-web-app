@@ -10,6 +10,7 @@ builder.Services.AddDbContext<LechonDbContext>(options =>
     options.UseSqlServer(connectionString));
     builder.Services.AddScoped<OrderService>();
     builder.Services.AddScoped<ISchedulingService, SchedulingService>();
+    builder.Services.AddScoped<IInventoryService, InventoryService>();
 // -----------------------------------------------------
 
 builder.Services.AddControllers();

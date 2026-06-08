@@ -15,13 +15,19 @@ namespace LechonSystem.Api.Services
     public class OrderService : IOrderService
     {
         private readonly LechonDbContext _context;
-        private readonly ISchedulingService _schedulingService; // 1. Bring in the Scheduling Service
+        private readonly ISchedulingService _schedulingService; 
+        // 1. Declare your new state machine service field
+        private readonly IInventoryService _inventoryService;
 
-        // 2. Inject both the Database Context and the Scheduling Service via the constructor
-        public OrderService(LechonDbContext context, ISchedulingService schedulingService)
+        // 2. Expand constructor parameters to inject the Inventory Service
+        public OrderService(
+            LechonDbContext context, 
+            ISchedulingService schedulingService,
+            IInventoryService inventoryService)
         {
             _context = context;
             _schedulingService = schedulingService;
+            _inventoryService = inventoryService; // Assign it here!
         }
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
@@ -52,7 +58,7 @@ namespace LechonSystem.Api.Services
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            // 3. Now that the items have real database IDs, loop through them to auto-generate timelines!
+            // 3. Loop through saved items to auto-generate timelines AND inventory holds!
             foreach (var savedItem in order.OrderItems)
             {
                 // Call our backward-scheduling math engine
@@ -64,9 +70,17 @@ namespace LechonSystem.Api.Services
 
                 // Add the new schedule to the tracking context
                 _context.OrderItemSchedules.Add(calculatedSchedule);
+
+                // --- NEW ARCHITECTURAL HOOK POINT ---
+                // 4. Command the inventory system to safely flag a temporary 'Pending' stock reservation
+                await _inventoryService.CreatePendingReservationAsync(
+                    order.Id, 
+                    savedItem.ItemCategoryId, 
+                    order.TargetDeliveryTime
+                );
             }
 
-            // Save the schedules permanently to the database
+            // Save both the schedules and the inventory reservations permanently to the database
             await _context.SaveChangesAsync();
 
             return order;

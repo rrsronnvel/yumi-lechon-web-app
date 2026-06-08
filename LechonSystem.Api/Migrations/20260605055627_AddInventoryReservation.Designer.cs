@@ -4,6 +4,7 @@ using LechonSystem.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LechonSystem.Api.Migrations
 {
     [DbContext(typeof(LechonDbContext))]
-    partial class LechonDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260605055627_AddInventoryReservation")]
+    partial class AddInventoryReservation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -55,42 +58,6 @@ namespace LechonSystem.Api.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("InventoryReservations");
-                });
-
-            modelBuilder.Entity("LechonSystem.Api.Models.InventoryTransaction", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("ItemCategoryId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ReferenceId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("TransactionDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ItemCategoryId");
-
-                    b.ToTable("InventoryTransactions");
                 });
 
             modelBuilder.Entity("LechonSystem.Api.Models.ItemCategory", b =>
@@ -373,17 +340,6 @@ namespace LechonSystem.Api.Migrations
                     b.Navigation("ItemCategory");
 
                     b.Navigation("Order");
-                });
-
-            modelBuilder.Entity("LechonSystem.Api.Models.InventoryTransaction", b =>
-                {
-                    b.HasOne("LechonSystem.Api.Models.ItemCategory", "ItemCategory")
-                        .WithMany()
-                        .HasForeignKey("ItemCategoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ItemCategory");
                 });
 
             modelBuilder.Entity("LechonSystem.Api.Models.OrderItem", b =>

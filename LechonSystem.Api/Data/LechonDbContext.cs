@@ -15,6 +15,10 @@ public class LechonDbContext : DbContext
     public DbSet<OrderItem> OrderItems { get; set; } = null!;
     public DbSet<OrderItemSchedule> OrderItemSchedules { get; set; }
 
+    public DbSet<InventoryReservation> InventoryReservations { get; set; }
+
+    public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
