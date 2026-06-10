@@ -17,5 +17,13 @@ namespace LechonSystem.Api.Models
         public DateTime PackagingStartTime { get; set; }
         public DateTime SalangStartTime { get; set; }
         public DateTime TahiStartTime { get; set; }
+
+
+        // --- NEW: Live Execution Tracking Timestamps ---
+    public ProductionStatus CurrentStatus { get; set; } = ProductionStatus.Defrosting;
+    public DateTime? ActualPreppingStartTime { get; set; }
+    public DateTime? ActualSalangTime { get; set; }
+    public DateTime? ActualPackagingTime { get; set; }
+    public DateTime? ActualReadyForDeliveryTime { get; set; }
     }
 }

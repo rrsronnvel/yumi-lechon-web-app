@@ -11,7 +11,8 @@ builder.Services.AddDbContext<LechonDbContext>(options =>
     builder.Services.AddScoped<IOrderService, OrderService>();
     builder.Services.AddScoped<ISchedulingService, SchedulingService>();
     builder.Services.AddScoped<IInventoryService, InventoryService>();
-    
+    builder.Services.AddScoped<IDashboardService, DashboardService>();
+    builder.Services.AddScoped<IRoastingService, RoastingService>();
 // -----------------------------------------------------
 
 builder.Services.AddControllers().AddJsonOptions(options =>
