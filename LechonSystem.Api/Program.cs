@@ -13,6 +13,7 @@ builder.Services.AddDbContext<LechonDbContext>(options =>
     builder.Services.AddScoped<IInventoryService, InventoryService>();
     builder.Services.AddScoped<IDashboardService, DashboardService>();
     builder.Services.AddScoped<IRoastingService, RoastingService>();
+    builder.Services.AddScoped<ILogisticsService, LogisticsService>();
 // -----------------------------------------------------
 
 builder.Services.AddControllers().AddJsonOptions(options =>

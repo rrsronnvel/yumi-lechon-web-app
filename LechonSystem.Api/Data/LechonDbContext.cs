@@ -19,6 +19,8 @@ public class LechonDbContext : DbContext
 
     public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
 
+     public DbSet<DeliveryTrip> DeliveryTrips { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
