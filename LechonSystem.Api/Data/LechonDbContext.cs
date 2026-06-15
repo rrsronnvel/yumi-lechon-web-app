@@ -19,8 +19,9 @@ public class LechonDbContext : DbContext
 
     public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
 
-     public DbSet<DeliveryTrip> DeliveryTrips { get; set; }
-
+    public DbSet<DeliveryTrip> DeliveryTrips { get; set; }
+    public DbSet<NotificationLog> NotificationLogs { get; set; }
+    public DbSet<PaymentLog> PaymentLogs { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -43,5 +44,9 @@ public class LechonDbContext : DbContext
             new ProductCookingProfile { Id = 3, ItemCategoryId = 3, Name = "Large Profile", Description = "Large whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 240, PackagingDurationMinutes = 30, CreatedAt = seedDate },
             new ProductCookingProfile { Id = 4, ItemCategoryId = 4, Name = "Belly Profile", Description = "Standard belly duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 90, PackagingDurationMinutes = 15, CreatedAt = seedDate }
         );
+
+        modelBuilder.Entity<PaymentLog>()
+                .HasIndex(p => p.GatewayReferenceId)
+                .IsUnique();
     }
 }

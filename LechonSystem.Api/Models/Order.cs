@@ -23,4 +23,5 @@ public class Order : BaseEntity
     // The Foreign Key linking this order to a specific trip (nullable because pickups don't have trips)
     public int? DeliveryTripId { get; set; }
     public DeliveryTrip? DeliveryTrip { get; set; }
+    
 }

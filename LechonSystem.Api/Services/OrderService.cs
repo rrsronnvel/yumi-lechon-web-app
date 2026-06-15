@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore; // <-- Step 3: Added this for FirstOrDefaul
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
-
+using LechonSystem.Api.Interfaces;
 
 
 namespace LechonSystem.Api.Services
@@ -25,14 +25,18 @@ namespace LechonSystem.Api.Services
         private readonly ISchedulingService _schedulingService;
         private readonly IInventoryService _inventoryService;
 
+        private readonly INotificationSender _notificationSender;
+
         public OrderService(
             LechonDbContext context,
             ISchedulingService schedulingService,
-            IInventoryService inventoryService)
+            IInventoryService inventoryService,
+            INotificationSender notificationSender)
         {
             _context = context;
             _schedulingService = schedulingService;
             _inventoryService = inventoryService;
+            _notificationSender = notificationSender;
         }
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
@@ -43,7 +47,7 @@ namespace LechonSystem.Api.Services
                 ContactNumber = request.ContactNumber,
                 Source = request.Source,
                 TargetDeliveryTime = request.TargetDeliveryTime,
-                IsDeliveryDetailsConfirmed = false 
+                IsDeliveryDetailsConfirmed = false
             };
 
             foreach (var itemDto in request.Items)
@@ -52,7 +56,7 @@ namespace LechonSystem.Api.Services
                 {
                     ItemCategoryId = itemDto.ItemCategoryId,
                     Quantity = itemDto.Quantity,
-                    TotalPrice = 0 
+                    TotalPrice = 0
                 };
                 order.OrderItems.Add(orderItem);
             }
@@ -91,6 +95,25 @@ namespace LechonSystem.Api.Services
 
             reservation.ReservationStatus = ReservationStatus.Committed;
 
+            var order = await _context.Orders.FindAsync(orderId);
+            if (order == null) return false;
+
+            // FIX HERE: Change customerPhone to read order.ContactNumber
+            string customerPhone = order.ContactNumber;
+            string message = $"Hi {order.CustomerName}, your downpayment for Order #{order.Id} has been verified! Your lechon reservation is now locked in. 🐷";
+
+            bool dispatchSuccess = await _notificationSender.SendMessageAsync(customerPhone, message);
+
+            var log = new NotificationLog
+            {
+                OrderId = order.Id,
+                RecipientPhone = customerPhone,
+                MessageBody = message,
+                SentAt = DateTime.UtcNow,
+                IsSuccess = dispatchSuccess
+            };
+
+            _context.NotificationLogs.Add(log);
             await _context.SaveChangesAsync();
             return true;
         }

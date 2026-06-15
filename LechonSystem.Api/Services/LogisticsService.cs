@@ -5,16 +5,19 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
+using LechonSystem.Api.Interfaces;
 
 namespace LechonSystem.Api.Services
 {
     public class LogisticsService : ILogisticsService
     {
         private readonly LechonDbContext _context;
+        private readonly INotificationSender _notificationSender;
 
-        public LogisticsService(LechonDbContext context)
+        public LogisticsService(LechonDbContext context, INotificationSender notificationSender)
         {
             _context = context;
+            _notificationSender = notificationSender;
         }
 
         // 1. Fetching unassigned orders (Optimized/Grouped can be handled on the frontend using this payload)
@@ -30,6 +33,7 @@ namespace LechonSystem.Api.Services
         }
 
         // 2. The Batch Assignment with Security Validation Checks
+        // 2. The Batch Assignment with Security Validation Checks and Automated Dispatch Notifications
         public async Task<DeliveryTrip> AssignRiderAsync(string riderName, string vehicleType, List<int> orderIds)
         {
             if (orderIds == null || !orderIds.Any())
@@ -44,28 +48,22 @@ namespace LechonSystem.Api.Services
                 .Where(o => orderIds.Contains(o.Id))
                 .ToListAsync();
 
-            // 💡 NEW SAFETY CHECK: Yell an error if any of the requested order IDs don't exist!
+            // Safety check: Yell an error if any of the requested order IDs don't exist
             if (ordersToAssign.Count != orderIds.Count)
             {
                 throw new ArgumentException("One or more provided Order IDs were not found in the system database.");
             }
 
-            // SPRINT FOCUS SPREAD: Defensive check for production completeness
+            // Defensive validation check for production completeness
             foreach (var order in ordersToAssign)
             {
-                // Validation: Prevent pickup orders from getting assigned to delivery trips
                 if (order.Fulfillment == FulfillmentType.Pickup)
                 {
                     throw new InvalidOperationException($"Order #{order.Id} is a Pickup order and cannot be assigned to a delivery trip.");
                 }
 
-                // Validation: Check if the items are completely ready from the roasting machine
-                // (Assuming your OrderItem or Order item tracks ProductionStatus from your previous milestone)
-                // Inside your AssignRiderAsync method loops:
-                // Inside LogisticsService.cs -> AssignRiderAsync
                 foreach (var item in order.OrderItems)
                 {
-                    // Check CurrentStatus instead of ProductionStatus
                     if (item.OrderItemSchedule == null || item.OrderItemSchedule.CurrentStatus != ProductionStatus.ReadyForDelivery)
                     {
                         throw new InvalidOperationException(
@@ -83,13 +81,31 @@ namespace LechonSystem.Api.Services
                 DispatchTime = DateTime.UtcNow
             };
 
-            // Associate orders and update statuses
+            // PROCESS THE BATCH: Update orders, send texts, and write audit logs in a single pass!
             foreach (var order in ordersToAssign)
             {
                 order.RoutingStatus = DeliveryStatus.Assigned;
                 newTrip.Orders.Add(order);
+
+                // 1. TRIGGER THE TEXT DISPATCH IMMEDIATELY (Using ContactNumber!)
+                string message = $"Good news! Your hot Lechon from Order #{order.Id} is now OUT FOR DELIVERY with our rider, {riderName}. Get the table ready! 🛵💨";
+
+                bool dispatchSuccess = await _notificationSender.SendMessageAsync(order.ContactNumber, message);
+
+                // 2. RECORD THE PERMANENT AUDIT TRAIL RECORD
+                var log = new NotificationLog
+                {
+                    OrderId = order.Id,
+                    RecipientPhone = order.ContactNumber,
+                    MessageBody = message,
+                    SentAt = DateTime.UtcNow,
+                    IsSuccess = dispatchSuccess
+                };
+
+                _context.NotificationLogs.Add(log);
             }
 
+            // Commit everything to the physical database inside a single atomic save operation
             _context.DeliveryTrips.Add(newTrip);
             await _context.SaveChangesAsync();
 

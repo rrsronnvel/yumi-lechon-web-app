@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Services;
+using LechonSystem.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,12 +9,15 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<LechonDbContext>(options =>
     options.UseSqlServer(connectionString));
-    builder.Services.AddScoped<IOrderService, OrderService>();
-    builder.Services.AddScoped<ISchedulingService, SchedulingService>();
-    builder.Services.AddScoped<IInventoryService, InventoryService>();
-    builder.Services.AddScoped<IDashboardService, DashboardService>();
-    builder.Services.AddScoped<IRoastingService, RoastingService>();
-    builder.Services.AddScoped<ILogisticsService, LogisticsService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<ISchedulingService, SchedulingService>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IRoastingService, RoastingService>();
+builder.Services.AddScoped<ILogisticsService, LogisticsService>();
+
+// "Whenever a class asks for the INotificationSender socket, plug in the SmsNotificationService."
+builder.Services.AddScoped<INotificationSender, SmsNotificationService>();
 // -----------------------------------------------------
 
 builder.Services.AddControllers().AddJsonOptions(options =>
@@ -48,7 +52,7 @@ var summaries = new[]
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
+    var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
         (
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
