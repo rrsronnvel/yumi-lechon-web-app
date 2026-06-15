@@ -15,9 +15,11 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IRoastingService, RoastingService>();
 builder.Services.AddScoped<ILogisticsService, LogisticsService>();
+builder.Services.AddScoped<PaymentService>();
 
 // "Whenever a class asks for the INotificationSender socket, plug in the SmsNotificationService."
 builder.Services.AddScoped<INotificationSender, SmsNotificationService>();
+
 // -----------------------------------------------------
 
 builder.Services.AddControllers().AddJsonOptions(options =>

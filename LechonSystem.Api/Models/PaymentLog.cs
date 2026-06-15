@@ -22,6 +22,7 @@ namespace LechonSystem.Api.Models
 
     public class PaymentLog : BaseEntity
     {
+        public int Id { get; set; }
         public int OrderId { get; set; }
         
         // This is our shield against duplicate payments
