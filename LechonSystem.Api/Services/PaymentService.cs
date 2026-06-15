@@ -9,12 +9,13 @@ namespace LechonSystem.Api.Services
     public class PaymentService
     {
         private readonly LechonDbContext _context;
-        private readonly OrderService _orderService; // Reusing your existing confirmation workflow!
+        // DELETE THE CONCRETE OrderService LINE, ONLY KEEP THIS ONE:
+        private readonly IOrderService _orderService;
 
-        public PaymentService(LechonDbContext context, OrderService orderService)
+        public PaymentService(LechonDbContext context, IOrderService orderService)
         {
             _context = context;
-            _orderService = orderService;
+            _orderService = orderService; // Now this maps perfectly!
         }
 
         public async Task<bool> ProcessPaymentAsync(int orderId, decimal amount, string referenceId, PaymentProvider provider)
@@ -26,7 +27,7 @@ namespace LechonSystem.Api.Services
             if (existingPayment != null && existingPayment.Status == PaymentStatus.Success)
             {
                 // Core Idempotency Rule: Safely return true without altering state or double-locking inventory
-                return true; 
+                return true;
             }
 
             // 2. Locate the master order

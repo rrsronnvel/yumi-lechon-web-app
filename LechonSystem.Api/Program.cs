@@ -16,6 +16,9 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IRoastingService, RoastingService>();
 builder.Services.AddScoped<ILogisticsService, LogisticsService>();
 builder.Services.AddScoped<PaymentService>();
+builder.Services.AddScoped<IProcurementService, ProcurementService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+
 
 // "Whenever a class asks for the INotificationSender socket, plug in the SmsNotificationService."
 builder.Services.AddScoped<INotificationSender, SmsNotificationService>();

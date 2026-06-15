@@ -7,4 +7,6 @@ public class ItemCategory : BaseEntity
     public decimal MinimumWeightKg { get; set; }
     public decimal MaximumWeightKg { get; set; }
     public decimal BasePrice { get; set; }
+
+    public int MinimumSafetyStock { get; set; }
 }

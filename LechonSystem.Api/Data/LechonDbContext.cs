@@ -22,6 +22,9 @@ public class LechonDbContext : DbContext
     public DbSet<DeliveryTrip> DeliveryTrips { get; set; }
     public DbSet<NotificationLog> NotificationLogs { get; set; }
     public DbSet<PaymentLog> PaymentLogs { get; set; }
+    public DbSet<PurchaseOrder> PurchaseOrders { get; set; }
+    public DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
