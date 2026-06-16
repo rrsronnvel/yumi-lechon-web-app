@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LechonSystem.Api.Migrations
 {
     [DbContext(typeof(LechonDbContext))]
-    [Migration("20260615064633_AddProcurementModule")]
-    partial class AddProcurementModule
+    [Migration("20260616081932_AddProcurementFix")]
+    partial class AddProcurementFix
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

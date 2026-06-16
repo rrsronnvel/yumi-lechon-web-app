@@ -5,10 +5,15 @@ using LechonSystem.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- ADD THIS BLOCK TO REGISTER YOUR DB CONNECTION ---
+// ==========================================
+// PHASE 1: THE CONFIGURATION MIXING BOWL
+// All 'builder.Services' must stay up here!
+// ==========================================
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<LechonDbContext>(options =>
     options.UseSqlServer(connectionString));
+
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
@@ -18,12 +23,19 @@ builder.Services.AddScoped<ILogisticsService, LogisticsService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<IProcurementService, ProcurementService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
-
-
-// "Whenever a class asks for the INotificationSender socket, plug in the SmsNotificationService."
 builder.Services.AddScoped<INotificationSender, SmsNotificationService>();
 
-// -----------------------------------------------------
+// 🟢 MOVE CORS CONFIGURATION HERE (Before builder.Build)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:5173") 
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
+});
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
@@ -31,12 +43,19 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// ==========================================
+// THE POINT OF NO RETURN
+// This bakes the services container permanently
+// ==========================================
+var app = builder.Build(); 
 
-var app = builder.Build();
-// Configure the HTTP request pipeline.
+// ==========================================
+// PHASE 2: THE REQUEST PIPELINE (MIDDLEWARE)
+// All 'app.Use...' statements stay down here!
+// ==========================================
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -44,11 +63,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
+// 🟢 Use CORS right before mapping routes
+app.UseCors("AllowReactApp"); 
 app.UseAuthorization();
 app.MapControllers();
-
-//app.UseHttpsRedirection();
 
 var summaries = new[]
 {
