@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Cholo\\Desktop\\Yumi's Lechon Web App\\LechonSystem.Api\\LechonSystem.Api.csproj": {}
+    "C:\\Users\\Cholo\\Desktop\\yumi-lechon-web-app\\LechonSystem.Api\\LechonSystem.Api.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Cholo\\Desktop\\Yumi's Lechon Web App\\LechonSystem.Api\\LechonSystem.Api.csproj": {
+    "C:\\Users\\Cholo\\Desktop\\yumi-lechon-web-app\\LechonSystem.Api\\LechonSystem.Api.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Cholo\\Desktop\\Yumi's Lechon Web App\\LechonSystem.Api\\LechonSystem.Api.csproj",
+        "projectUniqueName": "C:\\Users\\Cholo\\Desktop\\yumi-lechon-web-app\\LechonSystem.Api\\LechonSystem.Api.csproj",
         "projectName": "LechonSystem.Api",
-        "projectPath": "C:\\Users\\Cholo\\Desktop\\Yumi's Lechon Web App\\LechonSystem.Api\\LechonSystem.Api.csproj",
+        "projectPath": "C:\\Users\\Cholo\\Desktop\\yumi-lechon-web-app\\LechonSystem.Api\\LechonSystem.Api.csproj",
         "packagesPath": "C:\\Users\\Cholo\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Cholo\\Desktop\\Yumi's Lechon Web App\\LechonSystem.Api\\obj\\",
+        "outputPath": "C:\\Users\\Cholo\\Desktop\\yumi-lechon-web-app\\LechonSystem.Api\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Cholo\\AppData\\Roaming\\NuGet\\NuGet.Config"
