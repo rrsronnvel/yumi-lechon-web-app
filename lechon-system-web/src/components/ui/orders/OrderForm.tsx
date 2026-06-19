@@ -2,10 +2,12 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { orderFormSchema, OrderFormValues } from "@/schemas/orderSchema";
-import { toast } from "sonner"; // 1. Grab Sonner's manager
+import { orderFormSchema } from "@/schemas/orderSchema";
+import { z } from "zod";
+import { toast } from "sonner"; 
 
-// 2. Import your clean shadcn blocks
+type OrderFormValues = z.infer<typeof orderFormSchema>;
+
 import {
   Form,
   FormControl,
@@ -13,20 +15,29 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form.tsx";
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+// 1. Import the Shadcn Select components
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function OrderForm() {
   const queryClient = useQueryClient();
 
-  const form = useForm<OrderFormValues>({
+ const form = useForm<OrderFormValues>({
     resolver: zodResolver(orderFormSchema),
     defaultValues: {
       customerName: "",
       customerPhone: "",
       targetDeliveryTime: "",
-      fulfillmentType: "Delivery",
+      // 2. CHANGE THIS TO A STRING
+      fulfillmentType: "1", 
       items: [{ itemCategoryId: 1, quantity: 1 }],
     },
   });
@@ -38,14 +49,21 @@ export default function OrderForm() {
 
   const createOrderMutation = useMutation({
     mutationFn: async (newOrder: OrderFormValues) => {
+      
+      // 3. THE ESCAPE HATCH: Convert the string back to a C# Number right here
+      const payload = {
+        ...newOrder,
+        fulfillment: parseInt(newOrder.fulfillmentType, 10) 
+      };
+
       const response = await axios.post(
         "http://localhost:5199/api/orders",
-        newOrder,
+        payload
       );
       return response.data;
     },
+    // ... onSuccess, onError, etc.
     onSuccess: () => {
-      // 3. Seamless user notification!
       toast.success("Order Created Successfully!", {
         description: "The order slip is now live on your dashboard roster.",
       });
@@ -64,7 +82,6 @@ export default function OrderForm() {
   }
 
   return (
-    // 4. Wrap everything inside the smart Shadcn Form context shell
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
@@ -79,7 +96,6 @@ export default function OrderForm() {
           </p>
         </div>
 
-        {/* Customer Name Controlled Field */}
         <FormField
           control={form.control}
           name="customerName"
@@ -89,12 +105,11 @@ export default function OrderForm() {
               <FormControl>
                 <Input placeholder="e.g., Juan Dela Cruz" {...field} />
               </FormControl>
-              <FormMessage /> {/* Displays automatic Zod messages perfectly */}
+              <FormMessage />
             </FormItem>
           )}
         />
 
-        {/* Customer Phone Controlled Field */}
         <FormField
           control={form.control}
           name="customerPhone"
@@ -109,28 +124,29 @@ export default function OrderForm() {
           )}
         />
 
-        {/* Fulfillment Type Selection Field */}
+        {/* 2. The Updated Shadcn Select Field for Fulfillment */}
         <FormField
           control={form.control}
           name="fulfillmentType"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Fulfillment Method</FormLabel>
-              <FormControl>
-                <select
-                  {...field}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="Delivery">🚗 Delivery Routing</option>
-                  <option value="Pickup">🏪 Walk-in Store Pickup</option>
-                </select>
-              </FormControl>
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger className="focus:ring-orange-500">
+                    <SelectValue placeholder="Select fulfillment method" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="1">🚗 Delivery Routing</SelectItem>
+                  <SelectItem value="0">🏪 Walk-in Store Pickup</SelectItem>
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        {/* Target Delivery Date & Time Field */}
         <FormField
           control={form.control}
           name="targetDeliveryTime"
@@ -149,7 +165,6 @@ export default function OrderForm() {
           )}
         />
 
-        {/* Dynamic Items Section */}
         <div className="space-y-3 border-t pt-4">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-semibold text-gray-700">
@@ -170,7 +185,6 @@ export default function OrderForm() {
               key={field.id}
               className="flex gap-3 items-start bg-slate-50 p-3 rounded-md relative border border-dashed"
             >
-              {/* Native category selector remains for speed, styled with tailwind */}
               <div className="flex-1 space-y-1">
                 <span className="text-xs font-medium text-muted-foreground">
                   Product Category
@@ -187,7 +201,6 @@ export default function OrderForm() {
                 </select>
               </div>
 
-              {/* Quantity input inside array row */}
               <div className="w-20 space-y-1">
                 <span className="text-xs font-medium text-muted-foreground">
                   Qty
@@ -216,7 +229,6 @@ export default function OrderForm() {
           ))}
         </div>
 
-        {/* Form Submit Controller */}
         <Button
           type="submit"
           className="w-full bg-orange-600 hover:bg-orange-700 text-white"

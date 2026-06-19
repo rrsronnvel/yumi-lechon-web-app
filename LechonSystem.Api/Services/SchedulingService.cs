@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
@@ -6,11 +7,14 @@ using LechonSystem.Api.Models;
 
 namespace LechonSystem.Api.Services
 {
+    // 1. Here is our unified Interface (The Menu)
     public interface ISchedulingService
     {
         Task<OrderItemSchedule> CalculateScheduleAsync(int orderItemId, DateTime targetDeliveryTime, int itemCategoryId);
+        Task<object> GetDailyRosterAsync(); 
     }
 
+    // 2. Here is our Class (The Kitchen)
     public class SchedulingService : ISchedulingService
     {
         private readonly LechonDbContext _context;
@@ -22,21 +26,17 @@ namespace LechonSystem.Api.Services
 
         public async Task<OrderItemSchedule> CalculateScheduleAsync(int orderItemId, DateTime targetDeliveryTime, int itemCategoryId)
         {
-            // 1. Fetch the cooking durations based on the product category
             var profile = await _context.ProductCookingProfiles
                 .FirstOrDefaultAsync(p => p.ItemCategoryId == itemCategoryId);
 
-            // Fallback default values if no specific cooking profile is configured yet
             int tahiDuration = profile?.TahiDurationMinutes ?? 60;
-            int salangDuration = profile?.SalangDurationMinutes ?? 180; // 3 hours default
+            int salangDuration = profile?.SalangDurationMinutes ?? 180;
             int packagingDuration = profile?.PackagingDurationMinutes ?? 30;
 
-            // 2. Perform the continuous backward scheduling math using C# AddMinutes with negative values
             DateTime packagingStart = targetDeliveryTime.AddMinutes(-packagingDuration);
             DateTime salangStart = packagingStart.AddMinutes(-salangDuration);
             DateTime tahiStart = salangStart.AddMinutes(-tahiDuration);
 
-            // 3. Assemble and return the brand-new schedule record
             var schedule = new OrderItemSchedule
             {
                 OrderItemId = orderItemId,
@@ -47,6 +47,27 @@ namespace LechonSystem.Api.Services
             };
 
             return schedule;
+        }
+
+        public async Task<object> GetDailyRosterAsync()
+        {
+            var items = await _context.OrderItemSchedules
+                .Include(s => s.OrderItem)
+                    .ThenInclude(oi => oi!.Order)
+                .Include(s => s.OrderItem)
+                    .ThenInclude(oi => oi!.ItemCategory)
+                .Select(s => new
+                {
+                    id = s.Id,
+                    // 3. We use the '!' (Null-Forgiving Operator) to silence the compiler warnings safely
+                    customerName = s.OrderItem!.Order!.CustomerName, 
+                    size = s.OrderItem!.ItemCategory!.Name, 
+                    targetDeliveryTime = s.TargetDeliveryTime.ToString("h:mm tt"), 
+                    status = s.CurrentStatus.ToString()
+                })
+                .ToListAsync();
+
+            return items;
         }
     }
 }

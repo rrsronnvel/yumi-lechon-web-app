@@ -47,9 +47,12 @@ namespace LechonSystem.Api.Services
                 ContactNumber = request.ContactNumber,
                 Source = request.Source,
                 TargetDeliveryTime = request.TargetDeliveryTime,
-                IsDeliveryDetailsConfirmed = false
-            };
+                IsDeliveryDetailsConfirmed = false,
 
+            
+                Fulfillment = request.Fulfillment
+            };
+         
             foreach (var itemDto in request.Items)
             {
                 var orderItem = new OrderItem
