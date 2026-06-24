@@ -9,6 +9,7 @@ export default function Sidebar() {
     { name: "Orders", href: "/orders", icon: ClipboardList },
     { name: "Kitchen", href: "/kitchen", icon: Utensils },
     { name: "Logistics", href: "/logistics", icon: Truck },
+    { name: "Inventory", href: "/inventory", icon: ClipboardList },
   ];
 
   return (
