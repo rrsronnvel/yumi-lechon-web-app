@@ -7,6 +7,7 @@ import LogisticsPage from "./pages/LogisticsPage";
 import { Toaster } from "@/components/ui/sonner"; 
 import InventoryPage from './pages/InventoryPage';
 import ManifestPage from './pages/ManifestPage';
+import AnalyticsPage from "./pages/AnalyticsPage";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="logistics" element={<LogisticsPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="manifest" element={<ManifestPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
         </Route>
       </Routes>
       

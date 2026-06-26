@@ -11,6 +11,7 @@ export default function Sidebar() {
     { name: "Logistics", href: "/logistics", icon: Truck },
     { name: "Inventory", href: "/inventory", icon: ClipboardList },
     { name: "Manifest", href: "/manifest", icon: ClipboardList },
+    { name: "Analytics", href: "/analytics", icon: LayoutDashboard },
   ];
 
   return (
