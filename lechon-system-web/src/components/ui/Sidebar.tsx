@@ -10,6 +10,7 @@ export default function Sidebar() {
     { name: "Kitchen", href: "/kitchen", icon: Utensils },
     { name: "Logistics", href: "/logistics", icon: Truck },
     { name: "Inventory", href: "/inventory", icon: ClipboardList },
+    { name: "Manifest", href: "/manifest", icon: ClipboardList },
   ];
 
   return (
