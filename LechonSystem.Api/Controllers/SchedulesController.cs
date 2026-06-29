@@ -15,12 +15,14 @@ public class SchedulesController : ControllerBase
         _schedulingService = schedulingService;
     }
 
-    [HttpGet("roster")] // This maps to /api/schedules/roster
-    public async Task<IActionResult> GetDailyRoster()
+   [HttpGet("roster")] // This maps to /api/schedules/roster?date=YYYY-MM-DD
+    public async Task<IActionResult> GetDailyRoster([FromQuery] string? date)
     {
-        // 1. We will call a service method to get today's items.
-        // We will build this method in Step 2!
-        var roster = await _schedulingService.GetDailyRosterAsync();
+        // If the frontend didn't send a date, we default to today's date
+        var targetDate = string.IsNullOrEmpty(date) ? DateTime.Today : DateTime.Parse(date);
+
+        // We pass the targetDate down into the kitchen (the service)
+        var roster = await _schedulingService.GetDailyRosterAsync(targetDate);
         return Ok(roster);
     }
 }

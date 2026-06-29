@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import InventoryPage from './pages/InventoryPage';
 import ManifestPage from './pages/ManifestPage';
 import AnalyticsPage from "./pages/AnalyticsPage";
+import DailySheetsPage from "./pages/DailySheetsPage";
 
 export default function App() {
   return (
@@ -22,8 +23,11 @@ export default function App() {
           <Route path="manifest" element={<ManifestPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
         </Route>
-      </Routes>
+            <Route path="/daily-sheets" element={<DailySheetsPage />} />
       
+      </Routes>
+
+  
       {/* 🔌 We 'plug in' the Toaster here so it hovers over all pages! */}
       <Toaster position="top-right" closeButton richColors />
     </BrowserRouter>
