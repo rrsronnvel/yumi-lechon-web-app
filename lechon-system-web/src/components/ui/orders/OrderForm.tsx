@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { orderFormSchema } from "@/schemas/orderSchema";
 import { z } from "zod";
@@ -18,7 +20,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-// 1. Import the Shadcn Select components
 import {
   Select,
   SelectContent,
@@ -27,10 +28,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-
 export default function OrderForm() {
   const queryClient = useQueryClient();
 
+  // 1. FETCH DATA FIRST: Get live inventory categories from the backend
+  const { data: categories = [], isLoading: isCategoriesLoading } = useQuery({
+    queryKey: ["inventory", "categories"],
+    queryFn: async () => {
+      const response = await axios.get(
+        "http://localhost:5199/api/inventory/categories",
+      );
+      return response.data;
+    },
+  });
+
+  // 2. INITIALIZE FORM SECOND: Create the form so it exists in memory
   const form = useForm<OrderFormValues>({
     resolver: zodResolver(orderFormSchema),
     defaultValues: {
@@ -39,8 +51,6 @@ export default function OrderForm() {
       targetDeliveryTime: "",
       fulfillmentType: "1",
       items: [{ itemCategoryId: 1, quantity: 1 }],
-
-      // -- ADD THESE NEW DEFAULT VALUES --
       address: "",
       remarks: "",
       price: 0,
@@ -49,24 +59,65 @@ export default function OrderForm() {
     },
   });
 
-  
+  // 3. SET UP WATCHERS THIRD: Now that the form exists, we can watch it
   const { fields, append, remove } = useFieldArray({
     name: "items",
     control: form.control,
   });
 
+ 
+
+  // 4. RUN THE MATH FOURTH: The Bulletproof RHF Subscription
+  useEffect(() => {
+    if (categories.length === 0) return; // Wait for backend data
+
+    // Helper function so we can calculate immediately AND on every keystroke
+    const calculatePrice = (cartItems: any[]) => {
+      let runningTotal = 0;
+      cartItems.forEach((cartItem) => {
+        const categoryId = Number(cartItem?.itemCategoryId);
+        const qty = Number(cartItem?.quantity) || 1;
+
+        const dbCategory = categories.find(
+          (c: { id: number; basePrice: number }) => c.id === categoryId
+        );
+
+        if (dbCategory) {
+          runningTotal += dbCategory.basePrice * qty;
+        }
+      });
+      return runningTotal;
+    };
+
+    // 1. Force an immediate calculation the exact millisecond the backend API data loads
+    const currentFormValues = form.getValues("items");
+    form.setValue("price", calculatePrice(currentFormValues));
+
+    // 2. Subscribe directly to the form's internal heartbeat for all future changes
+    const subscription = form.watch((value) => {
+      const newTotal = calculatePrice(value.items || []);
+      
+      // Magically push the total into the UI (only if it actually changed)
+      if (value.price !== newTotal) {
+        form.setValue("price", newTotal);
+      }
+    });
+
+    // Clean up memory when the component closes
+    return () => subscription.unsubscribe();
+  }, [categories, form]);
+
+  // 5. SET UP SUBMISSION FIFTH: Handle sending the final payload to the backend
   const createOrderMutation = useMutation({
     mutationFn: async (newOrder: OrderFormValues) => {
-      // The spread operator (...) automatically includes our new fields
-      // like address, remarks, price, addOns, and deliveryFee!
       const payload = {
         ...newOrder,
-        fulfillment: parseInt(newOrder.fulfillmentType, 10) 
+        fulfillment: parseInt(newOrder.fulfillmentType, 10),
       };
 
       const response = await axios.post(
         "http://localhost:5199/api/orders",
-        payload
+        payload,
       );
       return response.data;
     },
@@ -75,12 +126,13 @@ export default function OrderForm() {
         description: "The order slip is now live on your dashboard roster.",
       });
       form.reset(); // Clear the form for the next customer
-      
-      // -- NEW: AGGRESSIVE CACHE INVALIDATION --
-      // Tell React to instantly refresh these specific views
+
+      // AGGRESSIVE CACHE INVALIDATION
       queryClient.invalidateQueries({ queryKey: ["dashboard-pending"] });
       queryClient.invalidateQueries({ queryKey: ["roster"] });
-      queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
+      queryClient.invalidateQueries({
+        queryKey: ["schedules", "daily-sheets"],
+      });
     },
     onError: () => {
       toast.error("Submission Failed", {
@@ -93,6 +145,7 @@ export default function OrderForm() {
     createOrderMutation.mutate(data);
   }
 
+  // 6. RENDER THE UI
   return (
     <Form {...form}>
       <form
@@ -136,7 +189,6 @@ export default function OrderForm() {
           )}
         />
 
-        {/* 2. The Updated Shadcn Select Field for Fulfillment */}
         <FormField
           control={form.control}
           name="fulfillmentType"
@@ -159,7 +211,7 @@ export default function OrderForm() {
           )}
         />
 
-       <FormField
+        <FormField
           control={form.control}
           name="targetDeliveryTime"
           render={({ field }) => (
@@ -170,32 +222,36 @@ export default function OrderForm() {
                   type="datetime-local"
                   step={900}
                   className="h-10 focus-visible:ring-orange-500"
-                  value={field.value} 
+                  value={field.value}
                   onChange={(e) => {
-                    const rawValue = e.target.value; 
-                    
+                    const rawValue = e.target.value;
+
                     if (!rawValue) {
                       field.onChange("");
                       return;
                     }
 
-                    // 1. Convert the HTML string into a real JavaScript Date object
                     const dateObj = new Date(rawValue);
-
-                    // 2. The Math: Round to the nearest 15 minutes (in milliseconds)
-                    // 15 minutes = 1000ms * 60s * 15m = 900,000 milliseconds
                     const ms = 1000 * 60 * 15;
-                    const snappedDate = new Date(Math.round(dateObj.getTime() / ms) * ms);
+                    const snappedDate = new Date(
+                      Math.round(dateObj.getTime() / ms) * ms,
+                    );
 
-                    // 3. Rebuild the string manually so it stays in Local Time for the UI
-                    // (Padding with "0" ensures we get "09" instead of just "9")
                     const year = snappedDate.getFullYear();
-                    const month = String(snappedDate.getMonth() + 1).padStart(2, "0");
+                    const month = String(snappedDate.getMonth() + 1).padStart(
+                      2,
+                      "0",
+                    );
                     const day = String(snappedDate.getDate()).padStart(2, "0");
-                    const hours = String(snappedDate.getHours()).padStart(2, "0");
-                    const mins = String(snappedDate.getMinutes()).padStart(2, "0");
+                    const hours = String(snappedDate.getHours()).padStart(
+                      2,
+                      "0",
+                    );
+                    const mins = String(snappedDate.getMinutes()).padStart(
+                      2,
+                      "0",
+                    );
 
-                    // 4. Send the perfectly formatted, snapped time back to the form!
                     field.onChange(`${year}-${month}-${day}T${hours}:${mins}`);
                   }}
                 />
@@ -205,7 +261,6 @@ export default function OrderForm() {
           )}
         />
 
-        {/* -- NEW ROUTING FIELDS -- */}
         <FormField
           control={form.control}
           name="address"
@@ -266,10 +321,25 @@ export default function OrderForm() {
                     valueAsNumber: true,
                   })}
                   className="w-full h-9 rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus:outline-none"
+                  disabled={isCategoriesLoading}
                 >
-                  <option value={1}>Whole Lechon (Small 15kg)</option>
-                  <option value={2}>Whole Lechon (Medium 20kg)</option>
-                  <option value={3}>Lechon Belly (Per kg)</option>
+                  <option value={0} disabled>
+                    {isCategoriesLoading
+                      ? "Loading sizes..."
+                      : "Select a size..."}
+                  </option>
+
+                  {categories.map(
+                    (category: {
+                      id: number;
+                      name: string;
+                      basePrice: number;
+                    }) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ),
+                  )}
                 </select>
               </div>
 
@@ -301,8 +371,7 @@ export default function OrderForm() {
           ))}
         </div>
 
-        {/* -- NEW FINANCIAL FIELDS -- */}
-        <div className="grid grid-cols-2 gap-4 pt-4 border-t mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t mt-4">
           <FormField
             control={form.control}
             name="price"
@@ -322,19 +391,18 @@ export default function OrderForm() {
           />
 
           <div className="space-y-1 mb-4">
-            <FormLabel>Distance (KM) - Auto Calculator</FormLabel>
+            <FormLabel>Distance (KM)</FormLabel>
             <Input
               type="number"
               placeholder="e.g., 5"
               onChange={(e) => {
                 const km = parseFloat(e.target.value) || 0;
                 const calculatedFee = km > 0 ? 50 + 15 * km : 0;
-                form.setValue("deliveryFee", calculatedFee); // Magically updates the field below!
+                form.setValue("deliveryFee", calculatedFee);
               }}
             />
-            <p className="text-xs text-muted-foreground">
-              Formula: ₱50 + (₱15 x KM). Override the fee below if free
-              delivery.
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              Formula: ₱50 + (₱15 x KM). Override if free delivery.
             </p>
           </div>
 
@@ -361,7 +429,7 @@ export default function OrderForm() {
           control={form.control}
           name="addOns"
           render={({ field }) => (
-            <FormItem className="mb-6">
+            <FormItem className="mb-6 mt-4">
               <FormLabel>Add-Ons (Optional)</FormLabel>
               <FormControl>
                 <Input
