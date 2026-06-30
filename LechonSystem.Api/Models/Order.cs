@@ -5,11 +5,16 @@ public class Order : BaseEntity
     public int Id { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string ContactNumber { get; set; } = string.Empty;
-    public string Source { get; set; } = string.Empty; 
-    
+    public string Source { get; set; } = string.Empty;
+
     // THE MISSING FIELDS:
     public string DeliveryAddress { get; set; } = string.Empty;
     public string? Remarks { get; set; }
+    // -- MAKE SURE ALL OF THESE ARE HERE --
+    public decimal Price { get; set; }
+    public string? AddOns { get; set; }
+    public decimal DeliveryFee { get; set; }
+    public decimal Downpayment { get; set; }
 
     public DateTime TargetDeliveryTime { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; } = false;

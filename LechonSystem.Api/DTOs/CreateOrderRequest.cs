@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using LechonSystem.Api.Models; // 👈 Make sure to import your Models folder so it knows what FulfillmentType is!
+using LechonSystem.Api.Models; 
 
 namespace LechonSystem.Api.DTOs
 {
@@ -11,7 +11,14 @@ namespace LechonSystem.Api.DTOs
         public string Source { get; set; } = string.Empty; 
         public DateTime TargetDeliveryTime { get; set; }
         
-        
+        // -- 🚀 NEW POS FIELDS ADDED HERE --
+        public string DeliveryAddress { get; set; } = string.Empty;
+        public string? Remarks { get; set; }
+        public decimal Price { get; set; }
+        public string? AddOns { get; set; }
+        public decimal DeliveryFee { get; set; }
+        public decimal Downpayment { get; set; }
+
         public FulfillmentType Fulfillment { get; set; } 
 
         public List<OrderItemRequest> Items { get; set; } = new();

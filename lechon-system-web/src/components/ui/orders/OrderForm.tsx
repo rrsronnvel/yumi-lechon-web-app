@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { orderFormSchema } from "@/schemas/orderSchema";
 import { z } from "zod";
-import { toast } from "sonner"; 
+import { toast } from "sonner";
 
 type OrderFormValues = z.infer<typeof orderFormSchema>;
 
@@ -27,21 +27,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+
 export default function OrderForm() {
   const queryClient = useQueryClient();
 
- const form = useForm<OrderFormValues>({
+  const form = useForm<OrderFormValues>({
     resolver: zodResolver(orderFormSchema),
     defaultValues: {
       customerName: "",
       customerPhone: "",
       targetDeliveryTime: "",
-      // 2. CHANGE THIS TO A STRING
-      fulfillmentType: "1", 
+      fulfillmentType: "1",
       items: [{ itemCategoryId: 1, quantity: 1 }],
+
+      // -- ADD THESE NEW DEFAULT VALUES --
+      address: "",
+      remarks: "",
+      price: 0,
+      addOns: "",
+      deliveryFee: 0,
     },
   });
 
+  
   const { fields, append, remove } = useFieldArray({
     name: "items",
     control: form.control,
@@ -49,8 +57,8 @@ export default function OrderForm() {
 
   const createOrderMutation = useMutation({
     mutationFn: async (newOrder: OrderFormValues) => {
-      
-      // 3. THE ESCAPE HATCH: Convert the string back to a C# Number right here
+      // The spread operator (...) automatically includes our new fields
+      // like address, remarks, price, addOns, and deliveryFee!
       const payload = {
         ...newOrder,
         fulfillment: parseInt(newOrder.fulfillmentType, 10) 
@@ -62,13 +70,17 @@ export default function OrderForm() {
       );
       return response.data;
     },
-    // ... onSuccess, onError, etc.
     onSuccess: () => {
       toast.success("Order Created Successfully!", {
         description: "The order slip is now live on your dashboard roster.",
       });
-      form.reset();
+      form.reset(); // Clear the form for the next customer
+      
+      // -- NEW: AGGRESSIVE CACHE INVALIDATION --
+      // Tell React to instantly refresh these specific views
       queryClient.invalidateQueries({ queryKey: ["dashboard-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["roster"] });
+      queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
     },
     onError: () => {
       toast.error("Submission Failed", {
@@ -147,7 +159,7 @@ export default function OrderForm() {
           )}
         />
 
-        <FormField
+       <FormField
           control={form.control}
           name="targetDeliveryTime"
           render={({ field }) => (
@@ -156,8 +168,68 @@ export default function OrderForm() {
               <FormControl>
                 <Input
                   type="datetime-local"
-                  {...field}
+                  step={900}
                   className="h-10 focus-visible:ring-orange-500"
+                  value={field.value} 
+                  onChange={(e) => {
+                    const rawValue = e.target.value; 
+                    
+                    if (!rawValue) {
+                      field.onChange("");
+                      return;
+                    }
+
+                    // 1. Convert the HTML string into a real JavaScript Date object
+                    const dateObj = new Date(rawValue);
+
+                    // 2. The Math: Round to the nearest 15 minutes (in milliseconds)
+                    // 15 minutes = 1000ms * 60s * 15m = 900,000 milliseconds
+                    const ms = 1000 * 60 * 15;
+                    const snappedDate = new Date(Math.round(dateObj.getTime() / ms) * ms);
+
+                    // 3. Rebuild the string manually so it stays in Local Time for the UI
+                    // (Padding with "0" ensures we get "09" instead of just "9")
+                    const year = snappedDate.getFullYear();
+                    const month = String(snappedDate.getMonth() + 1).padStart(2, "0");
+                    const day = String(snappedDate.getDate()).padStart(2, "0");
+                    const hours = String(snappedDate.getHours()).padStart(2, "0");
+                    const mins = String(snappedDate.getMinutes()).padStart(2, "0");
+
+                    // 4. Send the perfectly formatted, snapped time back to the form!
+                    field.onChange(`${year}-${month}-${day}T${hours}:${mins}`);
+                  }}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* -- NEW ROUTING FIELDS -- */}
+        <FormField
+          control={form.control}
+          name="address"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Delivery Address / Location</FormLabel>
+              <FormControl>
+                <Input placeholder="e.g., 123 Main St, Bacoor" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="remarks"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Remarks (Optional)</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="e.g., Deliver to the blue gate"
+                  {...field}
                 />
               </FormControl>
               <FormMessage />
@@ -228,6 +300,79 @@ export default function OrderForm() {
             </div>
           ))}
         </div>
+
+        {/* -- NEW FINANCIAL FIELDS -- */}
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t mt-4">
+          <FormField
+            control={form.control}
+            name="price"
+            render={() => (
+              <FormItem>
+                <FormLabel>Lechon Price (₱)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    {...form.register("price", { valueAsNumber: true })}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className="space-y-1 mb-4">
+            <FormLabel>Distance (KM) - Auto Calculator</FormLabel>
+            <Input
+              type="number"
+              placeholder="e.g., 5"
+              onChange={(e) => {
+                const km = parseFloat(e.target.value) || 0;
+                const calculatedFee = km > 0 ? 50 + 15 * km : 0;
+                form.setValue("deliveryFee", calculatedFee); // Magically updates the field below!
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Formula: ₱50 + (₱15 x KM). Override the fee below if free
+              delivery.
+            </p>
+          </div>
+
+          <FormField
+            control={form.control}
+            name="deliveryFee"
+            render={() => (
+              <FormItem>
+                <FormLabel>Delivery Fee (₱)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    {...form.register("deliveryFee", { valueAsNumber: true })}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="addOns"
+          render={({ field }) => (
+            <FormItem className="mb-6">
+              <FormLabel>Add-Ons (Optional)</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="e.g., Extra Dinuguan, 2x Sarsa"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <Button
           type="submit"
