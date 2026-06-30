@@ -2,6 +2,7 @@ import React from 'react';
 import PrintLayout from '../layouts/PrintLayout'; 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KitchenViewTab } from "@/layouts/KitchenViewTab";
+import RiderViewTab from '@/layouts/RiderViewTab';
 
 export default function DailySheetsPage() {
   return (
@@ -28,7 +29,7 @@ export default function DailySheetsPage() {
         {/* Tab 2: Rider (Logistics focused, SHOWS EXACT CASH SPLITS) */}
         <TabsContent value="rider">
           <div className="p-4 border-2 border-dashed border-gray-200 text-center text-gray-500">
-            Rider Data Table Scaffold goes here...
+            <RiderViewTab />
           </div>
         </TabsContent>
       </Tabs>
