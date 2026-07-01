@@ -9,9 +9,13 @@ namespace LechonSystem.Api.Services
 {
     public interface IInventoryService
     {
+
+        Task ReleaseReservationAsync(int orderId);
         Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate, bool isTrustedCustomer, decimal downpayment);
         Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null);
         Task<int> GetAvailableStockAsync(int itemCategoryId, DateTime date);
+
+
     }
 
     public class InventoryService : IInventoryService
@@ -87,6 +91,20 @@ namespace LechonSystem.Api.Services
 
             // 3. Subtract promised stock from physical stock to get the absolute truth
             return physicalOnHand - totalCommittedReservations;
+        }
+
+        public async Task ReleaseReservationAsync(int orderId)
+        {
+            // Find the locked pig ticket
+            var reservation = await _context.InventoryReservations
+                .FirstOrDefaultAsync(r => r.OrderId == orderId);
+
+            // If it exists, rip up the ticket!
+            if (reservation != null)
+            {
+                _context.InventoryReservations.Remove(reservation);
+                await _context.SaveChangesAsync();
+            }
         }
     }
 }

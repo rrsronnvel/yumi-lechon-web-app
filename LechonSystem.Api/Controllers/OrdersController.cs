@@ -45,5 +45,16 @@ namespace LechonSystem.Api.Controllers
 
             return Ok(new { Message = "Delivery details officially confirmed." });
         }
+
+        [HttpPatch("{id}/cancel")]
+        public async Task<IActionResult> CancelOrder(int id)
+        {
+            var success = await _orderService.CancelOrderAsync(id);
+
+            if (!success)
+                return NotFound($"Order ID {id} not found or could not be cancelled.");
+
+            return Ok(new { Message = "Order permanently voided and inventory released back to ledger." });
+        }
     }
 }

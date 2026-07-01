@@ -20,6 +20,8 @@ public class Order : BaseEntity
     public DateTime TargetDeliveryTime { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; } = false;
 
+    public bool IsCancelled { get; set; } = false;
+
     public List<OrderItem> OrderItems { get; set; } = new();
 
     public FulfillmentType Fulfillment { get; set; } = FulfillmentType.Pickup;

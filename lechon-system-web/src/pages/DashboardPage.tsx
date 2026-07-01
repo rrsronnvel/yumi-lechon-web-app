@@ -15,8 +15,42 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import axios from "axios"; // or your apiClient if you use one
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function DashboardPage() {
+  const queryClient = useQueryClient();
+
+  // The engine that fires our new C# cancellation endpoint
+  const cancelOrderMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      // Pointing directly to the new OrdersController endpoint we just built
+      const response = await axios.patch(
+        `http://localhost:5199/api/orders/${orderId}/cancel`,
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      // 1. Wipe the old dashboard data so the cancelled order disappears
+      queryClient.invalidateQueries({
+        queryKey: ["dashboard", "pending-confirmations"],
+      });
+      // 2. Wipe the inventory cache so the freed-up pig instantly appears available
+      queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] });
+    },
+  });
+
   // 1. Dispatch our three data messengers simultaneously
   const {
     data: pending,
@@ -87,26 +121,53 @@ export default function DashboardPage() {
                   <TableHead>Target Delivery</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead className="text-right">Total Amount</TableHead>
+                  <TableHead className="w-[100px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pending.map((item) => (
-                  <TableRow key={item.orderId}>
-                    <TableCell className="font-medium">
-                      #{item.orderId}
-                    </TableCell>
+                  <TableRow key={item.id}>
+                    {/* 2. Change the displayed text */}
+                    <TableCell className="font-medium">#{item.id}</TableCell>
+
                     <TableCell>{item.customerName}</TableCell>
                     <TableCell>
                       {new Date(item.targetDeliveryTime).toLocaleString()}
                     </TableCell>
                     <TableCell>{item.phoneNumber}</TableCell>
                     <TableCell className="text-right font-bold text-red-600">
-                      {/* 🛡️ The safety harness ensures it never crashes the screen again */}
-                      ₱
-                      {(
-                        item?.totalAmount ??
-                        0
-                      ).toLocaleString()}
+                      ₱{(item?.totalAmount ?? 0).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <AlertDialog>
+                        <AlertDialogTrigger className="inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
+                          Cancel
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Are you absolutely sure?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently void Order #{item.id} and
+                              instantly release their locked lechon back to the
+                              available inventory pool. This action cannot be
+                              undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Keep Order</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() =>
+                                cancelOrderMutation.mutate(item.id)
+                              }
+                            >
+                              Yes, cancel this order
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -152,9 +213,10 @@ export default function DashboardPage() {
               </TableHeader>
               <TableBody>
                 {deliveries.map((item) => (
-                  <TableRow key={item.orderId}>
+                  // 1. Change the key here
+                  <TableRow key={item.id}>
                     <TableCell className="font-medium">
-                      #{item.orderId}
+                      {/* 2. Change the displayed text here */}#{item.id}
                     </TableCell>
                     <TableCell>{item.customerName}</TableCell>
                     <TableCell>{item.deliveryAddress}</TableCell>
@@ -201,9 +263,9 @@ export default function DashboardPage() {
               </TableHeader>
               <TableBody>
                 {defrost.map((item) => (
-                  <TableRow key={item.orderItemId}>
+                  <TableRow key={item.id}>
                     <TableCell className="font-medium">
-                      Item #{item.orderItemId}
+                      Item #{item.id}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{item.weightCategory}</Badge>

@@ -3,7 +3,7 @@ import apiClient from '@/services/apiClient'; // Adjust path if your client live
 
 // 1. TypeScript Contracts (Matching your .NET DTO models)
 export interface PendingConfirmationDto {
-  orderId: number;
+  id: number;
   customerName: string;
   targetDeliveryTime: string;
   phoneNumber: string;
@@ -11,7 +11,7 @@ export interface PendingConfirmationDto {
 }
 
 export interface DeliveryVerificationDto {
-  orderId: number;
+  id: number;
   customerName: string;
   deliveryAddress: string;
   phoneNumber: string;
@@ -19,7 +19,7 @@ export interface DeliveryVerificationDto {
 }
 
 export interface DefrostRosterDto {
-  orderItemId: number;
+  id: number;
   weightCategory: string;
   quantity: number;
   tahiStartTime: string;

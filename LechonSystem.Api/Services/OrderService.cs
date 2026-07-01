@@ -16,6 +16,8 @@ namespace LechonSystem.Api.Services
         Task<Order> CreateOrderAsync(CreateOrderRequest request);
         Task<bool> ConfirmPaymentAsync(int orderId);
         Task<bool> ConfirmDeliveryDetailsAsync(int orderId);
+
+        Task<bool> CancelOrderAsync(int orderId);
     }
 
     // Step 2: The Kitchen (Class) - The actual logic!
@@ -49,10 +51,10 @@ namespace LechonSystem.Api.Services
                 TargetDeliveryTime = request.TargetDeliveryTime,
                 IsDeliveryDetailsConfirmed = false,
 
-            
+
                 Fulfillment = request.Fulfillment
             };
-         
+
             foreach (var itemDto in request.Items)
             {
                 var orderItem = new OrderItem
@@ -123,6 +125,8 @@ namespace LechonSystem.Api.Services
             return true;
         }
 
+
+
         // Moved from the Interface to the Class
         public async Task<bool> ConfirmDeliveryDetailsAsync(int orderId)
         {
@@ -133,6 +137,27 @@ namespace LechonSystem.Api.Services
             order.IsDeliveryDetailsConfirmed = true;
 
             await _context.SaveChangesAsync();
+            return true;
+        }
+
+
+        public async Task<bool> CancelOrderAsync(int orderId)
+        {
+            // 1. Find the master order
+            var order = await _context.Orders.FindAsync(orderId);
+
+            // 2. Protect against bad requests (order doesn't exist or is already cancelled)
+            if (order == null || order.IsCancelled) return false;
+
+            // 3. Flip the kill-switch
+            order.IsCancelled = true;
+
+            // 4. Tell the Inventory Service to free up the pig!
+            await _inventoryService.ReleaseReservationAsync(orderId);
+
+            // 5. Save everything to the SQL database
+            await _context.SaveChangesAsync();
+
             return true;
         }
     }

@@ -26,23 +26,28 @@ namespace LechonSystem.Api.Services
 
         public async Task<List<Order>> GetPendingConfirmationsAsync()
         {
-            var deadline = DateTime.UtcNow.AddHours(48);
+            // 1. Calculate the exact 4-day deadline in memory
+            var fourDaysFromNow = DateTime.UtcNow.AddDays(4);
 
-            // Fetch orders happening in the next 48 hours that still have a Pending reservation
             return await _context.Orders
-                .Where(o => o.TargetDeliveryTime <= deadline && o.TargetDeliveryTime >= DateTime.UtcNow)
+                // 2. Keep your original, correct check for Pending reservations
                 .Where(o => _context.InventoryReservations
                     .Any(r => r.OrderId == o.Id && r.ReservationStatus == ReservationStatus.Pending))
+                // 3. 🚨 OUR NEW ZERO-INBOX RULE: Target time must be between now and 4 days from now
+                .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow && o.TargetDeliveryTime <= fourDaysFromNow)
                 .ToListAsync();
         }
 
         public async Task<List<Order>> GetDeliveryVerificationsAsync()
         {
-            var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+            // 1. Calculate the exact 2-day deadline in memory
+            var twoDaysFromNow = DateTime.UtcNow.AddDays(2);
 
-            // Fetch orders scheduled for tomorrow where delivery details are NOT confirmed
             return await _context.Orders
-                .Where(o => o.TargetDeliveryTime.Date == tomorrow && o.IsDeliveryDetailsConfirmed == false)
+                // 2. 🚨 OUR NEW ZERO-INBOX RULE: Target time must be between now and 2 days from now
+                .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow && o.TargetDeliveryTime <= twoDaysFromNow)
+                // 3. Keep your original check: Only show if delivery details are still missing
+                .Where(o => o.IsDeliveryDetailsConfirmed == false)
                 .ToListAsync();
         }
 
