@@ -80,7 +80,9 @@ namespace LechonSystem.Api.Services
                 await _inventoryService.CreatePendingReservationAsync(
                     order.Id,
                     savedItem.ItemCategoryId,
-                    order.TargetDeliveryTime
+                    order.TargetDeliveryTime,
+                    order.IsTrustedCustomer,
+                    order.Downpayment // <-- Pass the downpayment here!
                 );
             }
 

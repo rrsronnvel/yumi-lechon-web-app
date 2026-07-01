@@ -9,7 +9,7 @@ namespace LechonSystem.Api.Services
 {
     public interface IInventoryService
     {
-        Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate);
+        Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate, bool isTrustedCustomer, decimal downpayment);
         Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null);
         Task<int> GetAvailableStockAsync(int itemCategoryId, DateTime date);
     }
@@ -24,14 +24,24 @@ namespace LechonSystem.Api.Services
         }
 
         // --- Your existing Reservation State Machine Logic ---
-        public async Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate)
+        public async Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate, bool isTrustedCustomer, decimal downpayment)
         {
+            // 1. Default to Pending (Normal Reservation waiting for GCash)
+            ReservationStatus initialStatus = ReservationStatus.Pending; // (Or PendingPayment if that is your exact Enum name)
+
+            // 2. The Unified Rule: If they paid cash upfront, OR the admin checked the VIP box, lock the pig!
+            if (downpayment > 0 || isTrustedCustomer)
+            {
+                initialStatus = ReservationStatus.Committed;
+            }
+
+            // 3. Create the reservation using our calculated status
             var reservation = new InventoryReservation
             {
                 OrderId = orderId,
                 ItemCategoryId = itemCategoryId,
                 ReservationDate = reservationDate,
-                Status = ReservationStatus.Pending
+                Status = initialStatus
             };
 
             _context.InventoryReservations.Add(reservation);
@@ -70,8 +80,8 @@ namespace LechonSystem.Api.Services
 
             // 2. Calculate Promised/Locked Stock for this target date
             int totalCommittedReservations = await _context.InventoryReservations
-                .Where(r => r.ItemCategoryId == itemCategoryId 
-                         && r.ReservationDate.Date == date.Date 
+                .Where(r => r.ItemCategoryId == itemCategoryId
+                         && r.ReservationDate.Date == date.Date
                          && r.Status == ReservationStatus.Committed)
                 .CountAsync();
 

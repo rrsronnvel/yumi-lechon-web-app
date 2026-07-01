@@ -1,14 +1,16 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { orderFormSchema } from "@/schemas/orderSchema";
+import { OrderFormData, orderFormSchema } from "@/schemas/orderSchema";
 import { z } from "zod";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 
-type OrderFormValues = z.infer<typeof orderFormSchema>;
+
 
 import {
   Form,
@@ -43,8 +45,8 @@ export default function OrderForm() {
   });
 
   // 2. INITIALIZE FORM SECOND: Create the form so it exists in memory
-  const form = useForm<OrderFormValues>({
-    resolver: zodResolver(orderFormSchema),
+  const form = useForm<OrderFormData>({
+    resolver: zodResolver(orderFormSchema as any),
     defaultValues: {
       customerName: "",
       customerPhone: "",
@@ -56,6 +58,8 @@ export default function OrderForm() {
       price: 0,
       addOns: "",
       deliveryFee: 0,
+      downpayment: 0,           // <--- Ensure this is exactly 0
+      isTrustedCustomer: false, // <--- Ensure this is exactly false
     },
   });
 
@@ -109,7 +113,7 @@ export default function OrderForm() {
 
   // 5. SET UP SUBMISSION FIFTH: Handle sending the final payload to the backend
   const createOrderMutation = useMutation({
-    mutationFn: async (newOrder: OrderFormValues) => {
+    mutationFn: async (newOrder: OrderFormData) => {
       const payload = {
         ...newOrder,
         fulfillment: parseInt(newOrder.fulfillmentType, 10),
@@ -141,7 +145,7 @@ export default function OrderForm() {
     },
   });
 
-  function onSubmit(data: OrderFormValues) {
+  function onSubmit(data: OrderFormData) {
     createOrderMutation.mutate(data);
   }
 
@@ -424,6 +428,51 @@ export default function OrderForm() {
             )}
           />
         </div>
+
+        {/* --- NEW DOWNPAYMENT & VIP SECTION --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t mt-4 items-end">
+          <FormField
+            control={form.control}
+            name="downpayment"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Downpayment Received (₱)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    {...form.register("downpayment", { valueAsNumber: true })}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="isTrustedCustomer"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-[68px]">
+                <div className="space-y-0.5">
+                  <FormLabel className="text-base font-semibold text-orange-700">
+                    👑 VIP Trusted Customer
+                  </FormLabel>
+                  <p className="text-[11px] text-muted-foreground">
+                    Bypass the downpayment requirement.
+                  </p>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+        </div>
+       
 
         <FormField
           control={form.control}
