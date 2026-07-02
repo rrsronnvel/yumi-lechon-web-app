@@ -21,6 +21,7 @@ namespace LechonSystem.Api.Services
         Task<bool> CancelOrderAsync(int orderId);
 
         Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
+        Task UpdateOrderAsync(int id, UpdateOrderDto request);
     }
 
     // Step 2: The Kitchen (Class) - The actual logic!
@@ -201,5 +202,84 @@ namespace LechonSystem.Api.Services
 
             return directory;
         }
+
+
+        public async Task UpdateOrderAsync(int id, UpdateOrderDto request)
+{
+    // 1. Pull the existing order AND its nested items out of the database
+    var order = await _context.Orders
+        .Include(o => o.OrderItems) // We need the items to check for size changes!
+        .FirstOrDefaultAsync(o => o.Id == id);
+
+    if (order == null)
+    {
+        // If some rogue ID comes through, gracefully abort.
+        throw new KeyNotFoundException($"Order with ID {id} not found.");
+    }
+
+    // 2. The Trigger: Did they change the delivery time?
+    bool requiresRescheduling = false;
+    if (order.TargetDeliveryTime != request.TargetDeliveryTime)
+    {
+        requiresRescheduling = true;
+    }
+
+    // 3. Update the Master Order details
+    order.CustomerName = request.CustomerName;
+    order.ContactNumber = request.ContactNumber;
+    order.DeliveryAddress = request.DeliveryAddress;
+    order.Remarks = request.Remarks;
+    order.TargetDeliveryTime = request.TargetDeliveryTime;
+    order.Fulfillment = request.Fulfillment;
+    
+    order.Price = request.Price;
+    order.AddOns = request.AddOns;
+    order.DeliveryFee = request.DeliveryFee;
+    order.Downpayment = request.Downpayment;
+
+    // 4. Update the Items (Check if they changed the Lechon Size!)
+    foreach (var requestedItem in request.Items)
+    {
+        var existingItem = order.OrderItems.FirstOrDefault(i => i.Id == requestedItem.Id);
+        if (existingItem != null)
+        {
+            if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId)
+            {
+                // If they changed a Medium to a Large, we MUST recalculate the cooking time!
+                requiresRescheduling = true;
+                existingItem.ItemCategoryId = requestedItem.ItemCategoryId;
+            }
+            existingItem.Quantity = requestedItem.Quantity;
+        }
+    }
+
+    // 5. THE MAGIC RULE: Automatically recalculate the kitchen timeline!
+    if (requiresRescheduling)
+    {
+        foreach (var item in order.OrderItems)
+        {
+            // Find and delete the outdated schedule
+            var oldSchedule = await _context.OrderItemSchedules
+                .FirstOrDefaultAsync(s => s.OrderItemId == item.Id);
+
+            if (oldSchedule != null)
+            {
+                _context.OrderItemSchedules.Remove(oldSchedule);
+            }
+
+            // Command the SchedulingService to generate a brand new timeline
+            var newSchedule = await _schedulingService.CalculateScheduleAsync(
+                item.Id,
+                order.TargetDeliveryTime, // The newly edited time!
+                item.ItemCategoryId       // The potentially edited size!
+            );
+
+            _context.OrderItemSchedules.Add(newSchedule);
+        }
+    }
+
+    // 6. Save all these changes to SQL Server atomically
+    await _context.SaveChangesAsync();
+}
     }
 }

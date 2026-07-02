@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Services;
+using LechonSystem.Api.Models.DTOs;
 
 namespace LechonSystem.Api.Controllers
 {
@@ -62,9 +63,40 @@ namespace LechonSystem.Api.Controllers
         {
             // Hand the URL search words directly to the fast query we just built
             var directory = await _orderService.GetOrderDirectoryAsync(searchTerm, filterTab);
-            
+
             // Return the flat JSON array with a 200 OK status
             return Ok(directory);
         }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateOrderAsync(int id, [FromBody] UpdateOrderDto request)
+        {
+            // 1. The Safety Bouncer: Ensure the URL ID matches the Payload ID
+            if (id != request.Id)
+            {
+                return BadRequest("The Order ID in the URL does not match the ID in the payload.");
+            }
+
+            try
+            {
+                // 2. The Hand-off: Pass the validated data back to the OrderService
+                await _orderService.UpdateOrderAsync(id, request);
+
+                // 3. The Green Light: Tell the React frontend everything worked perfectly
+                return Ok(new { message = "Order successfully updated." });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                // If the service can't find the order in the database, return a 404
+                return NotFound(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                // Catch any other business logic errors
+                return BadRequest(ex.Message);
+            }
+        }
+
+
     }
 }
