@@ -6,6 +6,7 @@ using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Interfaces;
+using LechonSystem.Api.Models.DTOs;
 
 
 namespace LechonSystem.Api.Services
@@ -18,6 +19,8 @@ namespace LechonSystem.Api.Services
         Task<bool> ConfirmDeliveryDetailsAsync(int orderId);
 
         Task<bool> CancelOrderAsync(int orderId);
+
+        Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
     }
 
     // Step 2: The Kitchen (Class) - The actual logic!
@@ -159,6 +162,44 @@ namespace LechonSystem.Api.Services
             await _context.SaveChangesAsync();
 
             return true;
+        }
+
+        public async Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab)
+        {
+            // 1. The Foundation: Start looking at Orders, but tell Entity Framework 
+            // NOT to track changes (.AsNoTracking()). This makes read operations lightning fast!
+            var query = _context.Orders.AsNoTracking().AsQueryable();
+
+            // 2. The Search Engine: If the user typed something, filter the database rows 
+            // BEFORE bringing them into memory.
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                query = query.Where(o => o.CustomerName.Contains(searchTerm));
+            }
+
+            // 3. Tab Filtering (Prep for later): 
+            // For example, if (filterTab == "Upcoming") { query = query.Where(o => o.TargetDeliveryTime >= DateTime.UtcNow); }
+            // We will leave this simple for now, but the hook is there!
+
+            // 4. The Projection (N+1 Killer): Only pull the exact columns we need, directly into our DTO.
+            var directory = await query
+                .Select(o => new OrderDirectoryDto
+                {
+                    Id = o.Id,
+                    CustomerName = o.CustomerName,
+                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    TotalAmount = o.Price + o.DeliveryFee,
+                
+                    Status = o.RoutingStatus.ToString(),
+
+                    ContactNumber = o.ContactNumber ?? string.Empty,
+
+                    Location = o.DeliveryAddress ?? string.Empty
+                })
+                .OrderByDescending(o => o.TargetDeliveryTime)
+                .ToListAsync();
+
+            return directory;
         }
     }
 }

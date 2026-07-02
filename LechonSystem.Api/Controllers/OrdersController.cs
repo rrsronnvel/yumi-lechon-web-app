@@ -56,5 +56,15 @@ namespace LechonSystem.Api.Controllers
 
             return Ok(new { Message = "Order permanently voided and inventory released back to ledger." });
         }
+
+        [HttpGet("directory")]
+        public async Task<IActionResult> GetOrderDirectory([FromQuery] string? searchTerm, [FromQuery] string? filterTab)
+        {
+            // Hand the URL search words directly to the fast query we just built
+            var directory = await _orderService.GetOrderDirectoryAsync(searchTerm, filterTab);
+            
+            // Return the flat JSON array with a 200 OK status
+            return Ok(directory);
+        }
     }
 }
