@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
-using LechonSystem.Api.Services; 
-using LechonSystem.Api.Models;   
+using LechonSystem.Api.Services;
+using LechonSystem.Api.Models;
 
 namespace LechonSystem.Api.Controllers;
 
@@ -26,7 +26,7 @@ public class InventoryController : ControllerBase
     {
         // Go to the database, grab all ItemCategories, and turn them into a list
         var categories = await _context.ItemCategories.ToListAsync();
-        
+
         return Ok(categories); // Returns a 200 OK status with the JSON data
     }
 
@@ -47,11 +47,11 @@ public class InventoryController : ControllerBase
         {
             // Pass everything to the service, including the Reason!
             await _inventoryService.LogTransactionAsync(
-                request.ItemCategoryId, 
-                request.Quantity, 
-                request.Type, 
-                request.ReferenceId, 
-                request.Reason 
+                request.ItemCategoryId,
+                request.Quantity,
+                request.TransactionType,
+                request.ReferenceId,
+                request.Reason
             );
             return Ok(new { message = "Transaction logged successfully." });
         }
@@ -62,6 +62,15 @@ public class InventoryController : ControllerBase
             return BadRequest(new { error = ex.Message });
         }
     }
+
+
+
+    [HttpGet("balances")]
+    public async Task<IActionResult> GetLiveBalances()
+    {
+        var balances = await _inventoryService.GetLiveBalancesAsync();
+        return Ok(balances);
+    }
 } // End of InventoryController
 
 // --- NEW: The incoming JSON payload structure ---
@@ -69,7 +78,10 @@ public class LogTransactionRequest
 {
     public int ItemCategoryId { get; set; }
     public int Quantity { get; set; }
-    public TransactionType Type { get; set; }
+    
+    // FIX 1: Rename this from 'Type' to 'TransactionType'
+    public TransactionType TransactionType { get; set; } 
+    
     public int? ReferenceId { get; set; }
     public string? Reason { get; set; }
 }

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
+using LechonSystem.Api.DTOs;
 
 namespace LechonSystem.Api.Services
 {
@@ -19,6 +20,8 @@ namespace LechonSystem.Api.Services
 
         // NEW: Fetch the entire ledger history
         Task<List<LechonSystem.Api.DTOs.InventoryTransactionDto>> GetTransactionLedgerAsync();
+
+        Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync();
     }
 
     public class InventoryService : IInventoryService
@@ -121,18 +124,42 @@ namespace LechonSystem.Api.Services
         {
             return await _context.InventoryTransactions
                 .AsNoTracking()
-                .OrderByDescending(t => t.TransactionDate) // Newest transactions at the top!
+                .OrderByDescending(t => t.TransactionDate)
                 .Select(t => new LechonSystem.Api.DTOs.InventoryTransactionDto
                 {
                     Id = t.Id,
                     ItemCategoryId = t.ItemCategoryId,
                     Quantity = t.Quantity,
-                    Type = t.Type.ToString(), // Convert Enum to text for React
+                    
+                    // FIX: Update this line from 'Type =' to 'TransactionType ='
+                    TransactionType = t.Type.ToString(), 
+                    
                     Reason = t.Reason,
                     ReferenceId = t.ReferenceId,
                     TransactionDate = t.TransactionDate
                 })
                 .ToListAsync();
+        }
+
+        public async Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync()
+        {
+            // We ask SQL to look at the categories, and for every category, 
+            // instantly calculate the Sum of Stock In minus the Sum of Stock Out/Adjustments
+            var balances = await _context.ItemCategories
+                .Select(cat => new InventoryBalanceDto
+                {
+                    Id = cat.Id,
+                    Name = cat.Name,
+                    MinimumSafetyStock = cat.MinimumSafetyStock,
+                    CurrentStock = _context.InventoryTransactions
+                        .Where(t => t.ItemCategoryId == cat.Id)
+                        .Sum(t => t.Type == TransactionType.StockIn ? t.Quantity : -t.Quantity)
+                    // Adds StockIn, subtracts everything else!
+                })
+                .AsNoTracking()
+                .ToListAsync();
+
+            return balances;
         }
     }
 }
