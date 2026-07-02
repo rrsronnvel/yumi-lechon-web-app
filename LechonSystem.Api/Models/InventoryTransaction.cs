@@ -14,5 +14,7 @@ namespace LechonSystem.Api.Models
         
         // This links the transaction to a specific Order ID or Supplier Delivery ID
         public int? ReferenceId { get; set; } 
+
+        public string? Reason { get; set; }
     }
 }

@@ -9,13 +9,16 @@ namespace LechonSystem.Api.Services
 {
     public interface IInventoryService
     {
-
         Task ReleaseReservationAsync(int orderId);
         Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate, bool isTrustedCustomer, decimal downpayment);
-        Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null);
+
+        // ADDED: reason parameter
+        Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null, string? reason = null);
+
         Task<int> GetAvailableStockAsync(int itemCategoryId, DateTime date);
 
-
+        // NEW: Fetch the entire ledger history
+        Task<List<LechonSystem.Api.DTOs.InventoryTransactionDto>> GetTransactionLedgerAsync();
     }
 
     public class InventoryService : IInventoryService
@@ -53,15 +56,22 @@ namespace LechonSystem.Api.Services
         }
 
         // --- New Action Item 1: Log a Ledger Movement ---
-        public async Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null)
+        public async Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null, string? reason = null)
         {
+            // THE BOUNCER: Block manual adjustments if the staff didn't type a reason!
+            if (type == TransactionType.Adjustment && string.IsNullOrWhiteSpace(reason))
+            {
+                throw new ArgumentException("A reason must be provided for manual inventory adjustments.");
+            }
+
             var transaction = new InventoryTransaction
             {
                 ItemCategoryId = itemCategoryId,
                 Quantity = quantity,
                 Type = type,
                 ReferenceId = referenceId,
-                TransactionDate = DateTime.UtcNow
+                TransactionDate = DateTime.UtcNow,
+                Reason = reason // Hook up the new property!
             };
 
             _context.InventoryTransactions.Add(transaction);
@@ -105,6 +115,24 @@ namespace LechonSystem.Api.Services
                 _context.InventoryReservations.Remove(reservation);
                 await _context.SaveChangesAsync();
             }
+        }
+
+        public async Task<List<LechonSystem.Api.DTOs.InventoryTransactionDto>> GetTransactionLedgerAsync()
+        {
+            return await _context.InventoryTransactions
+                .AsNoTracking()
+                .OrderByDescending(t => t.TransactionDate) // Newest transactions at the top!
+                .Select(t => new LechonSystem.Api.DTOs.InventoryTransactionDto
+                {
+                    Id = t.Id,
+                    ItemCategoryId = t.ItemCategoryId,
+                    Quantity = t.Quantity,
+                    Type = t.Type.ToString(), // Convert Enum to text for React
+                    Reason = t.Reason,
+                    ReferenceId = t.ReferenceId,
+                    TransactionDate = t.TransactionDate
+                })
+                .ToListAsync();
         }
     }
 }
