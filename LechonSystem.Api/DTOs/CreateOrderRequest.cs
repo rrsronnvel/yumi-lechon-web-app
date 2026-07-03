@@ -7,12 +7,12 @@ namespace LechonSystem.Api.DTOs
     public class CreateOrderRequest
     {
         public string CustomerName { get; set; } = string.Empty;
-        public string ContactNumber { get; set; } = string.Empty;
+        public string CustomerPhone { get; set; } = string.Empty;
         public string Source { get; set; } = string.Empty; 
         public DateTime TargetDeliveryTime { get; set; }
         
         // -- 🚀 NEW POS FIELDS ADDED HERE --
-        public string DeliveryAddress { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
         public string? Remarks { get; set; }
         public decimal Price { get; set; }
         public string? AddOns { get; set; }

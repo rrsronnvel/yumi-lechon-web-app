@@ -12,6 +12,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+// Plus the Plus icon if you want a nice button!
+import { Plus } from "lucide-react";
 
 // 1. Import the shadcn Sheet & Tabs components!
 import {
@@ -24,6 +33,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // <-- NEW IMPORT
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import { Button } from "@/components/ui/button";
+import OrderForm from "@/components/ui/orders/OrderForm";
 
 export default function OrdersPage() {
   const [searchInput, setSearchInput] = useState("");
@@ -43,6 +53,8 @@ export default function OrdersPage() {
 
   // 1. NEW: Track if the safety switch is flipped!
   const [isEditing, setIsEditing] = useState(false);
+
+  const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
 
   // Helper to open the drawer
   const handleRowClick = (order: any) => {
@@ -105,14 +117,34 @@ export default function OrdersPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">
-          Master Order Directory
-        </h1>
-        <p className="text-gray-500 mt-2">
-          Search and safely modify historical and active orders.
-        </p>
+      {/* Header with New Order Button */}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Master Order Directory
+          </h1>
+          <p className="text-gray-500 mt-2">
+            Search and safely modify historical and active orders.
+          </p>
+        </div>
+
+        {/* The New Order Modal */}
+        <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
+          <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-orange-600 text-primary-foreground shadow hover:bg-orange-700 h-9 px-4 py-2">
+            <Plus className="h-4 w-4" /> New Order
+          </DialogTrigger>
+          {/* We use max-w-4xl and overflow-y-auto because your POS form is big! */}
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-full">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold">
+                New POS Entry
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* Your massive form is now safely tucked inside! */}
+            <OrderForm />
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Search Bar */}
