@@ -15,7 +15,7 @@ namespace LechonSystem.Api.Services
         public string CustomerName { get; set; } = string.Empty;
         public DateTime TargetDeliveryTime { get; set; }
         public string PhoneNumber { get; set; } = string.Empty;
-        public decimal TotalAmount { get; set; } 
+        public decimal TotalAmount { get; set; }
     }
 
     public class DeliveryVerificationDto
@@ -59,16 +59,28 @@ namespace LechonSystem.Api.Services
             var fourDaysFromNow = DateTime.UtcNow.AddDays(4);
 
             return await _context.Orders
+                // 1. Keep your original inventory validation
                 .Where(o => _context.InventoryReservations
                     .Any(r => r.OrderId == o.Id && r.ReservationStatus == ReservationStatus.Pending))
-                .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow && o.TargetDeliveryTime <= fourDaysFromNow)
+
+                // 2. Combine your date range with the new business logic filters
+                .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow
+                         && o.TargetDeliveryTime <= fourDaysFromNow
+                         && o.Downpayment == 0
+                         && o.IsTrustedCustomer == false
+                         && o.IsCancelled == false)
+
+                // 3. Keep the OrderBy (it's good practice for dashboard lists)
+                .OrderBy(o => o.TargetDeliveryTime)
+
+                // 4. Keep your exact DTO naming and mapping
                 .Select(o => new PendingConfirmationDto
                 {
                     Id = o.Id,
                     CustomerName = o.CustomerName,
                     TargetDeliveryTime = o.TargetDeliveryTime,
-                    PhoneNumber = o.ContactNumber ?? string.Empty, 
-                    TotalAmount = o.Price + o.DeliveryFee          
+                    PhoneNumber = o.ContactNumber ?? string.Empty,
+                    TotalAmount = o.Price + o.DeliveryFee
                 })
                 .ToListAsync();
         }
@@ -86,7 +98,7 @@ namespace LechonSystem.Api.Services
                     CustomerName = o.CustomerName,
                     TargetDeliveryTime = o.TargetDeliveryTime,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
-                    PhoneNumber = o.ContactNumber ?? string.Empty 
+                    PhoneNumber = o.ContactNumber ?? string.Empty
                 })
                 .ToListAsync();
         }
@@ -98,13 +110,13 @@ namespace LechonSystem.Api.Services
 
             return await _context.OrderItemSchedules
                 .Include(s => s.OrderItem)
-                    .ThenInclude(oi => oi.ItemCategory) 
+                    .ThenInclude(oi => oi.ItemCategory)
                 .Where(s => s.TahiStartTime.Date == tomorrow)
                 .Select(s => new DefrostRosterDto
                 {
-                    Id = s.OrderItemId, 
-                    WeightCategory = s.OrderItem.ItemCategory.Name, 
-                    Quantity = s.OrderItem.Quantity,                
+                    Id = s.OrderItemId,
+                    WeightCategory = s.OrderItem.ItemCategory.Name,
+                    Quantity = s.OrderItem.Quantity,
                     TahiStartTime = s.TahiStartTime
                 })
                 .ToListAsync();

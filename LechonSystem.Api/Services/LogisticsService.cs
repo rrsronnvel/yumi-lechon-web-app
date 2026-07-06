@@ -9,6 +9,13 @@ using LechonSystem.Api.Interfaces;
 
 namespace LechonSystem.Api.Services
 {
+
+    public interface ILogisticsService
+    {
+        Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync();
+        Task<DeliveryTrip> AssignRiderAsync(string riderName, string vehicleType, List<int> orderIds);
+    }
+
     public class LogisticsService : ILogisticsService
     {
         private readonly LechonDbContext _context;
@@ -25,9 +32,14 @@ namespace LechonSystem.Api.Services
         {
             return await _context.Orders
                 .Include(o => o.OrderItems)
-                    .ThenInclude(i => i.OrderItemSchedule) // 👈 Tell EF Core to load the schedule records too!
+                    .ThenInclude(i => i.OrderItemSchedule)
+
+                // 👇 WE UPDATED THIS BLOCK 👇
                 .Where(o => o.Fulfillment == FulfillmentType.Delivery
-                         && o.RoutingStatus == DeliveryStatus.Unassigned)
+                         && o.RoutingStatus == DeliveryStatus.Unassigned
+                         && o.TargetDeliveryTime.Date == DateTime.Today.AddDays(1).Date) // <-- THE NEW TIME FILTER!
+                                                                                         // 👆 ---------------------- 👆
+
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ToListAsync();
         }
@@ -62,14 +74,7 @@ namespace LechonSystem.Api.Services
                     throw new InvalidOperationException($"Order #{order.Id} is a Pickup order and cannot be assigned to a delivery trip.");
                 }
 
-                foreach (var item in order.OrderItems)
-                {
-                    if (item.OrderItemSchedule == null || item.OrderItemSchedule.CurrentStatus != ProductionStatus.ReadyForDelivery)
-                    {
-                        throw new InvalidOperationException(
-                            $"Dispatch Blocked: Order #{order.Id} cannot be assigned. An item is not 'ReadyForDelivery' yet.");
-                    }
-                }
+
             }
 
             // If all checks pass, create the clipboard trip record
@@ -87,16 +92,17 @@ namespace LechonSystem.Api.Services
                 order.RoutingStatus = DeliveryStatus.Assigned;
                 newTrip.Orders.Add(order);
 
-                // 1. TRIGGER THE TEXT DISPATCH IMMEDIATELY (Using ContactNumber!)
-                string message = $"Good news! Your hot Lechon from Order #{order.Id} is now OUT FOR DELIVERY with our rider, {riderName}. Get the table ready! 🛵💨";
+                // 1. MUTE THE TEXT MESSAGE (Just create a silent internal log for now)
+                string message = $"Internal Log: Rider {riderName} assigned for tomorrow's delivery route.";
 
-                bool dispatchSuccess = await _notificationSender.SendMessageAsync(order.ContactNumber, message);
+                // We pass 'false' or bypass the actual SMS sender so we don't text the customer the night before!
+                bool dispatchSuccess = true;
 
                 // 2. RECORD THE PERMANENT AUDIT TRAIL RECORD
                 var log = new NotificationLog
                 {
                     OrderId = order.Id,
-                    RecipientPhone = order.ContactNumber,
+                    RecipientPhone = order.ContactNumber, // Kept for record-keeping
                     MessageBody = message,
                     SentAt = DateTime.UtcNow,
                     IsSuccess = dispatchSuccess

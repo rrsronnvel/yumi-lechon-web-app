@@ -144,7 +144,7 @@ export default function LogisticsPage() {
                 <th className="p-4 w-12"></th>
                 <th className="p-4 font-semibold">Order ID</th>
                 <th className="p-4 font-semibold">Customer</th>
-                <th className="p-4 font-semibold">Delivery Address</th>{" "}
+                <th className="p-4 font-semibold">Delivery Address</th>
                 {/* New header */}
                 <th className="p-4 font-semibold">Target Delivery Time</th>
               </tr>
@@ -167,7 +167,7 @@ export default function LogisticsPage() {
                   <td className="p-4 font-medium text-gray-900">
                     {order.customerName}
                   </td>
-                  <td className="p-4">{order.deliveryAddress}</td>{" "}
+                 <td className="p-4">{order.deliveryAddress}</td>
                   {/* New cell */}
                   <td className="p-4 font-medium text-blue-600">
                     {new Date(order.targetDeliveryTime).toLocaleTimeString([], {

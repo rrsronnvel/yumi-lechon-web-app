@@ -55,29 +55,38 @@ namespace LechonSystem.Api.Services
             var items = await _context.OrderItemSchedules
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
+                        .ThenInclude(o => o!.DeliveryTrip) // 👈 1. Join the Delivery Trip!
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.ItemCategory)
-                // 1. FILTER: Only pull records where the TargetDeliveryTime falls on the requested date!
+                // FILTER: Only pull records where the TargetDeliveryTime falls on the requested date
                 .Where(s => s.TargetDeliveryTime.Date == targetDate.Date)
                 .Select(s => new
                 {
                     id = s.Id,
-                    customerName = s.OrderItem!.Order!.CustomerName, 
-                    size = s.OrderItem!.ItemCategory!.Name, 
-                    
-                    // 2. TIMINGS: We send the raw ISO strings so React can sort and format them properly
-                    targetDeliveryTime = s.TargetDeliveryTime.ToString("o"), 
+                    orderId = s.OrderItem!.OrderId, // 👈 Added for the Rider View
+                    customerName = s.OrderItem!.Order!.CustomerName,
+                    size = s.OrderItem!.ItemCategory!.Name,
+
+                    // TIMINGS
+                    targetDeliveryTime = s.TargetDeliveryTime.ToString("o"),
                     tahiStartTime = s.TahiStartTime.ToString("o"),
                     salangStartTime = s.SalangStartTime.ToString("o"),
                     packagingStartTime = s.PackagingStartTime.ToString("o"),
-                    
-                    // 3. LOGISTICS: Pulling data safely from the master Order record
+
+                    // LOGISTICS & NOTES
                     location = s.OrderItem!.Order!.DeliveryAddress,
                     remarks = s.OrderItem!.Order!.Remarks,
-                    
-                    // Temporary placeholder for AddOns since we haven't built that table yet
-                    addOns = "-",
-                    
+                    addOns = s.OrderItem!.Order!.AddOns ?? "-",
+
+                    // 👇 2. Financials for the Rider View
+                    price = s.OrderItem.Order.Price,
+                    deliveryFee = s.OrderItem.Order.DeliveryFee,
+
+                    // 👇 3. Safely map the Rider Name!
+                    riderName = s.OrderItem.Order.DeliveryTrip != null
+                        ? s.OrderItem.Order.DeliveryTrip.RiderName
+                        : "Unassigned",
+
                     status = s.CurrentStatus.ToString()
                 })
                 .ToListAsync();

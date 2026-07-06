@@ -205,7 +205,9 @@ namespace LechonSystem.Api.Services
 
                     ContactNumber = o.ContactNumber ?? string.Empty,
 
-                    Location = o.DeliveryAddress ?? string.Empty
+                    Location = o.DeliveryAddress ?? string.Empty,
+
+                    Downpayment = o.Downpayment
                 })
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .ToListAsync();

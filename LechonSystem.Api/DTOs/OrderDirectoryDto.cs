@@ -11,5 +11,7 @@ namespace LechonSystem.Api.Models.DTOs
         // You can add other flat fields your Shadcn Data Table will need:
         public string ContactNumber { get; set; } = string.Empty;
         public string Location { get; set; } = string.Empty;
+
+        public decimal Downpayment { get; set; }
     }
 }
