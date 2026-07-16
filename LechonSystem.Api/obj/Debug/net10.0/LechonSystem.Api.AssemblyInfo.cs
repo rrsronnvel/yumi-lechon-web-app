@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LechonSystem.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+92b668d247605ada8cb534f03d6017764ba588c5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+157f6a92619c677fd92909940043872189150f31")]
 [assembly: System.Reflection.AssemblyProductAttribute("LechonSystem.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LechonSystem.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

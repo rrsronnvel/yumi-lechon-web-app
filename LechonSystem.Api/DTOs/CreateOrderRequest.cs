@@ -19,6 +19,9 @@ namespace LechonSystem.Api.DTOs
         public decimal DeliveryFee { get; set; }
         public decimal Downpayment { get; set; }
 
+        public decimal Discount { get; set; }
+        public decimal GrandTotal { get; set; }
+
         public bool IsTrustedCustomer { get; set; }
 
         public FulfillmentType Fulfillment { get; set; } 

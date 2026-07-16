@@ -10,8 +10,6 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 
-
-
 import {
   Form,
   FormControl,
@@ -29,6 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// MOCK CMS DATA: Future-proofing for our Add-Ons Database Table
+const AVAILABLE_ADDONS = [
+  { id: 1, name: "Dinuguan", price: 100 },
+  { id: 2, name: "Sarsa", price: 50 },
+  { id: 3, name: "Pancit Palabok", price: 200 },
+  { id: 4, name: "Puto", price: 200 },
+];
 
 export default function OrderForm() {
   const queryClient = useQueryClient();
@@ -53,23 +59,36 @@ export default function OrderForm() {
       targetDeliveryTime: "",
       fulfillmentType: "1",
       items: [{ itemCategoryId: 1, quantity: 1 }],
+      addOnArray: [],
       address: "",
       remarks: "",
       price: 0,
       addOns: "",
       deliveryFee: 0,
-      downpayment: 0,           // <--- Ensure this is exactly 0
+      downpayment: 0, // <--- Ensure this is exactly 0
       isTrustedCustomer: false, // <--- Ensure this is exactly false
+      discount: 0,
+      grandTotal: 0,
     },
   });
 
   // 3. SET UP WATCHERS THIRD: Now that the form exists, we can watch it
+
+  // Array 1: The Main Lechon Items
   const { fields, append, remove } = useFieldArray({
     name: "items",
     control: form.control,
   });
 
- 
+  // Array 2: The Lightweight Add-Ons
+  const {
+    fields: addOnFields,
+    append: appendAddOn,
+    remove: removeAddOn,
+  } = useFieldArray({
+    name: "addOnArray",
+    control: form.control,
+  });
 
   // 4. RUN THE MATH FOURTH: The Bulletproof RHF Subscription
   useEffect(() => {
@@ -83,7 +102,7 @@ export default function OrderForm() {
         const qty = Number(cartItem?.quantity) || 1;
 
         const dbCategory = categories.find(
-          (c: { id: number; basePrice: number }) => c.id === categoryId
+          (c: { id: number; basePrice: number }) => c.id === categoryId,
         );
 
         if (dbCategory) {
@@ -99,11 +118,27 @@ export default function OrderForm() {
 
     // 2. Subscribe directly to the form's internal heartbeat for all future changes
     const subscription = form.watch((value) => {
-      const newTotal = calculatePrice(value.items || []);
-      
-      // Magically push the total into the UI (only if it actually changed)
-      if (value.price !== newTotal) {
-        form.setValue("price", newTotal);
+      const newBasePrice = calculatePrice(value.items || []);
+      const delivery = Number(value.deliveryFee) || 0;
+      const discount = Number(value.discount) || 0;
+
+      // 🚀 NEW: Sum up the Add-On prices dynamically
+      const addOnsTotal = (value.addOnArray || []).reduce(
+        (sum, item) => sum + (Number(item?.price) || 0),
+        0,
+      );
+
+      // 🚀 NEW: The Final Equation: (Price + AddOns + DeliveryFee) - Discount
+      const finalTotal = newBasePrice + addOnsTotal + delivery - discount;
+
+      // Magically push the base price into the UI
+      if (value.price !== newBasePrice) {
+        form.setValue("price", newBasePrice, { shouldValidate: true });
+      }
+
+      // Magically push the Grand Total into the UI
+      if (value.grandTotal !== finalTotal) {
+        form.setValue("grandTotal", finalTotal, { shouldValidate: true });
       }
     });
 
@@ -146,7 +181,19 @@ export default function OrderForm() {
   });
 
   function onSubmit(data: OrderFormData) {
-    createOrderMutation.mutate(data);
+    // Format the array into a clean receipt string
+    const addOnsString = data.addOnArray
+      ?.filter((a) => a.name && a.name.trim() !== "")
+      .map((a) => `${a.quantity}x ${a.name} (₱${a.price})`)
+      .join(", ");
+
+    const payload = {
+      ...data,
+      fulfillment: parseInt(data.fulfillmentType, 10),
+      addOns: addOnsString || "", // Overwrite the string field with our formatted data!
+    };
+
+    createOrderMutation.mutate(payload);
   }
 
   // 6. RENDER THE UI
@@ -198,11 +245,11 @@ export default function OrderForm() {
           name="fulfillmentType"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Fulfillment Method</FormLabel>
+              <FormLabel>Delivery Method</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
                   <SelectTrigger className="focus:ring-orange-500">
-                    <SelectValue placeholder="Select fulfillment method" />
+                    <SelectValue placeholder="Select delivery method" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
@@ -429,6 +476,45 @@ export default function OrderForm() {
           />
         </div>
 
+        <FormField
+          control={form.control}
+          name="discount"
+          render={() => (
+            <FormItem>
+              <FormLabel className="text-red-600">Discount (₱)</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  {...form.register("discount", { valueAsNumber: true })}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="grandTotal"
+          render={() => (
+            <FormItem>
+              <FormLabel className="font-bold text-green-700">
+                Grand Total (₱)
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  readOnly
+                  className="bg-green-50 font-bold text-lg"
+                  {...form.register("grandTotal", { valueAsNumber: true })}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         {/* --- NEW DOWNPAYMENT & VIP SECTION --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t mt-4 items-end">
           <FormField
@@ -472,24 +558,96 @@ export default function OrderForm() {
             )}
           />
         </div>
-       
 
-        <FormField
-          control={form.control}
-          name="addOns"
-          render={({ field }) => (
-            <FormItem className="mb-6 mt-4">
-              <FormLabel>Add-Ons (Optional)</FormLabel>
-              <FormControl>
+        <div className="space-y-3 border-t pt-4 mt-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Lightweight Add-Ons
+            </h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => appendAddOn({ name: "", quantity: 1, price: 0 })}
+            >
+              + Add Extra
+            </Button>
+          </div>
+
+          {addOnFields.map((field, index) => (
+            <div
+              key={field.id}
+              className="flex gap-3 items-end bg-orange-50/50 p-3 rounded-md relative border border-dashed border-orange-200"
+            >
+              <div className="flex-1 space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Add-On Item
+                </span>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus:outline-none"
+                  {...form.register(`addOnArray.${index}.name` as const, {
+                    // The Magic Calculator: When they pick an item, find the price and push it!
+                    onChange: (e) => {
+                      const selectedItem = AVAILABLE_ADDONS.find(
+                        (a) => a.name === e.target.value,
+                      );
+                      if (selectedItem) {
+                        form.setValue(
+                          `addOnArray.${index}.price`,
+                          selectedItem.price,
+                          { shouldValidate: true },
+                        );
+                      }
+                    },
+                  })}
+                >
+                  <option value="" disabled>
+                    Select an add-on...
+                  </option>
+                  {AVAILABLE_ADDONS.map((addon) => (
+                    <option key={addon.id} value={addon.name}>
+                      {addon.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-20 space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Qty
+                </span>
                 <Input
-                  placeholder="e.g., Extra Dinuguan, 2x Sarsa"
-                  {...field}
+                  type="number"
+                  {...form.register(`addOnArray.${index}.quantity` as const, {
+                    valueAsNumber: true,
+                  })}
+                  className="h-9 bg-white"
                 />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+              </div>
+              <div className="w-24 space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Price (₱)
+                </span>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  {...form.register(`addOnArray.${index}.price` as const, {
+                    valueAsNumber: true,
+                  })}
+                  className="h-9 bg-white"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-9"
+                onClick={() => removeAddOn(index)}
+              >
+                X
+              </Button>
+            </div>
+          ))}
+        </div>
 
         <Button
           type="submit"

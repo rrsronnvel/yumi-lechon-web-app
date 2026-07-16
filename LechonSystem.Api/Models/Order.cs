@@ -15,6 +15,9 @@ public class Order : BaseEntity
     public string? AddOns { get; set; }
     public decimal DeliveryFee { get; set; }
     public decimal Downpayment { get; set; }
+
+    public decimal Discount { get; set; }
+    public decimal GrandTotal { get; set; }
     public bool IsTrustedCustomer { get; set; } = false;
 
     public DateTime TargetDeliveryTime { get; set; }

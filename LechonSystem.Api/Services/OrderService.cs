@@ -66,7 +66,9 @@ namespace LechonSystem.Api.Services
                 Price = request.Price,   // <-- Added this to catch the 4500!
                 AddOns = request.AddOns, // <-- Added this to catch any extras!
                 DeliveryFee = request.DeliveryFee,
-                Downpayment = request.Downpayment
+                Downpayment = request.Downpayment,
+                Discount = request.Discount,      
+                GrandTotal = request.GrandTotal  
             };
 
             foreach (var itemDto in request.Items)
@@ -207,7 +209,9 @@ namespace LechonSystem.Api.Services
 
                     Location = o.DeliveryAddress ?? string.Empty,
 
-                    Downpayment = o.Downpayment
+                    Downpayment = o.Downpayment,
+
+                    IsTrustedCustomer = o.IsTrustedCustomer
                 })
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .ToListAsync();
@@ -248,6 +252,8 @@ namespace LechonSystem.Api.Services
             order.AddOns = request.AddOns;
             order.DeliveryFee = request.DeliveryFee;
             order.Downpayment = request.Downpayment;
+            order.Discount = request.Discount;     
+            order.GrandTotal = request.GrandTotal; 
 
             // 4. Update the Items (Check if they changed the Lechon Size!)
             foreach (var requestedItem in request.Items)

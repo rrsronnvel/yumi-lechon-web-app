@@ -13,5 +13,7 @@ namespace LechonSystem.Api.Models.DTOs
         public string Location { get; set; } = string.Empty;
 
         public decimal Downpayment { get; set; }
+
+        public bool IsTrustedCustomer { get; set; }
     }
 }

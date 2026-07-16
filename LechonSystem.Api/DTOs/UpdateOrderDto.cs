@@ -18,6 +18,8 @@ namespace LechonSystem.Api.Models.DTOs
         public string? AddOns { get; set; }
         public decimal DeliveryFee { get; set; }
         public decimal Downpayment { get; set; }
+        public decimal Discount { get; set; }
+        public decimal GrandTotal { get; set; }
 
         // 4. The Order Items (Needed so we can see if they changed the Lechon Size!)
         public List<UpdateOrderItemDto> Items { get; set; } = new();

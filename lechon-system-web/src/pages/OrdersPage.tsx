@@ -99,7 +99,16 @@ export default function OrdersPage() {
                 onClick={() => handleRowClick(order)}
               >
                 <TableCell className="font-medium">#{order.id}</TableCell>
-                <TableCell>{order.customerName}</TableCell>
+               <TableCell>
+                  <div className="flex items-center gap-2">
+                    {order.customerName}
+                    {order.isTrustedCustomer && (
+                    <Badge variant="outline" className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-sm">
+                        👑 VIP
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   {new Date(order.targetDeliveryTime).toLocaleString()}
                 </TableCell>
@@ -221,8 +230,13 @@ export default function OrdersPage() {
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-gray-500">Name</p>
-                        <p className="font-medium text-base">
+                     <p className="font-medium text-base flex items-center gap-2">
                           {selectedOrder.customerName}
+                          {selectedOrder.isTrustedCustomer && (
+                         <Badge variant="outline" className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-sm">
+                        👑 VIP
+                      </Badge>
+                          )}
                         </p>
                       </div>
                       <div>

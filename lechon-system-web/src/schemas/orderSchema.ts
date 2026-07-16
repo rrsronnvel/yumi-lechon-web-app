@@ -13,19 +13,26 @@ export const orderFormSchema = z.object({
   price: z.number().min(0, { message: "Price cannot be negative." }),
   addOns: z.string().optional(),
   deliveryFee: z.number().min(0, { message: "Delivery fee cannot be negative." }),
-  
+  discount: z.number().min(0).optional().default(0),
+  grandTotal: z.number().min(0).optional().default(0),
   // 1. Add the downpayment field so Zod knows it exists!
   downpayment: z.number().min(0, { message: "Downpayment cannot be negative." }),
   isTrustedCustomer: z.boolean().default(false),
-  
+
   items: z.array(
     z.object({
       itemCategoryId: z.number(),
       quantity: z.number().min(1, { message: "Must order at least 1." })
     })
-  ).min(1, { message: "Order must contain at least one item." })
+  ).min(1, { message: "Order must contain at least one item." }),
 
-// 2. Chain the "Smart Cashier" rule onto the very end of the object
+  addOnArray: z.array(z.object({
+  name: z.string(),
+  quantity: z.number().min(1),
+  price: z.number().min(0)
+})).optional(),
+
+  // 2. Chain the "Smart Cashier" rule onto the very end of the object
 });
 
 // Export the inferred TypeScript interface (The Blueprint)
