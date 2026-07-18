@@ -22,6 +22,8 @@ namespace LechonSystem.Api.Services
 
         Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
         Task UpdateOrderAsync(int id, UpdateOrderDto request);
+
+        Task<Order> GetOrderByIdAsync(int orderId);
     }
 
     // Step 2: The Kitchen (Class) - The actual logic!
@@ -67,8 +69,8 @@ namespace LechonSystem.Api.Services
                 AddOns = request.AddOns, // <-- Added this to catch any extras!
                 DeliveryFee = request.DeliveryFee,
                 Downpayment = request.Downpayment,
-                Discount = request.Discount,      
-                GrandTotal = request.GrandTotal  
+                Discount = request.Discount,
+                GrandTotal = request.GrandTotal
             };
 
             foreach (var itemDto in request.Items)
@@ -211,7 +213,8 @@ namespace LechonSystem.Api.Services
 
                     Downpayment = o.Downpayment,
 
-                    IsTrustedCustomer = o.IsTrustedCustomer
+                    IsTrustedCustomer = o.IsTrustedCustomer,
+                    DeliveryAddress = o.DeliveryAddress
                 })
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .ToListAsync();
@@ -252,24 +255,66 @@ namespace LechonSystem.Api.Services
             order.AddOns = request.AddOns;
             order.DeliveryFee = request.DeliveryFee;
             order.Downpayment = request.Downpayment;
-            order.Discount = request.Discount;     
-            order.GrandTotal = request.GrandTotal; 
+            order.Discount = request.Discount;
+            order.GrandTotal = request.GrandTotal;
 
-            // 4. Update the Items (Check if they changed the Lechon Size!)
+            // 4. Update the Items (Smart Synchronization)
+            var incomingItemIds = request.Items.Select(i => i.Id).ToList();
+
             foreach (var requestedItem in request.Items)
             {
                 var existingItem = order.OrderItems.FirstOrDefault(i => i.Id == requestedItem.Id);
+
                 if (existingItem != null)
                 {
+                    // SCENARIO A: The item already exists. Update it!
                     if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId)
                     {
-                        // If they changed a Medium to a Large, we MUST recalculate the cooking time!
                         requiresRescheduling = true;
                         existingItem.ItemCategoryId = requestedItem.ItemCategoryId;
                     }
                     existingItem.Quantity = requestedItem.Quantity;
                 }
+                else if (requestedItem.Id == 0)
+                {
+                    // SCENARIO B: Brand new item added from the React Edit Form!
+                    requiresRescheduling = true; // A new pig means the kitchen needs a new schedule!
+
+                    var newItem = new OrderItem
+                    {
+                        ItemCategoryId = requestedItem.ItemCategoryId,
+                        Quantity = requestedItem.Quantity,
+                        TotalPrice = 0
+                    };
+
+                    // Add it to the master order tracking
+                    order.OrderItems.Add(newItem);
+                }
             }
+
+            // SCENARIO C: Handle Deletions (If the cashier removed a Lechon from the cart)
+            var itemsToRemove = order.OrderItems
+                .Where(i => !incomingItemIds.Contains(i.Id) && i.Id != 0)
+                .ToList();
+
+            if (itemsToRemove.Any())
+            {
+                requiresRescheduling = true;
+
+                // Safety Step: We must delete the old schedules of the removed items first to avoid DB clashes!
+                var schedulesToDelete = await _context.OrderItemSchedules
+                    .Where(s => itemsToRemove.Select(item => item.Id).Contains(s.OrderItemId))
+                    .ToListAsync();
+                _context.OrderItemSchedules.RemoveRange(schedulesToDelete);
+
+                _context.OrderItems.RemoveRange(itemsToRemove);
+            }
+
+            // --- 🚀 THE MAGIC FIX: THE TWO-STEP SAVE ---
+            // We force C# to push the new items to SQL Server right now.
+            // SQL Server will instantly replace their "0" IDs with real IDs (e.g., 49, 50)!
+            await _context.SaveChangesAsync();
+            // -------------------------------------------
 
             // 5. THE MAGIC RULE: Automatically recalculate the kitchen timeline!
             if (requiresRescheduling)
@@ -285,19 +330,33 @@ namespace LechonSystem.Api.Services
                         _context.OrderItemSchedules.Remove(oldSchedule);
                     }
 
-                    // Command the SchedulingService to generate a brand new timeline
+                    // Because of our Two-Step Save, item.Id is no longer 0! It is now a real ID!
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
                         item.Id,
-                        order.TargetDeliveryTime, // The newly edited time!
-                        item.ItemCategoryId       // The potentially edited size!
+                        order.TargetDeliveryTime,
+                        item.ItemCategoryId
                     );
 
                     _context.OrderItemSchedules.Add(newSchedule);
                 }
             }
 
-            // 6. Save all these changes to SQL Server atomically
+            // 6. Save the newly generated schedules!
             await _context.SaveChangesAsync();
         }
+
+
+        public async Task<Order> GetOrderByIdAsync(int orderId)
+        {
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.ItemCategory) // Grabs the Lechon Size Name!
+                .AsNoTracking() // Makes the read lightning fast
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            return order;
+        }
     }
+
+
 }

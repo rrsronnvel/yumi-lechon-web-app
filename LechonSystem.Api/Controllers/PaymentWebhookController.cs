@@ -45,13 +45,20 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
-        // --- DOOR 2: CASHIER MANUAL DASHBOARD ENTRANCE ---
-        [HttpPost("payments/manual")]
+       // --- DOOR 2: CASHIER MANUAL DASHBOARD ENTRANCE ---
+        [HttpPost("internal/payments/manual")]
         public async Task<IActionResult> HandleManualPayment([FromBody] ManualPaymentDto dto)
         {
             try
             {
-                // Pass manual inputs (Cash or Manual GCash uploads) straight into the exact same verification brain
+              
+                // This prevents the Idempotency guard from silently blocking multiple cash drops.
+                if (string.IsNullOrWhiteSpace(dto.ReferenceId))
+                {
+                    dto.ReferenceId = $"MANUAL_{Guid.NewGuid().ToString().Substring(0, 8)}";
+                }
+
+                // Pass manual inputs straight into the exact same verification brain
                 await _paymentService.ProcessPaymentAsync(dto.OrderId, dto.Amount, dto.ReferenceId, dto.Provider);
                 
                 return Ok(new { message = "Manual payment recorded successfully. Reservation locked!" });
@@ -60,10 +67,7 @@ namespace LechonSystem.Api.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
-            catch (Exception)
-            {
-                return StatusCode(500, new { message = "An error occurred while manually encoding the transaction." });
-            }
+            // ...
         }
     }
 

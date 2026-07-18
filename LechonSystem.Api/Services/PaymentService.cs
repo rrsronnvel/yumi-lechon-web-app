@@ -54,14 +54,17 @@ namespace LechonSystem.Api.Services
                 GatewayReferenceId = referenceId,
                 Provider = provider,
                 Amount = amount,
-                Status = PaymentStatus.Success // Setting to success since validation passed
+                Status = PaymentStatus.Success
             };
 
             _context.PaymentLogs.Add(paymentLog);
+
+            // 🚀 THE FIX: Update the master order's total downpayment balance!
+            order.Downpayment += amount;
+
             await _context.SaveChangesAsync();
 
             // 5. Shared Trigger: Wire successful matches to automatically lock reservations
-            // This invokes your Task 5 method to transition the reservation from Pending to Committed/Locked
             await _orderService.ConfirmPaymentAsync(orderId);
 
             return true;

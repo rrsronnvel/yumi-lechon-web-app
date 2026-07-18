@@ -15,5 +15,7 @@ namespace LechonSystem.Api.Models.DTOs
         public decimal Downpayment { get; set; }
 
         public bool IsTrustedCustomer { get; set; }
+
+        public string? DeliveryAddress { get; set; } // Nullable because it might be a Store Pickup
     }
 }

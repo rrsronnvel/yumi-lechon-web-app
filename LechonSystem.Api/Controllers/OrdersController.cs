@@ -97,6 +97,26 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetOrderById(int id)
+        {
+            try
+            {
+                var order = await _orderService.GetOrderByIdAsync(id);
+
+                if (order == null)
+                    return NotFound($"Order {id} not found.");
+
+                return Ok(order);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+
+
 
     }
 }

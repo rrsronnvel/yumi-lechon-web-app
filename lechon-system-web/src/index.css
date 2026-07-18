@@ -128,3 +128,14 @@
     @apply font-sans;
     }
 }
+
+/* Nuke the number input spin buttons across the entire app */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield; /* Firefox */
+}

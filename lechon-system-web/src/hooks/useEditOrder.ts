@@ -13,16 +13,18 @@ export function useEditOrder() {
       return response.data;
     },
     // 2. The Chain Reaction: If the C# backend successfully recalculates...
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Order Updated", {
         description: "The kitchen schedule has been securely recalculated.",
       });
-      
+
       // 3. The Clean Slate: Force React to instantly fetch the new reality!
-      queryClient.invalidateQueries({ queryKey: ["orders", "directory"] });
-      queryClient.invalidateQueries({ queryKey: ["roster"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
+      // Notice these are Catch-Alls now! No "directory" or "details" attached.
+      await queryClient.invalidateQueries({ queryKey: ["orders"] }); // Catches all plural ["orders", ...]
+      await queryClient.invalidateQueries({ queryKey: ["order"] });  // Catches all singular ["order", 41]
+      await queryClient.invalidateQueries({ queryKey: ["roster"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
     },
     onError: (error: any) => {
       toast.error("Update Failed", {
