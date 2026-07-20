@@ -180,7 +180,7 @@ export default function OrderForm() {
     },
   });
 
-  function onSubmit(data: OrderFormData) {
+ function onSubmit(data: OrderFormData) {
     // Format the array into a clean receipt string
     const addOnsString = data.addOnArray
       ?.filter((a) => a.name && a.name.trim() !== "")
@@ -190,7 +190,9 @@ export default function OrderForm() {
     const payload = {
       ...data,
       fulfillment: parseInt(data.fulfillmentType, 10),
-      addOns: addOnsString || "", // Overwrite the string field with our formatted data!
+      addOns: addOnsString || "", 
+      // 🚀 THE FIX: Map your form's 'address' field to the C# DTO's 'deliveryAddress' field
+      deliveryAddress: data.address, 
     };
 
     createOrderMutation.mutate(payload);

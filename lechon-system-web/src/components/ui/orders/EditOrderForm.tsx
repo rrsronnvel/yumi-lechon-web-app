@@ -19,6 +19,7 @@ interface AddOnItem {
 }
 
 
+
 // 1. Paste your mock data here, right below imports
 const AVAILABLE_ADDONS = [
   { id: 1, name: "Dinuguan", price: 100 },

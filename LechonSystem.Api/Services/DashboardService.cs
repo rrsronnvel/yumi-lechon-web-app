@@ -34,6 +34,12 @@ namespace LechonSystem.Api.Services
         public string WeightCategory { get; set; } = string.Empty;
         public int Quantity { get; set; }
         public DateTime TahiStartTime { get; set; }
+
+        // NEW FIELDS FOR THE DASHBOARD HUD
+        public string CustomerName { get; set; } = string.Empty;
+        public DateTime TargetDeliveryTime { get; set; }
+        public bool IsTrustedCustomer { get; set; }
+        public string DeliveryAddress { get; set; } = string.Empty;
     }
 
     // 2. THE INTERFACE
@@ -80,7 +86,9 @@ namespace LechonSystem.Api.Services
                     CustomerName = o.CustomerName,
                     TargetDeliveryTime = o.TargetDeliveryTime,
                     PhoneNumber = o.ContactNumber ?? string.Empty,
-                    TotalAmount = o.Price + o.DeliveryFee
+                    
+               
+                    TotalAmount = o.GrandTotal 
                 })
                 .ToListAsync();
         }
@@ -103,23 +111,33 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
         }
 
-        // 🚀 THE FIX: Added the projection to grab the string name and quantity!
-        public async Task<List<DefrostRosterDto>> GetDefrostingRosterAsync()
-        {
-            var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+       // 2. THE QUERY
+    public async Task<List<DefrostRosterDto>> GetDefrostingRosterAsync()
+    {
+        var tomorrow = DateTime.UtcNow.Date.AddDays(1);
 
-            return await _context.OrderItemSchedules
-                .Include(s => s.OrderItem)
-                    .ThenInclude(oi => oi.ItemCategory)
-                .Where(s => s.TahiStartTime.Date == tomorrow)
-                .Select(s => new DefrostRosterDto
-                {
-                    Id = s.OrderItemId,
-                    WeightCategory = s.OrderItem.ItemCategory.Name,
-                    Quantity = s.OrderItem.Quantity,
-                    TahiStartTime = s.TahiStartTime
-                })
-                .ToListAsync();
-        }
+        return await _context.OrderItemSchedules
+            .Include(s => s.OrderItem)
+                .ThenInclude(oi => oi.ItemCategory)
+            .Include(s => s.OrderItem)
+                .ThenInclude(oi => oi.Order) 
+            .Where(s => s.TahiStartTime.Date == tomorrow)
+            .Select(s => new DefrostRosterDto
+            {
+                Id = s.OrderItemId,
+                WeightCategory = s.OrderItem.ItemCategory.Name,
+                Quantity = s.OrderItem.Quantity,
+                TahiStartTime = s.TahiStartTime,
+                CustomerName = s.OrderItem.Order.CustomerName,
+                TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
+                IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
+                
+                
+                DeliveryAddress = ((int)s.OrderItem.Order.Fulfillment) == 1
+                                  ? s.OrderItem.Order.DeliveryAddress
+                                  : "Store Pickup"
+            })
+            .ToListAsync();
+    }
     }
 }

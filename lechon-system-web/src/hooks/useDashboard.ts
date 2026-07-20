@@ -23,6 +23,11 @@ export interface DefrostRosterDto {
   weightCategory: string;
   quantity: number;
   tahiStartTime: string;
+  // 🚀 NEW FIELDS
+  customerName: string;
+  targetDeliveryTime: string;
+  isTrustedCustomer: boolean;
+  deliveryAddress: string;
 }
 
 // 2. Hook #1: The Downpayment Chase List
