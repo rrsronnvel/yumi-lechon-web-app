@@ -24,6 +24,9 @@ namespace LechonSystem.Api.Services
         Task UpdateOrderAsync(int id, UpdateOrderDto request);
 
         Task<Order> GetOrderByIdAsync(int orderId);
+
+        Task<bool> ApplyNewMenuPricesAsync(int orderId);
+        Task<bool> WaivePriceHikeAsync(int orderId);
     }
 
     // Step 2: The Kitchen (Class) - The actual logic!
@@ -79,7 +82,10 @@ namespace LechonSystem.Api.Services
                 {
                     ItemCategoryId = itemDto.ItemCategoryId,
                     Quantity = itemDto.Quantity,
-                    TotalPrice = 0
+
+                    // 🚀 THE SNAPSHOT FIX: We pull the exact price of this specific Lechon 
+                    // from the frontend cart and lock it into the database row!
+                    TotalPrice = itemDto.Price
                 };
                 order.OrderItems.Add(orderItem);
             }
@@ -355,6 +361,45 @@ namespace LechonSystem.Api.Services
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             return order;
+        }
+
+
+
+        // Action 1: Customer Agreed
+        public async Task<bool> ApplyNewMenuPricesAsync(int orderId)
+        {
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null) return false;
+
+            // Mathematically increase the locked prices to match the live CMS prices
+            foreach (var item in order.OrderItems)
+            {
+                if (item.Price < item.ItemCategory.BasePrice)
+                {
+                    item.Price = item.ItemCategory.BasePrice;
+                    item.TotalPrice = item.Price * item.Quantity;
+                }
+            }
+
+            // You would recalculate your Order Grand Total here if you have a method for it!
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        // Action 2: Waive Hike
+        public async Task<bool> WaivePriceHikeAsync(int orderId)
+        {
+            var order = await _context.Orders.FindAsync(orderId);
+            if (order == null) return false;
+
+            // Permanently lock the old price and dismiss the alarm
+            order.IsPriceWaived = true;
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 

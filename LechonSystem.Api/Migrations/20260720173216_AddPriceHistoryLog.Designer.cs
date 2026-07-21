@@ -4,6 +4,7 @@ using LechonSystem.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LechonSystem.Api.Migrations
 {
     [DbContext(typeof(LechonDbContext))]
-    partial class LechonDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720173216_AddPriceHistoryLog")]
+    partial class AddPriceHistoryLog
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -298,9 +301,6 @@ namespace LechonSystem.Api.Migrations
                     b.Property<bool>("IsDeliveryDetailsConfirmed")
                         .HasColumnType("bit");
 
-                    b.Property<bool>("IsPriceWaived")
-                        .HasColumnType("bit");
-
                     b.Property<bool>("IsTrustedCustomer")
                         .HasColumnType("bit");
 
@@ -346,9 +346,6 @@ namespace LechonSystem.Api.Migrations
 
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
-
-                    b.Property<decimal>("Price")
-                        .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("int");

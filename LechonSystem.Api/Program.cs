@@ -24,6 +24,7 @@ builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<IProcurementService, ProcurementService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<INotificationSender, SmsNotificationService>();
+builder.Services.AddScoped<ICmsService, CmsService>();
 
 // 🟢 MOVE CORS CONFIGURATION HERE (Before builder.Build)
 builder.Services.AddCors(options =>

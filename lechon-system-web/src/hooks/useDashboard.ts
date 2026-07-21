@@ -62,3 +62,22 @@ export function useDefrostRoster() {
     },
   });
 }
+
+
+export interface RenegotiationTask {
+  orderId: number;
+  customerName: string;
+  targetDeliveryTime: string;
+  priceGap: number;
+}
+
+// 2. Build the fetcher hook
+export const useRenegotiationTasks = () => {
+  return useQuery<RenegotiationTask[]>({
+    queryKey: ['dashboard', 'renegotiations'],
+    queryFn: async () => {
+      const response = await apiClient.get('/dashboard/tasks/renegotiations');
+      return response.data;
+    },
+  });
+};

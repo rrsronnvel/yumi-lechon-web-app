@@ -33,5 +33,6 @@ namespace LechonSystem.Api.DTOs
     {
         public int ItemCategoryId { get; set; }
         public int Quantity { get; set; }
+        public decimal Price { get; set; }
     }
 }

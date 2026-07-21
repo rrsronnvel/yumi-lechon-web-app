@@ -3,6 +3,7 @@ import {
   usePendingConfirmations,
   useDeliveryVerifications,
   useDefrostRoster,
+  useRenegotiationTasks,
 } from "@/hooks/useDashboard";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -48,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useLogPayment } from "@/hooks/useLogPayment";
+import { toast } from "sonner";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -55,19 +57,60 @@ export default function DashboardPage() {
   // The engine that fires our new C# cancellation endpoint
   const cancelOrderMutation = useMutation({
     mutationFn: async (orderId: number) => {
-      // Pointing directly to the new OrdersController endpoint we just built
       const response = await axios.patch(
         `http://localhost:5199/api/orders/${orderId}/cancel`,
       );
       return response.data;
     },
     onSuccess: () => {
-      // 1. Wipe the old dashboard data so the cancelled order disappears
+      toast.success("Order Cancelled", {
+        description: "The order has been voided and inventory released.",
+      });
       queryClient.invalidateQueries({
         queryKey: ["dashboard", "pending-confirmations"],
       });
-      // 2. Wipe the inventory cache so the freed-up pig instantly appears available
+      queryClient.invalidateQueries({
+        queryKey: ["dashboard", "renegotiations"],
+      }); // Add this line so it wipes from the new list too!
       queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] });
+    },
+  });
+
+  // Engine 1: Customer agrees to the new price
+  const agreeToHikeMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await axios.patch(
+        `http://localhost:5199/api/orders/${orderId}/renegotiate/agree`,
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success("Price Updated!", {
+        description:
+          "The customer's order price has been updated to match the current menu.",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["dashboard", "renegotiations"],
+      });
+    },
+  });
+
+  // Engine 2: Owner decides to waive the price hike
+  const waiveHikeMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await axios.patch(
+        `http://localhost:5199/api/orders/${orderId}/renegotiate/waive`,
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success("Price Waived", {
+        description:
+          "The old price has been permanently locked for this customer.",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["dashboard", "renegotiations"],
+      });
     },
   });
 
@@ -163,6 +206,8 @@ export default function DashboardPage() {
   };
   // -----------------------------------
 
+  const { data: renegotiations, isLoading } = useRenegotiationTasks();
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
       <div>
@@ -230,6 +275,149 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Peak Season Renegotiation Alarm */}
+      {renegotiations && renegotiations.length > 0 && (
+        <div className="mb-6 rounded-lg border-2 border-red-500 bg-red-50 p-4 shadow-sm">
+          <h2 className="mb-2 text-xl font-bold text-red-700 flex items-center">
+            ⚠️ Action Required: Peak Season Price Updates
+          </h2>
+          <p className="mb-4 text-sm text-red-600">
+            The following advance bookings are locked at old menu prices. Please
+            contact the customers.
+          </p>
+
+          <div className="grid gap-3">
+            {renegotiations.map((task) => (
+              <div
+                key={task.orderId}
+                className="flex items-center justify-between rounded-md bg-white p-3 shadow-sm"
+              >
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    Order #{task.orderId} - {task.customerName}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Delivery:{" "}
+                    {new Date(task.targetDeliveryTime).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* This highlights exactly how much money the store is losing */}
+                  <span className="font-bold text-red-600 bg-red-100 px-2 py-1 rounded">
+                    Gap: ₱{task.priceGap.toLocaleString()}
+                  </span>
+
+                  <div className="flex gap-2">
+                    {/* BUTTON 1: Customer Agreed Modal */}
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50"
+                        disabled={agreeToHikeMutation.isPending}
+                      >
+                        {agreeToHikeMutation.isPending
+                          ? "Updating..."
+                          : "Customer Agreed"}
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Update Order Price?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will mathematically increase Order #
+                            {task.orderId}'s locked price to match the live menu
+                            price. The customer's remaining balance will
+                            increase by ₱{task.priceGap.toLocaleString()}.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() =>
+                              agreeToHikeMutation.mutate(task.orderId)
+                            }
+                          >
+                            Yes, Customer Agreed
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    {/* BUTTON 2: Waive Hike Modal */}
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 disabled:opacity-50"
+                        disabled={waiveHikeMutation.isPending}
+                      >
+                        {waiveHikeMutation.isPending
+                          ? "Waiving..."
+                          : "Waive Hike"}
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Waive Price Hike?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently lock in the old, cheaper price
+                            for Order #{task.orderId} and dismiss this warning
+                            to keep the customer happy.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-gray-600 hover:bg-gray-700"
+                            onClick={() =>
+                              waiveHikeMutation.mutate(task.orderId)
+                            }
+                          >
+                            Yes, Waive Hike
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    {/* BUTTON 3: Cancel Order Modal */}
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 disabled:opacity-50"
+                        disabled={cancelOrderMutation.isPending}
+                      >
+                        Cancel
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Cancel Order #{task.orderId}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently void the order and instantly
+                            release their locked lechon back to the available
+                            inventory pool.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep Order</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={() =>
+                              cancelOrderMutation.mutate(task.orderId)
+                            }
+                          >
+                            Yes, Cancel Order
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* PRIORITY 1: The Money (Pending Confirmations) */}
       <Card className="border-t-4 border-t-red-500">
@@ -503,7 +691,9 @@ export default function DashboardPage() {
               <Input
                 type="number"
                 value={paymentAmount}
-                onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || "")}
+                onChange={(e) =>
+                  setPaymentAmount(parseFloat(e.target.value) || "")
+                }
                 placeholder="e.g., 3000"
               />
             </div>
@@ -526,7 +716,7 @@ export default function DashboardPage() {
               disabled={paymentMutation.isPending || !paymentAmount}
               onClick={() => {
                 if (!selectedOrderId) return;
-                
+
                 paymentMutation.mutate(
                   {
                     orderId: selectedOrderId,
@@ -538,9 +728,9 @@ export default function DashboardPage() {
                       setIsPaymentOpen(false);
                       setPaymentAmount("");
                       // We close the Action Center drawer as well so the user sees the fresh dashboard
-                      setIsSheetOpen(false); 
+                      setIsSheetOpen(false);
                     },
-                  }
+                  },
                 );
               }}
             >

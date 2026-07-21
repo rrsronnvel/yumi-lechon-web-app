@@ -115,6 +115,22 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
+        [HttpPatch("{id}/renegotiate/agree")]
+        public async Task<IActionResult> AgreeToPriceHike(int id)
+        {
+            var success = await _orderService.ApplyNewMenuPricesAsync(id);
+            if (!success) return NotFound();
+            return Ok();
+        }
+
+        [HttpPatch("{id}/renegotiate/waive")]
+        public async Task<IActionResult> WaivePriceHike(int id)
+        {
+            var success = await _orderService.WaivePriceHikeAsync(id);
+            if (!success) return NotFound();
+            return Ok();
+        }
+
 
 
 

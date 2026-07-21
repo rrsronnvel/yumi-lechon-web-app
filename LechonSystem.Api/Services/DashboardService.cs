@@ -48,6 +48,8 @@ namespace LechonSystem.Api.Services
         Task<List<PendingConfirmationDto>> GetPendingConfirmationsAsync();
         Task<List<DeliveryVerificationDto>> GetDeliveryVerificationsAsync();
         Task<List<DefrostRosterDto>> GetDefrostingRosterAsync(); // 🚀 Updated to use the DTO!
+
+        Task<List<RenegotiationTaskDto>> GetRenegotiationTasksAsync();
     }
 
     // 3. THE IMPLEMENTATION
@@ -86,9 +88,9 @@ namespace LechonSystem.Api.Services
                     CustomerName = o.CustomerName,
                     TargetDeliveryTime = o.TargetDeliveryTime,
                     PhoneNumber = o.ContactNumber ?? string.Empty,
-                    
-               
-                    TotalAmount = o.GrandTotal 
+
+
+                    TotalAmount = o.GrandTotal
                 })
                 .ToListAsync();
         }
@@ -111,33 +113,54 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
         }
 
-       // 2. THE QUERY
-    public async Task<List<DefrostRosterDto>> GetDefrostingRosterAsync()
-    {
-        var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+        // 2. THE QUERY
+        public async Task<List<DefrostRosterDto>> GetDefrostingRosterAsync()
+        {
+            var tomorrow = DateTime.UtcNow.Date.AddDays(1);
 
-        return await _context.OrderItemSchedules
-            .Include(s => s.OrderItem)
-                .ThenInclude(oi => oi.ItemCategory)
-            .Include(s => s.OrderItem)
-                .ThenInclude(oi => oi.Order) 
-            .Where(s => s.TahiStartTime.Date == tomorrow)
-            .Select(s => new DefrostRosterDto
-            {
-                Id = s.OrderItemId,
-                WeightCategory = s.OrderItem.ItemCategory.Name,
-                Quantity = s.OrderItem.Quantity,
-                TahiStartTime = s.TahiStartTime,
-                CustomerName = s.OrderItem.Order.CustomerName,
-                TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
-                IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
-                
-                
-                DeliveryAddress = ((int)s.OrderItem.Order.Fulfillment) == 1
-                                  ? s.OrderItem.Order.DeliveryAddress
-                                  : "Store Pickup"
-            })
-            .ToListAsync();
-    }
+            return await _context.OrderItemSchedules
+                .Include(s => s.OrderItem)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .Include(s => s.OrderItem)
+                    .ThenInclude(oi => oi.Order)
+                .Where(s => s.TahiStartTime.Date == tomorrow)
+                .Select(s => new DefrostRosterDto
+                {
+                    Id = s.OrderItemId,
+                    WeightCategory = s.OrderItem.ItemCategory.Name,
+                    Quantity = s.OrderItem.Quantity,
+                    TahiStartTime = s.TahiStartTime,
+                    CustomerName = s.OrderItem.Order.CustomerName,
+                    TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
+                    IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
+
+
+                    DeliveryAddress = ((int)s.OrderItem.Order.Fulfillment) == 1
+                                      ? s.OrderItem.Order.DeliveryAddress
+                                      : "Store Pickup"
+                })
+                .ToListAsync();
+        }
+
+
+        public async Task<List<RenegotiationTaskDto>> GetRenegotiationTasksAsync()
+        {
+            // 1. Scan the database for upcoming, active orders
+            return await _context.Orders
+     .Include(o => o.OrderItems)
+         .ThenInclude(oi => oi.ItemCategory)
+     .Where(o => !o.IsCancelled && !o.IsPriceWaived && o.TargetDeliveryTime >= DateTime.UtcNow)
+     .Where(o => o.OrderItems.Any(item => item.Price < item.ItemCategory.BasePrice))
+     .Select(o => new RenegotiationTaskDto
+     {
+         OrderId = o.Id,
+         CustomerName = o.CustomerName,
+         TargetDeliveryTime = o.TargetDeliveryTime,
+         // 3. Calculate exactly how much money is missing across all items in this order
+         PriceGap = o.OrderItems.Sum(item => item.ItemCategory.BasePrice - item.Price)
+     })
+                 .AsNoTracking() // Read-optimized!
+                 .ToListAsync();
+        }
     }
 }

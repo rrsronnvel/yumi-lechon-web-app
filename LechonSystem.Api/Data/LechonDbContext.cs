@@ -24,6 +24,7 @@ public class LechonDbContext : DbContext
     public DbSet<PaymentLog> PaymentLogs { get; set; }
     public DbSet<PurchaseOrder> PurchaseOrders { get; set; }
     public DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
+    public DbSet<PriceHistoryLog> PriceHistoryLogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

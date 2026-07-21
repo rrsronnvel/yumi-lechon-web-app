@@ -25,6 +25,9 @@ public class Order : BaseEntity
 
     public bool IsCancelled { get; set; } = false;
 
+  
+    public bool IsPriceWaived { get; set; } = false;
+
     public List<OrderItem> OrderItems { get; set; } = new();
 
     public FulfillmentType Fulfillment { get; set; } = FulfillmentType.Pickup;

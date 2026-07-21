@@ -35,5 +35,12 @@ namespace LechonSystem.Api.Controllers
             var tasks = await _dashboardService.GetDefrostingRosterAsync();
             return Ok(tasks);
         }
+
+        [HttpGet("tasks/renegotiations")]
+        public async Task<ActionResult<List<RenegotiationTaskDto>>> GetRenegotiations()
+        {
+            var tasks = await _dashboardService.GetRenegotiationTasksAsync();
+            return Ok(tasks);
+        }
     }
 }

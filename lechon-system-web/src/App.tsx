@@ -4,11 +4,12 @@ import DashboardPage from "./pages/DashboardPage";
 import OrdersPage from "./pages/OrdersPage";
 import KitchenPage from "./pages/KitchenPage";
 import LogisticsPage from "./pages/LogisticsPage";
-import { Toaster } from "@/components/ui/sonner"; 
-import InventoryPage from './pages/InventoryPage';
-import ManifestPage from './pages/ManifestPage';
+import { Toaster } from "@/components/ui/sonner";
+import InventoryPage from "./pages/InventoryPage";
+import ManifestPage from "./pages/ManifestPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import DailySheetsPage from "./pages/DailySheetsPage";
+import CmsPage from "./pages/CmsPage";
 
 export default function App() {
   return (
@@ -23,11 +24,10 @@ export default function App() {
           <Route path="manifest" element={<ManifestPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
         </Route>
-            <Route path="/daily-sheets" element={<DailySheetsPage />} />
-      
+        <Route path="/daily-sheets" element={<DailySheetsPage />} />
+        <Route path="/settings" element={<CmsPage />} />
       </Routes>
 
-  
       {/* 🔌 We 'plug in' the Toaster here so it hovers over all pages! */}
       <Toaster position="top-right" closeButton richColors />
     </BrowserRouter>
