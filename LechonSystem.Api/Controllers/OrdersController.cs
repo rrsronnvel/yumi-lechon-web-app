@@ -132,7 +132,12 @@ namespace LechonSystem.Api.Controllers
         }
 
 
-
+        [HttpGet("{id}/audit-logs")]
+        public async Task<IActionResult> GetAuditLogs(int id)
+        {
+            var logs = await _orderService.GetOrderAuditLogsAsync(id);
+            return Ok(logs);
+        }
 
     }
 }

@@ -59,8 +59,20 @@ namespace LechonSystem.Api.Services
 
             _context.PaymentLogs.Add(paymentLog);
 
-            // 🚀 THE FIX: Update the master order's total downpayment balance!
             order.Downpayment += amount;
+
+            // 🚀 THE BLACK BOX: Record the financial event in the Order Audit Trail
+            var auditLog = new OrderAuditLog
+            {
+                OrderId = orderId,
+                ActionType = "Payment Logged",
+                // We use {amount:N2} so it formats the number beautifully (e.g., 3,000.00)
+                Changes = $"Logged payment of ₱{amount:N2} via {provider}",
+                ChangedBy = "Admin", // Placeholder until we add real users later
+                Timestamp = DateTime.UtcNow
+            };
+
+            _context.OrderAuditLogs.Add(auditLog);
 
             await _context.SaveChangesAsync();
 

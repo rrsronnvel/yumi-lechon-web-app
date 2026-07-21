@@ -27,6 +27,8 @@ namespace LechonSystem.Api.Services
 
         Task<bool> ApplyNewMenuPricesAsync(int orderId);
         Task<bool> WaivePriceHikeAsync(int orderId);
+
+        Task<List<OrderAuditLog>> GetOrderAuditLogsAsync(int orderId);
     }
 
     // Step 2: The Kitchen (Class) - The actual logic!
@@ -231,32 +233,61 @@ namespace LechonSystem.Api.Services
 
         public async Task UpdateOrderAsync(int id, UpdateOrderDto request)
         {
-            // 1. Pull the existing order AND its nested items out of the database
+            // 1. We added .ThenInclude() here! This acts as our dictionary to get the exact Lechon Name.
             var order = await _context.Orders
-                .Include(o => o.OrderItems) // We need the items to check for size changes!
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.ItemCategory)
                 .FirstOrDefaultAsync(o => o.Id == id);
 
             if (order == null)
             {
-                // If some rogue ID comes through, gracefully abort.
                 throw new KeyNotFoundException($"Order with ID {id} not found.");
             }
 
-            // 2. The Trigger: Did they change the delivery time?
+            var auditChanges = new List<string>();
+
+            // --- NEW: Tracking ALL Master Order Fields ---
+            if (order.CustomerName != request.CustomerName)
+                auditChanges.Add($"Customer Name changed from '{order.CustomerName}' to '{request.CustomerName}'");
+
+            if (order.ContactNumber != request.ContactNumber)
+                auditChanges.Add($"Contact changed from '{order.ContactNumber}' to '{request.ContactNumber}'");
+
+            if (order.AddOns != request.AddOns)
+                auditChanges.Add($"Add-Ons changed from '{order.AddOns}' to '{request.AddOns}'");
+
+            if (order.Remarks != request.Remarks)
+                auditChanges.Add($"Remarks changed from '{order.Remarks}' to '{request.Remarks}'");
+
+            if (order.Discount != request.Discount)
+                auditChanges.Add($"Discount changed from ₱{order.Discount} to ₱{request.Discount}");
+
+            if (order.TargetDeliveryTime != request.TargetDeliveryTime)
+                auditChanges.Add($"Delivery Time changed from {order.TargetDeliveryTime:MMM dd, yyyy h:mm tt} to {request.TargetDeliveryTime:MMM dd, yyyy h:mm tt}");
+
+            if (order.DeliveryAddress != request.DeliveryAddress)
+                auditChanges.Add($"Address changed from '{order.DeliveryAddress}' to '{request.DeliveryAddress}'");
+
+            if (order.DeliveryFee != request.DeliveryFee)
+                auditChanges.Add($"Delivery Fee changed from ₱{order.DeliveryFee} to ₱{request.DeliveryFee}");
+
+            if (order.Price != request.Price)
+                auditChanges.Add($"Lechon Subtotal changed from ₱{order.Price} to ₱{request.Price}");
+
+
             bool requiresRescheduling = false;
             if (order.TargetDeliveryTime != request.TargetDeliveryTime)
             {
                 requiresRescheduling = true;
             }
 
-            // 3. Update the Master Order details
+            // Overwrite Master Order details
             order.CustomerName = request.CustomerName;
             order.ContactNumber = request.ContactNumber;
             order.DeliveryAddress = request.DeliveryAddress;
             order.Remarks = request.Remarks;
             order.TargetDeliveryTime = request.TargetDeliveryTime;
             order.Fulfillment = request.Fulfillment;
-
             order.Price = request.Price;
             order.AddOns = request.AddOns;
             order.DeliveryFee = request.DeliveryFee;
@@ -264,7 +295,7 @@ namespace LechonSystem.Api.Services
             order.Discount = request.Discount;
             order.GrandTotal = request.GrandTotal;
 
-            // 4. Update the Items (Smart Synchronization)
+            // --- NEW: Highly Detailed Item Tracking ---
             var incomingItemIds = request.Items.Select(i => i.Id).ToList();
 
             foreach (var requestedItem in request.Items)
@@ -273,18 +304,33 @@ namespace LechonSystem.Api.Services
 
                 if (existingItem != null)
                 {
-                    // SCENARIO A: The item already exists. Update it!
                     if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId)
                     {
                         requiresRescheduling = true;
+                        // Fetch the new category name from the database so we can log it clearly
+                        var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
+                        string oldName = existingItem.ItemCategory?.Name ?? "Unknown Size";
+                        string newName = newCat?.Name ?? "Unknown Size";
+
+                        auditChanges.Add($"Item changed from {oldName} to {newName}");
                         existingItem.ItemCategoryId = requestedItem.ItemCategoryId;
+                    }
+                    if (existingItem.Quantity != requestedItem.Quantity)
+                    {
+                        string itemName = existingItem.ItemCategory?.Name ?? "Item";
+                        auditChanges.Add($"{itemName} quantity changed from {existingItem.Quantity} to {requestedItem.Quantity}");
                     }
                     existingItem.Quantity = requestedItem.Quantity;
                 }
                 else if (requestedItem.Id == 0)
                 {
-                    // SCENARIO B: Brand new item added from the React Edit Form!
-                    requiresRescheduling = true; // A new pig means the kitchen needs a new schedule!
+                    requiresRescheduling = true;
+
+                    // Look up the name of the new item they just added
+                    var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
+                    string newName = newCat?.Name ?? "Item";
+
+                    auditChanges.Add($"Added {requestedItem.Quantity}x {newName} to the order");
 
                     var newItem = new OrderItem
                     {
@@ -292,13 +338,11 @@ namespace LechonSystem.Api.Services
                         Quantity = requestedItem.Quantity,
                         TotalPrice = 0
                     };
-
-                    // Add it to the master order tracking
                     order.OrderItems.Add(newItem);
                 }
             }
 
-            // SCENARIO C: Handle Deletions (If the cashier removed a Lechon from the cart)
+            // SCENARIO C: Handle Deletions with Detail
             var itemsToRemove = order.OrderItems
                 .Where(i => !incomingItemIds.Contains(i.Id) && i.Id != 0)
                 .ToList();
@@ -307,50 +351,62 @@ namespace LechonSystem.Api.Services
             {
                 requiresRescheduling = true;
 
-                // Safety Step: We must delete the old schedules of the removed items first to avoid DB clashes!
+                foreach (var removedItem in itemsToRemove)
+                {
+                    string itemName = removedItem.ItemCategory?.Name ?? "Item";
+                    auditChanges.Add($"Removed {removedItem.Quantity}x {itemName} from the order");
+                }
+
                 var schedulesToDelete = await _context.OrderItemSchedules
                     .Where(s => itemsToRemove.Select(item => item.Id).Contains(s.OrderItemId))
                     .ToListAsync();
                 _context.OrderItemSchedules.RemoveRange(schedulesToDelete);
-
                 _context.OrderItems.RemoveRange(itemsToRemove);
             }
 
-            // --- 🚀 THE MAGIC FIX: THE TWO-STEP SAVE ---
-            // We force C# to push the new items to SQL Server right now.
-            // SQL Server will instantly replace their "0" IDs with real IDs (e.g., 49, 50)!
             await _context.SaveChangesAsync();
-            // -------------------------------------------
 
-            // 5. THE MAGIC RULE: Automatically recalculate the kitchen timeline!
+            // Recalculate kitchen timeline
             if (requiresRescheduling)
             {
                 foreach (var item in order.OrderItems)
                 {
-                    // Find and delete the outdated schedule
                     var oldSchedule = await _context.OrderItemSchedules
                         .FirstOrDefaultAsync(s => s.OrderItemId == item.Id);
 
-                    if (oldSchedule != null)
-                    {
-                        _context.OrderItemSchedules.Remove(oldSchedule);
-                    }
+                    if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
 
-                    // Because of our Two-Step Save, item.Id is no longer 0! It is now a real ID!
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
-                        item.Id,
-                        order.TargetDeliveryTime,
-                        item.ItemCategoryId
-                    );
+                        item.Id, order.TargetDeliveryTime, item.ItemCategoryId);
 
                     _context.OrderItemSchedules.Add(newSchedule);
                 }
             }
 
-            // 6. Save the newly generated schedules!
+            // Save the highly-detailed Black Box record!
+            if (auditChanges.Any())
+            {
+                var auditLog = new OrderAuditLog
+                {
+                    OrderId = order.Id,
+                    ActionType = "Order Edited",
+                    Changes = string.Join(" | ", auditChanges),
+                    ChangedBy = "Admin",
+                    Timestamp = DateTime.UtcNow
+                };
+                _context.OrderAuditLogs.Add(auditLog);
+            }
+
             await _context.SaveChangesAsync();
         }
 
+        public async Task<List<OrderAuditLog>> GetOrderAuditLogsAsync(int orderId)
+        {
+            return await _context.OrderAuditLogs
+                .Where(log => log.OrderId == orderId)
+                .OrderByDescending(log => log.Timestamp)
+                .ToListAsync();
+        }
 
         public async Task<Order> GetOrderByIdAsync(int orderId)
         {

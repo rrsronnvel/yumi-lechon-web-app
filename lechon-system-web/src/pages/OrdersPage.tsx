@@ -36,8 +36,7 @@ import { Button } from "@/components/ui/button";
 import OrderForm from "@/components/ui/orders/OrderForm";
 import { useOrderDetails } from "@/hooks/useOrderDetails";
 import { useLogPayment } from "@/hooks/useLogPayment";
-
-
+import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
 
 export default function OrdersPage() {
   const [searchInput, setSearchInput] = useState("");
@@ -64,6 +63,9 @@ export default function OrdersPage() {
     selectedOrder?.id || null,
   );
 
+  const { data: auditLogs, isLoading: isAuditLoading } = useOrderAuditLogs(
+    selectedOrder?.id || null,
+  );
   const orderDetails = data as any; // <-- This silences all the red lines below!
 
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
@@ -455,6 +457,42 @@ export default function OrdersPage() {
                           ).toLocaleString()}
                         </span>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Security Audit Log */}
+                  <div className="bg-white p-5 rounded-md border shadow-sm">
+                    <h3 className="font-semibold text-lg border-b pb-2 mb-4 text-gray-800 flex items-center gap-2">
+                      🛡️ Audit Log
+                    </h3>
+                    <div className="space-y-4">
+                      {isAuditLoading ? (
+                        <p className="text-sm text-slate-500 animate-pulse">
+                          Decrypting logs...
+                        </p>
+                      ) : auditLogs?.length === 0 ? (
+                        <p className="text-sm text-slate-500 italic">
+                          No modifications logged. Order is in its original
+                          state.
+                        </p>
+                      ) : (
+                        <div className="relative border-l-2 border-slate-200 ml-3 space-y-6">
+                          {auditLogs?.map((log: any) => (
+                            <div key={log.id} className="relative ml-6">
+                              {/* The Timeline Dot */}
+                              <span className="absolute flex items-center justify-center w-3 h-3 bg-slate-400 rounded-full -left-[31px] ring-4 ring-white mt-1"></span>
+
+                              <p className="text-xs text-slate-500 font-semibold tracking-wider uppercase">
+                                {new Date(log.timestamp).toLocaleString()} •{" "}
+                                {log.changedBy}
+                              </p>
+                              <p className="text-sm text-slate-800 mt-1 font-medium bg-slate-50 p-2 rounded border border-slate-100">
+                                {log.changes}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
