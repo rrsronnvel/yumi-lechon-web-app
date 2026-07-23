@@ -7,7 +7,7 @@ namespace LechonSystem.Api.Models.DTOs
         public DateTime TargetDeliveryTime { get; set; }
         public decimal TotalAmount { get; set; }
         public string Status { get; set; } = string.Empty;
-        
+
         // You can add other flat fields your Shadcn Data Table will need:
         public string ContactNumber { get; set; } = string.Empty;
         public string Location { get; set; } = string.Empty;
@@ -17,5 +17,7 @@ namespace LechonSystem.Api.Models.DTOs
         public bool IsTrustedCustomer { get; set; }
 
         public string? DeliveryAddress { get; set; } // Nullable because it might be a Store Pickup
+
+        public int Fulfillment { get; set; }
     }
 }

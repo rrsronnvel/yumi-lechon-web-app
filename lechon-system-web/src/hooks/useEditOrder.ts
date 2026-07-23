@@ -27,8 +27,25 @@ export function useEditOrder() {
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
     },
     onError: (error: any) => {
+      // 1. Set a generic fallback
+      let errorMessage = "Could not safely modify the order.";
+
+      // 2. Safely parse the ASP.NET Core JSON error object
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (data.errors) {
+          // Extracts all the specific validation errors and joins them into a readable sentence
+          errorMessage = Object.values(data.errors).flat().join(" | ");
+        } else if (data.title) {
+          errorMessage = data.title;
+        } else if (typeof data === "string") {
+          errorMessage = data;
+        }
+      }
+
+      // 3. Safely print the string (no more crashing!)
       toast.error("Update Failed", {
-        description: error.response?.data || "Could not safely modify the order.",
+        description: errorMessage,
       });
     },
   });

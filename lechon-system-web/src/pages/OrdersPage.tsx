@@ -81,20 +81,34 @@ export default function OrdersPage() {
     setIsSheetOpen(true);
   };
 
-  // 3. NEW: The Location Truncation & Badging Helper
-  const formatLocation = (address: string | null | undefined) => {
-    // If it's null or empty, it's a pickup!
-    if (!address || address.trim() === "") {
+  // 3. UPGRADED: The Location Truncation & Badging Helper
+  const formatLocation = (order: any) => {
+    // 1. ALWAYS check for pickup first!
+    const rawFulfill = String(order?.fulfillment).toLowerCase();
+    const isPickup = rawFulfill === "0" || rawFulfill === "pickup";
+
+    if (isPickup) {
       return (
         <Badge
           variant="outline"
-          className="bg-slate-50 text-slate-500 border-slate-200"
+          className="bg-slate-50 text-slate-500 border-slate-200 shadow-sm"
         >
-          Store Pickup
+          🏪 Store Pickup
         </Badge>
       );
     }
-    // If it's too long, elegantly truncate it
+
+    // 2. Only if it's NOT a pickup, check for the address.
+    const address = order?.deliveryAddress || order?.location || "";
+
+    if (address.trim() === "") {
+      return (
+        <span className="text-sm text-gray-400 italic">
+          No Address Provided
+        </span>
+      );
+    }
+
     if (address.length > 30) {
       return (
         <span title={address} className="text-sm text-gray-600">
@@ -102,7 +116,6 @@ export default function OrdersPage() {
         </span>
       );
     }
-    // Otherwise, just return the normal address
     return <span className="text-sm text-gray-600">{address}</span>;
   };
 
@@ -161,8 +174,8 @@ export default function OrdersPage() {
                   </div>
                 </TableCell>
 
-                {/* <-- NEW CELL WITH HELPER --> */}
-                <TableCell>{formatLocation(order.deliveryAddress)}</TableCell>
+                {/* 🚀 THE FIX: Pass the whole 'order' object! */}
+                <TableCell>{formatLocation(order)}</TableCell>
 
                 <TableCell>
                   {new Date(order.targetDeliveryTime).toLocaleString()}
@@ -326,10 +339,29 @@ export default function OrdersPage() {
                           ).toLocaleString()}
                         </p>
                       </div>
-                      <div className="col-span-2">
+                      {/* Explicit Delivery Method Display */}
+                      <div>
+                        <p className="text-gray-500">Delivery Method</p>
+                        <p className="font-medium flex items-center gap-1">
+                          {/* 🚀 THE FIX: Check for the word "pickup" or "0" */}
+                          {String(orderDetails?.fulfillment).toLowerCase() ===
+                            "pickup" ||
+                          String(orderDetails?.fulfillment) === "0"
+                            ? "🏪 Walk-in Store Pickup"
+                            : "🚚 Standard Delivery"}
+                        </p>
+                      </div>
+
+                      {/* Explicit Address Display */}
+                      <div>
                         <p className="text-gray-500">Address / Location</p>
-                        <p className="font-medium">
-                          {orderDetails.deliveryAddress || "Store Pickup"}
+                        <p className="font-medium text-gray-800">
+                          {orderDetails?.deliveryAddress ||
+                            orderDetails?.location || (
+                              <span className="text-gray-400 italic">
+                                None Provided
+                              </span>
+                            )}
                         </p>
                       </div>
                       {/* The Special Remarks Highlight */}

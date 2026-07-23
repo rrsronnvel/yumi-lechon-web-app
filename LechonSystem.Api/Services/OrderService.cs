@@ -224,7 +224,9 @@ namespace LechonSystem.Api.Services
                     Downpayment = o.Downpayment,
 
                     IsTrustedCustomer = o.IsTrustedCustomer,
-                    DeliveryAddress = o.DeliveryAddress
+                    DeliveryAddress = o.DeliveryAddress,
+
+                    Fulfillment = (int)o.Fulfillment
                 })
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .ToListAsync();
