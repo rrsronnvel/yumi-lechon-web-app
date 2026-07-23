@@ -9,4 +9,9 @@ public class ItemCategory : BaseEntity
     public decimal BasePrice { get; set; }
 
     public int MinimumSafetyStock { get; set; }
+
+    public bool IsActive { get; set; } = true;
+
+    public ProductCookingProfile? ProductCookingProfile { get; set; }
+    
 }

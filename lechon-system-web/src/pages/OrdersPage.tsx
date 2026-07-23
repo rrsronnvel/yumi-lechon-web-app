@@ -365,9 +365,18 @@ export default function OrdersPage() {
                                 {item.itemCategory?.name || "Lechon Size"}
                               </p>
                             </div>
-                            {/* CHANGED: Pulling the base price from the nested category object */}
-                            <p className="font-semibold text-sm">
-                              ₱{item.itemCategory?.basePrice?.toLocaleString()}
+
+                            {/* 🚀 THE IRONCLAD FIX: Cleanly display the old 4500 price! */}
+                            <p className="font-semibold text-sm text-gray-800">
+                              {item.totalPrice > 0 ? (
+                                `₱${item.totalPrice.toLocaleString()}`
+                              ) : orderDetails.orderItems?.length === 1 ? (
+                                `₱${(orderDetails.price || 0).toLocaleString()}`
+                              ) : (
+                                <span className="text-gray-400 italic text-xs">
+                                  Included in Subtotal
+                                </span>
+                              )}
                             </p>
                           </div>
                         ),

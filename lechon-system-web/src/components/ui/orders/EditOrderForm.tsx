@@ -18,8 +18,6 @@ interface AddOnItem {
   name: string;
 }
 
-
-
 // 1. Paste your mock data here, right below imports
 const AVAILABLE_ADDONS = [
   { id: 1, name: "Dinuguan", price: 100 },
@@ -178,9 +176,16 @@ export default function EditOrderForm({
 
   // THE AUTO-PRICE CALCULATOR
   const handleCalculatePrice = () => {
-    // We use setTimeout to give React Hook Form a millisecond to update
-    // its internal state before we read the new dropdown values.
     setTimeout(() => {
+      // 🚀 THE FIX: Check if this is a historical order!
+      const targetDate = new Date(form.getValues("targetDeliveryTime"));
+      const isPastOrder = targetDate < new Date();
+
+      // If the order is already in the past, ABORT the live recalculation to protect the receipt!
+      if (isPastOrder) {
+        return;
+      }
+
       const currentCart = form.getValues("items") || [];
       const newTotal = currentCart.reduce((sum: number, item: any) => {
         const category = categories.find(

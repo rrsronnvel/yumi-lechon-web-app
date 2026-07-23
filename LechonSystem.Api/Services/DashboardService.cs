@@ -150,7 +150,7 @@ namespace LechonSystem.Api.Services
      .Include(o => o.OrderItems)
          .ThenInclude(oi => oi.ItemCategory)
      .Where(o => !o.IsCancelled && !o.IsPriceWaived && o.TargetDeliveryTime >= DateTime.UtcNow)
-     .Where(o => o.OrderItems.Any(item => item.Price < item.ItemCategory.BasePrice))
+     .Where(o => o.OrderItems.Any(item => item.Price < item.ItemCategory.BasePrice && item.ItemCategory.MinimumWeightKg > 0))
      .Select(o => new RenegotiationTaskDto
      {
          OrderId = o.Id,

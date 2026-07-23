@@ -28,14 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// MOCK CMS DATA: Future-proofing for our Add-Ons Database Table
-const AVAILABLE_ADDONS = [
-  { id: 1, name: "Dinuguan", price: 100 },
-  { id: 2, name: "Sarsa", price: 50 },
-  { id: 3, name: "Pancit Palabok", price: 200 },
-  { id: 4, name: "Puto", price: 200 },
-];
-
 export default function OrderForm() {
   const queryClient = useQueryClient();
 
@@ -49,6 +41,14 @@ export default function OrderForm() {
       return response.data;
     },
   });
+
+  // 🚀 NEW: Filter the active items dynamically based on weight!
+  const lechonOptions = categories.filter(
+    (c: any) => c.minimumWeightKg > 0 && c.isActive !== false
+  );
+  const liveAddOns = categories.filter(
+    (c: any) => c.minimumWeightKg === 0 && c.isActive !== false
+  );
 
   // 2. INITIALIZE FORM SECOND: Create the form so it exists in memory
   const form = useForm<OrderFormData>({
@@ -73,6 +73,7 @@ export default function OrderForm() {
   });
 
   // 3. SET UP WATCHERS THIRD: Now that the form exists, we can watch it
+  const fulfillmentType = form.watch("fulfillmentType");
 
   // Array 1: The Main Lechon Items
   const { fields, append, remove } = useFieldArray({
@@ -89,6 +90,14 @@ export default function OrderForm() {
     name: "addOnArray",
     control: form.control,
   });
+
+  // 🚀 NEW: The Store Pickup Safeguard
+  useEffect(() => {
+    // If Walk-in Store Pickup is selected (Value "0")
+    if (fulfillmentType === "0") {
+      form.setValue("deliveryFee", 0, { shouldValidate: true });
+    }
+  }, [fulfillmentType, form]);
 
   // 4. RUN THE MATH FOURTH: The Bulletproof RHF Subscription
   useEffect(() => {
@@ -122,13 +131,13 @@ export default function OrderForm() {
       const delivery = Number(value.deliveryFee) || 0;
       const discount = Number(value.discount) || 0;
 
-      // 🚀 NEW: Sum up the Add-On prices dynamically
+      // Sum up the Add-On prices dynamically
       const addOnsTotal = (value.addOnArray || []).reduce(
         (sum, item) => sum + (Number(item?.price) || 0),
         0,
       );
 
-      // 🚀 NEW: The Final Equation: (Price + AddOns + DeliveryFee) - Discount
+      // The Final Equation: (Price + AddOns + DeliveryFee) - Discount
       const finalTotal = newBasePrice + addOnsTotal + delivery - discount;
 
       // Magically push the base price into the UI
@@ -180,7 +189,7 @@ export default function OrderForm() {
     },
   });
 
- function onSubmit(data: OrderFormData) {
+  function onSubmit(data: OrderFormData) {
     // Format the array into a clean receipt string
     const addOnsString = data.addOnArray
       ?.filter((a) => a.name && a.name.trim() !== "")
@@ -191,7 +200,6 @@ export default function OrderForm() {
       ...data,
       fulfillment: parseInt(data.fulfillmentType, 10),
       addOns: addOnsString || "", 
-      // 🚀 THE FIX: Map your form's 'address' field to the C# DTO's 'deliveryAddress' field
       deliveryAddress: data.address, 
     };
 
@@ -321,7 +329,11 @@ export default function OrderForm() {
             <FormItem>
               <FormLabel>Delivery Address / Location</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., 123 Main St, Bacoor" {...field} />
+                <Input 
+                  placeholder="e.g., 123 Main St, Bacoor" 
+                  disabled={fulfillmentType === "0"} 
+                  {...field} 
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -382,14 +394,11 @@ export default function OrderForm() {
                       : "Select a size..."}
                   </option>
 
-                  {categories.map(
-                    (category: {
-                      id: number;
-                      name: string;
-                      basePrice: number;
-                    }) => (
+                  {/* 🚀 NEW: Dynamically render Lechon Options */}
+                  {lechonOptions.map(
+                    (category: any) => (
                       <option key={category.id} value={category.id}>
-                        {category.name}
+                        {category.name} — ₱{category.basePrice?.toLocaleString()}
                       </option>
                     ),
                   )}
@@ -435,6 +444,8 @@ export default function OrderForm() {
                   <Input
                     type="number"
                     placeholder="0"
+                    readOnly
+                    className="bg-gray-100 cursor-not-allowed"
                     {...form.register("price", { valueAsNumber: true })}
                   />
                 </FormControl>
@@ -448,6 +459,7 @@ export default function OrderForm() {
             <Input
               type="number"
               placeholder="e.g., 5"
+              disabled={fulfillmentType === "0"} // 🚀 NEW: Disable if Store Pickup
               onChange={(e) => {
                 const km = parseFloat(e.target.value) || 0;
                 const calculatedFee = km > 0 ? 50 + 15 * km : 0;
@@ -469,6 +481,7 @@ export default function OrderForm() {
                   <Input
                     type="number"
                     placeholder="0"
+                    disabled={fulfillmentType === "0"} // 🚀 NEW: Disable if Store Pickup
                     {...form.register("deliveryFee", { valueAsNumber: true })}
                   />
                 </FormControl>
@@ -517,7 +530,6 @@ export default function OrderForm() {
           )}
         />
 
-        {/* --- NEW DOWNPAYMENT & VIP SECTION --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t mt-4 items-end">
           <FormField
             control={form.control}
@@ -588,15 +600,15 @@ export default function OrderForm() {
                 <select
                   className="w-full h-9 rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus:outline-none"
                   {...form.register(`addOnArray.${index}.name` as const, {
-                    // The Magic Calculator: When they pick an item, find the price and push it!
+                    // 🚀 NEW: Pointing to Live Backend Prices
                     onChange: (e) => {
-                      const selectedItem = AVAILABLE_ADDONS.find(
-                        (a) => a.name === e.target.value,
+                      const selectedItem = liveAddOns.find(
+                        (a: any) => a.name === e.target.value,
                       );
                       if (selectedItem) {
                         form.setValue(
                           `addOnArray.${index}.price`,
-                          selectedItem.price,
+                          selectedItem.basePrice, // Swapped from static 'price' to DB 'basePrice'
                           { shouldValidate: true },
                         );
                       }
@@ -606,9 +618,10 @@ export default function OrderForm() {
                   <option value="" disabled>
                     Select an add-on...
                   </option>
-                  {AVAILABLE_ADDONS.map((addon) => (
+                  {/* 🚀 NEW: Dynamically mapping Live Add Ons */}
+                  {liveAddOns.map((addon: any) => (
                     <option key={addon.id} value={addon.name}>
-                      {addon.name}
+                      {addon.name} — ₱{addon.basePrice?.toLocaleString()}
                     </option>
                   ))}
                 </select>
@@ -632,10 +645,11 @@ export default function OrderForm() {
                 <Input
                   type="number"
                   placeholder="0"
+                  readOnly // Added readOnly so cashiers can't invent a new price
+                  className="h-9 bg-gray-100 cursor-not-allowed"
                   {...form.register(`addOnArray.${index}.price` as const, {
                     valueAsNumber: true,
                   })}
-                  className="h-9 bg-white"
                 />
               </div>
               <Button

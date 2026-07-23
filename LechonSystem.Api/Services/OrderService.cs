@@ -80,14 +80,16 @@ namespace LechonSystem.Api.Services
 
             foreach (var itemDto in request.Items)
             {
+                // 🚀 THE SNAPSHOT FIX: We actively look up the live CMS price at checkout
+                // and lock it into the database so it never saves as 0 again!
+                var category = await _context.ItemCategories.FindAsync(itemDto.ItemCategoryId);
+                var lockedPrice = (category?.BasePrice ?? 0) * itemDto.Quantity;
+
                 var orderItem = new OrderItem
                 {
                     ItemCategoryId = itemDto.ItemCategoryId,
                     Quantity = itemDto.Quantity,
-
-                    // 🚀 THE SNAPSHOT FIX: We pull the exact price of this specific Lechon 
-                    // from the frontend cart and lock it into the database row!
-                    TotalPrice = itemDto.Price
+                    TotalPrice = lockedPrice
                 };
                 order.OrderItems.Add(orderItem);
             }
@@ -304,29 +306,37 @@ namespace LechonSystem.Api.Services
 
                 if (existingItem != null)
                 {
-                    if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId)
+                    if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId || existingItem.Quantity != requestedItem.Quantity)
                     {
                         requiresRescheduling = true;
-                        // Fetch the new category name from the database so we can log it clearly
+
+                        // Fetch the new category from the database
                         var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                         string oldName = existingItem.ItemCategory?.Name ?? "Unknown Size";
                         string newName = newCat?.Name ?? "Unknown Size";
 
-                        auditChanges.Add($"Item changed from {oldName} to {newName}");
+                        if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId)
+                            auditChanges.Add($"Item changed from {oldName} to {newName}");
+
+                        if (existingItem.Quantity != requestedItem.Quantity)
+                        {
+                            string itemName = existingItem.ItemCategory?.Name ?? "Item";
+                            auditChanges.Add($"{itemName} quantity changed from {existingItem.Quantity} to {requestedItem.Quantity}");
+                        }
+
+                        // Apply the updates
                         existingItem.ItemCategoryId = requestedItem.ItemCategoryId;
+                        existingItem.Quantity = requestedItem.Quantity;
+
+                        // 🚀 THE FIX: Update the snapshot price!
+                        existingItem.TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity;
                     }
-                    if (existingItem.Quantity != requestedItem.Quantity)
-                    {
-                        string itemName = existingItem.ItemCategory?.Name ?? "Item";
-                        auditChanges.Add($"{itemName} quantity changed from {existingItem.Quantity} to {requestedItem.Quantity}");
-                    }
-                    existingItem.Quantity = requestedItem.Quantity;
                 }
                 else if (requestedItem.Id == 0)
                 {
                     requiresRescheduling = true;
 
-                    // Look up the name of the new item they just added
+                    // Look up the name and price of the new item they just added
                     var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                     string newName = newCat?.Name ?? "Item";
 
@@ -336,7 +346,8 @@ namespace LechonSystem.Api.Services
                     {
                         ItemCategoryId = requestedItem.ItemCategoryId,
                         Quantity = requestedItem.Quantity,
-                        TotalPrice = 0
+                        // 🚀 THE FIX: Lock the price snapshot for newly added items so it doesn't save as 0!
+                        TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity
                     };
                     order.OrderItems.Add(newItem);
                 }
@@ -420,8 +431,7 @@ namespace LechonSystem.Api.Services
         }
 
 
-
-        // Action 1: Customer Agreed
+       // Action 1: Customer Agreed
         public async Task<bool> ApplyNewMenuPricesAsync(int orderId)
         {
             var order = await _context.Orders
@@ -431,17 +441,39 @@ namespace LechonSystem.Api.Services
 
             if (order == null) return false;
 
+            decimal totalIncrease = 0;
+
             // Mathematically increase the locked prices to match the live CMS prices
             foreach (var item in order.OrderItems)
             {
-                if (item.Price < item.ItemCategory.BasePrice)
+                // Calculate what the exact total SHOULD be today
+                var newLivePrice = item.ItemCategory?.BasePrice ?? 0;
+                var newLiveTotal = newLivePrice * item.Quantity;
+
+                // If the old locked snapshot is cheaper, calculate the difference
+                if (item.TotalPrice < newLiveTotal)
                 {
-                    item.Price = item.ItemCategory.BasePrice;
-                    item.TotalPrice = item.Price * item.Quantity;
+                    totalIncrease += (newLiveTotal - item.TotalPrice);
+
+                    // Update the item's individual receipt to the new higher price
+                    item.TotalPrice = newLiveTotal; 
+                    
+                    // Note: If your OrderItem model also has a 'Price' property, uncomment the line below:
+                    // item.Price = newLivePrice;
                 }
             }
 
-            // You would recalculate your Order Grand Total here if you have a method for it!
+            // 🚀 THE FIX: Apply the exact price hike difference to the Master Order!
+            if (totalIncrease > 0)
+            {
+                order.Price += totalIncrease;      // Updates the Lechon Subtotal
+                order.GrandTotal += totalIncrease; // Updates the Grand Total (which instantly fixes Balance to Collect!)
+            }
+
+            // 🚀 THE DASHBOARD KILL-SWITCH: Explicitly flag this renegotiation as "Resolved" 
+            // This guarantees it drops off the Dashboard table!
+            order.IsPriceWaived = true; 
+
             await _context.SaveChangesAsync();
             return true;
         }

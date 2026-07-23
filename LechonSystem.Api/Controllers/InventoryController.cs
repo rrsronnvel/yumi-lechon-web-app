@@ -20,14 +20,27 @@ public class InventoryController : ControllerBase
         _inventoryService = inventoryService;
     }
 
-    // GET: /api/inventory/categories
     [HttpGet("categories")]
     public async Task<IActionResult> GetCategories()
     {
-        // Go to the database, grab all ItemCategories, and turn them into a list
-        var categories = await _context.ItemCategories.ToListAsync();
+        var categories = await _context.ItemCategories
+            .Include(c => c.ProductCookingProfile) // 👈 Tell SQL to grab the clocks!
+            .Select(c => new
+            {
+                id = c.Id,
+                name = c.Name,
+                basePrice = c.BasePrice,
+                minimumWeightKg = c.MinimumWeightKg,
+                maximumWeightKg = c.MaximumWeightKg,
+                isActive = c.IsActive,
+                // 👇 Safely extract the times, falling back to defaults if brand new
+                tahiDurationMinutes = c.ProductCookingProfile != null ? c.ProductCookingProfile.TahiDurationMinutes : 60,
+                salangDurationMinutes = c.ProductCookingProfile != null ? c.ProductCookingProfile.SalangDurationMinutes : 180
+            })
+            .AsNoTracking()
+            .ToListAsync();
 
-        return Ok(categories); // Returns a 200 OK status with the JSON data
+        return Ok(categories);
     }
 
     // --- NEW: Expose the Ledger History ---
@@ -78,10 +91,10 @@ public class LogTransactionRequest
 {
     public int ItemCategoryId { get; set; }
     public int Quantity { get; set; }
-    
+
     // FIX 1: Rename this from 'Type' to 'TransactionType'
-    public TransactionType TransactionType { get; set; } 
-    
+    public TransactionType TransactionType { get; set; }
+
     public int? ReferenceId { get; set; }
     public string? Reason { get; set; }
 }
