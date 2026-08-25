@@ -1,10 +1,17 @@
-import React from "react";
+import { useState } from "react";
+import axios from "axios";
+import { toast } from "sonner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   usePendingConfirmations,
   useDeliveryVerifications,
   useDefrostRoster,
   useRenegotiationTasks,
 } from "@/hooks/useDashboard";
+import { usePendingSettlements, PendingSettlementDrop } from "@/hooks/useManifest";
+import { useOrderDetails } from "@/hooks/useOrderDetails";
+import { useLogPayment } from "@/hooks/useLogPayment";
+
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -16,8 +23,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios"; // or your apiClient if you use one
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +36,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { usePendingSettlements } from "@/hooks/useManifest"; // Or wherever your settlement hook lives
 import {
   Sheet,
   SheetContent,
@@ -37,28 +43,22 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import EditOrderForm from "@/components/ui/orders/EditOrderForm"; // Adjust path if needed!
-import { useState } from "react";
-import { useOrderDetails } from "@/hooks/useOrderDetails"; // Your deep fetch hook!
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { useLogPayment } from "@/hooks/useLogPayment";
-import { toast } from "sonner";
+import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
 
-  // The engine that fires our new C# cancellation endpoint
+  // Mutations
   const cancelOrderMutation = useMutation({
     mutationFn: async (orderId: number) => {
       const response = await axios.patch(
-        `http://localhost:5199/api/orders/${orderId}/cancel`,
+        `http://localhost:5199/api/orders/${orderId}/cancel`
       );
       return response.data;
     },
@@ -71,16 +71,15 @@ export default function DashboardPage() {
       });
       queryClient.invalidateQueries({
         queryKey: ["dashboard", "renegotiations"],
-      }); // Add this line so it wipes from the new list too!
+      });
       queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] });
     },
   });
 
-  // Engine 1: Customer agrees to the new price
   const agreeToHikeMutation = useMutation({
     mutationFn: async (orderId: number) => {
       const response = await axios.patch(
-        `http://localhost:5199/api/orders/${orderId}/renegotiate/agree`,
+        `http://localhost:5199/api/orders/${orderId}/renegotiate/agree`
       );
       return response.data;
     },
@@ -95,11 +94,10 @@ export default function DashboardPage() {
     },
   });
 
-  // Engine 2: Owner decides to waive the price hike
   const waiveHikeMutation = useMutation({
     mutationFn: async (orderId: number) => {
       const response = await axios.patch(
-        `http://localhost:5199/api/orders/${orderId}/renegotiate/waive`,
+        `http://localhost:5199/api/orders/${orderId}/renegotiate/waive`
       );
       return response.data;
     },
@@ -114,89 +112,61 @@ export default function DashboardPage() {
     },
   });
 
-  // 1. Dispatch our three data messengers simultaneously
+  // Query Hooks
   const {
     data: pending,
     isLoading: pendingLoading,
     isError: pendingError,
   } = usePendingConfirmations();
   const {
-    data: deliveries,
     isLoading: deliveriesLoading,
-    isError: deliveriesError,
   } = useDeliveryVerifications();
   const {
     data: defrost,
     isLoading: defrostLoading,
-    isError: defrostError,
   } = useDefrostRoster();
+  const { data: settlements = [] } = usePendingSettlements();
+  const { data: renegotiations } = useRenegotiationTasks();
 
-  // 1. Fetch the pending settlements
-  const { data: settlements } = usePendingSettlements();
-
-  // 2. Tomorrow's Lechon Count (Sum up the total quantity of pigs defrosting tonight)
+  // 1. Tomorrow's Lechon Count
   const tomorrowCount =
     defrost?.reduce((total, item) => total + item.quantity, 0) || 0;
 
-  // 3. The Overdue Radar (Check if any unremitted trips are from yesterday or older)
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Reset to midnight for a strict date comparison
+  // 2. Pending Remittances Math
+  const totalPendingRemittance = settlements.reduce(
+    (total: number, drop: PendingSettlementDrop) => total + (drop.netRemittance || 0),
+    0
+  );
 
-  const overdueRemittances =
-    settlements?.filter((trip) => {
-      // Assuming your DTO uses 'dispatchTime' or 'date'. Adjust if needed!
-      const tripDate = new Date(trip.dispatchTime);
-      return tripDate < today;
-    }) || [];
-
-  // 4. Unified Operations Roster (Shift-Aware Math)
+  // 3. Unified Operations Roster (Shift-Aware Math)
   const unifiedRoster =
     defrost?.map((item) => {
       const rushCutoff = new Date(item.tahiStartTime);
 
-      // 🚀 THE NIGHT SHIFT FIX:
-      // If the prep time is early tomorrow morning (before noon),
-      // the 12 PM warning cutoff needs to happen TODAY (subtract 1 day).
       if (rushCutoff.getHours() < 12) {
         rushCutoff.setDate(rushCutoff.getDate() - 1);
       }
-
-      // Set the cutoff strictly to 12:00 PM Noon
       rushCutoff.setHours(12, 0, 0, 0);
 
-      // Is the exact current time past the Noon cutoff?
       const isRush = new Date() >= rushCutoff;
 
       return {
         ...item,
-        // Ensure we display the address if it exists, otherwise default to "Store Pickup"
         deliveryAddress: item.deliveryAddress
           ? item.deliveryAddress
           : "Store Pickup",
-        isRush: isRush,
+        isRush,
       };
     }) || [];
 
-  // Helper component to show a pulsing loading state
-  const DashboardSkeleton = () => (
-    <div className="space-y-3">
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-16 w-full" />
-      <Skeleton className="h-16 w-full" />
-    </div>
-  );
-
-  // --- THE NEW ACTION CENTER STATE ---
+  // Modal & Slide-out State
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-
-  // 🚀 NEW: State for the Log Payment Modal
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentMethod, setPaymentMethod] = useState("GCash");
-  const paymentMutation = useLogPayment();
 
-  // Deep Fetch the heavy data only when a row is clicked!
+  const paymentMutation = useLogPayment();
   const { data: orderDetails, isLoading: isDetailsLoading } =
     useOrderDetails(selectedOrderId);
 
@@ -204,9 +174,14 @@ export default function DashboardPage() {
     setSelectedOrderId(id);
     setIsSheetOpen(true);
   };
-  // -----------------------------------
 
-  const { data: renegotiations, isLoading } = useRenegotiationTasks();
+  const DashboardSkeleton = () => (
+    <div className="space-y-3">
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-16 w-full" />
+      <Skeleton className="h-16 w-full" />
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
@@ -236,42 +211,55 @@ export default function DashboardPage() {
         </Card>
 
         {/* Widget 2: Pending Remittance Tracker */}
-        <Card
-          className={
-            overdueRemittances.length > 0 ? "border-red-500 bg-red-50" : ""
-          }
-        >
+        <Card className={settlements.length > 0 ? "border-amber-400 bg-amber-50/40" : ""}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle
-              className={`text-sm font-medium ${overdueRemittances.length > 0 ? "text-red-700" : ""}`}
+              className={`text-sm font-medium ${
+                settlements.length > 0 ? "text-amber-800" : ""
+              }`}
             >
-              Overdue Remittances
+              Floating Rider Remittances
             </CardTitle>
-            <span className="text-2xl">🚨</span>
+            <span className="text-2xl">🛵</span>
           </CardHeader>
           <CardContent>
-            {overdueRemittances.length === 0 ? (
-              <div className="text-2xl font-bold text-green-600">0</div>
+            {settlements.length === 0 ? (
+              <div>
+                <div className="text-3xl font-bold text-emerald-600">₱0</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  All rider collections are reconciled and accounted for.
+                </p>
+              </div>
             ) : (
-              <div className="space-y-2 mt-2">
-                {overdueRemittances.map((trip) => (
-                  <div
-                    key={trip.id}
-                    className="flex justify-between items-center bg-white p-2 rounded border border-red-200"
-                  >
-                    <span className="font-semibold text-red-700">
-                      {trip.riderName}
-                    </span>
-                    <span className="font-bold text-red-700">
-                      ₱{(trip.amountToCollect || 0).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
+              <div>
+                <div className="text-3xl font-bold text-amber-900 font-mono">
+                  ₱{totalPendingRemittance.toLocaleString()}
+                </div>
+                <div className="space-y-1.5 mt-3 max-h-36 overflow-y-auto pr-1">
+                  {settlements.map((drop: PendingSettlementDrop) => (
+                    <div
+                      key={drop.id}
+                      className="flex justify-between items-center bg-white p-2 rounded border border-amber-200 text-xs shadow-xs"
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-800">
+                          {drop.riderName}
+                        </span>
+                        <span className="text-muted-foreground text-[10px]">
+                          Order #{drop.orderId} • {drop.customerName}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-emerald-700">
+                        ₱{drop.netRemittance.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  {settlements.length} active drop{settlements.length > 1 ? "s" : ""} pending drawer settlement
+                </p>
               </div>
             )}
-            <p className="text-xs text-muted-foreground mt-2">
-              Trips from previous days missing GCash/Cash drops
-            </p>
           </CardContent>
         </Card>
       </div>
@@ -298,47 +286,37 @@ export default function DashboardPage() {
                     Order #{task.orderId} - {task.customerName}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Delivery:{" "}
-                    {new Date(task.targetDeliveryTime).toLocaleDateString()}
+                    Delivery: {new Date(task.targetDeliveryTime).toLocaleDateString()}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-4">
-                  {/* This highlights exactly how much money the store is losing */}
                   <span className="font-bold text-red-600 bg-red-100 px-2 py-1 rounded">
                     Gap: ₱{task.priceGap.toLocaleString()}
                   </span>
 
                   <div className="flex gap-2">
-                    {/* BUTTON 1: Customer Agreed Modal */}
                     <AlertDialog>
                       <AlertDialogTrigger
                         className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50"
                         disabled={agreeToHikeMutation.isPending}
                       >
-                        {agreeToHikeMutation.isPending
-                          ? "Updating..."
-                          : "Customer Agreed"}
+                        {agreeToHikeMutation.isPending ? "Updating..." : "Customer Agreed"}
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Update Order Price?
-                          </AlertDialogTitle>
+                          <AlertDialogTitle>Update Order Price?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will mathematically increase Order #
-                            {task.orderId}'s locked price to match the live menu
-                            price. The customer's remaining balance will
-                            increase by ₱{task.priceGap.toLocaleString()}.
+                            This will mathematically increase Order #{task.orderId}'s locked
+                            price to match the live menu price. The customer's remaining
+                            balance will increase by ₱{task.priceGap.toLocaleString()}.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-green-600 hover:bg-green-700"
-                            onClick={() =>
-                              agreeToHikeMutation.mutate(task.orderId)
-                            }
+                            onClick={() => agreeToHikeMutation.mutate(task.orderId)}
                           >
                             Yes, Customer Agreed
                           </AlertDialogAction>
@@ -346,32 +324,26 @@ export default function DashboardPage() {
                       </AlertDialogContent>
                     </AlertDialog>
 
-                    {/* BUTTON 2: Waive Hike Modal */}
                     <AlertDialog>
                       <AlertDialogTrigger
                         className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 disabled:opacity-50"
                         disabled={waiveHikeMutation.isPending}
                       >
-                        {waiveHikeMutation.isPending
-                          ? "Waiving..."
-                          : "Waive Hike"}
+                        {waiveHikeMutation.isPending ? "Waiving..." : "Waive Hike"}
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Waive Price Hike?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently lock in the old, cheaper price
-                            for Order #{task.orderId} and dismiss this warning
-                            to keep the customer happy.
+                            This will permanently lock in the old, cheaper price for Order
+                            #{task.orderId} and dismiss this warning to keep the customer happy.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-gray-600 hover:bg-gray-700"
-                            onClick={() =>
-                              waiveHikeMutation.mutate(task.orderId)
-                            }
+                            onClick={() => waiveHikeMutation.mutate(task.orderId)}
                           >
                             Yes, Waive Hike
                           </AlertDialogAction>
@@ -379,7 +351,6 @@ export default function DashboardPage() {
                       </AlertDialogContent>
                     </AlertDialog>
 
-                    {/* BUTTON 3: Cancel Order Modal */}
                     <AlertDialog>
                       <AlertDialogTrigger
                         className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 disabled:opacity-50"
@@ -389,22 +360,17 @@ export default function DashboardPage() {
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Cancel Order #{task.orderId}?
-                          </AlertDialogTitle>
+                          <AlertDialogTitle>Cancel Order #{task.orderId}?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently void the order and instantly
-                            release their locked lechon back to the available
-                            inventory pool.
+                            This will permanently void the order and instantly release their
+                            locked lechon back to the available inventory pool.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Keep Order</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-red-600 hover:bg-red-700"
-                            onClick={() =>
-                              cancelOrderMutation.mutate(task.orderId)
-                            }
+                            onClick={() => cancelOrderMutation.mutate(task.orderId)}
                           >
                             Yes, Cancel Order
                           </AlertDialogAction>
@@ -419,7 +385,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* PRIORITY 1: The Money (Pending Confirmations) */}
+      {/* PRIORITY 1: Pending Confirmations */}
       <Card className="border-t-4 border-t-red-500">
         <CardHeader>
           <CardTitle className="text-red-700 flex justify-between items-center">
@@ -432,19 +398,15 @@ export default function DashboardPage() {
         <CardContent>
           {pendingLoading && <DashboardSkeleton />}
           {pendingError && (
-            <p className="text-red-500">
-              Failed to load pending confirmations.
-            </p>
+            <p className="text-red-500">Failed to load pending confirmations.</p>
           )}
 
-          {/* Empty State / Zero-Inbox */}
           {pending?.length === 0 && (
             <div className="text-center py-6 text-green-600 font-medium">
               🎉 All caught up! No pending confirmations.
             </div>
           )}
 
-          {/* Data Table */}
           {pending && pending.length > 0 && (
             <Table>
               <TableHeader>
@@ -460,9 +422,7 @@ export default function DashboardPage() {
               <TableBody>
                 {pending.map((item) => (
                   <TableRow key={item.id}>
-                    {/* 2. Change the displayed text */}
                     <TableCell className="font-medium">#{item.id}</TableCell>
-
                     <TableCell>{item.customerName}</TableCell>
                     <TableCell>
                       {new Date(item.targetDeliveryTime).toLocaleString()}
@@ -471,9 +431,7 @@ export default function DashboardPage() {
                     <TableCell className="text-right font-bold text-red-600">
                       ₱{(item?.totalAmount ?? 0).toLocaleString()}
                     </TableCell>
-                    {/* 🚀 CLEANED UP BUTTON GROUP */}
                     <TableCell className="text-right flex justify-end gap-2 items-center">
-                      {/* BUTTON 1: Triggers the Deep Fetch & Opens the Sheet */}
                       <Button
                         variant="outline"
                         size="sm"
@@ -483,29 +441,23 @@ export default function DashboardPage() {
                         Log Payment / Edit
                       </Button>
 
-                      {/* BUTTON 2: The Existing Cancel Button */}
                       <AlertDialog>
                         <AlertDialogTrigger className="inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
                           Cancel
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              Are you absolutely sure?
-                            </AlertDialogTitle>
+                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will permanently void Order #{item.id} and
-                              instantly release their locked lechon back to the
-                              available inventory pool.
+                              This will permanently void Order #{item.id} and instantly release
+                              their locked lechon back to the available inventory pool.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Keep Order</AlertDialogCancel>
                             <AlertDialogAction
                               className="bg-red-600 hover:bg-red-700"
-                              onClick={() =>
-                                cancelOrderMutation.mutate(item.id)
-                              }
+                              onClick={() => cancelOrderMutation.mutate(item.id)}
                             >
                               Yes, cancel this order
                             </AlertDialogAction>
@@ -527,14 +479,11 @@ export default function DashboardPage() {
           <CardTitle className="text-blue-800 flex justify-between items-center">
             Operations Roster: Defrost & Dispatch
             {unifiedRoster.length > 0 && (
-              <Badge className="bg-blue-600">
-                {unifiedRoster.length} Active
-              </Badge>
+              <Badge className="bg-blue-600">{unifiedRoster.length} Active</Badge>
             )}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Combined view of tonight's prep requirements and tomorrow's delivery
-            targets.
+            Combined view of tonight's prep requirements and tomorrow's delivery targets.
           </p>
         </CardHeader>
         <CardContent>
@@ -549,13 +498,9 @@ export default function DashboardPage() {
               <TableHeader>
                 <TableRow className="bg-slate-50">
                   <TableHead className="font-bold">Item #</TableHead>
-                  <TableHead className="font-bold">
-                    Customer & Routing
-                  </TableHead>
+                  <TableHead className="font-bold">Customer & Routing</TableHead>
                   <TableHead className="font-bold">Size / Qty</TableHead>
-                  <TableHead className="font-bold">
-                    Prep (Tahi) Deadline
-                  </TableHead>
+                  <TableHead className="font-bold">Prep (Tahi) Deadline</TableHead>
                   <TableHead className="font-bold">Target Delivery</TableHead>
                   <TableHead className="text-right font-bold">Status</TableHead>
                 </TableRow>
@@ -567,11 +512,9 @@ export default function DashboardPage() {
                     className={item.isRush ? "bg-red-50/50" : ""}
                   >
                     <TableCell className="font-medium">#{item.id}</TableCell>
-
                     <TableCell>
                       <div className="font-semibold flex items-center gap-2">
                         {item.customerName}
-                        {/* 👑 THE VIP BADGE */}
                         {item.isTrustedCustomer && (
                           <Badge
                             variant="outline"
@@ -585,33 +528,28 @@ export default function DashboardPage() {
                         {item.deliveryAddress}
                       </div>
                     </TableCell>
-
                     <TableCell>
                       <Badge variant="outline" className="bg-white">
                         {item.weightCategory}
                       </Badge>
-                      <span className="ml-2 text-sm font-medium">
-                        x{item.quantity}
-                      </span>
+                      <span className="ml-2 text-sm font-medium">x{item.quantity}</span>
                     </TableCell>
-
                     <TableCell
-                      className={`font-semibold ${item.isRush ? "text-red-600" : "text-blue-600"}`}
+                      className={`font-semibold ${
+                        item.isRush ? "text-red-600" : "text-blue-600"
+                      }`}
                     >
                       {new Date(item.tahiStartTime).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
                     </TableCell>
-
-                    {/* THE REAL TARGET DELIVERY TIME FROM C# */}
                     <TableCell className="text-sm font-medium">
-                      {new Date(item.targetDeliveryTime).toLocaleTimeString(
-                        [],
-                        { hour: "2-digit", minute: "2-digit" },
-                      )}
+                      {new Date(item.targetDeliveryTime).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </TableCell>
-
                     <TableCell className="text-right">
                       {item.isRush ? (
                         <Badge variant="destructive" className="animate-pulse">
@@ -631,7 +569,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 🚀 THE MASTER ACTION CENTER SLIDE-OUT */}
+      {/* Master Action Center Slide-Out */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="overflow-y-auto sm:max-w-xl bg-slate-50">
           <SheetHeader className="mb-6 border-b pb-4">
@@ -645,7 +583,6 @@ export default function DashboardPage() {
                 </SheetDescription>
               </div>
 
-              {/* 🚀 THE NEW LOG PAYMENT BUTTON */}
               {selectedOrderId && (
                 <Button
                   className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
@@ -657,7 +594,6 @@ export default function DashboardPage() {
             </div>
           </SheetHeader>
 
-          {/* Conditional Rendering: Wait for the deep fetch to finish! */}
           {isDetailsLoading ? (
             <div className="py-16 text-center text-slate-500 animate-pulse">
               Securely fetching financial dossier...
@@ -677,7 +613,7 @@ export default function DashboardPage() {
         </SheetContent>
       </Sheet>
 
-      {/* 🚀 THE SECURE PAYMENT MODAL */}
+      {/* Payment Modal */}
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -727,10 +663,9 @@ export default function DashboardPage() {
                     onSuccess: () => {
                       setIsPaymentOpen(false);
                       setPaymentAmount("");
-                      // We close the Action Center drawer as well so the user sees the fresh dashboard
                       setIsSheetOpen(false);
                     },
-                  },
+                  }
                 );
               }}
             >

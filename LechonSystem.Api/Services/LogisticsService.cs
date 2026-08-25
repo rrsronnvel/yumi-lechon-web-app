@@ -14,6 +14,10 @@ namespace LechonSystem.Api.Services
     {
         Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync();
         Task<DeliveryTrip> AssignRiderAsync(string riderName, string vehicleType, List<int> orderIds);
+
+        Task<IEnumerable<object>> GetTodayDispatchesAsync();
+
+        Task<IEnumerable<object>> GetPendingSettlementDropsAsync();
     }
 
     public class LogisticsService : ILogisticsService
@@ -116,6 +120,52 @@ namespace LechonSystem.Api.Services
             await _context.SaveChangesAsync();
 
             return newTrip;
+        }
+
+
+        public async Task<IEnumerable<object>> GetTodayDispatchesAsync()
+        {
+            return await _context.Orders
+                .Include(o => o.DeliveryTrip)
+                .Where(o => o.Fulfillment == FulfillmentType.Delivery
+                         && o.TargetDeliveryTime.Date == DateTime.Today.Date)
+                .OrderBy(o => o.TargetDeliveryTime)
+                .Select(o => new
+                {
+                    id = o.Id,
+                    customerName = o.CustomerName,
+                    deliveryAddress = o.DeliveryAddress,
+                    targetDeliveryTime = o.TargetDeliveryTime,
+                    riderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : null,
+                    vehicleType = o.DeliveryTrip != null ? o.DeliveryTrip.VehicleType : null,
+                    isDeliveryDetailsConfirmed = o.IsDeliveryDetailsConfirmed,
+                    routingStatus = o.RoutingStatus.ToString()
+                })
+                .ToListAsync();
+        }
+
+
+        public async Task<IEnumerable<object>> GetPendingSettlementDropsAsync()
+        {
+            return await _context.Orders
+                .Include(o => o.DeliveryTrip)
+                .Where(o => o.DeliveryTripId != null
+                         && !o.IsCancelled
+                         && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0) // 👈 True Settlement Filter
+                .OrderByDescending(o => o.CreatedAt)
+                .Select(o => new
+                {
+                    id = o.Id,
+                    orderId = o.Id,
+                    riderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : "Unassigned",
+                    customerName = o.CustomerName,
+                    isTrustedCustomer = o.IsTrustedCustomer,
+                    deliveryAddress = o.DeliveryAddress,
+                    totalCollected = o.GrandTotal - o.Downpayment,
+                    riderDeliveryFee = o.DeliveryFee,
+                    netRemittance = (o.GrandTotal - o.Downpayment) - o.DeliveryFee
+                })
+                .ToListAsync();
         }
     }
 }

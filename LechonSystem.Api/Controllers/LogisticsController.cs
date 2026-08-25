@@ -35,8 +35,8 @@ namespace LechonSystem.Api.Controllers
             try
             {
                 var assignedTrip = await _logisticsService.AssignRiderAsync(
-                    request.RiderName, 
-                    request.VehicleType, 
+                    request.RiderName,
+                    request.VehicleType,
                     request.OrderIds
                 );
 
@@ -56,6 +56,26 @@ namespace LechonSystem.Api.Controllers
                 return StatusCode(500, new { message = "An unexpected error occurred during dispatch allocation.", error = ex.Message });
             }
         }
+
+        // 3. GET: api/logistics/today
+        // Fetches all active delivery orders scheduled for today
+        [HttpGet("today")]
+        public async Task<IActionResult> GetTodayDispatches()
+        {
+            var todayDispatches = await _logisticsService.GetTodayDispatchesAsync();
+            return Ok(todayDispatches);
+        }
+
+
+        // 4. GET: api/logistics/trips/pending-settlement
+        // Fetches individual customer drops pending cash reconciliation
+        [HttpGet("trips/pending-settlement")]
+        public async Task<IActionResult> GetPendingSettlements()
+        {
+            var pendingDrops = await _logisticsService.GetPendingSettlementDropsAsync();
+            return Ok(pendingDrops);
+        }
+
     }
 
     // Tiny Request Data Container Carrier (DTO)
