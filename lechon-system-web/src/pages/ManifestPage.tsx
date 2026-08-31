@@ -273,9 +273,11 @@ export default function ManifestPage() {
                 </Label>
                 <Select
                   value={paymentMethod || undefined}
-                  onValueChange={(val: string) => {
-                    setPaymentMethod(val);
-                    if (errorMessage) setErrorMessage(null);
+                  onValueChange={(val: string | null) => {
+                    if (val) {
+                      setPaymentMethod(val);
+                      if (errorMessage) setErrorMessage(null);
+                    }
                   }}
                 >
                   <SelectTrigger id="payment-method" className="w-full">

@@ -168,17 +168,50 @@ To completely replace the legacy Google Sheet, the system features a global Mast
 - The Locked Cash: The Downpayment and payment logs are strictly Read-Only to prevent accounting leaks. If the customer pays more, the admin clicks a separate "Add Payment" button.
     
 
-### 8. Inventory Audit Ledger & Procurement Workflow
+### 8. Inventory Ledger, Dual-Balance Forecasting & Procurement Engine
 
-The inventory system is designed as a strict financial-style audit ledger (a "Bank Statement for Pigs"), managed exclusively by the Office Admin. Add-Ons are explicitly excluded from this strict ledger.
+The inventory subsystem serves as the immutable "bank statement for pigs," separating physical chest freezer contents from operational forward commitments. All calculations operate on continuous weight brackets (categories) rather than individual ear tags.
 
-- Tab 1: Live Balances: The scoreboard. A quick-glance table showing current stock vs. minimum safety thresholds, utilizing red badges for low inventory.
+#### 8.1 Dual-Balance Stock Formulas & Forecasting Horizon
+
+Stock availability calculations are decoupled into physical presence and sellable buffers using a rolling 14-day operational horizon:
+
+1. Physical Stock (On-Hand):  
+    Physical Carcasses = Sum(StockIn + Positive Adjustments) - Sum(StockOut + Negative Adjustments)  
+    Represents actual, thawed or frozen units physically sitting inside the chest freezers.  
+      
     
-- Tab 2: Audit Ledger: A chronological, searchable history of every physical movement in the freezer (Stock-Ins from suppliers, Stock-Outs from completed orders, and Manual Adjustments).
+2. Locked Stock (14-Day Forward Commitment):  
+    Locked Carcasses = Sum(Committed Reservations)  
+    Calculated strictly for orders where:  
+      
     
-- Mandatory Adjustment Reasons: If an admin manually deducts a pig from the system, the system enforces a strict validation rule requiring them to type a "Reason" to prevent untraceable stock loss.
+
+- ReservationStatus == Committed (downpayment logged OR trusted VIP override).
     
-- The Procurement (Supplier) Workflow: When stock is low, the admin clicks a button to generate a clean, formatted text list of needed pigs optimized for copy-pasting directly into Facebook Messenger.
+- TargetDeliveryTime falls between Today (00:00) and Today + 14 Days (23:59).
+    
+
+4. Available Stock (Sellable Buffer):  
+    Available Stock = Physical Stock (On-Hand) - Locked Stock (14-Day Horizon)  
+    Represents the exact number of carcasses safe to promise to new inquiries without risking operational shortages during the active fulfillment cycle.  
+      
+    
+
+#### 8.2 Health Thresholds & Visual Status Badges
+
+- Optimal (Green): Available Stock > MinimumSafetyStock.
+    
+- Low Stock (Yellow/Orange): 0 <= Available Stock <= MinimumSafetyStock.
+    
+- Deficit (Red / Destructive): Available Stock < 0 (Overbooked beyond physical inventory)
+    
+
+#### 8.3 Administrative Ledger Adjustments
+
+- Clerical Safeguards: Manual ledger inputs strictly prohibit raw integer Category IDs. The interface enforces descriptive selection using dynamic catalog names and weight ranges.
+    
+- Mandatory Audit Trails: All manual entries require a validated movement type (StockIn, StockOut, Adjustment) and an auditable reason string (minimum 5 characters) to track shrinkage, spoilage, or unlogged farm intakes.
     
 
 ### 9. Daily Manifest & Granular Cash Reconciliation

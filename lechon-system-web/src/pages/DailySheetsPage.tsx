@@ -1,4 +1,3 @@
-import React from 'react';
 import PrintLayout from '../layouts/PrintLayout'; 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KitchenViewTab } from "@/layouts/KitchenViewTab";

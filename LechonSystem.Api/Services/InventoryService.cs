@@ -21,6 +21,7 @@ namespace LechonSystem.Api.Services
         // NEW: Fetch the entire ledger history
         Task<List<LechonSystem.Api.DTOs.InventoryTransactionDto>> GetTransactionLedgerAsync();
 
+        Task<IEnumerable<InventoryBalanceDto>> GetInventoryBalancesAsync();
         Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync();
     }
 
@@ -51,7 +52,8 @@ namespace LechonSystem.Api.Services
                 OrderId = orderId,
                 ItemCategoryId = itemCategoryId,
                 ReservationDate = reservationDate,
-                Status = initialStatus
+                Status = initialStatus,
+                ReservationStatus = initialStatus
             };
 
             _context.InventoryReservations.Add(reservation);
@@ -99,7 +101,7 @@ namespace LechonSystem.Api.Services
             int totalCommittedReservations = await _context.InventoryReservations
                 .Where(r => r.ItemCategoryId == itemCategoryId
                          && r.ReservationDate.Date == date.Date
-                         && r.Status == ReservationStatus.Committed)
+                         && (r.Status == ReservationStatus.Committed || r.ReservationStatus == ReservationStatus.Committed))
                 .CountAsync();
 
             // 3. Subtract promised stock from physical stock to get the absolute truth
@@ -130,10 +132,7 @@ namespace LechonSystem.Api.Services
                     Id = t.Id,
                     ItemCategoryId = t.ItemCategoryId,
                     Quantity = t.Quantity,
-                    
-                    // FIX: Update this line from 'Type =' to 'TransactionType ='
                     TransactionType = t.Type.ToString(), 
-                    
                     Reason = t.Reason,
                     ReferenceId = t.ReferenceId,
                     TransactionDate = t.TransactionDate
@@ -141,25 +140,96 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync()
+        public async Task<IEnumerable<InventoryBalanceDto>> GetInventoryBalancesAsync()
         {
-            // We ask SQL to look at the categories, and for every category, 
-            // instantly calculate the Sum of Stock In minus the Sum of Stock Out/Adjustments
-            var balances = await _context.ItemCategories
-                .Select(cat => new InventoryBalanceDto
-                {
-                    Id = cat.Id,
-                    Name = cat.Name,
-                    MinimumSafetyStock = cat.MinimumSafetyStock,
-                    CurrentStock = _context.InventoryTransactions
-                        .Where(t => t.ItemCategoryId == cat.Id)
-                        .Sum(t => t.Type == TransactionType.StockIn ? t.Quantity : -t.Quantity)
-                    // Adds StockIn, subtracts everything else!
-                })
+            var categories = await _context.ItemCategories
+                .AsNoTracking()
+                .Where(c => c.MinimumWeightKg > 0 || c.MaximumWeightKg > 0)
+                .ToListAsync();
+
+            // 1. Calculate Physical Stock per category:
+            // Sum(StockIn + Positive Adjustments) - Sum(StockOut + Negative Adjustments)
+            var transactions = await _context.InventoryTransactions
                 .AsNoTracking()
                 .ToListAsync();
 
+            var physicalStockMap = transactions
+                .GroupBy(t => t.ItemCategoryId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Sum(t =>
+                    {
+                        if (t.Type == TransactionType.StockIn)
+                            return Math.Abs(t.Quantity);
+                        if (t.Type == TransactionType.StockOut)
+                            return -Math.Abs(t.Quantity);
+                        // Adjustment: positive adds, negative subtracts
+                        return t.Quantity;
+                    })
+                );
+
+            // 2. Calculate Locked Stock (14-Day Forward Window):
+            // Committed holds from InventoryReservations linked to Order where:
+            // - ReservationStatus == Committed
+            // - Order.IsCancelled == false
+            // - Order.TargetDeliveryTime >= DateTime.Today and Order.TargetDeliveryTime < DateTime.Today.AddDays(15)
+            var windowStart = DateTime.Today;
+            var windowEnd = windowStart.AddDays(15);
+
+            var reservations = await _context.InventoryReservations
+                .AsNoTracking()
+                .Include(r => r.Order)
+                .Where(r => (r.Status == ReservationStatus.Committed || r.ReservationStatus == ReservationStatus.Committed)
+                         && r.Order != null
+                         && !r.Order.IsCancelled
+                         && r.Order.TargetDeliveryTime >= windowStart
+                         && r.Order.TargetDeliveryTime < windowEnd)
+                .ToListAsync();
+
+            var lockedStockMap = reservations
+                .GroupBy(r => r.ItemCategoryId)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // 3. Health status evaluation & DTO construction
+            var balances = categories.Select(cat =>
+            {
+                int physicalStock = physicalStockMap.GetValueOrDefault(cat.Id, 0);
+                int lockedStock = lockedStockMap.GetValueOrDefault(cat.Id, 0);
+                int availableStock = physicalStock - lockedStock;
+
+                string healthStatus;
+                if (availableStock > cat.MinimumSafetyStock)
+                {
+                    healthStatus = "Optimal";
+                }
+                else if (availableStock >= 0)
+                {
+                    healthStatus = "Low Stock";
+                }
+                else
+                {
+                    healthStatus = "Deficit";
+                }
+
+                return new InventoryBalanceDto
+                {
+                    CategoryId = cat.Id,
+                    CategoryName = cat.Name,
+                    WeightRangeDisplay = $"{cat.MinimumWeightKg:0.0}–{cat.MaximumWeightKg:0.0} kg",
+                    PhysicalStock = physicalStock,
+                    LockedStock = lockedStock,
+                    AvailableStock = availableStock,
+                    MinimumSafetyStock = cat.MinimumSafetyStock,
+                    HealthStatus = healthStatus
+                };
+            }).ToList();
+
             return balances;
+        }
+
+        public async Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync()
+        {
+            return await GetInventoryBalancesAsync();
         }
     }
 }

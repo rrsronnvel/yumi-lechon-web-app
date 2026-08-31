@@ -8,6 +8,8 @@ export interface ItemCategory {
     basePrice: number;
     isActive: boolean;       
     minimumWeightKg: number; 
+    maximumWeightKg: number;
+    minimumSafetyStock?: number;
     tahiDurationMinutes?: number;  
     salangDurationMinutes?: number; 
 }

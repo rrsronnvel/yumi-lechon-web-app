@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { OrderFormData, orderFormSchema } from "@/schemas/orderSchema";
-import { z } from "zod";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 
@@ -534,7 +533,7 @@ export default function OrderForm() {
           <FormField
             control={form.control}
             name="downpayment"
-            render={({ field }) => (
+            render={() => (
               <FormItem>
                 <FormLabel>Downpayment Received (₱)</FormLabel>
                 <FormControl>

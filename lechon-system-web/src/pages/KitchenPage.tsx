@@ -29,7 +29,7 @@ export default function KitchenPage() {
   const { data: rosterItems = [], isLoading, isError } = useRosterQuery();
   const updateStatusMutation = useUpdateStatusMutation();
 
-  const handleAdvanceStatus = (id: number, currentStatus: ProductionStatus, nextStatus: ProductionStatus | null) => {
+  const handleAdvanceStatus = (id: number, _currentStatus: ProductionStatus, nextStatus: ProductionStatus | null) => {
     if (!nextStatus) return;
     
     updateStatusMutation.mutate(

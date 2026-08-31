@@ -2,9 +2,13 @@ namespace LechonSystem.Api.DTOs
 {
     public class InventoryBalanceDto
     {
-        public int Id { get; set; }
-        public string Name { get; set; } = string.Empty;
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; } = string.Empty;
+        public string WeightRangeDisplay { get; set; } = string.Empty;
+        public int PhysicalStock { get; set; }
+        public int LockedStock { get; set; }
+        public int AvailableStock { get; set; }
         public int MinimumSafetyStock { get; set; }
-        public int CurrentStock { get; set; } // The magic number we've been missing!
+        public string HealthStatus { get; set; } = "Optimal"; // "Optimal" | "Low Stock" | "Deficit"
     }
 }

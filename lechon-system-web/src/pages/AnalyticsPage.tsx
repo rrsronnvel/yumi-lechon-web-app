@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from "react";
 import {
   useSalesAnalytics,
   useDeliveryPerformance,
@@ -148,7 +147,7 @@ export default function AnalyticsPage() {
                   label={(entry: any) => `${entry.category}`}
                 >
                   {(Array.isArray(wastage) ? wastage : []).map(
-                    (entry: any, index: number) => (
+                    (_entry: any, index: number) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={WASTAGE_COLORS[index % WASTAGE_COLORS.length]}
