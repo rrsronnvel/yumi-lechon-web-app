@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
+import apiClient from '@/services/apiClient';
 import { toast } from 'sonner';
 
 export interface ItemCategory {
@@ -14,46 +14,14 @@ export interface ItemCategory {
     salangDurationMinutes?: number; 
 }
 
-// 1. Fetch the live menu
-export function useMenuCategories() {
-    return useQuery<ItemCategory[]>({
-        queryKey: ['cms', 'categories'],
-        queryFn: async () => {
-            // Re-using the same endpoint your POS form uses!
-            const response = await axios.get('http://localhost:5199/api/inventory/categories');
-            return response.data;
-        },
-    });
-}
-
-// 2. The Engine to change a price
-export function useUpdatePrice() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        // Inside useUpdatePrice()
-        mutationFn: async ({ categoryId, newPrice }: { categoryId: number; newPrice: number }) => {
-            // 1. Notice how we use the backticks (`) to inject the categoryId directly into the URL string!
-            const response = await axios.put(`http://localhost:5199/api/cms/categories/${categoryId}/price`, {
-                // 2. We no longer need to pass categoryId in the body because it is in the URL!
-                newPrice: newPrice,
-                adminName: "Owner"
-            });
-            return response.data;
-        },
-        onSuccess: () => {
-            toast.success("Menu Price Updated!", {
-                description: "The new price is now live. Checking for affected advance orders...",
-            });
-            // Refresh the menu list
-            queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] });
-            // Instantly wake up the Dashboard Radar to check if this broke any old orders!
-            queryClient.invalidateQueries({ queryKey: ['dashboard', 'renegotiations'] });
-        },
-        onError: () => {
-            toast.error("Failed to update price.");
-        }
-    });
+export interface PriceHistoryLog {
+    id: number;
+    itemCategoryId: number;
+    oldPrice: number;
+    newPrice: number;
+    delta: number;
+    changedBy?: string | null;
+    dateChanged: string;
 }
 
 export interface CreateCategoryPayload {
@@ -64,21 +32,136 @@ export interface CreateCategoryPayload {
     minimumSafetyStock: number;
 }
 
-// 3. The Engine to create a brand new item
+export interface UpdateCategoryDetailsPayload {
+    categoryId: number;
+    name: string;
+    minimumWeightKg: number;
+    maximumWeightKg: number;
+    minimumSafetyStock: number;
+}
+
+// 1. Fetch the live menu categories
+export function useMenuCategories() {
+    return useQuery<ItemCategory[]>({
+        queryKey: ['inventory', 'categories'],
+        queryFn: async () => {
+            const response = await apiClient.get<ItemCategory[]>('/inventory/categories');
+            return response.data;
+        },
+    });
+}
+
+// 2. Query price history log
+export function usePriceHistory(categoryId: number | null) {
+    return useQuery<PriceHistoryLog[]>({
+        queryKey: ['cms', 'price-history', categoryId],
+        queryFn: async () => {
+            if (categoryId === null) return [];
+            const response = await apiClient.get<PriceHistoryLog[]>(`/cms/categories/${categoryId}/price-history`);
+            return response.data;
+        },
+        enabled: categoryId !== null,
+    });
+}
+
+// 3. Update Category Details (Metadata & Safety Stock)
+export function useUpdateCategoryDetails() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ categoryId, ...payload }: UpdateCategoryDetailsPayload) => {
+            const response = await apiClient.put(`/cms/categories/${categoryId}/details`, payload);
+            return response.data;
+        },
+        onSuccess: async () => {
+            toast.success("Category details updated successfully!");
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'balances'] }),
+                queryClient.invalidateQueries({ queryKey: ['procurement', 'alerts'] }),
+            ]);
+        },
+        onError: (error: any) => {
+            const msg = error.response?.data?.message || "Failed to update category details.";
+            toast.error(msg);
+        }
+    });
+}
+
+// 4. Toggle Category POS Visibility / Active Status
+export function useToggleCategoryStatus() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (categoryId: number) => {
+            const response = await apiClient.patch<{ isActive: boolean }>(`/cms/categories/${categoryId}/status`);
+            return response.data;
+        },
+        onSuccess: async (data) => {
+            toast.success(data?.isActive ? "Category activated!" : "Category hidden from POS!");
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'balances'] }),
+            ]);
+        },
+        onError: () => {
+            toast.error("Failed to update category visibility status.");
+        }
+    });
+}
+
+// Backwards-compatible alias
+export const useToggleActive = useToggleCategoryStatus;
+
+// 5. Update Menu Item Base Price
+export function useUpdatePrice() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ categoryId, newPrice, adminName = "Owner" }: { categoryId: number; newPrice: number; adminName?: string }) => {
+            const response = await apiClient.put(`/cms/categories/${categoryId}/price`, {
+                newPrice: newPrice,
+                adminName: adminName,
+            });
+            return response.data;
+        },
+        onSuccess: async () => {
+            toast.success("Menu Price Updated!", {
+                description: "The new price is now live. Checking for affected advance orders...",
+            });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['cms', 'price-history'] }),
+                queryClient.invalidateQueries({ queryKey: ['dashboard', 'renegotiations'] }),
+            ]);
+        },
+        onError: () => {
+            toast.error("Failed to update price.");
+        }
+    });
+}
+
+// 6. Create brand new menu item
 export function useCreateCategory() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async (payload: CreateCategoryPayload) => {
-            const response = await axios.post('http://localhost:5199/api/cms/categories', payload);
+            const response = await apiClient.post('/cms/categories', payload);
             return response.data;
         },
-        onSuccess: () => {
+        onSuccess: async () => {
             toast.success("New Menu Item Created!", {
                 description: "The item is now live and active on the POS.",
             });
-            // Refresh the menu list instantly!
-            queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'balances'] }),
+            ]);
         },
         onError: () => {
             toast.error("Failed to create new item. Check your inputs.");
@@ -86,35 +169,25 @@ export function useCreateCategory() {
     });
 }
 
-export function useToggleActive() {
-    const queryClient = useQueryClient();
-    return useMutation({
-        mutationFn: async (categoryId: number) => {
-            const response = await axios.patch(`http://localhost:5199/api/cms/categories/${categoryId}/toggle`);
-            return response.data;
-        },
-        onSuccess: () => {
-            toast.success("Menu Item Updated!");
-            queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] });
-        }
-    });
-
-}
-
+// 7. Update kitchen cooking clock profile
 export function useUpdateClocks() {
     const queryClient = useQueryClient(); 
+
     return useMutation({
-        mutationFn: async ({ categoryId, tahi, salang }: { categoryId: number, tahi: number, salang: number }) => {
-            const response = await axios.patch(`http://localhost:5199/api/cms/categories/${categoryId}/clocks`, {
+        mutationFn: async ({ categoryId, tahi, salang }: { categoryId: number; tahi: number; salang: number }) => {
+            const response = await apiClient.patch(`/cms/categories/${categoryId}/clocks`, {
                 tahiDurationMinutes: tahi,
                 salangDurationMinutes: salang
             });
             return response.data;
         },
-        onSuccess: () => {
+        onSuccess: async () => {
             toast.success("Clocks Updated!", { description: "All upcoming kitchen schedules just re-adjusted." });
-           
-            queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['inventory', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['cms', 'categories'] }),
+                queryClient.invalidateQueries({ queryKey: ['schedules'] }),
+            ]);
         }
     });
 }

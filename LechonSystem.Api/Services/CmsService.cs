@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
@@ -5,27 +9,16 @@ using LechonSystem.Api.DTOs;
 
 namespace LechonSystem.Api.Services
 {
-    // 1. The Interface (The Menu)
-    public interface ICmsService
-    {
-        Task<bool> UpdateCategoryPriceAsync(int categoryId, decimal newPrice, string adminName);
-        Task<ItemCategory> CreateCategoryAsync(CreateCategoryRequest request);
-        Task<bool> UpdateCookingProfileAsync(int profileId, int tahiMinutes, int salangMinutes);
-        Task<bool> ToggleCategoryActiveAsync(int categoryId);
-    }
-
-    // 2. The Implementation (The Kitchen)
     public class CmsService : ICmsService
     {
         private readonly LechonDbContext _context;
-        private readonly ISchedulingService _schedulingService; // 👈 Add the engine
+        private readonly ISchedulingService _schedulingService;
 
         public CmsService(LechonDbContext context, ISchedulingService schedulingService)
         {
             _context = context;
-            _schedulingService = schedulingService; // 👈 Assign it
+            _schedulingService = schedulingService;
         }
-        // ... your other methods stay exactly the same
 
         public async Task<bool> UpdateCategoryPriceAsync(int categoryId, decimal newPrice, string adminName)
         {
@@ -50,8 +43,6 @@ namespace LechonSystem.Api.Services
             category.BasePrice = newPrice;
 
             // 5. 🚀 THE ATOMIC SAVE
-            // Entity Framework will automatically wrap these two actions in a SQL Transaction.
-            // If the server crashes halfway through, it rolls back, preventing accounting leaks.
             _context.PriceHistoryLogs.Add(historyLog);
             await _context.SaveChangesAsync();
 
@@ -78,7 +69,6 @@ namespace LechonSystem.Api.Services
 
         public async Task<bool> UpdateCookingProfileAsync(int categoryId, int tahiMinutes, int salangMinutes)
         {
-            // 👇 Change: Search by ItemCategoryId
             var profile = await _context.ProductCookingProfiles.FirstOrDefaultAsync(p => p.ItemCategoryId == categoryId);
 
             // Safety Net: If a clock doesn't exist yet, create one!
@@ -87,7 +77,7 @@ namespace LechonSystem.Api.Services
                 profile = new ProductCookingProfile
                 {
                     ItemCategoryId = categoryId,
-                    PackagingDurationMinutes = 30 // 👈 Explicitly default to 30 minutes!
+                    PackagingDurationMinutes = 30 // Explicitly default to 30 minutes!
                 };
                 _context.ProductCookingProfiles.Add(profile);
             }
@@ -100,8 +90,8 @@ namespace LechonSystem.Api.Services
                 .Include(i => i.Order)
                 .Include(i => i.ItemCategory)
                 .Include(i => i.OrderItemSchedule)
-                // 👇 THE FIX: We use the profile's ItemCategoryId to find matching order items!
-                .Where(i => i.ItemCategoryId == profile.ItemCategoryId
+                .Where(i => i.ItemCategoryId == profile!.ItemCategoryId
+                         && i.Order != null
                          && i.Order.TargetDeliveryTime > DateTime.UtcNow
                          && !i.Order.IsCancelled)
                 .ToListAsync();
@@ -109,7 +99,10 @@ namespace LechonSystem.Api.Services
             // 4. Force a recalculation for each affected item using the injected engine
             foreach (var item in upcomingItems)
             {
-                await _schedulingService.CalculateScheduleAsync(item.Id, item.Order.TargetDeliveryTime, item.ItemCategoryId);
+                if (item.Order != null)
+                {
+                    await _schedulingService.CalculateScheduleAsync(item.Id, item.Order.TargetDeliveryTime, item.ItemCategoryId);
+                }
             }
 
             // 5. THE ATOMIC SAVE 🚀
@@ -123,11 +116,89 @@ namespace LechonSystem.Api.Services
             var category = await _context.ItemCategories.FindAsync(categoryId);
             if (category == null) return false;
 
-            // Flip the switch! If it's true, make it false. If false, make it true.
             category.IsActive = !category.IsActive;
             await _context.SaveChangesAsync();
 
             return true;
+        }
+
+        public async Task<List<PriceHistoryLogDto>> GetPriceHistoryAsync(int categoryId)
+        {
+            return await _context.PriceHistoryLogs
+                .AsNoTracking()
+                .Where(p => p.ItemCategoryId == categoryId)
+                .OrderByDescending(p => p.DateChanged)
+                .Select(p => new PriceHistoryLogDto
+                {
+                    Id = p.Id,
+                    ItemCategoryId = p.ItemCategoryId,
+                    OldPrice = p.OldPrice,
+                    NewPrice = p.NewPrice,
+                    ChangedBy = p.ChangedBy,
+                    DateChanged = p.DateChanged
+                })
+                .ToListAsync();
+        }
+
+        public async Task<bool> UpdateCategoryDetailsAsync(int categoryId, CategoryMetadataDto dto)
+        {
+            var category = await _context.ItemCategories.FindAsync(categoryId);
+            if (category == null)
+            {
+                throw new KeyNotFoundException($"Item Category with ID {categoryId} was not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                throw new ArgumentException("Category name is required.");
+            }
+
+            if (category.MinimumWeightKg == 0)
+            {
+                // Non-meat Add-On: Force non-meat exclusion shield
+                dto.MinimumWeightKg = 0;
+                dto.MaximumWeightKg = 0;
+                dto.MinimumSafetyStock = 0;
+            }
+            else
+            {
+                // Meat roast
+                if (dto.MinimumWeightKg < 0)
+                {
+                    throw new ArgumentException("Minimum weight cannot be negative.");
+                }
+
+                if (dto.MinimumWeightKg >= dto.MaximumWeightKg)
+                {
+                    throw new ArgumentException("Minimum weight must be strictly less than maximum weight.");
+                }
+            }
+
+            if (dto.MinimumSafetyStock < 0)
+            {
+                throw new ArgumentException("Minimum safety stock must be non-negative.");
+            }
+
+            category.Name = dto.Name.Trim();
+            category.MinimumWeightKg = dto.MinimumWeightKg;
+            category.MaximumWeightKg = dto.MaximumWeightKg;
+            category.MinimumSafetyStock = dto.MinimumSafetyStock;
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> ToggleCategoryStatusAsync(int categoryId)
+        {
+            var category = await _context.ItemCategories.FindAsync(categoryId);
+            if (category == null)
+            {
+                throw new KeyNotFoundException($"Item Category with ID {categoryId} was not found.");
+            }
+
+            category.IsActive = !category.IsActive;
+            await _context.SaveChangesAsync();
+            return category.IsActive;
         }
     }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   useInventoryAlerts,
   useAdjustStock,
@@ -48,6 +48,31 @@ export default function InventoryPage() {
   const { data: ledgerData, isLoading: isLedgerLoading } = useInventoryLedger();
   const { data: balances, isLoading: isBalancesLoading, isError: isBalancesError } = useInventoryBalances();
   const { data: categories = [], isLoading: isCategoriesLoading } = useMenuCategories();
+
+  // Memoize pig categories (excluding non-pig add-ons) and human-readable label lookup map
+  const pigCategories = useMemo(
+    () =>
+      categories.filter(
+        (cat) =>
+          cat.isActive !== false &&
+          (cat.minimumWeightKg > 0 || cat.maximumWeightKg > 0)
+      ),
+    [categories]
+  );
+
+  const categoryItems = useMemo(() => {
+    const items: Record<string, string> = {};
+    pigCategories.forEach((cat) => {
+      items[String(cat.id)] = `${cat.name} (${cat.minimumWeightKg.toFixed(1)}–${cat.maximumWeightKg.toFixed(1)} kg)`;
+    });
+    return items;
+  }, [pigCategories]);
+
+  const movementTypeItems: Record<string, string> = {
+    StockIn: "📥 Stock In (+)",
+    StockOut: "📤 Stock Out (-)",
+    Adjustment: "⚖️ Shrinkage / Manual Adjustment (-)",
+  };
 
   // 2. Local State & Form Validation
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -152,6 +177,7 @@ export default function InventoryPage() {
                     Weight Bracket / Category <span className="text-red-500">*</span>
                   </label>
                   <Select
+                    items={categoryItems}
                     value={
                       form.watch("itemCategoryId")
                         ? String(form.watch("itemCategoryId"))
@@ -172,23 +198,20 @@ export default function InventoryPage() {
                             ? "Loading categories..."
                             : "Select category / weight bracket..."
                         }
-                      />
+                      >
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(val: any) => (val ? categoryItems[String(val)] || val : null)}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {categories
-                        ?.filter(
-                          (cat) =>
-                            cat.isActive !== false &&
-                            (cat.minimumWeightKg > 0 || cat.maximumWeightKg > 0)
-                        )
-                        .map((category) => (
-                          <SelectItem
-                            key={category.id}
-                            value={String(category.id)}
-                          >
-                            {category.name} ({category.minimumWeightKg.toFixed(1)}–{category.maximumWeightKg.toFixed(1)} kg)
-                          </SelectItem>
-                        ))}
+                      {pigCategories.map((category) => (
+                        <SelectItem
+                          key={category.id}
+                          value={String(category.id)}
+                        >
+                          {category.name} ({category.minimumWeightKg.toFixed(1)}–{category.maximumWeightKg.toFixed(1)} kg)
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   {form.formState.errors.itemCategoryId && (
@@ -221,6 +244,7 @@ export default function InventoryPage() {
                     Movement Type <span className="text-red-500">*</span>
                   </label>
                   <Select
+                    items={movementTypeItems}
                     value={form.watch("transactionType")}
                     onValueChange={(val: string | null) => {
                       if (val) {
@@ -235,7 +259,10 @@ export default function InventoryPage() {
                     }}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select type..." />
+                      <SelectValue placeholder="Select type...">
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(val: any) => (val ? movementTypeItems[String(val)] || val : null)}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="StockIn">📥 Stock In (+)</SelectItem>

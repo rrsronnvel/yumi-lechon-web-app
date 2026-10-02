@@ -43,10 +43,10 @@ export default function OrderForm() {
 
   // 🚀 NEW: Filter the active items dynamically based on weight!
   const lechonOptions = categories.filter(
-    (c: any) => c.minimumWeightKg > 0 && c.isActive !== false
+    (c: any) => c.minimumWeightKg > 0 && c.isActive === true
   );
   const liveAddOns = categories.filter(
-    (c: any) => c.minimumWeightKg === 0 && c.isActive !== false
+    (c: any) => c.minimumWeightKg === 0 && c.isActive === true
   );
 
   // 2. INITIALIZE FORM SECOND: Create the form so it exists in memory
