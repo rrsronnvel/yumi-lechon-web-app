@@ -1,39 +1,62 @@
 import { z } from "zod";
 
 // We define the exact shape of a valid order (The Bouncer)
-export const orderFormSchema = z.object({
-  customerName: z.string().min(2, { message: "Name must be at least 2 characters." }),
-  customerPhone: z.string().min(10, { message: "Please enter a valid phone number." }),
-  targetDeliveryTime: z.string().nonempty({ message: "Delivery time is required." }),
-  fulfillmentType: z.string(),
+export const orderFormSchema = z
+  .object({
+    customerName: z
+      .string()
+      .min(2, { message: "Name must be at least 2 characters." }),
+    customerPhone: z
+      .string()
+      .min(10, { message: "Please enter a valid phone number (min 10 digits)." }),
+    targetDeliveryTime: z
+      .string()
+      .min(1, { message: "Target delivery/pickup time is required." }),
+    fulfillment: z.number().default(1), // 0 = Pickup, 1 = Delivery
+    distanceKm: z.number().min(0).default(0),
 
-  // -- FINANCIAL & ROUTING FIELDS --
-  address: z.string().min(1, { message: "Location/Address is required." }),
-  remarks: z.string().optional(),
-  price: z.number().min(0, { message: "Price cannot be negative." }),
-  addOns: z.string().optional(),
-  deliveryFee: z.number().min(0, { message: "Delivery fee cannot be negative." }),
-  discount: z.number().min(0).optional().default(0),
-  grandTotal: z.number().min(0).optional().default(0),
-  // 1. Add the downpayment field so Zod knows it exists!
-  downpayment: z.number().min(0, { message: "Downpayment cannot be negative." }),
-  isTrustedCustomer: z.boolean().default(false),
+    // -- FINANCIAL & ROUTING FIELDS --
+    address: z.string().optional().default(""),
+    remarks: z.string().optional().default(""),
+    price: z.number().min(0, { message: "Price cannot be negative." }).default(0),
+    addOns: z.string().optional().default(""),
+    deliveryFee: z.number().min(0, { message: "Delivery fee cannot be negative." }).default(0),
+    discount: z.number().min(0, { message: "Discount cannot be negative." }).default(0),
+    grandTotal: z.number().min(0).default(0),
+    downpayment: z.number().min(0, { message: "Downpayment cannot be negative." }).default(0),
+    isTrustedCustomer: z.boolean().default(false),
 
-  items: z.array(
-    z.object({
-      itemCategoryId: z.number(),
-      quantity: z.number().min(1, { message: "Must order at least 1." })
-    })
-  ).min(1, { message: "Order must contain at least one item." }),
+    items: z
+      .array(
+        z.object({
+          itemCategoryId: z.number().min(1, { message: "Must select a valid item." }),
+          quantity: z.number().min(1, { message: "Quantity must be at least 1." }),
+        })
+      )
+      .min(1, { message: "Order must contain at least one item." }),
 
-  addOnArray: z.array(z.object({
-  name: z.string(),
-  quantity: z.number().min(1),
-  price: z.number().min(0)
-})).optional(),
-
-  // 2. Chain the "Smart Cashier" rule onto the very end of the object
-});
+    // Backward-compatible fields
+    fulfillmentType: z.string().optional(),
+    addOnArray: z
+      .array(
+        z.object({
+          name: z.string(),
+          quantity: z.number().min(1),
+          price: z.number().min(0),
+        })
+      )
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    // If Delivery Routing is chosen (fulfillment === 1), address is mandatory
+    if (data.fulfillment === 1 && (!data.address || data.address.trim() === "")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Delivery address is required for delivery orders.",
+        path: ["address"],
+      });
+    }
+  });
 
 // Export the inferred TypeScript interface (The Blueprint)
 export type OrderFormData = z.infer<typeof orderFormSchema>;
@@ -53,4 +76,4 @@ export interface ParsedOrderDraftDto {
   deliveryFee?: number | null;
   downpayment?: number | null;
   items: ParsedOrderItemDto[];
-}
+}

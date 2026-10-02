@@ -1,13 +1,19 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
-import { OrderFormData, orderFormSchema, ParsedOrderDraftDto } from "@/schemas/orderSchema";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMenuCategories, ItemCategory } from "@/hooks/useCms";
+import apiClient from "@/services/apiClient";
+import {
+  OrderFormData,
+  orderFormSchema,
+  ParsedOrderDraftDto,
+} from "@/schemas/orderSchema";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import OrderScreenshotUploader from "./OrderScreenshotUploader";
 
 import {
@@ -21,193 +27,249 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  ShoppingCart,
+  ReceiptText,
+  Loader2,
+  CheckCircle2,
+  Trash2,
+  Plus,
+  Minus,
+} from "lucide-react";
 
-export default function OrderForm() {
+export default function OrderForm({ onClose }: { onClose?: () => void }) {
   const queryClient = useQueryClient();
 
-  // 1. FETCH DATA FIRST: Get live inventory categories from the backend
-  const { data: categories = [], isLoading: isCategoriesLoading } = useQuery({
-    queryKey: ["inventory", "categories"],
-    queryFn: async () => {
-      const response = await axios.get(
-        "http://localhost:5199/api/inventory/categories",
-      );
-      return response.data;
-    },
-  });
+  // 1. Fetch live inventory categories using shared CMS hook
+  const { data: categories = [], isLoading: isCategoriesLoading } =
+    useMenuCategories();
 
-  // 🚀 NEW: Filter the active items dynamically based on weight!
-  const lechonOptions = categories.filter(
-    (c: any) => c.minimumWeightKg > 0 && c.isActive === true
-  );
-  const liveAddOns = categories.filter(
-    (c: any) => c.minimumWeightKg === 0 && c.isActive === true
+  // Partition categories into Roast Lechon vs Add-Ons
+  const roastCategories = useMemo(
+    () =>
+      categories.filter(
+        (c: ItemCategory) => c.minimumWeightKg > 0 && c.isActive !== false,
+      ),
+    [categories],
   );
 
-  // 2. INITIALIZE FORM SECOND: Create the form so it exists in memory
+  const addOnCategories = useMemo(
+    () =>
+      categories.filter(
+        (c: ItemCategory) => c.minimumWeightKg === 0 && c.isActive !== false,
+      ),
+    [categories],
+  );
+
+  // 2. Initialize React Hook Form
   const form = useForm<OrderFormData>({
     resolver: zodResolver(orderFormSchema as any),
     defaultValues: {
       customerName: "",
       customerPhone: "",
       targetDeliveryTime: "",
-      fulfillmentType: "1",
-      items: [{ itemCategoryId: 1, quantity: 1 }],
-      addOnArray: [],
+      fulfillment: 1, // Default: 🚗 Delivery Routing
+      distanceKm: 0,
       address: "",
       remarks: "",
       price: 0,
       addOns: "",
       deliveryFee: 0,
-      downpayment: 0, // <--- Ensure this is exactly 0
-      isTrustedCustomer: false, // <--- Ensure this is exactly false
+      downpayment: 0,
+      isTrustedCustomer: false,
       discount: 0,
       grandTotal: 0,
+      items: [{ itemCategoryId: 1, quantity: 1 }],
     },
   });
 
-  // 3. SET UP WATCHERS THIRD: Now that the form exists, we can watch it
-  const fulfillmentType = form.watch("fulfillmentType");
-
-  // Array 1: The Main Lechon Items
   const { fields, append, remove, replace } = useFieldArray({
     name: "items",
     control: form.control,
   });
 
-  // Array 2: The Lightweight Add-Ons
-  const {
-    fields: addOnFields,
-    append: appendAddOn,
-    remove: removeAddOn,
-  } = useFieldArray({
-    name: "addOnArray",
-    control: form.control,
-  });
+  // Watch key fields for reactive calculations
+  const watchedFulfillment = form.watch("fulfillment");
+  const watchedItems = form.watch("items");
+  const watchedDeliveryFee = form.watch("deliveryFee");
+  const watchedDiscount = form.watch("discount");
+  const watchedDownpayment = form.watch("downpayment");
+  const watchedIsTrusted = form.watch("isTrustedCustomer");
 
-  // 🚀 NEW: The Store Pickup Safeguard
+  // 3. Interactive Store Pickup Safeguards
   useEffect(() => {
-    // If Walk-in Store Pickup is selected (Value "0")
-    if (fulfillmentType === "0") {
+    if (watchedFulfillment === 0) {
       form.setValue("deliveryFee", 0, { shouldValidate: true });
+      form.setValue("distanceKm", 0, { shouldValidate: true });
     }
-  }, [fulfillmentType, form]);
+  }, [watchedFulfillment, form]);
 
-  // 4. RUN THE MATH FOURTH: The Bulletproof RHF Subscription
+  // Ensure default item matches an actual category once loaded
   useEffect(() => {
-    if (categories.length === 0) return; // Wait for backend data
-
-    // Helper function so we can calculate immediately AND on every keystroke
-    const calculatePrice = (cartItems: any[]) => {
-      let runningTotal = 0;
-      cartItems.forEach((cartItem) => {
-        const categoryId = Number(cartItem?.itemCategoryId);
-        const qty = Number(cartItem?.quantity) || 1;
-
-        const dbCategory = categories.find(
-          (c: { id: number; basePrice: number }) => c.id === categoryId,
-        );
-
-        if (dbCategory) {
-          runningTotal += dbCategory.basePrice * qty;
-        }
-      });
-      return runningTotal;
-    };
-
-    // 1. Force an immediate calculation the exact millisecond the backend API data loads
-    const currentFormValues = form.getValues("items");
-    form.setValue("price", calculatePrice(currentFormValues));
-
-    // 2. Subscribe directly to the form's internal heartbeat for all future changes
-    const subscription = form.watch((value) => {
-      const newBasePrice = calculatePrice(value.items || []);
-      const delivery = Number(value.deliveryFee) || 0;
-      const discount = Number(value.discount) || 0;
-
-      // Sum up the Add-On prices dynamically
-      const addOnsTotal = (value.addOnArray || []).reduce(
-        (sum, item) => sum + (Number(item?.price) || 0),
-        0,
-      );
-
-      // The Final Equation: (Price + AddOns + DeliveryFee) - Discount
-      const finalTotal = newBasePrice + addOnsTotal + delivery - discount;
-
-      // Magically push the base price into the UI
-      if (value.price !== newBasePrice) {
-        form.setValue("price", newBasePrice, { shouldValidate: true });
+    if (categories.length > 0 && fields.length === 1 && fields[0].itemCategoryId === 1) {
+      const exists = categories.some((c) => c.id === 1);
+      if (!exists && roastCategories.length > 0) {
+        form.setValue("items.0.itemCategoryId", roastCategories[0].id);
       }
+    }
+  }, [categories, fields, roastCategories, form]);
 
-      // Magically push the Grand Total into the UI
-      if (value.grandTotal !== finalTotal) {
-        form.setValue("grandTotal", finalTotal, { shouldValidate: true });
-      }
+  // 4. Instant Reactive Math Calculations
+  const cartSubtotal = useMemo(() => {
+    if (!watchedItems || watchedItems.length === 0) return 0;
+    return watchedItems.reduce((acc, item) => {
+      const cat = categories.find((c: any) => c.id === item.itemCategoryId);
+      const unitPrice = cat?.basePrice ?? 0;
+      const qty = Number(item.quantity) || 0;
+      return acc + unitPrice * qty;
+    }, 0);
+  }, [watchedItems, categories]);
+
+  const roastSubtotal = useMemo(() => {
+    if (!watchedItems || watchedItems.length === 0) return 0;
+    return watchedItems.reduce((acc, item) => {
+      const cat = categories.find((c: any) => c.id === item.itemCategoryId);
+      if (!cat || cat.minimumWeightKg <= 0) return acc;
+      const unitPrice = cat.basePrice ?? 0;
+      const qty = Number(item.quantity) || 0;
+      return acc + unitPrice * qty;
+    }, 0);
+  }, [watchedItems, categories]);
+
+  const effectiveDeliveryFee =
+    watchedFulfillment === 0 ? 0 : Number(watchedDeliveryFee) || 0;
+  const effectiveDiscount = Number(watchedDiscount) || 0;
+  const effectiveDownpayment = Number(watchedDownpayment) || 0;
+
+  const grandTotal = Math.max(
+    0,
+    cartSubtotal + effectiveDeliveryFee - effectiveDiscount,
+  );
+  const balanceDue = grandTotal - effectiveDownpayment;
+
+  // Stepper quantity update helper
+  const updateQuantity = (index: number, newQty: number) => {
+    if (newQty < 1) return;
+    form.setValue(`items.${index}.quantity`, newQty, {
+      shouldValidate: true,
+      shouldDirty: true,
     });
+  };
 
-    // Clean up memory when the component closes
-    return () => subscription.unsubscribe();
-  }, [categories, form]);
+  // Quick add item to cart from header selector
+  const handleAddItem = (categoryId: number) => {
+    const currentItems = form.getValues("items") || [];
+    const existingIndex = currentItems.findIndex(
+      (i) => i.itemCategoryId === categoryId,
+    );
+    if (existingIndex >= 0) {
+      const currentQty = Number(currentItems[existingIndex].quantity) || 1;
+      form.setValue(`items.${existingIndex}.quantity`, currentQty + 1, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    } else {
+      append({ itemCategoryId: categoryId, quantity: 1 });
+    }
+  };
 
-  // 5. SET UP SUBMISSION FIFTH: Handle sending the final payload to the backend
+  // 5. Submission Mutation with Aggressive Cache Invalidation
   const createOrderMutation = useMutation({
-    mutationFn: async (newOrder: OrderFormData) => {
-      const payload = {
-        ...newOrder,
-        fulfillment: parseInt(newOrder.fulfillmentType, 10),
-      };
-
-      const response = await axios.post(
-        "http://localhost:5199/api/orders",
-        payload,
-      );
+    mutationFn: async (payload: any) => {
+      const response = await apiClient.post("/orders", payload);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Order Created Successfully!", {
         description: "The order slip is now live on your dashboard roster.",
       });
-      form.reset(); // Clear the form for the next customer
+      form.reset();
+      onClose?.();
 
-      // AGGRESSIVE CACHE INVALIDATION
-      queryClient.invalidateQueries({ queryKey: ["dashboard-pending"] });
-      queryClient.invalidateQueries({ queryKey: ["roster"] });
-      queryClient.invalidateQueries({
-        queryKey: ["schedules", "daily-sheets"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["orders", "directory"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory"] }),
+      ]);
     },
-    onError: () => {
+    onError: (err: any) => {
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.Message ||
+        "Could not deliver order request to backend.";
       toast.error("Submission Failed", {
-        description: "Could not deliver order request to .NET backend.",
+        description: msg,
       });
     },
   });
 
   function onSubmit(data: OrderFormData) {
-    // Format the array into a clean receipt string
-    const addOnsString = data.addOnArray
-      ?.filter((a) => a.name && a.name.trim() !== "")
-      .map((a) => `${a.quantity}x ${a.name} (₱${a.price})`)
-      .join(", ");
+    let computedCartSubtotal = 0;
+    let computedRoastSubtotal = 0;
+    const addOnStrings: string[] = [];
+
+    const formattedItems = (data.items || []).map((item) => {
+      const cat = categories.find((c: any) => c.id === item.itemCategoryId);
+      const unitPrice = cat?.basePrice ?? 0;
+      const lineTotal = unitPrice * item.quantity;
+      computedCartSubtotal += lineTotal;
+
+      if (cat && cat.minimumWeightKg > 0) {
+        computedRoastSubtotal += lineTotal;
+      } else if (cat) {
+        addOnStrings.push(`${item.quantity}x ${cat.name}`);
+      }
+
+      return {
+        itemCategoryId: item.itemCategoryId,
+        quantity: item.quantity,
+        price: lineTotal,
+      };
+    });
+
+    const delivery = data.fulfillment === 0 ? 0 : Number(data.deliveryFee) || 0;
+    const discount = Number(data.discount) || 0;
+    const computedGrandTotal = Math.max(
+      0,
+      computedCartSubtotal + delivery - discount,
+    );
 
     const payload = {
-      ...data,
-      fulfillment: parseInt(data.fulfillmentType, 10),
-      addOns: addOnsString || "", 
-      deliveryAddress: data.address, 
+      customerName: data.customerName,
+      customerPhone: data.customerPhone,
+      source: "POS Terminal",
+      targetDeliveryTime: data.targetDeliveryTime,
+      fulfillment: Number(data.fulfillment),
+      address:
+        data.fulfillment === 0
+          ? "Store Pickup"
+          : data.address || "Store Pickup",
+      deliveryAddress:
+        data.fulfillment === 0
+          ? "Store Pickup"
+          : data.address || "Store Pickup",
+      remarks: data.remarks || "",
+      price:
+        roastSubtotal > 0
+          ? roastSubtotal
+          : computedCartSubtotal,
+      addOns: addOnStrings.join(", "),
+      deliveryFee: delivery,
+      discount: discount,
+      downpayment: Number(data.downpayment) || 0,
+      grandTotal: computedGrandTotal,
+      totalAmount: computedGrandTotal,
+      isTrustedCustomer: Boolean(data.isTrustedCustomer),
+      items: formattedItems,
     };
 
     createOrderMutation.mutate(payload);
   }
 
+  // Multimodal Vision Parser Bridge
   const handleScreenshotParsed = (draft: ParsedOrderDraftDto) => {
-    // 1. Customer Details
     if (draft.customerName) {
       form.setValue("customerName", draft.customerName, {
         shouldValidate: true,
@@ -221,7 +283,6 @@ export default function OrderForm() {
       });
     }
 
-    // 2. Format Target Delivery Time to YYYY-MM-DDTHH:mm
     if (draft.targetDeliveryTime) {
       const d = new Date(draft.targetDeliveryTime);
       if (!isNaN(d.getTime())) {
@@ -234,12 +295,11 @@ export default function OrderForm() {
       }
     }
 
-    // 3. Fulfillment & Address
     const fulfillmentVal =
       draft.fulfillment !== undefined && draft.fulfillment !== null
-        ? String(draft.fulfillment)
-        : "1";
-    form.setValue("fulfillmentType", fulfillmentVal, {
+        ? Number(draft.fulfillment)
+        : 1;
+    form.setValue("fulfillment", fulfillmentVal, {
       shouldValidate: true,
       shouldDirty: true,
     });
@@ -251,7 +311,6 @@ export default function OrderForm() {
       });
     }
 
-    // 4. Remarks
     if (draft.remarks !== undefined) {
       form.setValue("remarks", draft.remarks || "", {
         shouldValidate: true,
@@ -259,551 +318,668 @@ export default function OrderForm() {
       });
     }
 
-    // 5. Fees & Downpayment
-    const parsedFee = draft.fulfillment === 0 ? 0 : (draft.deliveryFee ?? 0);
+    const parsedFee =
+      fulfillmentVal === 0 ? 0 : Number(draft.deliveryFee) || 0;
     form.setValue("deliveryFee", parsedFee, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    const parsedDownpayment = draft.downpayment ?? 0;
+    const parsedDownpayment = Number(draft.downpayment) || 0;
     form.setValue("downpayment", parsedDownpayment, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    // 6. Items array
     if (draft.items && draft.items.length > 0) {
       const mappedItems = draft.items.map((i) => ({
         itemCategoryId: i.itemCategoryId,
         quantity: i.quantity || 1,
       }));
       replace(mappedItems);
-      form.setValue("items", mappedItems, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
     }
 
-    // 7. Explicit price recalculation trigger
-    const activeCartItems =
-      draft.items && draft.items.length > 0
-        ? draft.items
-        : form.getValues("items") || [];
-
-    let computedBasePrice = 0;
-    activeCartItems.forEach((cartItem: any) => {
-      const categoryId = Number(cartItem?.itemCategoryId);
-      const qty = Number(cartItem?.quantity) || 1;
-      const dbCat = categories.find((c: any) => c.id === categoryId);
-      if (dbCat) {
-        computedBasePrice += dbCat.basePrice * qty;
-      }
-    });
-
-    const currentDiscount = Number(form.getValues("discount")) || 0;
-    const addOnsTotal = (form.getValues("addOnArray") || []).reduce(
-      (sum: number, item: any) => sum + (Number(item?.price) || 0),
-      0,
-    );
-    const computedGrandTotal =
-      computedBasePrice + addOnsTotal + parsedFee - currentDiscount;
-
-    form.setValue("price", computedBasePrice, {
-      shouldValidate: true,
-      shouldDirty: true,
-    });
-    form.setValue("grandTotal", computedGrandTotal, {
-      shouldValidate: true,
-      shouldDirty: true,
-    });
-
-    // 8. Human-in-the-Loop Confirmation Toast
     toast.success("Order details extracted. Please review before saving.", {
-      description: "Parsed fields populated into the intake terminal. Verify data before saving.",
+      description:
+        "Parsed fields populated into the intake terminal. Verify data before saving.",
     });
   };
 
   const handleScreenshotError = (errorMsg: string) => {
     toast.error("Screenshot Parsing Failed", {
-      description: errorMsg || "Could not extract booking details from screenshot.",
+      description:
+        errorMsg || "Could not extract booking details from screenshot.",
     });
   };
 
-  // 6. RENDER THE UI
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-6 max-w-xl bg-white p-6 rounded-lg border shadow-sm"
+        className="grid grid-cols-1 lg:grid-cols-12 w-full max-h-[92vh] h-full overflow-hidden bg-white"
       >
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-            Order Entry Terminal
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Input Facebook Messenger payloads or walk-in tickets directly.
-          </p>
-        </div>
-
-        {/* 📸 Messenger Screenshot Parser Bridge */}
-        <OrderScreenshotUploader
-          onParsed={handleScreenshotParsed}
-          onError={handleScreenshotError}
-        />
-
-        <FormField
-          control={form.control}
-          name="customerName"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Customer Name</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g., Juan Dela Cruz" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="customerPhone"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Mobile Number</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g., 0917XXXXXXX" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="fulfillmentType"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Delivery Method</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger className="focus:ring-orange-500">
-                    <SelectValue placeholder="Select delivery method" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="1">🚗 Delivery Routing</SelectItem>
-                  <SelectItem value="0">🏪 Walk-in Store Pickup</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="targetDeliveryTime"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Target Delivery/Pickup Date & Time</FormLabel>
-              <FormControl>
-                <Input
-                  type="datetime-local"
-                  step={900}
-                  className="h-10 focus-visible:ring-orange-500"
-                  value={field.value}
-                  onChange={(e) => {
-                    const rawValue = e.target.value;
-
-                    if (!rawValue) {
-                      field.onChange("");
-                      return;
-                    }
-
-                    const dateObj = new Date(rawValue);
-                    const ms = 1000 * 60 * 15;
-                    const snappedDate = new Date(
-                      Math.round(dateObj.getTime() / ms) * ms,
-                    );
-
-                    const year = snappedDate.getFullYear();
-                    const month = String(snappedDate.getMonth() + 1).padStart(
-                      2,
-                      "0",
-                    );
-                    const day = String(snappedDate.getDate()).padStart(2, "0");
-                    const hours = String(snappedDate.getHours()).padStart(
-                      2,
-                      "0",
-                    );
-                    const mins = String(snappedDate.getMinutes()).padStart(
-                      2,
-                      "0",
-                    );
-
-                    field.onChange(`${year}-${month}-${day}T${hours}:${mins}`);
-                  }}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="address"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Delivery Address / Location</FormLabel>
-              <FormControl>
-                <Input 
-                  placeholder="e.g., 123 Main St, Bacoor" 
-                  disabled={fulfillmentType === "0"} 
-                  {...field} 
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="remarks"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Remarks (Optional)</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="e.g., Deliver to the blue gate"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="space-y-3 border-t pt-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-gray-700">
-              Weight & Categories
-            </h3>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => append({ itemCategoryId: 1, quantity: 1 })}
-            >
-              + Add Item
-            </Button>
-          </div>
-
-          {fields.map((field, index) => (
-            <div
-              key={field.id}
-              className="flex gap-3 items-start bg-slate-50 p-3 rounded-md relative border border-dashed"
-            >
-              <div className="flex-1 space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Product Category
-                </span>
-                <select
-                  {...form.register(`items.${index}.itemCategoryId` as const, {
-                    valueAsNumber: true,
-                  })}
-                  className="w-full h-9 rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus:outline-none"
-                  disabled={isCategoriesLoading}
-                >
-                  <option value={0} disabled>
-                    {isCategoriesLoading
-                      ? "Loading sizes..."
-                      : "Select a size..."}
-                  </option>
-
-                  {/* 🚀 NEW: Dynamically render Lechon Options */}
-                  {lechonOptions.map(
-                    (category: any) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name} — ₱{category.basePrice?.toLocaleString()}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </div>
-
-              <div className="w-20 space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Qty
-                </span>
-                <Input
-                  type="number"
-                  {...form.register(`items.${index}.quantity` as const, {
-                    valueAsNumber: true,
-                  })}
-                  className="h-9 bg-white"
-                />
-              </div>
-
-              {fields.length > 1 && (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="mt-5 h-9"
-                  onClick={() => remove(index)}
-                >
-                  Remove
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t mt-4">
-          <FormField
-            control={form.control}
-            name="price"
-            render={() => (
-              <FormItem>
-                <FormLabel>Lechon Price (₱)</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    readOnly
-                    className="bg-gray-100 cursor-not-allowed"
-                    {...form.register("price", { valueAsNumber: true })}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <div className="space-y-1 mb-4">
-            <FormLabel>Distance (KM)</FormLabel>
-            <Input
-              type="number"
-              placeholder="e.g., 5"
-              disabled={fulfillmentType === "0"} // 🚀 NEW: Disable if Store Pickup
-              onChange={(e) => {
-                const km = parseFloat(e.target.value) || 0;
-                const calculatedFee = km > 0 ? 50 + 15 * km : 0;
-                form.setValue("deliveryFee", calculatedFee);
-              }}
-            />
-            <p className="text-[10px] text-muted-foreground leading-tight">
-              Formula: ₱50 + (₱15 x KM). Override if free delivery.
+        {/* ========================================================= */}
+        {/* Left Column: Who & Where Logistics                        */}
+        {/* ========================================================= */}
+        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] border-b lg:border-b-0 lg:border-r border-slate-200 space-y-4">
+          <div className="border-b pb-3">
+            <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center gap-2">
+              <span>🐷</span> Order Entry Terminal
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Customer demographics, fulfillment routing & event logistics.
             </p>
           </div>
 
-          <FormField
-            control={form.control}
-            name="deliveryFee"
-            render={() => (
-              <FormItem>
-                <FormLabel>Delivery Fee (₱)</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    disabled={fulfillmentType === "0"} // 🚀 NEW: Disable if Store Pickup
-                    {...form.register("deliveryFee", { valueAsNumber: true })}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <FormField
-          control={form.control}
-          name="discount"
-          render={() => (
-            <FormItem>
-              <FormLabel className="text-red-600">Discount (₱)</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  {...form.register("discount", { valueAsNumber: true })}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="grandTotal"
-          render={() => (
-            <FormItem>
-              <FormLabel className="font-bold text-green-700">
-                Grand Total (₱)
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  readOnly
-                  className="bg-green-50 font-bold text-lg"
-                  {...form.register("grandTotal", { valueAsNumber: true })}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t mt-4 items-end">
-          <FormField
-            control={form.control}
-            name="downpayment"
-            render={() => (
-              <FormItem>
-                <FormLabel>Downpayment Received (₱)</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    {...form.register("downpayment", { valueAsNumber: true })}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+          {/* 1. Compact Screenshot Uploader */}
+          <OrderScreenshotUploader
+            onParsed={handleScreenshotParsed}
+            onError={handleScreenshotError}
           />
 
-          <FormField
-            control={form.control}
-            name="isTrustedCustomer"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-[68px]">
-                <div className="space-y-0.5">
-                  <FormLabel className="text-base font-semibold text-orange-700">
-                    👑 VIP Trusted Customer
+          {/* 2. Customer Identity Fields */}
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              control={form.control}
+              name="customerName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-gray-700">
+                    Customer Name
                   </FormLabel>
-                  <p className="text-[11px] text-muted-foreground">
-                    Bypass the downpayment requirement.
-                  </p>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        </div>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g., Juan Dela Cruz"
+                      className="h-9 text-xs"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
 
-        <div className="space-y-3 border-t pt-4 mt-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-gray-700">
-              Lightweight Add-Ons
-            </h3>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => appendAddOn({ name: "", quantity: 1, price: 0 })}
-            >
-              + Add Extra
-            </Button>
+            <FormField
+              control={form.control}
+              name="customerPhone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-gray-700">
+                    Mobile Number
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g., 09171234567"
+                      className="h-9 text-xs"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
           </div>
 
-          {addOnFields.map((field, index) => (
-            <div
-              key={field.id}
-              className="flex gap-3 items-end bg-orange-50/50 p-3 rounded-md relative border border-dashed border-orange-200"
-            >
-              <div className="flex-1 space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Add-On Item
-                </span>
-                <select
-                  className="w-full h-9 rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus:outline-none"
-                  {...form.register(`addOnArray.${index}.name` as const, {
-                    // 🚀 NEW: Pointing to Live Backend Prices
-                    onChange: (e) => {
-                      const selectedItem = liveAddOns.find(
-                        (a: any) => a.name === e.target.value,
-                      );
-                      if (selectedItem) {
-                        form.setValue(
-                          `addOnArray.${index}.price`,
-                          selectedItem.basePrice, // Swapped from static 'price' to DB 'basePrice'
-                          { shouldValidate: true },
+          {/* 3. Segmented Delivery Method Toggle */}
+          <FormField
+            control={form.control}
+            name="fulfillment"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs font-semibold text-gray-700">
+                  Fulfillment Method
+                </FormLabel>
+                <FormControl>
+                  <Tabs
+                    value={String(field.value)}
+                    onValueChange={(val) => {
+                      const numVal = parseInt(val, 10);
+                      field.onChange(numVal);
+                    }}
+                    className="w-full"
+                  >
+                    <TabsList className="grid w-full grid-cols-2 h-9 p-0.5 bg-slate-100">
+                      <TabsTrigger
+                        value="1"
+                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
+                      >
+                        🚗 Delivery Routing
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="0"
+                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
+                      >
+                        🏪 Walk-in Store Pickup
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </FormControl>
+                <FormMessage className="text-[11px]" />
+              </FormItem>
+            )}
+          />
+
+          {/* 4 & 5. Logistics Details: Target Date/Time & Distance (KM) */}
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              control={form.control}
+              name="targetDeliveryTime"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-gray-700">
+                    {watchedFulfillment === 0
+                      ? "Target Pickup Time"
+                      : "Target Delivery Time"}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="datetime-local"
+                      step={900}
+                      className="h-9 text-xs focus-visible:ring-orange-500"
+                      value={field.value}
+                      onChange={(e) => {
+                        const rawValue = e.target.value;
+                        if (!rawValue) {
+                          field.onChange("");
+                          return;
+                        }
+                        const dateObj = new Date(rawValue);
+                        const ms = 1000 * 60 * 15;
+                        const snappedDate = new Date(
+                          Math.round(dateObj.getTime() / ms) * ms,
                         );
-                      }
-                    },
-                  })}
-                >
-                  <option value="" disabled>
-                    Select an add-on...
-                  </option>
-                  {/* 🚀 NEW: Dynamically mapping Live Add Ons */}
-                  {liveAddOns.map((addon: any) => (
-                    <option key={addon.id} value={addon.name}>
-                      {addon.name} — ₱{addon.basePrice?.toLocaleString()}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="w-20 space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Qty
-                </span>
-                <Input
-                  type="number"
-                  {...form.register(`addOnArray.${index}.quantity` as const, {
-                    valueAsNumber: true,
-                  })}
-                  className="h-9 bg-white"
-                />
-              </div>
-              <div className="w-24 space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Price (₱)
-                </span>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  readOnly // Added readOnly so cashiers can't invent a new price
-                  className="h-9 bg-gray-100 cursor-not-allowed"
-                  {...form.register(`addOnArray.${index}.price` as const, {
-                    valueAsNumber: true,
-                  })}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="h-9"
-                onClick={() => removeAddOn(index)}
-              >
-                X
-              </Button>
-            </div>
-          ))}
+                        const year = snappedDate.getFullYear();
+                        const month = String(snappedDate.getMonth() + 1).padStart(
+                          2,
+                          "0",
+                        );
+                        const day = String(snappedDate.getDate()).padStart(
+                          2,
+                          "0",
+                        );
+                        const hours = String(snappedDate.getHours()).padStart(
+                          2,
+                          "0",
+                        );
+                        const mins = String(
+                          snappedDate.getMinutes(),
+                        ).padStart(2, "0");
+                        field.onChange(
+                          `${year}-${month}-${day}T${hours}:${mins}`,
+                        );
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="distanceKm"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-gray-700">
+                    Distance (KM)
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder={watchedFulfillment === 0 ? "0" : "e.g., 5"}
+                      disabled={watchedFulfillment === 0}
+                      value={field.value === 0 ? "" : field.value ?? ""}
+                      onChange={(e) => {
+                        const km = Math.max(0, parseFloat(e.target.value) || 0);
+                        field.onChange(km);
+                        const calculatedFee = km > 0 ? 50 + 15 * km : 0;
+                        form.setValue("deliveryFee", calculatedFee, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
+                      }}
+                      className="h-9 text-xs disabled:bg-slate-100 disabled:cursor-not-allowed"
+                    />
+                  </FormControl>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    Formula: ₱50 + (₱15 x KM). Override if needed.
+                  </p>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {/* Delivery Address */}
+          <FormField
+            control={form.control}
+            name="address"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs font-semibold text-gray-700">
+                  Delivery Address / Destination
+                </FormLabel>
+                <FormControl>
+                  <textarea
+                    rows={2}
+                    placeholder={
+                      watchedFulfillment === 0
+                        ? "N/A - Customer picking up at store"
+                        : "e.g., 123 General Trias Blvd, Barangay San Francisco, Cavite"
+                    }
+                    disabled={watchedFulfillment === 0}
+                    {...field}
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-slate-100 disabled:opacity-60 resize-none"
+                  />
+                </FormControl>
+                <FormMessage className="text-[11px]" />
+              </FormItem>
+            )}
+          />
+
+          {/* Remarks / Event Notes */}
+          <FormField
+            control={form.control}
+            name="remarks"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs font-semibold text-gray-700">
+                  Remarks / Event Notes (Optional)
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="e.g., Deliver to blue gate, request spicy vinegar, 50th Birthday"
+                    className="h-9 text-xs"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage className="text-[11px]" />
+              </FormItem>
+            )}
+          />
         </div>
 
-        <Button
-          type="submit"
-          className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-          disabled={createOrderMutation.isPending}
-        >
-          {createOrderMutation.isPending
-            ? "Validating & Ingesting..."
-            : "Submit Order Ticket"}
-        </Button>
+        {/* ========================================================= */}
+        {/* Right Column: What & Money Settlement                     */}
+        {/* ========================================================= */}
+        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] bg-slate-50/50 flex flex-col justify-between space-y-4">
+          {/* Top: Unified Order Cart */}
+          <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-xs space-y-3">
+            {/* Category Selector Header */}
+            <div className="flex items-center justify-between border-b pb-3 gap-2 flex-wrap">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                  <ShoppingCart className="w-4 h-4 text-orange-600" />
+                  Unified Order Cart
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  {fields.length} line item{fields.length === 1 ? "" : "s"} selected
+                </p>
+              </div>
+
+              {/* Selector to add Whole Lechon, Belly, or Extras */}
+              <div className="flex items-center gap-2">
+                <select
+                  className="h-8 text-xs font-semibold rounded-md border border-orange-200 bg-orange-50/80 text-orange-950 px-2 py-0 focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer shadow-2xs"
+                  defaultValue=""
+                  disabled={isCategoriesLoading || categories.length === 0}
+                  onChange={(e) => {
+                    const catId = Number(e.target.value);
+                    if (catId) {
+                      handleAddItem(catId);
+                      e.target.value = "";
+                    }
+                  }}
+                >
+                  <option value="" disabled>
+                    {isCategoriesLoading
+                      ? "Loading menu items..."
+                      : "+ Add Item to Order..."}
+                  </option>
+                  {roastCategories.length > 0 && (
+                    <optgroup label="🐷 Whole Lechon & Belly">
+                      {roastCategories.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.minimumWeightKg.toFixed(1)}–
+                          {c.maximumWeightKg.toFixed(1)} kg) — ₱
+                          {c.basePrice?.toLocaleString()}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {addOnCategories.length > 0 && (
+                    <optgroup label="🥣 Add-Ons & Extras">
+                      {addOnCategories.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} — ₱{c.basePrice?.toLocaleString()}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            {/* Added Cart Line Items */}
+            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+              {fields.length === 0 ? (
+                <div className="text-center py-6 border border-dashed rounded-lg bg-slate-50 text-slate-400 text-xs">
+                  Cart is currently empty. Use the selector above to add Lechon or Extras.
+                </div>
+              ) : (
+                fields.map((fieldItem, index) => {
+                  const category = categories.find(
+                    (c: any) => c.id === fieldItem.itemCategoryId,
+                  );
+                  const unitPrice = category?.basePrice ?? 0;
+                  const isRoast = (category?.minimumWeightKg ?? 0) > 0;
+                  const lineTotal = unitPrice * (fieldItem.quantity || 1);
+
+                  return (
+                    <div
+                      key={fieldItem.id}
+                      className="flex items-center justify-between gap-2 p-2.5 rounded-md border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-gray-900 truncate">
+                            {category?.name || `Item #${fieldItem.itemCategoryId}`}
+                          </span>
+                          {isRoast && category ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] h-4 px-1.5 bg-orange-50 text-orange-700 border-orange-200"
+                            >
+                              {category.minimumWeightKg.toFixed(1)}–
+                              {category.maximumWeightKg.toFixed(1)} kg
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] h-4 px-1.5 bg-slate-100 text-slate-600 border-slate-200"
+                            >
+                              Add-on
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          ₱{unitPrice.toLocaleString()} each
+                        </div>
+                      </div>
+
+                      {/* Quantity Stepper */}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-6 w-6 text-slate-600 bg-white"
+                          disabled={fieldItem.quantity <= 1}
+                          onClick={() =>
+                            updateQuantity(index, fieldItem.quantity - 1)
+                          }
+                        >
+                          <Minus className="w-3 h-3" />
+                        </Button>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={fieldItem.quantity}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            updateQuantity(
+                              index,
+                              isNaN(val) ? 1 : Math.max(1, val),
+                            );
+                          }}
+                          className="w-10 h-6 text-center text-xs font-semibold p-0 bg-white"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-6 w-6 text-slate-600 bg-white"
+                          onClick={() =>
+                            updateQuantity(index, fieldItem.quantity + 1)
+                          }
+                        >
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                      </div>
+
+                      {/* Computed Line Total */}
+                      <div className="w-20 text-right font-bold text-gray-900">
+                        ₱{lineTotal.toLocaleString()}
+                      </div>
+
+                      {/* Delete Action Button */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                        onClick={() => remove(index)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Cart Subtotal Footer */}
+            <div className="pt-2 border-t flex items-center justify-between text-xs">
+              <span className="font-semibold text-gray-600">
+                Cart Subtotal (Items):
+              </span>
+              <span className="font-bold text-gray-900 text-sm">
+                ₱{cartSubtotal.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* Bottom: Settlement Ledger & Handover Callout */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3 shadow-2xs">
+            <div className="flex items-center justify-between text-xs font-semibold text-gray-700 pb-2 border-b border-slate-200">
+              <span className="flex items-center gap-1.5">
+                <ReceiptText className="w-3.5 h-3.5 text-slate-500" />
+                Settlement Ledger
+              </span>
+              <span className="text-[11px] text-muted-foreground font-normal">
+                Real-time calculations
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {/* Cart Subtotal */}
+              <div className="flex items-center justify-between text-slate-600">
+                <span>Cart Subtotal</span>
+                <span className="font-semibold text-slate-900">
+                  ₱{cartSubtotal.toLocaleString()}
+                </span>
+              </div>
+              {roastSubtotal > 0 && cartSubtotal > roastSubtotal && (
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pl-2 border-l-2 border-orange-300">
+                  <span>Lechon: ₱{roastSubtotal.toLocaleString()}</span>
+                  <span>Extras: ₱{(cartSubtotal - roastSubtotal).toLocaleString()}</span>
+                </div>
+              )}
+
+              {/* Delivery Fee */}
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-slate-600 flex items-center gap-1">
+                  Delivery Fee
+                  {watchedFulfillment === 0 && (
+                    <span className="text-[10px] text-muted-foreground italic">
+                      (Store Pickup: ₱0)
+                    </span>
+                  )}
+                </span>
+                <div className="w-28">
+                  <Input
+                    type="number"
+                    min={0}
+                    disabled={watchedFulfillment === 0}
+                    value={watchedDeliveryFee ?? 0}
+                    onChange={(e) => {
+                      const fee = Math.max(0, parseFloat(e.target.value) || 0);
+                      form.setValue("deliveryFee", fee, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                    }}
+                    className="h-7 text-right text-xs bg-white disabled:bg-slate-100"
+                  />
+                </div>
+              </div>
+
+              {/* Discount */}
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-slate-600">Discount (₱)</span>
+                <div className="w-28">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={watchedDiscount ?? 0}
+                    onChange={(e) => {
+                      const disc = Math.max(0, parseFloat(e.target.value) || 0);
+                      form.setValue("discount", disc, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                    }}
+                    className="h-7 text-right text-xs bg-white text-red-600 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Grand Total */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 font-bold">
+                <span className="text-slate-900 text-sm">Grand Total</span>
+                <span className="text-base text-emerald-700">
+                  ₱{grandTotal.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Payment & VIP Section */}
+            <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+              <div>
+                <label className="text-[11px] font-semibold text-gray-700 block mb-1">
+                  Downpayment Received (₱)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={watchedDownpayment ?? 0}
+                  onChange={(e) => {
+                    const dp = Math.max(0, parseFloat(e.target.value) || 0);
+                    form.setValue("downpayment", dp, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    });
+                  }}
+                  className="h-8 text-xs bg-white font-medium"
+                  placeholder="0"
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="isTrustedCustomer"
+                render={({ field }) => (
+                  <div className="flex items-center justify-between p-2 rounded-md border border-amber-200 bg-amber-50/60 h-14">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                        👑 VIP Trusted
+                      </span>
+                      <p className="text-[10px] text-amber-700 leading-tight">
+                        Bypass downpayment
+                      </p>
+                    </div>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </div>
+                )}
+              />
+            </div>
+
+            {/* Prominent "Balance Due at Handover" Callout */}
+            <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg flex items-center justify-between gap-3 shadow-2xs">
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-emerald-950 block">
+                  {balanceDue < 0
+                    ? "Refund Due at Handover"
+                    : "Balance Due at Handover"}
+                </span>
+                <div>
+                  {effectiveDownpayment >= grandTotal && grandTotal > 0 ? (
+                    <Badge className="bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] px-2 py-0">
+                      PAID IN FULL
+                    </Badge>
+                  ) : effectiveDownpayment === 0 && watchedIsTrusted ? (
+                    <Badge className="bg-amber-500 text-white hover:bg-amber-600 text-[10px] px-2 py-0">
+                      VIP: PAY ON DELIVERY ALLOWED
+                    </Badge>
+                  ) : effectiveDownpayment === 0 && !watchedIsTrusted ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] px-2 py-0"
+                    >
+                      PENDING PAYMENT
+                    </Badge>
+                  ) : balanceDue < 0 ? (
+                    <Badge className="bg-rose-600 text-white hover:bg-rose-700 text-[10px] px-2 py-0">
+                      OVERPAID / REFUND DUE
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-blue-600 text-white hover:bg-blue-700 text-[10px] px-2 py-0">
+                      PARTIAL DOWNPAYMENT
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span
+                  className={`text-xl font-black font-mono tracking-tight ${
+                    balanceDue < 0 ? "text-rose-600" : "text-emerald-800"
+                  }`}
+                >
+                  ₱{Math.abs(balanceDue).toLocaleString()}
+                </span>
+                {balanceDue < 0 && (
+                  <span className="text-[10px] text-rose-600 font-medium block">
+                    Send refund with rider
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Ergonomic Submission Button */}
+            <Button
+              type="submit"
+              disabled={createOrderMutation.isPending || fields.length === 0}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold h-10 shadow-sm text-xs flex items-center justify-center gap-2 mt-2"
+            >
+              {createOrderMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Validating & Ingesting Order...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  Submit Order Ticket
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </form>
     </Form>
   );

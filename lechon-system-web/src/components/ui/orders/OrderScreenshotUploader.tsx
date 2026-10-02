@@ -105,10 +105,10 @@ export default function OrderScreenshotUploader({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative rounded-lg border-2 border-dashed p-4 text-center transition-all duration-200 ${
+      className={`relative py-2 px-3 border border-dashed rounded-lg text-xs flex items-center justify-between gap-3 transition-colors ${
         isDragging
-          ? "border-orange-500 bg-orange-100/70 scale-[1.01]"
-          : "border-orange-300 hover:border-orange-400 bg-orange-50/50 hover:bg-orange-50/80"
+          ? "border-orange-500 bg-orange-100/70"
+          : "border-amber-300 hover:border-amber-400 bg-amber-50/60 hover:bg-amber-50/90"
       }`}
     >
       <input
@@ -119,50 +119,39 @@ export default function OrderScreenshotUploader({
         onChange={handleFileInputChange}
       />
 
-      {/* Loading Overlay */}
-      {uploadMutation.isPending && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-xs flex flex-col items-center justify-center p-4 z-20 rounded-lg animate-in fade-in duration-200">
-          <Loader2 className="w-7 h-7 text-orange-600 animate-spin mb-2" />
-          <p className="font-semibold text-sm text-gray-900 flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-orange-500 animate-bounce" />
-            Extracting booking details via Gemini...
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Analyzing customer name, contact, menu sizes, timestamps & downpayment
-          </p>
-          <div className="w-44 h-1.5 bg-orange-100 rounded-full mt-3 overflow-hidden">
-            <div className="w-full h-full bg-orange-500 animate-pulse" />
+      {uploadMutation.isPending ? (
+        <div className="flex items-center gap-2 text-orange-700 font-medium py-0.5">
+          <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
+          <span className="flex items-center gap-1.5 text-xs truncate">
+            <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-pulse shrink-0" />
+            Extracting booking details via Gemini Vision...
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <Camera className="w-3.5 h-3.5" />
+          </div>
+          <div className="truncate">
+            <span className="font-semibold text-gray-800">📸 Drop or Paste Screenshot (Ctrl+V)</span>
+            <span className="text-[11px] text-muted-foreground ml-2 hidden sm:inline">
+              Auto-fill slip from Messenger
+            </span>
           </div>
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex flex-col items-center justify-center space-y-2">
-        <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 shadow-xs">
-          <Camera className="w-5 h-5" />
-        </div>
-
-        <div className="space-y-0.5">
-          <h4 className="text-sm font-semibold text-gray-800 flex items-center justify-center gap-1.5">
-            📸 Drag & Drop or Paste Messenger Screenshot (Ctrl + V)
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Instantly auto-populates the booking slip using multimodal vision AI
-          </p>
-        </div>
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploadMutation.isPending}
-          className="text-xs h-7 px-3 border-orange-200 bg-white text-orange-800 hover:bg-orange-100 hover:text-orange-900 mt-1"
-        >
-          <UploadCloud className="w-3.5 h-3.5 mr-1 text-orange-600" />
-          Browse Screenshot
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploadMutation.isPending}
+        className="text-[11px] h-6 px-2.5 border-amber-300 bg-white text-amber-900 hover:bg-amber-100 shrink-0 font-medium shadow-none"
+      >
+        <UploadCloud className="w-3 h-3 mr-1 text-amber-700" />
+        Browse
+      </Button>
     </div>
   );
 }

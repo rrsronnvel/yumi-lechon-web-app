@@ -210,16 +210,14 @@ export default function OrdersPage() {
           <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-orange-600 text-primary-foreground shadow hover:bg-orange-700 h-9 px-4 py-2">
             <Plus className="h-4 w-4" /> New Order
           </DialogTrigger>
-          {/* We use max-w-4xl and overflow-y-auto because your POS form is big! */}
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-full">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold">
-                New POS Entry
-              </DialogTitle>
+          {/* Widescreen POS Terminal Modal Shell */}
+          <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0">
+            <DialogHeader className="sr-only">
+              <DialogTitle>New POS Order Entry</DialogTitle>
             </DialogHeader>
 
-            {/* Your massive form is now safely tucked inside! */}
-            <OrderForm />
+            {/* Two-Column Ergonomic POS Form */}
+            <OrderForm onClose={() => setIsNewOrderOpen(false)} />
           </DialogContent>
         </Dialog>
       </div>
