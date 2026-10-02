@@ -120,17 +120,17 @@ namespace LechonSystem.Api.Services
 
             return await _context.OrderItemSchedules
                 .Include(s => s.OrderItem)
-                    .ThenInclude(oi => oi.ItemCategory)
+                    .ThenInclude(oi => oi!.ItemCategory)
                 .Include(s => s.OrderItem)
-                    .ThenInclude(oi => oi.Order)
+                    .ThenInclude(oi => oi!.Order)
                 .Where(s => s.TahiStartTime.Date == tomorrow)
                 .Select(s => new DefrostRosterDto
                 {
                     Id = s.OrderItemId,
-                    WeightCategory = s.OrderItem.ItemCategory.Name,
+                    WeightCategory = s.OrderItem!.ItemCategory!.Name,
                     Quantity = s.OrderItem.Quantity,
                     TahiStartTime = s.TahiStartTime,
-                    CustomerName = s.OrderItem.Order.CustomerName,
+                    CustomerName = s.OrderItem.Order!.CustomerName,
                     TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
                     IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
 
@@ -150,14 +150,14 @@ namespace LechonSystem.Api.Services
      .Include(o => o.OrderItems)
          .ThenInclude(oi => oi.ItemCategory)
      .Where(o => !o.IsCancelled && !o.IsPriceWaived && o.TargetDeliveryTime >= DateTime.UtcNow)
-     .Where(o => o.OrderItems.Any(item => item.Price < item.ItemCategory.BasePrice && item.ItemCategory.MinimumWeightKg > 0))
+     .Where(o => o.OrderItems.Any(item => item.Price < item.ItemCategory!.BasePrice && item.ItemCategory.MinimumWeightKg > 0))
      .Select(o => new RenegotiationTaskDto
      {
          OrderId = o.Id,
          CustomerName = o.CustomerName,
          TargetDeliveryTime = o.TargetDeliveryTime,
          // 3. Calculate exactly how much money is missing across all items in this order
-         PriceGap = o.OrderItems.Sum(item => item.ItemCategory.BasePrice - item.Price)
+         PriceGap = o.OrderItems.Sum(item => item.ItemCategory!.BasePrice - item.Price)
      })
                  .AsNoTracking() // Read-optimized!
                  .ToListAsync();

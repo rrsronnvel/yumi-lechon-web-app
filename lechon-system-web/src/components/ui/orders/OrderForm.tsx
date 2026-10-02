@@ -5,9 +5,10 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { OrderFormData, orderFormSchema } from "@/schemas/orderSchema";
+import { OrderFormData, orderFormSchema, ParsedOrderDraftDto } from "@/schemas/orderSchema";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import OrderScreenshotUploader from "./OrderScreenshotUploader";
 
 import {
   Form,
@@ -75,7 +76,7 @@ export default function OrderForm() {
   const fulfillmentType = form.watch("fulfillmentType");
 
   // Array 1: The Main Lechon Items
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     name: "items",
     control: form.control,
   });
@@ -205,6 +206,130 @@ export default function OrderForm() {
     createOrderMutation.mutate(payload);
   }
 
+  const handleScreenshotParsed = (draft: ParsedOrderDraftDto) => {
+    // 1. Customer Details
+    if (draft.customerName) {
+      form.setValue("customerName", draft.customerName, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (draft.contactNumber) {
+      form.setValue("customerPhone", draft.contactNumber, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+
+    // 2. Format Target Delivery Time to YYYY-MM-DDTHH:mm
+    if (draft.targetDeliveryTime) {
+      const d = new Date(draft.targetDeliveryTime);
+      if (!isNaN(d.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const formatted = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        form.setValue("targetDeliveryTime", formatted, {
+          shouldValidate: true,
+          shouldDirty: true,
+        });
+      }
+    }
+
+    // 3. Fulfillment & Address
+    const fulfillmentVal =
+      draft.fulfillment !== undefined && draft.fulfillment !== null
+        ? String(draft.fulfillment)
+        : "1";
+    form.setValue("fulfillmentType", fulfillmentVal, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    if (draft.deliveryAddress !== undefined) {
+      form.setValue("address", draft.deliveryAddress || "", {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+
+    // 4. Remarks
+    if (draft.remarks !== undefined) {
+      form.setValue("remarks", draft.remarks || "", {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+
+    // 5. Fees & Downpayment
+    const parsedFee = draft.fulfillment === 0 ? 0 : (draft.deliveryFee ?? 0);
+    form.setValue("deliveryFee", parsedFee, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    const parsedDownpayment = draft.downpayment ?? 0;
+    form.setValue("downpayment", parsedDownpayment, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    // 6. Items array
+    if (draft.items && draft.items.length > 0) {
+      const mappedItems = draft.items.map((i) => ({
+        itemCategoryId: i.itemCategoryId,
+        quantity: i.quantity || 1,
+      }));
+      replace(mappedItems);
+      form.setValue("items", mappedItems, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+
+    // 7. Explicit price recalculation trigger
+    const activeCartItems =
+      draft.items && draft.items.length > 0
+        ? draft.items
+        : form.getValues("items") || [];
+
+    let computedBasePrice = 0;
+    activeCartItems.forEach((cartItem: any) => {
+      const categoryId = Number(cartItem?.itemCategoryId);
+      const qty = Number(cartItem?.quantity) || 1;
+      const dbCat = categories.find((c: any) => c.id === categoryId);
+      if (dbCat) {
+        computedBasePrice += dbCat.basePrice * qty;
+      }
+    });
+
+    const currentDiscount = Number(form.getValues("discount")) || 0;
+    const addOnsTotal = (form.getValues("addOnArray") || []).reduce(
+      (sum: number, item: any) => sum + (Number(item?.price) || 0),
+      0,
+    );
+    const computedGrandTotal =
+      computedBasePrice + addOnsTotal + parsedFee - currentDiscount;
+
+    form.setValue("price", computedBasePrice, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    form.setValue("grandTotal", computedGrandTotal, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    // 8. Human-in-the-Loop Confirmation Toast
+    toast.success("Order details extracted. Please review before saving.", {
+      description: "Parsed fields populated into the intake terminal. Verify data before saving.",
+    });
+  };
+
+  const handleScreenshotError = (errorMsg: string) => {
+    toast.error("Screenshot Parsing Failed", {
+      description: errorMsg || "Could not extract booking details from screenshot.",
+    });
+  };
+
   // 6. RENDER THE UI
   return (
     <Form {...form}>
@@ -220,6 +345,12 @@ export default function OrderForm() {
             Input Facebook Messenger payloads or walk-in tickets directly.
           </p>
         </div>
+
+        {/* 📸 Messenger Screenshot Parser Bridge */}
+        <OrderScreenshotUploader
+          onParsed={handleScreenshotParsed}
+          onError={handleScreenshotError}
+        />
 
         <FormField
           control={form.control}

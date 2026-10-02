@@ -10,12 +10,34 @@ namespace LechonSystem.Api.Controllers
     [ApiController]
     public class OrdersController : ControllerBase
     {
-        // Step 4: Inject the Interface (IOrderService) instead of the Class
         private readonly IOrderService _orderService;
+        private readonly IAiIntakeParserService _aiParserService;
 
-        public OrdersController(IOrderService orderService)
+        public OrdersController(IOrderService orderService, IAiIntakeParserService aiParserService)
         {
             _orderService = orderService;
+            _aiParserService = aiParserService;
+        }
+
+        [HttpPost("parse-screenshot")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ParseScreenshot([FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { Message = "No screenshot file was provided." });
+
+            if (!file.ContentType.StartsWith("image/"))
+                return BadRequest(new { Message = "Uploaded file must be a valid image." });
+
+            try
+            {
+                var draft = await _aiParserService.ParseScreenshotAsync(file);
+                return Ok(draft);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "Failed to parse booking screenshot.", Details = ex.Message });
+            }
         }
 
         [HttpPost]

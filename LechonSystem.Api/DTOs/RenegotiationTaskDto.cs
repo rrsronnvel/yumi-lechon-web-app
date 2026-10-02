@@ -1,7 +1,7 @@
 public class RenegotiationTaskDto
 {
     public int OrderId { get; set; }
-    public string CustomerName { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
     public DateTime TargetDeliveryTime { get; set; }
     
     // We can just calculate the total gap so the admin knows exactly how much they are losing

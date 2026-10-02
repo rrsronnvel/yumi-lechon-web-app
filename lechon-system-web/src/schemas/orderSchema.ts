@@ -37,3 +37,20 @@ export const orderFormSchema = z.object({
 
 // Export the inferred TypeScript interface (The Blueprint)
 export type OrderFormData = z.infer<typeof orderFormSchema>;
+
+export interface ParsedOrderItemDto {
+  itemCategoryId: number;
+  quantity: number;
+}
+
+export interface ParsedOrderDraftDto {
+  customerName: string;
+  contactNumber: string;
+  targetDeliveryTime?: string | null;
+  fulfillment: number; // 0 = Pickup, 1 = Delivery
+  deliveryAddress?: string | null;
+  remarks?: string | null;
+  deliveryFee?: number | null;
+  downpayment?: number | null;
+  items: ParsedOrderItemDto[];
+}

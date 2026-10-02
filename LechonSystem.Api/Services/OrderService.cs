@@ -23,7 +23,7 @@ namespace LechonSystem.Api.Services
         Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
         Task UpdateOrderAsync(int id, UpdateOrderDto request);
 
-        Task<Order> GetOrderByIdAsync(int orderId);
+        Task<Order?> GetOrderByIdAsync(int orderId);
 
         Task<bool> ApplyNewMenuPricesAsync(int orderId);
         Task<bool> WaivePriceHikeAsync(int orderId);
@@ -421,7 +421,7 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
         }
 
-        public async Task<Order> GetOrderByIdAsync(int orderId)
+        public async Task<Order?> GetOrderByIdAsync(int orderId)
         {
             var order = await _context.Orders
                 .Include(o => o.OrderItems)

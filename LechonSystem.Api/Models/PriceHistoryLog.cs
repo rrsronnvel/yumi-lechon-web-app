@@ -14,7 +14,7 @@ namespace LechonSystem.Api.Models
         
         // Navigation property mapping back to the exact Lechon category
         [ForeignKey("ItemCategoryId")]
-        public ItemCategory ItemCategory { get; set; }
+        public ItemCategory? ItemCategory { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
