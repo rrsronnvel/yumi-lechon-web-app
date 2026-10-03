@@ -194,10 +194,24 @@ Stock availability calculations are decoupled into physical presence and sellabl
 - Low Stock (Yellow/Orange): 0 <= Available Stock <= MinimumSafetyStock.
 - Deficit (Red / Destructive): Available Stock < 0 (Overbooked beyond physical inventory)
 
-#### 8.3 Administrative Ledger Adjustments
+#### 8.3 Freezer-Gate Intake & Purchase Order Fulfillment Governance
+To respect real-world physical constraints—where farm personnel communicate via voice calls/SMS rather than software interfaces—inventory tracking begins strictly at the "Freezer Gate" when clean, dressed carcasses are placed into the storage chest freezers.
 
-- Clerical Safeguards: Manual ledger inputs strictly prohibit raw integer Category IDs. The interface enforces descriptive selection using dynamic catalog names and weight ranges.
-- Mandatory Audit Trails: All manual entries require a validated movement type (StockIn, StockOut, Adjustment) and an auditable reason string (minimum 5 characters) to track shrinkage, spoilage, or unlogged farm intakes.
+- Physical-to-Digital Handshake (Zero Farm Tech Dependency):
+  - Live pen animals and unslaughtered livestock are excluded from the database ledger. The farm pen acts as an external physical buffer.
+  - Software intake occurs when the farm worker or supplier delivers dressed carcasses to the store freezers and reports the counts (via call/SMS/receipt) to the store owner or cashier.
+- Dual Operational Intake Paths:
+  1. PO Fulfillment Mode (Linked Restock):
+     - The operator selects an open, submitted Purchase Order (PO) generated from low-stock procurement alerts.
+     - The modal pre-populates expected sizes and quantities. The operator verifies the physical count and adjusts for any discrepancies (e.g., supplier delivered 8 Mediums instead of 10, or carcasses re-graded to Small).
+     - Committing the intake transitions the Purchase Order status to `Fulfilled` (or `PartiallyFulfilled`), updates physical balances, and archives the PO from the active shopping list.
+  2. Ad-Hoc / Emergency Farm Intake (Direct Restock):
+     - For emergency batches or direct farm butchery without a prior PO, operators log direct carcass additions by selecting weight categories and entering quantities.
+     - Does not require a pre-existing PO record, allowing immediate physical restocks without administrative overhead.
+- Atomic Ledger & Balance Synchronization:
+  - Every intake transaction writes batch immutable `StockIn` rows into `InventoryTransactions`.
+  - Stamped Metadata: Captures Category ID, Head Count, Transaction Type (`StockIn`), Reference Type (`PO` or `DirectIntake`), Supplier DR/Invoice Number, and Operational Notes (e.g., butcher name, carcass observations).
+  - Immediate Dual-Stock Recalculation: Physical On-Hand stock increments immediately. Sellable Available Stock recalculates (\(\text{Available} = \text{Physical} - \text{Locked 14d}\)), which immediately recalculates or clears low-stock alerts on both the Procurement Tab and the Command Center Dashboard.
 
 ### 9. Daily Manifest & Granular Cash Reconciliation
 

@@ -1,5 +1,12 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Utensils, ClipboardList, Truck } from "lucide-react";
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Truck,
+  FileSpreadsheet,
+  Boxes,
+  Settings,
+} from "lucide-react";
 
 export default function Sidebar() {
   const location = useLocation();
@@ -7,11 +14,10 @@ export default function Sidebar() {
   const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Orders", href: "/orders", icon: ClipboardList },
-    { name: "Kitchen", href: "/kitchen", icon: Utensils },
     { name: "Logistics", href: "/logistics", icon: Truck },
-    { name: "Inventory", href: "/inventory", icon: ClipboardList },
-    { name: "Manifest", href: "/manifest", icon: ClipboardList },
-    { name: "Analytics", href: "/analytics", icon: LayoutDashboard },
+    { name: "Manifest", href: "/manifest", icon: FileSpreadsheet },
+    { name: "Inventory", href: "/inventory", icon: Boxes },
+    { name: "Settings", href: "/cms", icon: Settings },
   ];
 
   return (
@@ -25,7 +31,11 @@ export default function Sidebar() {
 
       <nav className="flex-1 p-4 space-y-1">
         {navigation.map((item) => {
-          const isActive = location.pathname === item.href;
+          const isActive =
+            item.href === "/"
+              ? location.pathname === "/"
+              : location.pathname.startsWith(item.href) ||
+                (item.href === "/cms" && location.pathname.startsWith("/settings"));
           const Icon = item.icon;
 
           return (

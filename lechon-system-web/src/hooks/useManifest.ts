@@ -11,6 +11,9 @@ export interface PendingSettlementDrop {
   totalCollected: number;
   riderDeliveryFee: number;
   netRemittance: number;
+  createdAt?: string;
+  targetDeliveryTime?: string;
+  dispatchTime?: string | null;
 }
 
 export type PaymentMethodType = "Cash" | "GCash" | "ManualGCash";

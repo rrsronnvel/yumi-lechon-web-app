@@ -36,7 +36,17 @@ import {
   Minus,
 } from "lucide-react";
 
-export default function OrderForm({ onClose }: { onClose?: () => void }) {
+export interface OrderFormProps {
+  onClose?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export default function OrderForm({
+  onClose,
+  open: _open,
+  onOpenChange,
+}: OrderFormProps) {
   const queryClient = useQueryClient();
 
   // 1. Fetch live inventory categories using shared CMS hook
@@ -184,6 +194,7 @@ export default function OrderForm({ onClose }: { onClose?: () => void }) {
       });
       form.reset();
       onClose?.();
+      onOpenChange?.(false);
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders", "directory"] }),

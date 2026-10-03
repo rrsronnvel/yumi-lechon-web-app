@@ -23,9 +23,12 @@ export default function App() {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="manifest" element={<ManifestPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="cms" element={<CmsPage />} />
+          <Route path="settings" element={<CmsPage />} />
         </Route>
         <Route path="/daily-sheets" element={<DailySheetsPage />} />
         <Route path="/settings" element={<CmsPage />} />
+        <Route path="/cms" element={<CmsPage />} />
       </Routes>
 
       {/* 🔌 We 'plug in' the Toaster here so it hovers over all pages! */}
