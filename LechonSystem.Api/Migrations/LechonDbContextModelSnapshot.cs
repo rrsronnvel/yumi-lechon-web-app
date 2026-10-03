@@ -576,6 +576,9 @@ namespace LechonSystem.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ItemCategoryId")
+                        .IsUnique();
+
                     b.ToTable("ProductCookingProfiles");
 
                     b.HasData(
@@ -783,6 +786,15 @@ namespace LechonSystem.Api.Migrations
                     b.Navigation("ItemCategory");
                 });
 
+            modelBuilder.Entity("LechonSystem.Api.Models.ProductCookingProfile", b =>
+                {
+                    b.HasOne("LechonSystem.Api.Models.ItemCategory", null)
+                        .WithOne("ProductCookingProfile")
+                        .HasForeignKey("LechonSystem.Api.Models.ProductCookingProfile", "ItemCategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LechonSystem.Api.Models.PurchaseOrderItem", b =>
                 {
                     b.HasOne("LechonSystem.Api.Models.ItemCategory", "ItemCategory")
@@ -805,6 +817,11 @@ namespace LechonSystem.Api.Migrations
             modelBuilder.Entity("LechonSystem.Api.Models.DeliveryTrip", b =>
                 {
                     b.Navigation("Orders");
+                });
+
+            modelBuilder.Entity("LechonSystem.Api.Models.ItemCategory", b =>
+                {
+                    b.Navigation("ProductCookingProfile");
                 });
 
             modelBuilder.Entity("LechonSystem.Api.Models.Order", b =>

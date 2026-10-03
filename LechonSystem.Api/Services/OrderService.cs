@@ -78,18 +78,24 @@ namespace LechonSystem.Api.Services
                 GrandTotal = request.GrandTotal
             };
 
+            var categoryIds = request.Items.Select(i => i.ItemCategoryId).Distinct().ToList();
+            var categories = await _context.ItemCategories
+                .Where(c => categoryIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c);
+
             foreach (var itemDto in request.Items)
             {
-                // 🚀 THE SNAPSHOT FIX: We actively look up the live CMS price at checkout
-                // and lock it into the database so it never saves as 0 again!
-                var category = await _context.ItemCategories.FindAsync(itemDto.ItemCategoryId);
-                var lockedPrice = (category?.BasePrice ?? 0) * itemDto.Quantity;
+                if (!categories.TryGetValue(itemDto.ItemCategoryId, out var category))
+                {
+                    throw new InvalidOperationException($"Category with ID {itemDto.ItemCategoryId} not found.");
+                }
 
                 var orderItem = new OrderItem
                 {
                     ItemCategoryId = itemDto.ItemCategoryId,
                     Quantity = itemDto.Quantity,
-                    TotalPrice = lockedPrice
+                    Price = category.BasePrice,
+                    TotalPrice = category.BasePrice * itemDto.Quantity
                 };
                 order.OrderItems.Add(orderItem);
             }
@@ -331,6 +337,7 @@ namespace LechonSystem.Api.Services
                         existingItem.Quantity = requestedItem.Quantity;
 
                         // 🚀 THE FIX: Update the snapshot price!
+                        existingItem.Price = newCat?.BasePrice ?? 0;
                         existingItem.TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity;
                     }
                 }
@@ -349,6 +356,7 @@ namespace LechonSystem.Api.Services
                         ItemCategoryId = requestedItem.ItemCategoryId,
                         Quantity = requestedItem.Quantity,
                         // 🚀 THE FIX: Lock the price snapshot for newly added items so it doesn't save as 0!
+                        Price = newCat?.BasePrice ?? 0,
                         TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity
                     };
                     order.OrderItems.Add(newItem);
@@ -459,9 +467,7 @@ namespace LechonSystem.Api.Services
 
                     // Update the item's individual receipt to the new higher price
                     item.TotalPrice = newLiveTotal; 
-                    
-                    // Note: If your OrderItem model also has a 'Price' property, uncomment the line below:
-                    // item.Price = newLivePrice;
+                    item.Price = newLivePrice;
                 }
             }
 

@@ -56,6 +56,23 @@ builder.Services.AddOpenApi();
 var app = builder.Build(); 
 
 // ==========================================
+// STARTUP DATA REPAIR: Backfill 0.00 OrderItem prices
+// ==========================================
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<LechonDbContext>();
+    await context.Database.ExecuteSqlRawAsync(@"
+        UPDATE oi
+        SET oi.Price = ic.BasePrice,
+            oi.TotalPrice = ic.BasePrice * oi.Quantity
+        FROM OrderItems oi
+        INNER JOIN ItemCategories ic ON oi.ItemCategoryId = ic.Id
+        INNER JOIN Orders o ON oi.OrderId = o.Id
+        WHERE oi.Price = 0 AND o.IsCancelled = 0 AND o.TargetDeliveryTime >= CAST(GETDATE() AS DATE);
+    ");
+}
+
+// ==========================================
 // PHASE 2: THE REQUEST PIPELINE (MIDDLEWARE)
 // All 'app.Use...' statements stay down here!
 // ==========================================

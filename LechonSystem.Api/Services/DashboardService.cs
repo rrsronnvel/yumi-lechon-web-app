@@ -145,22 +145,29 @@ namespace LechonSystem.Api.Services
 
         public async Task<List<RenegotiationTaskDto>> GetRenegotiationTasksAsync()
         {
-            // 1. Scan the database for upcoming, active orders
-            return await _context.Orders
-     .Include(o => o.OrderItems)
-         .ThenInclude(oi => oi.ItemCategory)
-     .Where(o => !o.IsCancelled && !o.IsPriceWaived && o.TargetDeliveryTime >= DateTime.UtcNow)
-     .Where(o => o.OrderItems.Any(item => item.Price < item.ItemCategory!.BasePrice && item.ItemCategory.MinimumWeightKg > 0))
-     .Select(o => new RenegotiationTaskDto
-     {
-         OrderId = o.Id,
-         CustomerName = o.CustomerName,
-         TargetDeliveryTime = o.TargetDeliveryTime,
-         // 3. Calculate exactly how much money is missing across all items in this order
-         PriceGap = o.OrderItems.Sum(item => item.ItemCategory!.BasePrice - item.Price)
-     })
-                 .AsNoTracking() // Read-optimized!
-                 .ToListAsync();
+            return await _context.OrderItems
+                .Where(item => 
+                    !item.Order!.IsCancelled &&
+                    !item.Order.IsPriceWaived &&
+                    item.Order.TargetDeliveryTime >= DateTime.Today &&
+                    item.ItemCategory!.MinimumWeightKg > 0 &&
+                    item.Price > 0 &&
+                    item.Price < item.ItemCategory.BasePrice)
+                .GroupBy(item => new
+                {
+                    item.OrderId,
+                    CustomerName = item.Order!.CustomerName,
+                    TargetDeliveryTime = item.Order.TargetDeliveryTime
+                })
+                .Select(g => new RenegotiationTaskDto
+                {
+                    OrderId = g.Key.OrderId,
+                    CustomerName = g.Key.CustomerName,
+                    TargetDeliveryTime = g.Key.TargetDeliveryTime,
+                    PriceGap = g.Sum(item => item.ItemCategory!.BasePrice - item.Price)
+                })
+                .AsNoTracking()
+                .ToListAsync();
         }
     }
 }
