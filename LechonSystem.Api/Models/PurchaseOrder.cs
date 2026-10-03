@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LechonSystem.Api.Models
 {
@@ -27,5 +28,12 @@ namespace LechonSystem.Api.Models
 
         // Navigation property for the line items
         public List<PurchaseOrderItem> OrderItems { get; set; } = new();
+
+        [NotMapped]
+        public List<PurchaseOrderItem> Items
+        {
+            get => OrderItems;
+            set => OrderItems = value;
+        }
     }
 }

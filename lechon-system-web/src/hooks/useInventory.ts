@@ -127,3 +127,77 @@ export const useInventoryLedger = () => {
     },
   });
 };
+
+// 6. Freezer-Gate Stock Intake & Purchase Order Fulfillment
+export interface ReceiveStockItemPayload {
+  itemCategoryId: number;
+  quantity: number;
+}
+
+export interface ReceiveStockPayload {
+  purchaseOrderId?: number | null;
+  supplierDrNumber?: string;
+  notes?: string;
+  items: ReceiveStockItemPayload[];
+}
+
+export interface ReceiveStockResponse {
+  success: boolean;
+  message: string;
+  fulfilledPoId?: number | null;
+  totalCarcassesReceived: number;
+}
+
+export interface PurchaseOrderItem {
+  id: number;
+  purchaseOrderId?: number;
+  itemCategoryId: number;
+  itemCategory?: {
+    id: number;
+    name: string;
+    minimumWeightKg: number;
+    maximumWeightKg: number;
+  };
+  quantityRequested: number;
+  requestedQuantity?: number;
+}
+
+export interface PurchaseOrder {
+  id: number;
+  supplierName: string;
+  orderDate: string;
+  expectedFulfillmentDate: string;
+  status: "Draft" | "Submitted" | "Fulfilled" | string;
+  method: "SupplierDelivery" | "StaffPickup" | string;
+  orderItems?: PurchaseOrderItem[];
+  items?: PurchaseOrderItem[];
+}
+
+export const usePendingPurchaseOrders = () => {
+  return useQuery<PurchaseOrder[]>({
+    queryKey: ['procurement', 'pending-orders'],
+    queryFn: async () => {
+      const response = await apiClient.get('/procurement/pending-orders');
+      return response.data;
+    },
+  });
+};
+
+export const useReceiveStockMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: ReceiveStockPayload): Promise<ReceiveStockResponse> => {
+      const response = await apiClient.post('/inventory/receive', payload);
+      return response.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["procurement", "alerts"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    },
+  });
+};

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.Models;
+using LechonSystem.Api.DTOs;
 
 namespace LechonSystem.Api.Controllers;
 
@@ -83,6 +84,28 @@ public class InventoryController : ControllerBase
     {
         var balances = await _inventoryService.GetLiveBalancesAsync();
         return Ok(balances);
+    }
+
+    [HttpPost("receive")]
+    public async Task<ActionResult<ReceiveStockResponseDto>> ReceiveStock([FromBody] ReceiveStockRequest request)
+    {
+        try
+        {
+            var result = await _inventoryService.ReceiveStockAsync(request);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { Message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { Message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Message = "Failed to process stock intake.", Details = ex.Message });
+        }
     }
 } // End of InventoryController
 

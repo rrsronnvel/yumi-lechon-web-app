@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace LechonSystem.Api.Models
 {
     public class PurchaseOrderItem : BaseEntity
@@ -10,5 +12,12 @@ namespace LechonSystem.Api.Models
         public ItemCategory ItemCategory { get; set; } = null!;
 
         public int QuantityRequested { get; set; }
+
+        [NotMapped]
+        public int RequestedQuantity
+        {
+            get => QuantityRequested;
+            set => QuantityRequested = value;
+        }
     }
 }

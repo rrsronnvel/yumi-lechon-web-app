@@ -9,6 +9,7 @@ import {
   type InventoryTransaction,
 } from "../hooks/useInventory";
 import { useMenuCategories } from "../hooks/useCms";
+import ReceiveStockModal from "@/components/ui/inventory/ReceiveStockModal";
 import {
   Table,
   TableBody,
@@ -76,6 +77,7 @@ export default function InventoryPage() {
 
   // 2. Local State & Form Validation
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
 
   const form = useForm<AdjustmentFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,6 +158,14 @@ export default function InventoryPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* FREEZER-GATE INTAKE */}
+          <Button
+            onClick={() => setIsReceiveModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+          >
+            + Log Freezer Intake
+          </Button>
+
           {/* THE OVERRIDE SWITCH (MODAL) */}
           <Button variant="outline" onClick={() => setIsModalOpen(true)}>
             Manual Adjustment
@@ -303,6 +313,12 @@ export default function InventoryPage() {
               </form>
             </DialogContent>
           </Dialog>
+
+          {/* FREEZER-GATE INTAKE MODAL */}
+          <ReceiveStockModal
+            open={isReceiveModalOpen}
+            onOpenChange={setIsReceiveModalOpen}
+          />
         </div>
       </div>
 

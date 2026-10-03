@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LechonSystem.Api.Models
 {
@@ -11,6 +12,13 @@ namespace LechonSystem.Api.Models
         public ItemCategory? ItemCategory { get; set; }
         public int Quantity { get; set; }
         public TransactionType Type { get; set; }
+
+        [NotMapped]
+        public TransactionType TransactionType
+        {
+            get => Type;
+            set => Type = value;
+        }
         
         // This links the transaction to a specific Order ID or Supplier Delivery ID
         public int? ReferenceId { get; set; } 

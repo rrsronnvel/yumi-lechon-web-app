@@ -8,23 +8,6 @@ using LechonSystem.Api.DTOs;
 
 namespace LechonSystem.Api.Services
 {
-    public interface IInventoryService
-    {
-        Task ReleaseReservationAsync(int orderId);
-        Task CreatePendingReservationAsync(int orderId, int itemCategoryId, DateTime reservationDate, bool isTrustedCustomer, decimal downpayment);
-
-        // ADDED: reason parameter
-        Task LogTransactionAsync(int itemCategoryId, int quantity, TransactionType type, int? referenceId = null, string? reason = null);
-
-        Task<int> GetAvailableStockAsync(int itemCategoryId, DateTime date);
-
-        // NEW: Fetch the entire ledger history
-        Task<List<LechonSystem.Api.DTOs.InventoryTransactionDto>> GetTransactionLedgerAsync();
-
-        Task<IEnumerable<InventoryBalanceDto>> GetInventoryBalancesAsync();
-        Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync();
-    }
-
     public class InventoryService : IInventoryService
     {
         private readonly LechonDbContext _context;
@@ -230,6 +213,92 @@ namespace LechonSystem.Api.Services
         public async Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync()
         {
             return await GetInventoryBalancesAsync();
+        }
+
+        public async Task<ReceiveStockResponseDto> ReceiveStockAsync(ReceiveStockRequest request)
+        {
+            if (request == null)
+            {
+                throw new ArgumentException("Request payload cannot be null.");
+            }
+
+            if (request.Items == null || !request.Items.Any())
+            {
+                throw new ArgumentException("At least one stock item must be received.");
+            }
+
+            if (request.Items.Any(i => i.Quantity <= 0))
+            {
+                throw new ArgumentException("All received items must have a quantity greater than zero.");
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            int? fulfilledPoId = null;
+            if (request.PurchaseOrderId.HasValue && request.PurchaseOrderId.Value > 0)
+            {
+                var po = await _context.PurchaseOrders
+                    .Include(p => p.OrderItems)
+                    .FirstOrDefaultAsync(p => p.Id == request.PurchaseOrderId.Value);
+
+                if (po == null)
+                {
+                    throw new KeyNotFoundException($"Purchase Order #{request.PurchaseOrderId.Value} was not found.");
+                }
+
+                po.Status = POStatus.Fulfilled;
+                po.UpdatedAt = DateTime.UtcNow;
+                fulfilledPoId = po.Id;
+            }
+
+            var categoryIds = request.Items.Select(i => i.ItemCategoryId).Distinct().ToList();
+            var existingCategoryIds = await _context.ItemCategories
+                .Where(c => categoryIds.Contains(c.Id))
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            foreach (var catId in categoryIds)
+            {
+                if (!existingCategoryIds.Contains(catId))
+                {
+                    throw new KeyNotFoundException($"Item category #{catId} was not found.");
+                }
+            }
+
+            var drPart = !string.IsNullOrWhiteSpace(request.SupplierDrNumber) ? $"DR: {request.SupplierDrNumber.Trim()}" : "No DR";
+            var notesPart = !string.IsNullOrWhiteSpace(request.Notes) ? $" | Notes: {request.Notes.Trim()}" : "";
+            var reason = fulfilledPoId.HasValue
+                ? $"[Freezer Intake via PO #{fulfilledPoId.Value}] {drPart}{notesPart}"
+                : $"[Direct Freezer Intake] {drPart}{notesPart}";
+
+            int totalCarcassesReceived = 0;
+
+            foreach (var item in request.Items)
+            {
+                var ledgerEntry = new InventoryTransaction
+                {
+                    ItemCategoryId = item.ItemCategoryId,
+                    Quantity = item.Quantity,
+                    Type = TransactionType.StockIn,
+                    TransactionDate = DateTime.UtcNow,
+                    Reason = reason,
+                    ReferenceId = fulfilledPoId
+                };
+
+                _context.InventoryTransactions.Add(ledgerEntry);
+                totalCarcassesReceived += item.Quantity;
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return new ReceiveStockResponseDto
+            {
+                Success = true,
+                Message = $"Successfully received {totalCarcassesReceived} carcass{(totalCarcassesReceived == 1 ? "" : "es")} into freezer stock.",
+                FulfilledPoId = fulfilledPoId,
+                TotalCarcassesReceived = totalCarcassesReceived
+            };
         }
     }
 }

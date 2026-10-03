@@ -131,6 +131,17 @@ The business relies on a trusted pool of experienced, outsourced freelance motor
 - Tab 1: Kitchen View: Sorted by Tahi Time / Priority. Hides money data.
 - Tab 2: Rider View: Sorted chronologically by Delivery Time. Hides cooking data. Shows exact cash splits.
 
+#### 5.3 Freelance Rider Directory & Customer Communication Bridge
+
+- Lightweight Rider Registry:
+  - To eliminate phone number typos and repetitive typing during dispatch planning, the system maintains a lightweight directory of approved freelance riders (Name, Phone Number, Active Status).
+  - The Dispatch Planner provides a searchable combobox allowing instant selection of regular riders (auto-hydrating their mobile number) while preserving an ad-hoc text entry fallback for emergency first-time riders.
+- 1-Click Messenger Communication Bridge:
+  - Cashiers are provided 1-click clipboard triggers generating polite, standardized Taglish messages formatted for immediate pasting into Facebook Messenger chats:
+    - Booking Confirmation: Dispatched upon order creation, summarizing items, fulfillment method, downpayment received, and net balance due (omitting bank/GCash details).
+    - Delivery Verification: Dispatched 1-2 days prior to cooking, requesting customer confirmation ("para masalang po namin ng tama").
+    - Dispatch Notification: Dispatched upon departure, dynamically tailored to freelance rider details (including driver phone number), Lalamove handover, or store pickup availability.
+
 ### 6. Financial Math & Cash Split Rules
 
 - Price Snapshotting: Orders permanently lock in the base price of the item at the exact moment of checkout, ensuring historical records are tamper-proof even if menu prices rise.
@@ -194,24 +205,20 @@ Stock availability calculations are decoupled into physical presence and sellabl
 - Low Stock (Yellow/Orange): 0 <= Available Stock <= MinimumSafetyStock.
 - Deficit (Red / Destructive): Available Stock < 0 (Overbooked beyond physical inventory)
 
-#### 8.3 Freezer-Gate Intake & Purchase Order Fulfillment Governance
-To respect real-world physical constraints—where farm personnel communicate via voice calls/SMS rather than software interfaces—inventory tracking begins strictly at the "Freezer Gate" when clean, dressed carcasses are placed into the storage chest freezers.
+#### 8.3 Direct Freezer-Gate Stock Intake Governance
 
-- Physical-to-Digital Handshake (Zero Farm Tech Dependency):
-  - Live pen animals and unslaughtered livestock are excluded from the database ledger. The farm pen acts as an external physical buffer.
-  - Software intake occurs when the farm worker or supplier delivers dressed carcasses to the store freezers and reports the counts (via call/SMS/receipt) to the store owner or cashier.
-- Dual Operational Intake Paths:
-  1. PO Fulfillment Mode (Linked Restock):
-     - The operator selects an open, submitted Purchase Order (PO) generated from low-stock procurement alerts.
-     - The modal pre-populates expected sizes and quantities. The operator verifies the physical count and adjusts for any discrepancies (e.g., supplier delivered 8 Mediums instead of 10, or carcasses re-graded to Small).
-     - Committing the intake transitions the Purchase Order status to `Fulfilled` (or `PartiallyFulfilled`), updates physical balances, and archives the PO from the active shopping list.
-  2. Ad-Hoc / Emergency Farm Intake (Direct Restock):
-     - For emergency batches or direct farm butchery without a prior PO, operators log direct carcass additions by selecting weight categories and entering quantities.
-     - Does not require a pre-existing PO record, allowing immediate physical restocks without administrative overhead.
-- Atomic Ledger & Balance Synchronization:
-  - Every intake transaction writes batch immutable `StockIn` rows into `InventoryTransactions`.
-  - Stamped Metadata: Captures Category ID, Head Count, Transaction Type (`StockIn`), Reference Type (`PO` or `DirectIntake`), Supplier DR/Invoice Number, and Operational Notes (e.g., butcher name, carcass observations).
-  - Immediate Dual-Stock Recalculation: Physical On-Hand stock increments immediately. Sellable Available Stock recalculates (\(\text{Available} = \text{Physical} - \text{Locked 14d}\)), which immediately recalculates or clears low-stock alerts on both the Procurement Tab and the Command Center Dashboard.
+To eliminate unnecessary administrative overhead and match real-world voice/SMS supplier communication, freezer inventory replenishment operates strictly through direct intake at the "Freezer Gate."
+
+- Single Unified Intake Pathway:
+  - Multi-stage PO status tracking (Draft -> Submitted -> Fulfilled) is retired from the physical receiving loop. The system does not require pre-existing digital PO records to accept stock into the freezers.
+  - The Procurement tab functions strictly as a low-stock calculator and Messenger order text generator, decoupled from physical stock ingestion.
+- The Freezer-Gate Ingestion Terminal:
+  - Operators record stock arrivals directly via a streamlined single-view modal on the Inventory page upon physical delivery to the chest freezers.
+  - The interface allows immediate selection of active meat weight categories, increment/decrement steppers, Supplier DR/Invoice number tracking, and operational notes (e.g., butcher name, carcass grading).
+- Audit Ledger & Real-Time Recalculation:
+  - Every intake writes batch immutable `StockIn` records to `InventoryTransactions`.
+  - Stamped Reason format: `[Direct Freezer Intake] DR: {drNumber} | Notes: {notes}`.
+  - Submitting immediately increments Physical Stock on-hand, recalculates Available Stock (Physical - 14d Locked), and clears low-stock procurement warning badges across the dashboard and inventory scoreboards.
 
 ### 9. Daily Manifest & Granular Cash Reconciliation
 
