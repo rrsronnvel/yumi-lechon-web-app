@@ -19,11 +19,13 @@ namespace LechonSystem.Api.Models
         public DateTime TahiStartTime { get; set; }
 
 
+        public bool IsManualOverride { get; set; } = false;
+
         // --- NEW: Live Execution Tracking Timestamps ---
-    public ProductionStatus CurrentStatus { get; set; } = ProductionStatus.Defrosting;
-    public DateTime? ActualPreppingStartTime { get; set; }
-    public DateTime? ActualSalangTime { get; set; }
-    public DateTime? ActualPackagingTime { get; set; }
-    public DateTime? ActualReadyForDeliveryTime { get; set; }
+        public ProductionStatus CurrentStatus { get; set; } = ProductionStatus.Defrosting;
+        public DateTime? ActualPreppingStartTime { get; set; }
+        public DateTime? ActualSalangTime { get; set; }
+        public DateTime? ActualPackagingTime { get; set; }
+        public DateTime? ActualReadyForDeliveryTime { get; set; }
     }
 }

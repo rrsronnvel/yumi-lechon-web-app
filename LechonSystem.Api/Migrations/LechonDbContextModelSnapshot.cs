@@ -438,6 +438,9 @@ namespace LechonSystem.Api.Migrations
                     b.Property<int>("CurrentStatus")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsManualOverride")
+                        .HasColumnType("bit");
+
                     b.Property<int>("OrderItemId")
                         .HasColumnType("int");
 
