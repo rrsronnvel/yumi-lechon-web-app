@@ -71,9 +71,13 @@ namespace LechonSystem.Api.Services
                     remarks = s.OrderItem!.Order!.Remarks,
                     addOns = s.OrderItem!.Order!.AddOns ?? "-",
 
-                    // Financials for Rider View
+                    // Financials & Fulfillment for Rider View
                     price = s.OrderItem.Order.Price,
                     deliveryFee = s.OrderItem.Order.DeliveryFee,
+                    downpayment = s.OrderItem.Order.Downpayment,
+                    grandTotal = s.OrderItem.Order.GrandTotal,
+                    fulfillment = (int)s.OrderItem.Order.Fulfillment,
+                    quantity = s.OrderItem.Quantity,
 
                     // Safely map Rider Name
                     riderName = s.OrderItem.Order.DeliveryTrip != null

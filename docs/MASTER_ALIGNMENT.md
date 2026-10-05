@@ -66,6 +66,27 @@ To prevent cashier fatigue and eliminate layout shift during rapid phone or Mess
 
 - The register prominently displays the live calculated "Balance Due at Handover":
 
+#### 2.6 Tri-Modal Fulfillment & Address Retention Governance
+
+The POS and Logistics engines enforce strict boundary rules across three distinct fulfillment modes while preserving customer location data across all channels:
+
+1. Delivery Routing (Fulfillment = 1):
+   - Standard road freight managed by the store's outsourced freelance motorcycle fleet.
+   - Address is mandatory; distance calculation and editable delivery fee inputs are active.
+   - Generates cash remittance and delivery fee payout rows on the Daily Manifest.
+
+2. Walk-in Store Pickup (Fulfillment = 0):
+   - Customer collects the roast directly from the store counter.
+   - Address Retention Rule: The Delivery Address field remains fully enabled and editable. Staff capture customer addresses during intake to populate customer dossiers and support last-minute conversions from pickup to delivery.
+   - Fee Safeguards: Distance (KM) and Delivery Fee are strictly forced to 0 and locked to ₱0 to prevent accidental freight overcharges on store pickup tickets.
+   - Excluded from road dispatch planning and driver manifest reconciliations.
+
+3. Third-Party Courier / Lalamove (Fulfillment = 2):
+   - Delivery arranged via on-demand third-party delivery apps where freight costs are shouldered directly by the customer.
+   - Delivery address remains open and mandatory for dispatch coordination.
+   - Distance and Delivery Fee inputs are strictly forced to 0 and locked to ₱0 (preventing erroneous delivery fees from appearing on the store receipt).
+   - Excluded from freelance driver batch dispatch and manifest cash remittance workflows.
+
 ### 3. Dashboard Triggers & Exception Handling
 
 The "Zero-Inbox" Dashboard acts as a dynamic Command Center, programmed with a Time-Sensitive Trigger Engine to prevent screen clutter.
@@ -241,6 +262,30 @@ The Daily Manifest functions as the end-of-day financial reconciliation engine t
 - Rider GCash Remittance: Rider collected payment and transferred the remittance to the store's GCash account electronically.
 
 - Real-Time Settlement Ripple: Settling a row creates a permanent PaymentLog, clears that delivery row from the Manifest table, and dynamically decrements the pending amount on the Dashboard's Pending Remittance Tracker.
+
+#### 9.1 Tri-Tab Manifest & Daily Settlement Architecture
+The Manifest is elevated from a driver-only cash sheet into the centralized "Daily Handover & Cash Reconciliation Center," organizing end-of-day store income across three distinct fulfillment streams:
+
+1. Tab 1: Freelance Rider Remittance (Active Existing View)
+   - Scope: Outsourced freelance motorcycle delivery trips (Fulfillment = 1).
+   - Financial Math: Gross Door Collection minus Rider Delivery Fee = Net Store Remittance.
+   - Settlement Channels: Categorized into Physical Cash, Direct Store GCash, or Rider GCash Transfer.
+
+2. Tab 2: Walk-in Store Pickup Handovers (Counter Settlement)
+   - Scope: Customers picking up orders directly from the store counter (Fulfillment = 0).
+   - Financial Math: 100% of the remaining balance goes directly into the store register or store GCash (Rider Delivery Fee = ₱0).
+   - Time-Blind Ledger Retention ("The Notebook Rule"): Unsettled store pickups remain permanently locked on this tab until the owner digitally reconciles them. If staff collect physical cash during the day and record it on a physical paper ledger/notebook, the order remains visible as "Pending Drawer Remittance" until the owner counts the envelope, compares it against the paper notes, and clicks [Settle Payment].
+   - Visual Badges: Clearly distinguishes between [🟢 PAID IN FULL — Handover Complete] and [⚠️ UNPAID BALANCE: ₱X,XXX — Collect at Counter].
+
+3. Tab 3: Lalamove Pre-Release Gate (Anti-Loss Courier Verification)
+   - Scope: Orders fulfilled via customer-booked third-party courier apps (Fulfillment = 2).
+   - Pre-Release Protection: Third-party drivers transport goods but do not collect lechon payments. This tab acts as a physical security gate preventing kitchen staff from releasing an ₱8,000+ roast to an app courier without verified full payment.
+   - Status Guard: Highlights [🛑 HOLD: PENDING PAYMENT] versus [🟢 CLEAR TO RELEASE TO COURIER].
+   - Courier Handoff Action: Allows staff to log final online payment proof and click [Confirm Dispatch], officially closing the ticket without creating driver remittance obligations.
+
+#### 9.2 Financial Audit & Zero-Leakage Governance
+- Time-Blind State Retention: Orders with an unsettled balance (\(\text{GrandTotal} - \text{Downpayment} > 0\)) never expire, auto-archive, or vanish from settlement queues based on the clock. They persist indefinitely across days until a digital payment log is recorded.
+- Overnight Overdue Radar: Any unremitted orders from past calendar dates automatically escalate on the Command Center Dashboard's Floating Remittance Radar in high-contrast amber/red, prompting the owner to reconcile physical drawer envelopes and staff notebooks immediately upon morning login.
 
 ### 10. Content Management System (CMS), Pricing & Catalog Governance
 

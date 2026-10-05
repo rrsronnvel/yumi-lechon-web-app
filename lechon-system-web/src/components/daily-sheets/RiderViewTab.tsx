@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useRoastingRoster, RoastingScheduleItem } from "@/hooks/useSchedules";
+import { useRidersQuery } from "@/hooks/useRiders";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
-import { Pencil } from "lucide-react";
+import { Pencil, Copy } from "lucide-react";
+import { toast } from "sonner";
+import {
+  generateDispatchNotification,
+  TemplateOrderData,
+} from "@/utils/messengerTemplates";
 
 interface RiderViewTabProps {
   mode?: "edit" | "clean";
@@ -58,6 +64,56 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
   };
 
   const isEdit = mode === "edit";
+  const { data: registeredRiders = [] } = useRidersQuery();
+
+  const handleCopyDispatch = (item: RoastingScheduleItem) => {
+    const matchedRider = registeredRiders.find(
+      (r) => r.fullName.toLowerCase() === item.riderName?.trim().toLowerCase()
+    );
+
+    const price = Number(item.price) || 0;
+    const addOns = Number(item.addOns) || 0;
+    const deliveryFee = Number(item.deliveryFee) || 0;
+    const lechonFee =
+      item.lechonFee !== undefined && item.lechonFee !== null
+        ? Number(item.lechonFee)
+        : price + addOns;
+    const amountToCollect = lechonFee + deliveryFee;
+
+    const orderData: TemplateOrderData = {
+      orderNumber: item.orderId || item.id,
+      customerName: item.customerName || "Customer",
+      targetDeliveryTime: item.targetDeliveryTime,
+      fulfillment: item.fulfillment ?? 1,
+      deliveryAddress: item.location || "",
+      items: [
+        {
+          categoryName: item.size || "Lechon",
+          quantity: item.quantity || 1,
+        },
+      ],
+      subtotal: price,
+      deliveryFee: deliveryFee,
+      grandTotal: item.grandTotal ?? (price + addOns + deliveryFee),
+      downpayment: Number(item.downpayment) || 0,
+      balanceDue: amountToCollect,
+      remarks: item.remarks,
+    };
+
+    const alertText = generateDispatchNotification(orderData, {
+      name: item.riderName || "Freelance Courier",
+      phone: matchedRider?.phoneNumber,
+    });
+
+    navigator.clipboard.writeText(alertText);
+    const alertType =
+      item.fulfillment === 0
+        ? "Pickup alert"
+        : item.fulfillment === 2
+        ? "Lalamove alert"
+        : "Dispatch alert";
+    toast.success(`${alertType} copied for Messenger!`);
+  };
 
   // Financial summary calculations
   const totalAmountToCollect = sortedByDelivery.reduce((acc, item) => {
@@ -173,18 +229,40 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                     className={`px-1.5 py-2 text-center text-[11px] font-bold border-r border-slate-300 ${editableCellClass}`}
                     title={isEdit ? "Click to assign or change rider" : undefined}
                   >
-                    <div className="flex items-center justify-center gap-1">
-                      <span
-                        className={
-                          item.riderName && item.riderName !== "Unassigned"
-                            ? "text-blue-700 font-bold"
-                            : "text-slate-400 italic font-normal"
-                        }
-                      >
-                        {item.riderName || "Unassigned"}
-                      </span>
-                      {isEdit && (
-                        <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
+                    <div className="flex flex-col items-center justify-center gap-0.5">
+                      <div className="flex items-center justify-center gap-1">
+                        <span
+                          className={
+                            item.riderName && item.riderName !== "Unassigned"
+                              ? "text-blue-700 font-bold"
+                              : "text-slate-400 italic font-normal"
+                          }
+                        >
+                          {item.riderName || "Unassigned"}
+                        </span>
+                        {isEdit && (
+                          <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
+                        )}
+                      </div>
+                      {((item.riderName && item.riderName !== "Unassigned") || item.fulfillment === 0 || item.fulfillment === 2) && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-[9px] font-semibold print:hidden shadow-2xs transition-colors mt-0.5"
+                          title="Copy Messenger Alert"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyDispatch(item);
+                          }}
+                        >
+                          <Copy className="w-2.5 h-2.5" />
+                          <span>
+                            {item.fulfillment === 0
+                              ? "Pickup Alert"
+                              : item.fulfillment === 2
+                              ? "Lalamove Alert"
+                              : "Dispatch Alert"}
+                          </span>
+                        </button>
                       )}
                     </div>
                   </td>

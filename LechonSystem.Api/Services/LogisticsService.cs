@@ -73,12 +73,10 @@ namespace LechonSystem.Api.Services
             // Defensive validation check for production completeness
             foreach (var order in ordersToAssign)
             {
-                if (order.Fulfillment == FulfillmentType.Pickup)
+                if (order.Fulfillment != FulfillmentType.Delivery)
                 {
-                    throw new InvalidOperationException($"Order #{order.Id} is a Pickup order and cannot be assigned to a delivery trip.");
+                    throw new InvalidOperationException($"Order #{order.Id} is a {order.Fulfillment} order and cannot be assigned to a delivery trip.");
                 }
-
-
             }
 
             // If all checks pass, create the clipboard trip record
@@ -150,6 +148,7 @@ namespace LechonSystem.Api.Services
             return await _context.Orders
                 .Include(o => o.DeliveryTrip)
                 .Where(o => o.DeliveryTripId != null
+                         && o.Fulfillment == FulfillmentType.Delivery
                          && !o.IsCancelled
                          && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0) // 👈 True Settlement Filter
                 .OrderByDescending(o => o.CreatedAt)

@@ -26,6 +26,8 @@ public class LechonDbContext : DbContext
     public DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
     public DbSet<PriceHistoryLog> PriceHistoryLogs { get; set; }
     public DbSet<OrderAuditLog> OrderAuditLogs { get; set; }
+    public DbSet<Rider> Riders => Set<Rider>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -47,6 +49,13 @@ public class LechonDbContext : DbContext
             new ProductCookingProfile { Id = 2, ItemCategoryId = 2, Name = "Medium Profile", Description = "Medium whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 180, PackagingDurationMinutes = 30, CreatedAt = seedDate },
             new ProductCookingProfile { Id = 3, ItemCategoryId = 3, Name = "Large Profile", Description = "Large whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 240, PackagingDurationMinutes = 30, CreatedAt = seedDate },
             new ProductCookingProfile { Id = 4, ItemCategoryId = 4, Name = "Belly Profile", Description = "Standard belly duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 90, PackagingDurationMinutes = 15, CreatedAt = seedDate }
+        );
+
+        // 3. Seed Regular Freelance Riders
+        modelBuilder.Entity<Rider>().HasData(
+            new Rider { Id = 1, FullName = "Kuya Berto", PhoneNumber = "09171234567", IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 2, FullName = "Kuya Jun", PhoneNumber = "09182345678", IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 3, FullName = "Kuya AL", PhoneNumber = "09193456789", IsActive = true, CreatedAt = seedDate }
         );
 
         modelBuilder.Entity<PaymentLog>()

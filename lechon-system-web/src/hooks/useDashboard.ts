@@ -20,6 +20,7 @@ export interface DeliveryVerificationDto {
 
 export interface DefrostRosterDto {
   id: number;
+  orderId?: number;
   weightCategory: string;
   quantity: number;
   tahiStartTime: string;
@@ -28,6 +29,10 @@ export interface DefrostRosterDto {
   targetDeliveryTime: string;
   isTrustedCustomer: boolean;
   deliveryAddress: string;
+  fulfillment?: number;
+  grandTotal?: number;
+  downpayment?: number;
+  balanceDue?: number;
 }
 
 // 2. Hook #1: The Downpayment Chase List

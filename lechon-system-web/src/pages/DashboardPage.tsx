@@ -54,7 +54,11 @@ import {
 } from "@/components/ui/dialog";
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import OrderForm from "@/components/ui/orders/OrderForm";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, Copy } from "lucide-react";
+import {
+  generateVerificationReminder,
+  TemplateOrderData,
+} from "@/utils/messengerTemplates";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -655,6 +659,7 @@ export default function DashboardPage() {
                       <TableHead className="font-bold text-slate-800">Prep (Tahi) Deadline</TableHead>
                       <TableHead className="font-bold text-slate-800">Target Delivery</TableHead>
                       <TableHead className="text-right font-bold text-slate-800">Status</TableHead>
+                      <TableHead className="w-[50px] text-center font-bold text-slate-800"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -731,6 +736,45 @@ export default function DashboardPage() {
                                 NORMAL
                               </Badge>
                             )}
+                          </TableCell>
+                          <TableCell
+                            className="text-center p-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                              title="Copy 1-Day Verification for Messenger"
+                              onClick={() => {
+                                const orderData: TemplateOrderData = {
+                                  orderNumber: item.orderId || item.id,
+                                  customerName: item.customerName,
+                                  targetDeliveryTime: item.targetDeliveryTime,
+                                  fulfillment: item.fulfillment ?? 1,
+                                  deliveryAddress: item.deliveryAddress,
+                                  items: [
+                                    {
+                                      categoryName: item.weightCategory,
+                                      quantity: item.quantity,
+                                    },
+                                  ],
+                                  subtotal: item.grandTotal ?? 0,
+                                  deliveryFee: 0,
+                                  grandTotal: item.grandTotal ?? 0,
+                                  downpayment: item.downpayment ?? 0,
+                                  balanceDue: item.balanceDue ?? 0,
+                                };
+                                navigator.clipboard.writeText(
+                                  generateVerificationReminder(orderData)
+                                );
+                                toast.success(
+                                  "Verification reminder copied for Messenger!"
+                                );
+                              }}
+                            >
+                              <Copy className="w-4 h-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );

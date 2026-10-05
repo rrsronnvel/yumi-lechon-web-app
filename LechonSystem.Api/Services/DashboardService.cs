@@ -31,6 +31,7 @@ namespace LechonSystem.Api.Services
     public class DefrostRosterDto
     {
         public int Id { get; set; }
+        public int OrderId { get; set; }
         public string WeightCategory { get; set; } = string.Empty;
         public int Quantity { get; set; }
         public DateTime TahiStartTime { get; set; }
@@ -40,6 +41,10 @@ namespace LechonSystem.Api.Services
         public DateTime TargetDeliveryTime { get; set; }
         public bool IsTrustedCustomer { get; set; }
         public string DeliveryAddress { get; set; } = string.Empty;
+        public int Fulfillment { get; set; }
+        public decimal GrandTotal { get; set; }
+        public decimal Downpayment { get; set; }
+        public decimal BalanceDue { get; set; }
     }
 
     // 2. THE INTERFACE
@@ -127,17 +132,18 @@ namespace LechonSystem.Api.Services
                 .Select(s => new DefrostRosterDto
                 {
                     Id = s.OrderItemId,
+                    OrderId = s.OrderItem!.OrderId,
                     WeightCategory = s.OrderItem!.ItemCategory!.Name,
                     Quantity = s.OrderItem.Quantity,
                     TahiStartTime = s.TahiStartTime,
                     CustomerName = s.OrderItem.Order!.CustomerName,
                     TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
                     IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
-
-
-                    DeliveryAddress = ((int)s.OrderItem.Order.Fulfillment) == 1
-                                      ? s.OrderItem.Order.DeliveryAddress
-                                      : "Store Pickup"
+                    Fulfillment = (int)s.OrderItem.Order.Fulfillment,
+                    DeliveryAddress = s.OrderItem.Order.DeliveryAddress ?? string.Empty,
+                    GrandTotal = s.OrderItem.Order.GrandTotal,
+                    Downpayment = s.OrderItem.Order.Downpayment,
+                    BalanceDue = s.OrderItem.Order.GrandTotal - s.OrderItem.Order.Downpayment
                 })
                 .ToListAsync();
         }

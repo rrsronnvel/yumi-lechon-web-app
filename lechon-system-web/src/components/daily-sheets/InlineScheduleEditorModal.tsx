@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useOverrideScheduleMutation, RoastingScheduleItem } from "@/hooks/useSchedules";
-import { Clock, User, MapPin, Package, FileText, Calendar } from "lucide-react";
+import { useRidersQuery, useCreateRiderMutation } from "@/hooks/useRiders";
+import { Clock, User, MapPin, Package, FileText, Calendar, Phone } from "lucide-react";
 
 import axios from "axios";
 
@@ -70,10 +71,14 @@ export function InlineScheduleEditorModal({
   open,
   onOpenChange,
 }: InlineScheduleEditorModalProps) {
+  const { data: registeredRiders = [] } = useRidersQuery();
+  const createRiderMutation = useCreateRiderMutation();
+
   const [tahiTime, setTahiTime] = useState("");
   const [salangTime, setSalangTime] = useState("");
   const [packagingTime, setPackagingTime] = useState("");
   const [riderName, setRiderName] = useState("");
+  const [riderPhone, setRiderPhone] = useState("");
   const [remarks, setRemarks] = useState("");
 
   const overrideMutation = useOverrideScheduleMutation();
@@ -83,10 +88,18 @@ export function InlineScheduleEditorModal({
       setTahiTime(formatToHHMM(item.tahiStartTime));
       setSalangTime(formatToHHMM(item.salangStartTime));
       setPackagingTime(formatToHHMM(item.packagingStartTime));
-      setRiderName(item.riderName && item.riderName !== "Unassigned" ? item.riderName : "");
+      const currentRider =
+        item.riderName && item.riderName !== "Unassigned" ? item.riderName : "";
+      setRiderName(currentRider);
+
+      // Auto-fill phone from registry or item
+      const matched = registeredRiders.find(
+        (r) => r.fullName.toLowerCase() === currentRider.trim().toLowerCase()
+      );
+      setRiderPhone(matched ? matched.phoneNumber : item.riderPhone || "");
       setRemarks(item.remarks || "");
     }
-  }, [item, open]);
+  }, [item, open, registeredRiders]);
 
   if (!item) return null;
 
@@ -106,11 +119,34 @@ export function InlineScheduleEditorModal({
         remarks: remarks.trim() || undefined,
       });
 
-      toast.success(`Schedule overridden for ${item.customerName || `Order #${item.orderId || item.id}`}`);
+      // Auto-save new ad-hoc rider to registry if phone and name are provided
+      const cleanName = riderName.trim();
+      const cleanPhone = riderPhone.trim();
+      if (cleanName && cleanPhone && cleanName !== "Unassigned") {
+        const alreadyRegistered = registeredRiders.some(
+          (r) => r.fullName.toLowerCase() === cleanName.toLowerCase()
+        );
+        if (!alreadyRegistered) {
+          try {
+            await createRiderMutation.mutateAsync({
+              fullName: cleanName,
+              phoneNumber: cleanPhone,
+            });
+          } catch {
+            // Ignore registry save error if duplicate
+          }
+        }
+      }
+
+      toast.success(
+        `Schedule overridden for ${item.customerName || `Order #${item.orderId || item.id}`}`
+      );
       onOpenChange(false);
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        toast.error(err.response?.data?.message || "Failed to update schedule override.");
+        toast.error(
+          err.response?.data?.message || "Failed to update schedule override."
+        );
       } else {
         toast.error("Failed to update schedule override.");
       }
@@ -210,17 +246,75 @@ export function InlineScheduleEditorModal({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="riderName" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-              <User className="w-3.5 h-3.5" /> Assigned Rider Name
-            </Label>
-            <Input
-              id="riderName"
-              type="text"
-              placeholder="e.g., Kuya Boy, John Doe"
-              value={riderName}
-              onChange={(e) => setRiderName(e.target.value)}
-            />
+          {/* Rider Selection & Ad-Hoc Entry */}
+          <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                <User className="w-3.5 h-3.5" /> Assigned Rider
+              </Label>
+              <span className="text-[10px] text-muted-foreground">
+                Select registered rider or enter ad-hoc
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <select
+                className="w-full h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                value={
+                  registeredRiders.find(
+                    (r) => r.fullName.toLowerCase() === riderName.trim().toLowerCase()
+                  )?.id || ""
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) {
+                    return;
+                  }
+                  const selected = registeredRiders.find((r) => r.id === Number(val));
+                  if (selected) {
+                    setRiderName(selected.fullName);
+                    setRiderPhone(selected.phoneNumber);
+                  }
+                }}
+              >
+                <option value="">-- Select from Rider Registry --</option>
+                {registeredRiders.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.fullName} ({r.phoneNumber})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="space-y-1">
+                <Label htmlFor="riderName" className="text-[11px] font-medium text-slate-600">
+                  Rider Name
+                </Label>
+                <Input
+                  id="riderName"
+                  type="text"
+                  placeholder="e.g., Kuya Boy"
+                  value={riderName}
+                  onChange={(e) => setRiderName(e.target.value)}
+                  className="h-8 text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="riderPhone" className="text-[11px] font-medium text-slate-600 flex items-center gap-1">
+                  <Phone className="w-3 h-3" /> Contact Phone
+                </Label>
+                <Input
+                  id="riderPhone"
+                  type="text"
+                  placeholder="e.g., 09171234567"
+                  value={riderPhone}
+                  onChange={(e) => setRiderPhone(e.target.value)}
+                  className="h-8 text-xs font-mono bg-white"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-1.5">

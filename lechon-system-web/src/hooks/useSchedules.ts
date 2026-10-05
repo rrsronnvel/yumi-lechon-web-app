@@ -19,6 +19,10 @@ export interface RoastingScheduleItem {
   price?: number;
   deliveryFee?: number;
   lechonFee?: number;
+  downpayment?: number;
+  grandTotal?: number;
+  fulfillment?: number;
+  quantity?: number;
   riderName?: string;
   status?: string;
   isManualOverride?: boolean;

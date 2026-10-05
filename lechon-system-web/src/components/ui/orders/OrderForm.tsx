@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,10 +10,22 @@ import {
   orderFormSchema,
   ParsedOrderDraftDto,
 } from "@/schemas/orderSchema";
+import {
+  generateBookingConfirmation,
+  TemplateOrderData,
+} from "@/utils/messengerTemplates";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import OrderScreenshotUploader from "./OrderScreenshotUploader";
 
 import {
@@ -34,6 +46,7 @@ import {
   Trash2,
   Plus,
   Minus,
+  Copy,
 } from "lucide-react";
 
 export interface OrderFormProps {
@@ -48,6 +61,9 @@ export default function OrderForm({
   onOpenChange,
 }: OrderFormProps) {
   const queryClient = useQueryClient();
+  const [savedOrderForModal, setSavedOrderForModal] =
+    useState<TemplateOrderData | null>(null);
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
 
   // 1. Fetch live inventory categories using shared CMS hook
   const { data: categories = [], isLoading: isCategoriesLoading } =
@@ -105,9 +121,9 @@ export default function OrderForm({
   const watchedDownpayment = form.watch("downpayment");
   const watchedIsTrusted = form.watch("isTrustedCustomer");
 
-  // 3. Interactive Store Pickup Safeguards
+  // 3. Interactive Store Pickup & Lalamove Safeguards
   useEffect(() => {
-    if (watchedFulfillment === 0) {
+    if (watchedFulfillment === 0 || watchedFulfillment === 2) {
       form.setValue("deliveryFee", 0, { shouldValidate: true });
       form.setValue("distanceKm", 0, { shouldValidate: true });
     }
@@ -146,7 +162,9 @@ export default function OrderForm({
   }, [watchedItems, categories]);
 
   const effectiveDeliveryFee =
-    watchedFulfillment === 0 ? 0 : Number(watchedDeliveryFee) || 0;
+    watchedFulfillment === 0 || watchedFulfillment === 2
+      ? 0
+      : Number(watchedDeliveryFee) || 0;
   const effectiveDiscount = Number(watchedDiscount) || 0;
   const effectiveDownpayment = Number(watchedDownpayment) || 0;
 
@@ -188,14 +206,7 @@ export default function OrderForm({
       const response = await apiClient.post("/orders", payload);
       return response.data;
     },
-    onSuccess: async () => {
-      toast.success("Order Created Successfully!", {
-        description: "The order slip is now live on your dashboard roster.",
-      });
-      form.reset();
-      onClose?.();
-      onOpenChange?.(false);
-
+    onSuccess: async (savedOrder: any, variables: any) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders", "directory"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
@@ -204,6 +215,34 @@ export default function OrderForm({
         queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory"] }),
       ]);
+
+      const templateItems = (variables.items || []).map((item: any) => {
+        const cat = categories.find((c: any) => c.id === item.itemCategoryId);
+        return {
+          categoryName: cat?.name || `Item #${item.itemCategoryId}`,
+          quantity: item.quantity,
+        };
+      });
+
+      const templateOrder: TemplateOrderData = {
+        orderNumber: savedOrder?.id || savedOrder?.Id,
+        customerName: variables.customerName,
+        targetDeliveryTime: variables.targetDeliveryTime,
+        fulfillment: Number(variables.fulfillment),
+        deliveryAddress: variables.deliveryAddress || variables.address,
+        items: templateItems,
+        subtotal: variables.price || cartSubtotal,
+        deliveryFee: variables.deliveryFee || 0,
+        grandTotal: variables.grandTotal || grandTotal,
+        downpayment: variables.downpayment || 0,
+        balanceDue:
+          (variables.grandTotal || grandTotal) -
+          (variables.downpayment || 0),
+        remarks: variables.remarks,
+      };
+
+      setSavedOrderForModal(templateOrder);
+      setIsSuccessModalOpen(true);
     },
     onError: (err: any) => {
       const msg =
@@ -240,7 +279,10 @@ export default function OrderForm({
       };
     });
 
-    const delivery = data.fulfillment === 0 ? 0 : Number(data.deliveryFee) || 0;
+    const delivery =
+      data.fulfillment === 0 || data.fulfillment === 2
+        ? 0
+        : Number(data.deliveryFee) || 0;
     const discount = Number(data.discount) || 0;
     const computedGrandTotal = Math.max(
       0,
@@ -254,13 +296,11 @@ export default function OrderForm({
       targetDeliveryTime: data.targetDeliveryTime,
       fulfillment: Number(data.fulfillment),
       address:
-        data.fulfillment === 0
-          ? "Store Pickup"
-          : data.address || "Store Pickup",
+        data.address?.trim() ||
+        (data.fulfillment === 0 ? "Store Pickup" : ""),
       deliveryAddress:
-        data.fulfillment === 0
-          ? "Store Pickup"
-          : data.address || "Store Pickup",
+        data.address?.trim() ||
+        (data.fulfillment === 0 ? "Store Pickup" : ""),
       remarks: data.remarks || "",
       price:
         roastSubtotal > 0
@@ -330,7 +370,9 @@ export default function OrderForm({
     }
 
     const parsedFee =
-      fulfillmentVal === 0 ? 0 : Number(draft.deliveryFee) || 0;
+      fulfillmentVal === 0 || fulfillmentVal === 2
+        ? 0
+        : Number(draft.deliveryFee) || 0;
     form.setValue("deliveryFee", parsedFee, {
       shouldValidate: true,
       shouldDirty: true,
@@ -449,18 +491,24 @@ export default function OrderForm({
                     }}
                     className="w-full"
                   >
-                    <TabsList className="grid w-full grid-cols-2 h-9 p-0.5 bg-slate-100">
+                    <TabsList className="grid w-full grid-cols-3 h-9 p-0.5 bg-slate-100">
                       <TabsTrigger
                         value="1"
                         className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
                       >
-                        🚗 Delivery Routing
+                        🚗 Freelance Delivery
                       </TabsTrigger>
                       <TabsTrigger
                         value="0"
                         className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
                       >
-                        🏪 Walk-in Store Pickup
+                        🏪 Store Pickup
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="2"
+                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
+                      >
+                        📦 Lalamove Courier
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
@@ -480,6 +528,8 @@ export default function OrderForm({
                   <FormLabel className="text-xs font-semibold text-gray-700">
                     {watchedFulfillment === 0
                       ? "Target Pickup Time"
+                      : watchedFulfillment === 2
+                      ? "Target Courier Pickup Time"
                       : "Target Delivery Time"}
                   </FormLabel>
                   <FormControl>
@@ -538,8 +588,14 @@ export default function OrderForm({
                     <Input
                       type="number"
                       step="0.1"
-                      placeholder={watchedFulfillment === 0 ? "0" : "e.g., 5"}
-                      disabled={watchedFulfillment === 0}
+                      placeholder={
+                        watchedFulfillment === 0 || watchedFulfillment === 2
+                          ? "0"
+                          : "e.g., 5"
+                      }
+                      disabled={
+                        watchedFulfillment === 0 || watchedFulfillment === 2
+                      }
                       value={field.value === 0 ? "" : field.value ?? ""}
                       onChange={(e) => {
                         const km = Math.max(0, parseFloat(e.target.value) || 0);
@@ -554,7 +610,9 @@ export default function OrderForm({
                     />
                   </FormControl>
                   <p className="text-[10px] text-muted-foreground leading-tight">
-                    Formula: ₱50 + (₱15 x KM). Override if needed.
+                    {watchedFulfillment === 1
+                      ? "Formula: ₱50 + (₱15 x KM). Override if needed."
+                      : "N/A for Store Pickup & Lalamove."}
                   </p>
                   <FormMessage className="text-[11px]" />
                 </FormItem>
@@ -569,19 +627,22 @@ export default function OrderForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs font-semibold text-gray-700">
-                  Delivery Address / Destination
+                  {watchedFulfillment === 0
+                    ? "Customer Address / Landmark (For records)"
+                    : watchedFulfillment === 2
+                    ? "Drop-off Address (Lalamove Courier)"
+                    : "Delivery Address / Destination"}
                 </FormLabel>
                 <FormControl>
                   <textarea
                     rows={2}
                     placeholder={
                       watchedFulfillment === 0
-                        ? "N/A - Customer picking up at store"
-                        : "e.g., 123 General Trias Blvd, Barangay San Francisco, Cavite"
+                        ? "Customer Address / Landmark (For records)"
+                        : "House/Unit, Street, Barangay, City / Landmark"
                     }
-                    disabled={watchedFulfillment === 0}
                     {...field}
-                    className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-slate-100 disabled:opacity-60 resize-none"
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                   />
                 </FormControl>
                 <FormMessage className="text-[11px]" />
@@ -827,12 +888,19 @@ export default function OrderForm({
                       (Store Pickup: ₱0)
                     </span>
                   )}
+                  {watchedFulfillment === 2 && (
+                    <span className="text-[10px] text-muted-foreground italic">
+                      (Lalamove Courier: ₱0)
+                    </span>
+                  )}
                 </span>
                 <div className="w-28">
                   <Input
                     type="number"
                     min={0}
-                    disabled={watchedFulfillment === 0}
+                    disabled={
+                      watchedFulfillment === 0 || watchedFulfillment === 2
+                    }
                     value={watchedDeliveryFee ?? 0}
                     onChange={(e) => {
                       const fee = Math.max(0, parseFloat(e.target.value) || 0);
@@ -992,6 +1060,101 @@ export default function OrderForm({
           </div>
         </div>
       </form>
+
+      {/* Post-Submission Confirmation Modal */}
+      <Dialog
+        open={isSuccessModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsSuccessModalOpen(false);
+            setSavedOrderForModal(null);
+            form.reset();
+            onClose?.();
+            onOpenChange?.(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <DialogTitle>Order Ingested Successfully!</DialogTitle>
+            </div>
+            <DialogDescription>
+              Order #{savedOrderForModal?.orderNumber || "NEW"} has been recorded into the live roster.
+            </DialogDescription>
+          </DialogHeader>
+
+          {savedOrderForModal && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                <div>
+                  <span className="font-bold text-slate-900 text-sm">
+                    {savedOrderForModal.customerName}
+                  </span>
+                  <div className="text-muted-foreground text-[11px]">
+                    {savedOrderForModal.fulfillment === 0
+                      ? "🏪 Walk-in Store Pickup"
+                      : savedOrderForModal.fulfillment === 2
+                      ? "📦 Lalamove Courier (Customer Paid)"
+                      : "🚗 Freelance Delivery"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="font-mono font-bold text-emerald-700 text-sm">
+                    ₱{savedOrderForModal.grandTotal.toLocaleString()}
+                  </span>
+                  <div className="text-[11px] font-medium text-slate-600">
+                    Balance: ₱{savedOrderForModal.balanceDue.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1 pt-1 text-[11px]">
+                <div className="font-semibold text-slate-700">Items:</div>
+                <ul className="list-disc list-inside text-slate-600 space-y-0.5">
+                  {savedOrderForModal.items.map((it, idx) => (
+                    <li key={idx}>
+                      {it.quantity}x {it.categoryName}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex sm:justify-between gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsSuccessModalOpen(false);
+                setSavedOrderForModal(null);
+                form.reset();
+                onClose?.();
+                onOpenChange?.(false);
+              }}
+            >
+              Done / Close
+            </Button>
+            <Button
+              type="button"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1.5"
+              onClick={() => {
+                if (savedOrderForModal) {
+                  navigator.clipboard.writeText(
+                    generateBookingConfirmation(savedOrderForModal)
+                  );
+                  toast.success("Copied confirmation for Messenger!");
+                }
+              }}
+            >
+              <Copy className="w-4 h-4" />
+              Copy Messenger Confirmation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Form>
   );
 }

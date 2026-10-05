@@ -48,11 +48,14 @@ export const orderFormSchema = z
       .optional(),
   })
   .superRefine((data, ctx) => {
-    // If Delivery Routing is chosen (fulfillment === 1), address is mandatory
-    if (data.fulfillment === 1 && (!data.address || data.address.trim() === "")) {
+    // If Delivery (1) or Lalamove (2) is chosen, address is mandatory
+    if ((data.fulfillment === 1 || data.fulfillment === 2) && (!data.address || data.address.trim() === "")) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Delivery address is required for delivery orders.",
+        message:
+          data.fulfillment === 2
+            ? "Drop-off address is required for Lalamove courier orders."
+            : "Delivery address is required for delivery orders.",
         path: ["address"],
       });
     }
