@@ -45,21 +45,40 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
-       // --- DOOR 2: CASHIER MANUAL DASHBOARD ENTRANCE ---
+        // --- DOOR 2: CASHIER MANUAL DASHBOARD ENTRANCE ---
         [HttpPost("internal/payments/manual")]
         public async Task<IActionResult> HandleManualPayment([FromBody] ManualPaymentDto dto)
         {
             try
             {
-              
-                // This prevents the Idempotency guard from silently blocking multiple cash drops.
-                if (string.IsNullOrWhiteSpace(dto.ReferenceId))
+                // Pick up either ReferenceNumber or ReferenceId
+                var refId = !string.IsNullOrWhiteSpace(dto.ReferenceNumber) ? dto.ReferenceNumber : dto.ReferenceId;
+                if (string.IsNullOrWhiteSpace(refId))
                 {
-                    dto.ReferenceId = $"MANUAL_{Guid.NewGuid().ToString().Substring(0, 8)}";
+                    refId = $"MANUAL_{Guid.NewGuid().ToString().Substring(0, 8)}";
+                }
+
+                // Support both string PaymentMethod ("Physical Cash", "Store GCash") and Provider enum
+                var provider = dto.Provider ?? PaymentProvider.Cash;
+                if (!string.IsNullOrWhiteSpace(dto.PaymentMethod))
+                {
+                    var pm = dto.PaymentMethod.Trim().ToLowerInvariant();
+                    if (pm.Contains("gcash"))
+                    {
+                        provider = PaymentProvider.ManualGCash;
+                    }
+                    else if (pm.Contains("cash"))
+                    {
+                        provider = PaymentProvider.Cash;
+                    }
+                    else if (Enum.TryParse<PaymentProvider>(dto.PaymentMethod, true, out var parsed))
+                    {
+                        provider = parsed;
+                    }
                 }
 
                 // Pass manual inputs straight into the exact same verification brain
-                await _paymentService.ProcessPaymentAsync(dto.OrderId, dto.Amount, dto.ReferenceId, dto.Provider);
+                await _paymentService.ProcessPaymentAsync(dto.OrderId, dto.Amount, refId, provider);
                 
                 return Ok(new { message = "Manual payment recorded successfully. Reservation locked!" });
             }
@@ -67,7 +86,10 @@ namespace LechonSystem.Api.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
-            // ...
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An internal server error occurred while processing manual payment.", error = ex.Message });
+            }
         }
     }
 
@@ -81,12 +103,14 @@ namespace LechonSystem.Api.Controllers
         public string ReferenceId { get; set; } = string.Empty;
     }
 
-    // The data block filled out by your dashboard cashier
+    // The data block filled out by your dashboard cashier or counter staff
     public class ManualPaymentDto
     {
         public int OrderId { get; set; }
         public decimal Amount { get; set; }
         public string ReferenceId { get; set; } = string.Empty;
-        public PaymentProvider Provider { get; set; } // Cash, ManualGCash, BankTransfer, etc.
+        public string? ReferenceNumber { get; set; }
+        public PaymentProvider? Provider { get; set; } // Cash, ManualGCash, BankTransfer, etc.
+        public string? PaymentMethod { get; set; }     // E.g., "Physical Cash", "Store GCash"
     }
 }

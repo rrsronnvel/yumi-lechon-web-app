@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.Models;
+using LechonSystem.Api.DTOs;
 
 namespace LechonSystem.Api.Controllers
 {
@@ -66,7 +67,6 @@ namespace LechonSystem.Api.Controllers
             return Ok(todayDispatches);
         }
 
-
         // 4. GET: api/logistics/trips/pending-settlement
         // Fetches individual customer drops pending cash reconciliation
         [HttpGet("trips/pending-settlement")]
@@ -76,6 +76,47 @@ namespace LechonSystem.Api.Controllers
             return Ok(pendingDrops);
         }
 
+        // 5. GET: api/logistics/settlements/pickups
+        // Fetches all store pickups with pending balance to collect
+        [HttpGet("settlements/pickups")]
+        public async Task<IActionResult> GetPendingPickupSettlements()
+        {
+            var pickups = await _logisticsService.GetPendingPickupSettlementsAsync();
+            return Ok(pickups);
+        }
+
+        // 6. GET: api/logistics/settlements/lalamove
+        // Fetches active Lalamove courier orders for anti-loss verification gate
+        [HttpGet("settlements/lalamove")]
+        public async Task<IActionResult> GetPendingLalamoveSettlements()
+        {
+            var lalamove = await _logisticsService.GetPendingLalamoveSettlementsAsync();
+            return Ok(lalamove);
+        }
+
+        // 7. POST: api/logistics/settlements/lalamove/{orderId}/release
+        // Confirms physical handover to Lalamove courier (guards against unpaid balance)
+        [HttpPost("settlements/lalamove/{orderId}/release")]
+        public async Task<IActionResult> ConfirmLalamoveRelease(int orderId)
+        {
+            try
+            {
+                var result = await _logisticsService.ConfirmLalamoveReleaseAsync(orderId);
+                return Ok(new { success = result, message = $"Order #{orderId} successfully released to Lalamove courier." });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An unexpected error occurred during courier release.", error = ex.Message });
+            }
+        }
     }
 
     // Tiny Request Data Container Carrier (DTO)

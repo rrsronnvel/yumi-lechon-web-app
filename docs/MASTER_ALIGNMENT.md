@@ -336,7 +336,7 @@ To ensure cognitive focus and operational ergonomics for store cashiers and owne
   - Dynamic Zero-Inbox Visibility: Action-required banners (Pending Downpayments, Peak Season Renegotiations) render strictly when actionable records exist. When queues are clear, banners collapse entirely to preserve screen space for live rosters.
   - Global Action Triggers: The dashboard header houses direct entry triggers for [+ New Order] and [Generate Daily Sheets], eliminating unnecessary page hopping during order intake.
 
-12. AI-Assisted POS Intake Bridge (Screenshot Extraction)
+#### 12. AI-Assisted POS Intake Bridge (Screenshot Extraction)
 
 To accelerate telephone and social media order intake, the POS Form supports automated field hydration via multimodal computer vision parsing of Facebook Messenger chat screenshots.
 
@@ -361,5 +361,37 @@ To accelerate telephone and social media order intake, the POS Form supports aut
 - Financial Extraction:
 
 - Downpayments marked as "paid" or "fully paid" populate the Downpayment input. The system's standard financial state machine evaluates whether the order immediately transitions to Committed or requires follow-up.
+
+
+### 13. Authentication, Shift Login & Role-Based Access Control (RBAC)
+
+#### 13.1 Authentication & Role-Based Access Control (RBAC) Architecture
+To safeguard menu pricing, financial drawer balances, and configuration settings while empowering front-line staff to manage daily customer communications and order edits, the system implements token-based JWT (JSON Web Token) authentication with two operational roles:
+
+1. Operational Role Matrix:
+   - 🧑‍💼 Cashier / Counter Staff (`Cashier`):
+     - POS Order Entry: Create and submit new orders across all fulfillment types (Delivery, Pickup, Lalamove).
+     - Master Order Directory: Full operational editing authority (customer names, contact numbers, delivery addresses, delivery times, line items, dynamic add-ons, and remarks).
+     - Courtesy Discounts & Cancellations: Authorized to apply discounts and execute order cancellations (requiring a mandatory operational reason), with all actions stamped into immutable audit logs.
+     - Cash & Handover Reconciliations: Allowed to record customer payments (Cash / GCash) via Customer Dossiers and the Daily Manifest.
+     - Production & Restock Visibility: Access to the Daily Dispatch Planner, kitchen rosters, and Direct Freezer-Gate Stock Intake.
+     - Explicit Restrictions: Strictly prohibited from modifying CMS menu base prices, adding/deactivating item categories, deciding peak-season price waivers, or managing staff accounts.
+   - 👑 Business Owner / Administrator (`Owner`):
+     - Complete, unrestricted administrative authority across the entire platform.
+     - Exclusive access to CMS Catalog & Base Pricing governance, safety stock thresholds, and cooking profile clocks.
+     - Exclusive authority to resolve Peak Season Price Hike renegotiations (Customer Agreed vs. Waive Hike).
+     - Exclusive authority to create, edit, and deactivate user accounts.
+
+2. Shift-Based Session Governance:
+   - Single-Shift Validity: To maintain counter speed during rush periods, tokens are issued with a 12-hour expiration window (`TimeSpan.FromHours(12)`). Staff log in once at morning opening without repeated re-authentication interruptions.
+   - Automated Session Attachment: Client-side HTTP interceptors attach the Bearer token to all outbound API calls. Unauthenticated requests (`401 Unauthorized`) or role-forbidden requests (`403 Forbidden`) trigger automated redirects to `/login` with explanatory toasts.
+
+#### 13.2 Automated User Attribution & "Black Box" Audit Stamping
+- Identity-Linked Order Creation:
+  - The master `Orders` entity includes an explicit `CreatedBy` (string) column.
+  - Upon order creation via the POS terminal, the backend extracts the authenticated username directly from the JWT claims (`User.Identity.Name`) and stamps it onto the database record, replacing legacy unauthenticated or generic placeholders.
+- Real-Name Audit Footprints:
+  - All modifications recorded in `OrderAuditLogs`, `PriceHistoryLogs`, and `PaymentLogs` dynamically resolve `ChangedBy` or `ReceivedBy` from the calling user's JWT identity.
+  - Staff actions (such as applying a ₱300 courtesy discount, modifying a delivery time, or voiding a booking) are permanently linked to the specific staff account on shift.
 
 \*\*
