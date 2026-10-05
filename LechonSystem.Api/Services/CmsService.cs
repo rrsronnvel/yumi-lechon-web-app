@@ -13,11 +13,18 @@ namespace LechonSystem.Api.Services
     {
         private readonly LechonDbContext _context;
         private readonly ISchedulingService _schedulingService;
+        private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
 
-        public CmsService(LechonDbContext context, ISchedulingService schedulingService)
+        private string CurrentUser => _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "System";
+
+        public CmsService(
+            LechonDbContext context,
+            ISchedulingService schedulingService,
+            Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _schedulingService = schedulingService;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<bool> UpdateCategoryPriceAsync(int categoryId, decimal newPrice, string adminName)
@@ -29,13 +36,17 @@ namespace LechonSystem.Api.Services
             // 2. Safety Check: If the price didn't actually change, skip the work!
             if (category.BasePrice == newPrice) return true;
 
+            string changedBy = !string.IsNullOrWhiteSpace(_httpContextAccessor.HttpContext?.User?.Identity?.Name)
+                ? CurrentUser
+                : (!string.IsNullOrWhiteSpace(adminName) && adminName != "Admin" ? adminName : CurrentUser);
+
             // 3. Create the Paper Trail (The Ledger Entry)
             var historyLog = new PriceHistoryLog
             {
                 ItemCategoryId = categoryId,
                 OldPrice = category.BasePrice,  // Capture the old price before we overwrite it!
                 NewPrice = newPrice,
-                ChangedBy = adminName,
+                ChangedBy = changedBy,
                 DateChanged = DateTime.UtcNow
             };
 

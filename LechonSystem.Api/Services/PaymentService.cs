@@ -4,18 +4,23 @@ using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 
+using Microsoft.AspNetCore.Http;
+
 namespace LechonSystem.Api.Services
 {
     public class PaymentService
     {
         private readonly LechonDbContext _context;
-        // DELETE THE CONCRETE OrderService LINE, ONLY KEEP THIS ONE:
         private readonly IOrderService _orderService;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public PaymentService(LechonDbContext context, IOrderService orderService)
+        private string CurrentUser => _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "System";
+
+        public PaymentService(LechonDbContext context, IOrderService orderService, IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _orderService = orderService; // Now this maps perfectly!
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<bool> ProcessPaymentAsync(int orderId, decimal amount, string referenceId, PaymentProvider provider)
@@ -68,7 +73,7 @@ namespace LechonSystem.Api.Services
                 ActionType = "Payment Logged",
                 // We use {amount:N2} so it formats the number beautifully (e.g., 3,000.00)
                 Changes = $"Logged payment of ₱{amount:N2} via {provider}",
-                ChangedBy = "Admin", // Placeholder until we add real users later
+                ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             };
 

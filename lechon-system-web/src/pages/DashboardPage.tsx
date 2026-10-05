@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import apiClient from "@/services/apiClient";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -54,7 +55,7 @@ import {
 } from "@/components/ui/dialog";
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import OrderForm from "@/components/ui/orders/OrderForm";
-import { Plus, FileText, Copy } from "lucide-react";
+import { Plus, FileText, Copy, Lock } from "lucide-react";
 import {
   generateVerificationReminder,
   TemplateOrderData,
@@ -62,6 +63,7 @@ import {
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
+  const { isOwner } = useAuth();
 
   // Dialog State for POS Order Entry
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
@@ -69,9 +71,7 @@ export default function DashboardPage() {
   // Mutations
   const cancelOrderMutation = useMutation({
     mutationFn: async (orderId: number) => {
-      const response = await axios.patch(
-        `http://localhost:5199/api/orders/${orderId}/cancel`
-      );
+      const response = await apiClient.patch(`/orders/${orderId}/cancel`);
       return response.data;
     },
     onSuccess: () => {
@@ -90,8 +90,8 @@ export default function DashboardPage() {
 
   const agreeToHikeMutation = useMutation({
     mutationFn: async (orderId: number) => {
-      const response = await axios.patch(
-        `http://localhost:5199/api/orders/${orderId}/renegotiate/agree`
+      const response = await apiClient.patch(
+        `/orders/${orderId}/renegotiate/agree`
       );
       return response.data;
     },
@@ -108,8 +108,8 @@ export default function DashboardPage() {
 
   const waiveHikeMutation = useMutation({
     mutationFn: async (orderId: number) => {
-      const response = await axios.patch(
-        `http://localhost:5199/api/orders/${orderId}/renegotiate/waive`
+      const response = await apiClient.patch(
+        `/orders/${orderId}/renegotiate/waive`
       );
       return response.data;
     },
@@ -416,9 +416,20 @@ export default function DashboardPage() {
         {/* ⚠️ Peak Season Renegotiation Alarm (Collapses completely to null when 0) */}
         {renegotiations && renegotiations.length > 0 && (
           <div className="rounded-lg border-2 border-red-500 bg-red-50 p-4 shadow-sm">
-            <h2 className="mb-2 text-xl font-bold text-red-700 flex items-center">
-              ⚠️ Action Required: Peak Season Price Updates
-            </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-2">
+              <h2 className="text-xl font-bold text-red-700 flex items-center gap-2">
+                <span>⚠️ Action Required: Peak Season Price Updates</span>
+              </h2>
+              {!isOwner && (
+                <span
+                  className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-md flex items-center gap-1.5 self-start sm:self-auto"
+                  title="Owner authorization required to adjust peak season rates."
+                >
+                  <Lock className="w-3.5 h-3.5 text-amber-700" />
+                  Owner authorization required to adjust peak season rates.
+                </span>
+              )}
+            </div>
             <p className="mb-4 text-sm text-red-600">
               The following advance bookings are locked at old menu prices. Please contact the
               customers.
@@ -445,60 +456,84 @@ export default function DashboardPage() {
                     </span>
 
                     <div className="flex gap-2">
-                      <AlertDialog>
-                        <AlertDialogTrigger
-                          className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50"
-                          disabled={agreeToHikeMutation.isPending}
+                      {!isOwner ? (
+                        <button
+                          type="button"
+                          disabled
+                          title="Owner authorization required to adjust peak season rates."
+                          className="text-xs bg-slate-100 text-slate-400 border border-slate-300 px-3 py-1 rounded cursor-not-allowed opacity-60 flex items-center gap-1 font-medium select-none"
                         >
-                          {agreeToHikeMutation.isPending ? "Updating..." : "Customer Agreed"}
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Update Order Price?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will mathematically increase Order #{task.orderId}'s locked
-                              price to match the live menu price. The customer's remaining
-                              balance will increase by ₱{task.priceGap.toLocaleString()}.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-green-600 hover:bg-green-700"
-                              onClick={() => agreeToHikeMutation.mutate(task.orderId)}
-                            >
-                              Yes, Customer Agreed
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                          <Lock className="w-3 h-3 text-slate-400" />
+                          <span>Customer Agreed</span>
+                        </button>
+                      ) : (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+                            disabled={agreeToHikeMutation.isPending}
+                          >
+                            {agreeToHikeMutation.isPending ? "Updating..." : "Customer Agreed"}
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Update Order Price?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will mathematically increase Order #{task.orderId}'s locked
+                                price to match the live menu price. The customer's remaining
+                                balance will increase by ₱{task.priceGap.toLocaleString()}.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={() => agreeToHikeMutation.mutate(task.orderId)}
+                              >
+                                Yes, Customer Agreed
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
 
-                      <AlertDialog>
-                        <AlertDialogTrigger
-                          className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 disabled:opacity-50"
-                          disabled={waiveHikeMutation.isPending}
+                      {!isOwner ? (
+                        <button
+                          type="button"
+                          disabled
+                          title="Owner authorization required to adjust peak season rates."
+                          className="text-xs bg-slate-100 text-slate-400 border border-slate-300 px-3 py-1 rounded cursor-not-allowed opacity-60 flex items-center gap-1 font-medium select-none"
                         >
-                          {waiveHikeMutation.isPending ? "Waiving..." : "Waive Hike"}
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Waive Price Hike?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will permanently lock in the old, cheaper price for Order
-                              #{task.orderId} and dismiss this warning to keep the customer happy.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-gray-600 hover:bg-gray-700"
-                              onClick={() => waiveHikeMutation.mutate(task.orderId)}
-                            >
-                              Yes, Waive Hike
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                          <Lock className="w-3 h-3 text-slate-400" />
+                          <span>Waive Hike</span>
+                        </button>
+                      ) : (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 disabled:opacity-50 cursor-pointer"
+                            disabled={waiveHikeMutation.isPending}
+                          >
+                            {waiveHikeMutation.isPending ? "Waiving..." : "Waive Hike"}
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Waive Price Hike?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently lock in the old, cheaper price for Order
+                                #{task.orderId} and dismiss this warning to keep the customer happy.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-gray-600 hover:bg-gray-700"
+                                onClick={() => waiveHikeMutation.mutate(task.orderId)}
+                              >
+                                Yes, Waive Hike
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
 
                       <AlertDialog>
                         <AlertDialogTrigger

@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.Services;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace LechonSystem.Api.Controllers;
 
 // 1. Define the Delivery Box (DTO) to match your React payload
@@ -14,6 +16,7 @@ public class UpdateStatusDto
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "Owner,Cashier")]
 public class RoastingController : ControllerBase
 {
     private readonly IRoastingService _roastingService;

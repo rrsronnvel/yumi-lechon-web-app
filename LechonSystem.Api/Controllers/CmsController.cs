@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.DTOs;
@@ -9,6 +10,7 @@ namespace LechonSystem.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Owner,Cashier")]
     public class CmsController : ControllerBase
     {
         private readonly ICmsService _cmsService;
@@ -20,6 +22,7 @@ namespace LechonSystem.Api.Controllers
 
         // PUT: api/cms/categories/{id}/price
         [HttpPut("categories/{id}/price")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> UpdateCategoryPrice(int id, [FromBody] UpdatePriceRequest request)
         {
             if (!ModelState.IsValid)
@@ -27,7 +30,7 @@ namespace LechonSystem.Api.Controllers
                 return BadRequest(ModelState);
             }
 
-            string adminName = request.AdminName ?? "System";
+            string adminName = User.Identity?.Name ?? request.AdminName ?? "System";
             bool success = await _cmsService.UpdateCategoryPriceAsync(id, request.NewPrice, adminName);
 
             if (!success)
@@ -40,6 +43,7 @@ namespace LechonSystem.Api.Controllers
 
         // POST: api/cms/categories
         [HttpPost("categories")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryRequest request)
         {
             if (!ModelState.IsValid)
@@ -54,6 +58,7 @@ namespace LechonSystem.Api.Controllers
 
         // PATCH: api/cms/cooking-profiles/{id}
         [HttpPatch("cooking-profiles/{id}")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> UpdateCookingProfile(int id, [FromBody] UpdateCookingProfileRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -67,6 +72,7 @@ namespace LechonSystem.Api.Controllers
 
         // PATCH: api/cms/categories/{id}/toggle
         [HttpPatch("categories/{id}/toggle")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> ToggleCategoryActive(int id)
         {
             var success = await _cmsService.ToggleCategoryActiveAsync(id);
@@ -76,6 +82,7 @@ namespace LechonSystem.Api.Controllers
 
         // PATCH: api/cms/categories/{id}/clocks
         [HttpPatch("categories/{id}/clocks")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> UpdateClocks(int id, [FromBody] UpdateCookingProfileRequest request)
         {
             var success = await _cmsService.UpdateCookingProfileAsync(id, request.TahiDurationMinutes, request.SalangDurationMinutes);
@@ -93,6 +100,7 @@ namespace LechonSystem.Api.Controllers
 
         // PUT: api/cms/categories/{id}/details
         [HttpPut("categories/{id}/details")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> UpdateCategoryDetails(int id, [FromBody] CategoryMetadataDto dto)
         {
             if (!ModelState.IsValid)
@@ -117,6 +125,7 @@ namespace LechonSystem.Api.Controllers
 
         // PATCH: api/cms/categories/{id}/status
         [HttpPatch("categories/{id}/status")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> ToggleCategoryStatus(int id)
         {
             try

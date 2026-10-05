@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
@@ -8,6 +9,7 @@ namespace LechonSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "Owner,Cashier")]
 public class RidersController : ControllerBase
 {
     private readonly LechonDbContext _context;

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
@@ -9,6 +10,7 @@ namespace LechonSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")] // This means the URL will be: /api/inventory
+[Authorize(Roles = "Owner,Cashier")]
 public class InventoryController : ControllerBase
 {
     private readonly LechonDbContext _context;

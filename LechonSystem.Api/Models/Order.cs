@@ -27,6 +27,7 @@ public class Order : BaseEntity
 
   
     public bool IsPriceWaived { get; set; } = false;
+    public string CreatedBy { get; set; } = "System";
 
     public List<OrderItem> OrderItems { get; set; } = new();
 

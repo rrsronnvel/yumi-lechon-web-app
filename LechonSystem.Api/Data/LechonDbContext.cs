@@ -27,6 +27,7 @@ public class LechonDbContext : DbContext
     public DbSet<PriceHistoryLog> PriceHistoryLogs { get; set; }
     public DbSet<OrderAuditLog> OrderAuditLogs { get; set; }
     public DbSet<Rider> Riders => Set<Rider>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +57,30 @@ public class LechonDbContext : DbContext
             new Rider { Id = 1, FullName = "Kuya Berto", PhoneNumber = "09171234567", IsActive = true, CreatedAt = seedDate },
             new Rider { Id = 2, FullName = "Kuya Jun", PhoneNumber = "09182345678", IsActive = true, CreatedAt = seedDate },
             new Rider { Id = 3, FullName = "Kuya AL", PhoneNumber = "09193456789", IsActive = true, CreatedAt = seedDate }
+        );
+
+        // 4. Seed Initial User Accounts
+        modelBuilder.Entity<User>().HasData(
+            new User
+            {
+                Id = 1,
+                Username = "owner",
+                PasswordHash = "$2a$11$91qvtqitWclA.BB1pUEmsezQaloAyJi23suOIbEIT1JEZmSeqLB6S",
+                FullName = "Business Owner",
+                Role = "Owner",
+                IsActive = true,
+                CreatedAt = seedDate
+            },
+            new User
+            {
+                Id = 2,
+                Username = "cashier",
+                PasswordHash = "$2a$11$pWVefaVk/s0XTuGmg2GCCujzhLECelvzDiuenEDPva86K6zlzWQlW",
+                FullName = "Store Cashier",
+                Role = "Cashier",
+                IsActive = true,
+                CreatedAt = seedDate
+            }
         );
 
         modelBuilder.Entity<PaymentLog>()

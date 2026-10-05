@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Services;
@@ -8,6 +9,7 @@ namespace LechonSystem.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "Owner,Cashier")]
 public class SchedulesController : ControllerBase
 {
     private readonly ISchedulingService _schedulingService;

@@ -273,6 +273,10 @@ namespace LechonSystem.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("CustomerName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -748,6 +752,63 @@ namespace LechonSystem.Api.Migrations
                             FullName = "Kuya AL",
                             IsActive = true,
                             PhoneNumber = "09193456789"
+                        });
+                });
+
+            modelBuilder.Entity("LechonSystem.Api.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Business Owner",
+                            IsActive = true,
+                            PasswordHash = "$2a$11$91qvtqitWclA.BB1pUEmsezQaloAyJi23suOIbEIT1JEZmSeqLB6S",
+                            Role = "Owner",
+                            Username = "owner"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Store Cashier",
+                            IsActive = true,
+                            PasswordHash = "$2a$11$pWVefaVk/s0XTuGmg2GCCujzhLECelvzDiuenEDPva86K6zlzWQlW",
+                            Role = "Cashier",
+                            Username = "cashier"
                         });
                 });
 

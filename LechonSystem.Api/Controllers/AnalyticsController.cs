@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using LechonSystem.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -5,6 +6,7 @@ namespace LechonSystem.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Owner,Cashier")]
     public class AnalyticsController : ControllerBase
     {
         private readonly IAnalyticsService _analyticsService;

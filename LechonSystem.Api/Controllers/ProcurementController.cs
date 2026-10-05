@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
@@ -12,6 +13,7 @@ namespace LechonSystem.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Owner,Cashier")]
     public class ProcurementController : ControllerBase
     {
         private readonly IProcurementService _procurementService;

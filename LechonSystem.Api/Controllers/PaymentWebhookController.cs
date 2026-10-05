@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.Services;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace LechonSystem.Api.Controllers
 {
     [ApiController]
@@ -19,6 +21,7 @@ namespace LechonSystem.Api.Controllers
 
         // --- DOOR 1: AUTOMATED GATEWAY WEBHOOK ENTRANCE ---
         [HttpPost("webhooks/payments/{provider}")]
+        [AllowAnonymous]
         public async Task<IActionResult> HandleGatewayWebhook(string provider, [FromBody] WebhookPaymentDto dto)
         {
             try
@@ -47,6 +50,7 @@ namespace LechonSystem.Api.Controllers
 
         // --- DOOR 2: CASHIER MANUAL DASHBOARD ENTRANCE ---
         [HttpPost("internal/payments/manual")]
+        [Authorize(Roles = "Owner,Cashier")]
         public async Task<IActionResult> HandleManualPayment([FromBody] ManualPaymentDto dto)
         {
             try

@@ -37,19 +37,23 @@ namespace LechonSystem.Api.Services
         private readonly LechonDbContext _context;
         private readonly ISchedulingService _schedulingService;
         private readonly IInventoryService _inventoryService;
-
         private readonly INotificationSender _notificationSender;
+        private readonly IHttpContextAccessor _httpContextAccessor;
+
+        private string CurrentUser => _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "System";
 
         public OrderService(
             LechonDbContext context,
             ISchedulingService schedulingService,
             IInventoryService inventoryService,
-            INotificationSender notificationSender)
+            INotificationSender notificationSender,
+            IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _schedulingService = schedulingService;
             _inventoryService = inventoryService;
             _notificationSender = notificationSender;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
@@ -75,7 +79,8 @@ namespace LechonSystem.Api.Services
                 DeliveryFee = request.DeliveryFee,
                 Downpayment = request.Downpayment,
                 Discount = request.Discount,
-                GrandTotal = request.GrandTotal
+                GrandTotal = request.GrandTotal,
+                CreatedBy = CurrentUser
             };
 
             var categoryIds = request.Items.Select(i => i.ItemCategoryId).Distinct().ToList();
@@ -121,6 +126,16 @@ namespace LechonSystem.Api.Services
                     order.Downpayment // <-- Pass the downpayment here!
                 );
             }
+
+            var auditLog = new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Order Created",
+                Changes = $"Order created for {order.CustomerName} (Total: ₱{order.GrandTotal:N2})",
+                ChangedBy = CurrentUser,
+                Timestamp = DateTime.UtcNow
+            };
+            _context.OrderAuditLogs.Add(auditLog);
 
             await _context.SaveChangesAsync();
             return order;
@@ -188,6 +203,16 @@ namespace LechonSystem.Api.Services
 
             // 4. Tell the Inventory Service to free up the pig!
             await _inventoryService.ReleaseReservationAsync(orderId);
+
+            var auditLog = new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Order Cancelled",
+                Changes = "Order was cancelled and reserved inventory released back to ledger.",
+                ChangedBy = CurrentUser,
+                Timestamp = DateTime.UtcNow
+            };
+            _context.OrderAuditLogs.Add(auditLog);
 
             // 5. Save everything to the SQL database
             await _context.SaveChangesAsync();
@@ -412,7 +437,7 @@ namespace LechonSystem.Api.Services
                     OrderId = order.Id,
                     ActionType = "Order Edited",
                     Changes = string.Join(" | ", auditChanges),
-                    ChangedBy = "Admin",
+                    ChangedBy = CurrentUser,
                     Timestamp = DateTime.UtcNow
                 };
                 _context.OrderAuditLogs.Add(auditLog);

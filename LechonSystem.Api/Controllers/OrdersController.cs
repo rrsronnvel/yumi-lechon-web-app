@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using LechonSystem.Api.DTOs;
@@ -8,6 +9,7 @@ namespace LechonSystem.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Owner,Cashier")]
     public class OrdersController : ControllerBase
     {
         private readonly IOrderService _orderService;
@@ -138,6 +140,7 @@ namespace LechonSystem.Api.Controllers
         }
 
         [HttpPatch("{id}/renegotiate/agree")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> AgreeToPriceHike(int id)
         {
             var success = await _orderService.ApplyNewMenuPricesAsync(id);
@@ -146,6 +149,7 @@ namespace LechonSystem.Api.Controllers
         }
 
         [HttpPatch("{id}/renegotiate/waive")]
+        [Authorize(Roles = "Owner")]
         public async Task<IActionResult> WaivePriceHike(int id)
         {
             var success = await _orderService.WaivePriceHikeAsync(id);
@@ -155,6 +159,7 @@ namespace LechonSystem.Api.Controllers
 
 
         [HttpGet("{id}/audit-logs")]
+        [Authorize(Roles = "Owner,Cashier")]
         public async Task<IActionResult> GetAuditLogs(int id)
         {
             var logs = await _orderService.GetOrderAuditLogsAsync(id);
