@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { useEditOrder } from "@/hooks/useEditOrder";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   FormItem,
   FormLabel,
 } from "@/components/ui/form";
+import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 
@@ -62,6 +63,7 @@ export default function EditOrderForm({
     remarks: string;
     price: number;
     deliveryFee: number;
+    distanceKm: number;
     fulfillment: number;
     downpayment: number;
     discount: number;
@@ -78,6 +80,7 @@ export default function EditOrderForm({
       remarks: "",
       price: 0,
       deliveryFee: 0,
+      distanceKm: 0,
       fulfillment: 1, // Default to Delivery
       downpayment: 0,
       discount: 0,
@@ -114,8 +117,12 @@ export default function EditOrderForm({
 
       // 🚀 THE BULLETPROOF TRANSLATOR
       const rawFulfill = String(order.fulfillment).toLowerCase();
-      const resolvedFulfillment =
-        rawFulfill === "0" || rawFulfill === "pickup" ? 0 : 1;
+      let resolvedFulfillment = 1;
+      if (rawFulfill === "0" || rawFulfill === "pickup") {
+        resolvedFulfillment = 0;
+      } else if (rawFulfill === "2" || rawFulfill === "lalamove") {
+        resolvedFulfillment = 2;
+      }
 
       const parsedAddOns: AddOnItem[] = (order.addOns || "")
         .split(",")
@@ -142,11 +149,16 @@ export default function EditOrderForm({
         deliveryAddress: order.deliveryAddress || "",
         remarks: order.remarks || "",
         price: order.price || 0,
-        deliveryFee: order.deliveryFee || 0,
+        deliveryFee:
+          resolvedFulfillment === 0 || resolvedFulfillment === 2
+            ? 0
+            : order.deliveryFee || 0,
+        distanceKm:
+          resolvedFulfillment === 0 || resolvedFulfillment === 2
+            ? 0
+            : order.distanceKm || 0,
         discount: order.discount || 0,
         downpayment: order.downpayment || 0,
-        // 🚀 THE FIX: If C# says 0 or "Pickup", set to 0. Otherwise, default to Delivery (1).
-        // 🚀 THE FIX: Use our new translator!
         fulfillment: resolvedFulfillment,
         dynamicAddOns: parsedAddOns,
         items: order.orderItems?.map((i: any) => ({
@@ -158,92 +170,105 @@ export default function EditOrderForm({
         ],
       });
     }
-  }, [order, form]); // <-- The Fix!
+  }, [order, form, lechonOptions]);
 
-  // THE SMART BALANCE & BOUNCER STATE
-  const [
-    price,
-    deliveryFee,
-    downpayment,
-    discount,
-    dynamicAddOns,
-    fulfillment,
-  ] = form.watch([
-    "price",
+  // THE SMART BALANCE & BOUNCER STATE (Deeply Reactive via useWatch)
+  const watchedItems = useWatch({
+    control: form.control,
+    name: "items",
+  });
+
+  const watchedAddOns = useWatch({
+    control: form.control,
+    name: "dynamicAddOns",
+  });
+
+  const [deliveryFee, downpayment, discount, fulfillment] = form.watch([
     "deliveryFee",
     "downpayment",
     "discount",
-    "dynamicAddOns",
     "fulfillment",
   ]);
 
-  // 3. THE STORE PICKUP BOUNCER: If changed to Pickup (0), force fee to 0!
+  // 3. THE FEE BOUNCER: If changed to Pickup (0) or Lalamove (2), force fee & distance to 0!
   useEffect(() => {
-    // 🚀 THE FIX: Use strict string matching. 
-    // Number(null) or Number("") equals 0 in JavaScript, which causes accidental wipes!
-    if (String(fulfillment) === "0") {
-      form.setValue("deliveryFee", 0, { shouldValidate: true });
+    const currentFulfillment = Number(fulfillment);
+    if (currentFulfillment === 0 || currentFulfillment === 2) {
+      form.setValue("deliveryFee", 0, { shouldValidate: true, shouldDirty: true });
+      form.setValue("distanceKm", 0, { shouldValidate: true, shouldDirty: true });
     }
   }, [fulfillment, form]);
 
-  const totalAddOnCost = (dynamicAddOns || []).reduce(
-    (total: number, addon: any) => {
-      if (!addon.name) return total;
-      // PULL PRICE DIRECTLY FROM LIVE CMS!
-      const found = liveAddOns.find((a: any) => a.name === addon.name);
-      const itemPrice = found?.basePrice || found?.price || 0;
-      return total + itemPrice * (addon.quantity || 1);
-    },
+  // 🚀 REACTIVE LECHON SUBTOTAL: Immediately recalculated on add, remove, size or qty change!
+  const lechonSubtotal = useMemo(() => {
+    if (!watchedItems || watchedItems.length === 0) return 0;
+    return watchedItems.reduce((acc: number, item: any) => {
+      const cat = categories.find(
+        (c: any) => c.id === Number(item?.itemCategoryId)
+      );
+      const unitPrice = cat?.basePrice ?? cat?.price ?? 0;
+      const qty = Number(item?.quantity) || 0;
+      return acc + unitPrice * qty;
+    }, 0);
+  }, [watchedItems, categories]);
+
+  // 🚀 REACTIVE ADD-ONS SUBTOTAL: Pulls live pricing directly from CMS and updates on any selection or quantity edit
+  const totalAddOnCost = useMemo(() => {
+    return (watchedAddOns || []).reduce(
+      (total: number, addon: any) => {
+        if (!addon || !addon.name) return total;
+        const addonName = String(addon.name).trim().toLowerCase();
+        const found = liveAddOns.find(
+          (a: any) => a.name.trim().toLowerCase() === addonName
+        );
+        const itemPrice = found?.basePrice || found?.price || 0;
+        const qty = Number(addon.quantity) || 1;
+        return total + itemPrice * qty;
+      },
+      0,
+    );
+  }, [watchedAddOns, liveAddOns]);
+
+  const addOnsTotal = totalAddOnCost;
+  const currentFulfillment = Number(fulfillment);
+  const activeDeliveryFee =
+    currentFulfillment === 0 || currentFulfillment === 2
+      ? 0
+      : Number(deliveryFee) || 0;
+  const activeDiscount = Number(discount) || 0;
+  const downpaymentReceived = Number(downpayment) || 0;
+
+  const dynamicGrandTotal = Math.max(
     0,
+    lechonSubtotal + addOnsTotal + activeDeliveryFee - activeDiscount
   );
 
-  const dynamicGrandTotal =
-    (Number(price) || 0) +
-    totalAddOnCost +
-    (Number(deliveryFee) || 0) -
-    (Number(discount) || 0);
-
-  const remainingBalance = dynamicGrandTotal - (Number(downpayment) || 0);
-
-  const handleCalculatePrice = () => {
-    setTimeout(() => {
-      const targetDate = new Date(form.getValues("targetDeliveryTime"));
-      const isPastOrder = targetDate < new Date();
-
-      if (isPastOrder) return;
-
-      const currentCart = form.getValues("items") || [];
-      const newTotal = currentCart.reduce((sum: number, item: any) => {
-        const category = categories.find(
-          (c: any) => c.id === item.itemCategoryId,
-        );
-        const itemPrice = category?.basePrice || category?.price || 0;
-        return sum + itemPrice * (item.quantity || 1);
-      }, 0);
-
-      form.setValue("price", newTotal, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }, 0);
-  };
+  const remainingBalance = dynamicGrandTotal - downpaymentReceived;
 
   function onSubmit(data: any) {
     const combinedAddOns = (data.dynamicAddOns || [])
       .filter((a: any) => a.name && a.name.trim() !== "")
       .map((a: any) => `${a.quantity || 1}x ${a.name}`)
       .join(", ");
+
+    const fulfillmentNum = Number(data.fulfillment);
+    const finalDeliveryFee =
+      fulfillmentNum === 0 || fulfillmentNum === 2
+        ? 0
+        : Number(data.deliveryFee) || 0;
+
     const payload = {
       ...data,
-      // 🚀 THE FIX: If it isn't exactly "1" (Pickup), explicitly force it to 0 (Delivery).
-      // This makes it physically impossible to send 'null' to C#!
-      fulfillment: Number(data.fulfillment),
+      price: lechonSubtotal,
+      fulfillment: fulfillmentNum,
+      deliveryFee: finalDeliveryFee,
       addOns: combinedAddOns,
       grandTotal: dynamicGrandTotal,
     };
 
     // Strip out the temporary React array so C# doesn't choke on it!
     delete payload.dynamicAddOns;
+    delete payload.distanceKm;
 
     editMutation.mutate(payload, {
       onSuccess: () => {
@@ -303,28 +328,6 @@ export default function EditOrderForm({
 
             <FormField
               control={form.control}
-              name="fulfillment"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-700">
-                    Delivery Method
-                  </FormLabel>
-                  <FormControl>
-                    <select
-                      {...field}
-                      className="w-full h-10 rounded-md border border-input bg-slate-50 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
-                    >
-                      {/* 🚀 THE FIX: Swapped the numbers to match C# exactly! */}
-                      <option value={1}>🚚 Standard Delivery</option>
-                      <option value={0}>🏪 Walk-in Store Pickup</option>
-                    </select>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
               name="targetDeliveryTime"
               render={({ field }) => (
                 <FormItem>
@@ -339,19 +342,104 @@ export default function EditOrderForm({
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="fulfillment"
+              render={({ field }) => (
+                <FormItem className="col-span-1 sm:col-span-2">
+                  <FormLabel className="text-gray-700 font-medium text-xs sm:text-sm">
+                    Delivery Method
+                  </FormLabel>
+                  <FormControl>
+                    <div className="grid grid-cols-3 w-full p-1 bg-slate-100 rounded-lg border border-slate-200/80 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          field.onChange(1);
+                        }}
+                        className={cn(
+                          "min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          Number(field.value) === 1
+                            ? "bg-white text-orange-700 shadow-xs border border-orange-200/80"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                        )}
+                      >
+                        <span className="text-sm shrink-0">🚗</span>
+                        <span className="truncate">Delivery</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          field.onChange(0);
+                          form.setValue("deliveryFee", 0, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          form.setValue("distanceKm", 0, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                        }}
+                        className={cn(
+                          "min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          Number(field.value) === 0
+                            ? "bg-white text-orange-700 shadow-xs border border-orange-200/80"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                        )}
+                      >
+                        <span className="text-sm shrink-0">🏪</span>
+                        <span className="truncate">Store Pickup</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          field.onChange(2);
+                          form.setValue("deliveryFee", 0, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          form.setValue("distanceKm", 0, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                        }}
+                        className={cn(
+                          "min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          Number(field.value) === 2
+                            ? "bg-white text-orange-700 shadow-xs border border-orange-200/80"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                        )}
+                      >
+                        <span className="text-sm shrink-0">📦</span>
+                        <span className="truncate">Lalamove</span>
+                      </button>
+                    </div>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="deliveryAddress"
               render={({ field }) => (
                 <FormItem className="col-span-1 sm:col-span-2">
                   <FormLabel className="text-gray-700">
-                    Delivery Addres
+                    Delivery Address
                   </FormLabel>
                   <FormControl>
-                    {/* 🚀 THE FIX: Removed the 'disabled' prop entirely so it is always editable! */}
                     <Input
                       {...field}
-                      placeholder="Full Address or Store Pickup Notes"
+                      placeholder={
+                        Number(fulfillment) === 0
+                          ? "Customer Address / Landmark (For records)"
+                          : Number(fulfillment) === 2
+                          ? "Drop-off Address for Lalamove Courier"
+                          : "Full Address or Delivery Landmark"
+                      }
                       className="bg-slate-50 focus-visible:ring-orange-500"
                     />
                   </FormControl>
@@ -389,14 +477,13 @@ export default function EditOrderForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs border-dashed border-gray-300 text-gray-600 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50"
+                className="h-8 text-xs border-dashed border-gray-300 text-gray-600 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50 cursor-pointer"
                 onClick={() => {
                   appendItem({
                     id: 0,
                     itemCategoryId: lechonOptions[0]?.id || 1,
                     quantity: 1,
                   });
-                  handleCalculatePrice();
                 }}
               >
                 + Add Lechon
@@ -409,31 +496,40 @@ export default function EditOrderForm({
                   key={field.id}
                   className="flex gap-3 items-center bg-slate-50/50 p-3 rounded-md border border-slate-200"
                 >
-                  {/* 🚀 THE FIX: The missing Quantity Box! */}
                   <Input
                     type="number"
                     min="1"
                     className="w-16 bg-white h-9 text-sm text-center font-medium focus-visible:ring-orange-500"
                     {...form.register(`items.${index}.quantity` as const, {
                       valueAsNumber: true,
-                      onChange: handleCalculatePrice, // Recalculates total if qty changes
+                      onChange: (e) => {
+                        const val = parseInt(e.target.value, 10);
+                        form.setValue(
+                          `items.${index}.quantity`,
+                          isNaN(val) || val < 1 ? 1 : val,
+                          { shouldValidate: true, shouldDirty: true }
+                        );
+                      },
                     })}
                   />
 
                   <select
-                    {...form.register(
-                      `items.${index}.itemCategoryId` as const,
-                      {
-                        valueAsNumber: true,
-                        onChange: handleCalculatePrice,
+                    {...form.register(`items.${index}.itemCategoryId` as const, {
+                      valueAsNumber: true,
+                      onChange: (e) => {
+                        const val = parseInt(e.target.value, 10);
+                        form.setValue(`items.${index}.itemCategoryId`, val, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
                       },
-                    )}
+                    })}
                     className="w-full h-9 rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
                   >
                     {/* ONLY SHOW LECHONS HERE */}
                     {lechonOptions.map((cat: any) => (
                       <option key={cat.id} value={cat.id}>
-                        {cat.name}
+                        {cat.name} (₱{(cat.basePrice || cat.price || 0).toLocaleString()})
                       </option>
                     ))}
                   </select>
@@ -443,10 +539,9 @@ export default function EditOrderForm({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 text-red-400 hover:text-red-700 hover:bg-red-50 shrink-0"
+                      className="h-9 w-9 text-red-400 hover:text-red-700 hover:bg-red-50 shrink-0 cursor-pointer"
                       onClick={() => {
                         removeItem(index);
-                        handleCalculatePrice();
                       }}
                     >
                       ✕
@@ -471,7 +566,7 @@ export default function EditOrderForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs border-dashed border-gray-300 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50"
+                className="h-8 text-xs border-dashed border-gray-300 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
                 onClick={() => appendAddOn({ quantity: 1, name: "" })}
               >
                 + Add Item
@@ -490,11 +585,28 @@ export default function EditOrderForm({
                     className="w-16 bg-white h-9 text-sm text-center font-medium focus-visible:ring-indigo-500"
                     {...form.register(
                       `dynamicAddOns.${index}.quantity` as const,
-                      { valueAsNumber: true },
+                      {
+                        valueAsNumber: true,
+                        onChange: (e) => {
+                          const val = parseInt(e.target.value, 10);
+                          form.setValue(
+                            `dynamicAddOns.${index}.quantity`,
+                            isNaN(val) || val < 1 ? 1 : val,
+                            { shouldValidate: true, shouldDirty: true }
+                          );
+                        },
+                      },
                     )}
                   />
                   <select
-                    {...form.register(`dynamicAddOns.${index}.name` as const)}
+                    {...form.register(`dynamicAddOns.${index}.name` as const, {
+                      onChange: (e) => {
+                        form.setValue(`dynamicAddOns.${index}.name`, e.target.value, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
+                      },
+                    })}
                     className="flex-1 h-9 rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <option value="" className="text-gray-400">
@@ -511,7 +623,7 @@ export default function EditOrderForm({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 text-red-400 hover:bg-red-50 shrink-0"
+                    className="h-9 w-9 text-red-400 hover:bg-red-50 shrink-0 cursor-pointer"
                     onClick={() => removeAddOn(index)}
                   >
                     ✕
@@ -528,118 +640,146 @@ export default function EditOrderForm({
 
           {/* --- FINANCIAL ADJUSTMENTS BLOCK --- */}
           <div className="pt-6 border-t border-slate-200 space-y-5">
-            <h3 className="text-base font-semibold text-gray-800">
-              Financial Adjustments
-            </h3>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-              <FormField
-                control={form.control}
-                name="price"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-600 text-xs uppercase tracking-wider">
-                      Lechon Price (₱)
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }
-                        className="font-medium text-lg h-11"
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="deliveryFee"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-600 text-xs uppercase tracking-wider">
-                      Delivery Fee (₱)
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        disabled={Number(fulfillment) === 0} // <--- Changed to 0!
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }
-                        className="h-11 disabled:bg-gray-100 disabled:text-gray-400"
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="discount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-red-600 font-bold text-xs uppercase tracking-wider">
-                      Discount (₱)
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        value={field.value || 0}
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }
-                        className="border-red-200 focus-visible:ring-red-400 text-red-600 h-11"
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormItem>
-                <FormLabel className="text-indigo-600 font-bold text-xs uppercase tracking-wider">
-                  Add-Ons Total (₱)
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    disabled
-                    value={totalAddOnCost}
-                    className="bg-indigo-50/50 border-indigo-100 font-bold text-indigo-700 cursor-not-allowed h-11"
-                  />
-                </FormControl>
-              </FormItem>
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-gray-800">
+                Financial Adjustments
+              </h3>
+              <span className="text-xs text-slate-400 font-medium">
+                Flexible Cart • Locked Cash
+              </span>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 bg-slate-50 p-5 rounded-lg border border-slate-200 items-end justify-between shadow-inner">
-              <FormField
-                control={form.control}
-                name="downpayment"
-                render={({ field }) => (
-                  <FormItem className="w-full sm:w-1/2">
-                    <FormLabel className="text-gray-500 text-xs uppercase tracking-wider flex items-center gap-1">
-                      🔒 Historical Downpayment
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        disabled
-                        {...field}
-                        className="bg-gray-200/80 cursor-not-allowed text-gray-500 font-medium h-11 border-transparent"
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+            {/* Computed Read-Only Summaries */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Computed Cart Summaries
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-md text-sm font-mono text-slate-700 flex flex-col justify-between">
+                  <span className="text-xs font-sans text-slate-500 font-medium">
+                    Lechon Subtotal
+                  </span>
+                  <span className="text-base font-bold text-slate-800 mt-1">
+                    ₱{lechonSubtotal.toLocaleString()}
+                  </span>
+                </div>
+                <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-md text-sm font-mono text-slate-700 flex flex-col justify-between">
+                  <span className="text-xs font-sans text-slate-500 font-medium">
+                    Add-Ons Total
+                  </span>
+                  <span className="text-base font-bold text-indigo-700 mt-1">
+                    ₱{addOnsTotal.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-              <div className="flex flex-col items-end w-full sm:w-1/2 pt-2 sm:pt-0">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">
-                  Remaining Balance
-                </p>
+            {/* Editable Adjustments */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Editable Adjustments
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                <FormField
+                  control={form.control}
+                  name="deliveryFee"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-slate-600 font-semibold text-xs flex items-center justify-between h-5">
+                        <span className="truncate">Delivery Fee (₱)</span>
+                        {(Number(fulfillment) === 0 ||
+                          Number(fulfillment) === 2) && (
+                          <span className="text-[10px] text-amber-600 font-normal lowercase shrink-0">
+                            (locked ₱0)
+                          </span>
+                        )}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          {...field}
+                          disabled={
+                            Number(fulfillment) === 0 ||
+                            Number(fulfillment) === 2
+                          }
+                          value={
+                            Number(fulfillment) === 0 ||
+                            Number(fulfillment) === 2
+                              ? 0
+                              : field.value ?? 0
+                          }
+                          onChange={(e) =>
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }
+                          className="h-10 disabled:bg-slate-100 disabled:text-slate-400 font-medium"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="discount"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-rose-600 font-semibold text-xs flex items-center justify-between h-5">
+                        <span className="truncate">Courtesy Discount (₱)</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          {...field}
+                          value={field.value || 0}
+                          onChange={(e) =>
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }
+                          className="border-red-200 focus-visible:ring-red-400 text-red-600 h-10 font-medium"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Live Handover Preview */}
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3 shadow-inner">
+              <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
+                <span className="text-slate-600 font-medium">Grand Total</span>
+                <span className="font-mono font-bold text-slate-900 text-base">
+                  ₱{dynamicGrandTotal.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-medium flex items-center gap-1">
+                  🔒 Historical Downpayment
+                </span>
+                <span className="font-mono font-medium text-emerald-700">
+                  - ₱{downpaymentReceived.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-end pt-2 border-t border-slate-200">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                    Remaining Balance
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {remainingBalance < 0
+                      ? "Customer overpaid — send refund"
+                      : "Amount to collect on handover"}
+                  </p>
+                </div>
                 <p
-                  className={`text-3xl font-black tracking-tight ${remainingBalance < 0 ? "text-red-600" : "text-emerald-600"}`}
+                  className={`text-2xl font-black font-mono tracking-tight ${
+                    remainingBalance < 0
+                      ? "text-red-600"
+                      : "text-emerald-600"
+                  }`}
                 >
                   {remainingBalance < 0
                     ? `Refund: ₱${Math.abs(remainingBalance).toLocaleString()}`
@@ -649,15 +789,27 @@ export default function EditOrderForm({
             </div>
           </div>
 
-          <Button
-            type="submit"
-            className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold h-12 text-lg shadow-md transition-all active:scale-[0.99] mt-6"
-            disabled={editMutation.isPending}
-          >
-            {editMutation.isPending
-              ? "Securely Saving..."
-              : "Save Modifications"}
-          </Button>
+          {/* Form Action Footer */}
+          <div className="flex items-center gap-3 pt-4 border-t border-slate-200 mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-1/2 h-11 text-slate-700 hover:bg-slate-100 font-medium"
+              onClick={onClose}
+              disabled={editMutation.isPending}
+            >
+              Cancel / Discard
+            </Button>
+            <Button
+              type="submit"
+              className="w-1/2 bg-orange-600 hover:bg-orange-700 text-white font-semibold h-11 shadow-sm transition-all active:scale-[0.99]"
+              disabled={editMutation.isPending}
+            >
+              {editMutation.isPending
+                ? "Securely Saving..."
+                : "Save Modifications"}
+            </Button>
+          </div>
         </form>
       </div>
     </Form>

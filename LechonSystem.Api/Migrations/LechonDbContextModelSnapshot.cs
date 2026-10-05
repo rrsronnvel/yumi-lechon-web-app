@@ -69,6 +69,9 @@ namespace LechonSystem.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("bit");
+
                     b.Property<int>("ItemCategoryId")
                         .HasColumnType("int");
 
@@ -144,6 +147,7 @@ namespace LechonSystem.Api.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<decimal>("BasePrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -153,12 +157,14 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("bit");
 
                     b.Property<decimal>("MaximumWeightKg")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("MinimumSafetyStock")
                         .HasColumnType("int");
 
                     b.Property<decimal>("MinimumWeightKg")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Name")
@@ -266,6 +272,9 @@ namespace LechonSystem.Api.Migrations
                     b.Property<string>("AddOns")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("CancellationReason")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ContactNumber")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -286,21 +295,25 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("DeliveryFee")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int?>("DeliveryTripId")
                         .HasColumnType("int");
 
                     b.Property<decimal>("Discount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("Downpayment")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("Fulfillment")
                         .HasColumnType("int");
 
                     b.Property<decimal>("GrandTotal")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<bool>("IsCancelled")
@@ -316,6 +329,7 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("bit");
 
                     b.Property<decimal>("Price")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Remarks")
@@ -396,12 +410,14 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("Price")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
                     b.Property<decimal>("TotalPrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -480,6 +496,7 @@ namespace LechonSystem.Api.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -532,9 +549,11 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal>("NewPrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("OldPrice")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime?>("UpdatedAt")

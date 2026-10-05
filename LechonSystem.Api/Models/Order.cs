@@ -24,7 +24,7 @@ public class Order : BaseEntity
     public bool IsDeliveryDetailsConfirmed { get; set; } = false;
 
     public bool IsCancelled { get; set; } = false;
-
+    public string? CancellationReason { get; set; }
   
     public bool IsPriceWaived { get; set; } = false;
     public string CreatedBy { get; set; } = "System";

@@ -29,6 +29,12 @@ public class LechonDbContext : DbContext
     public DbSet<Rider> Riders => Set<Rider>();
     public DbSet<User> Users => Set<User>();
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+        configurationBuilder.Properties<decimal>().HavePrecision(18, 2);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -170,7 +170,7 @@ namespace LechonSystem.Api.Services
         }
 
 
-        public async Task<bool> CancelOrderAsync(int orderId)
+        public async Task<bool> CancelOrderAsync(int orderId, string reason = "Cancelled by dispatcher")
         {
             // 1. Find the master order
             var order = await _context.Orders.FindAsync(orderId);
@@ -180,15 +180,26 @@ namespace LechonSystem.Api.Services
 
             // 3. Flip the kill-switch
             order.IsCancelled = true;
+            order.CancellationReason = reason;
+            order.UpdatedAt = DateTime.UtcNow;
 
-            // 4. Tell the Inventory Service to free up the pig!
-            await _inventoryService.ReleaseReservationAsync(orderId);
+            // 4. Release/cancel all linked InventoryReservations
+            var reservations = await _context.InventoryReservations
+                .Where(r => r.OrderId == orderId)
+                .ToListAsync();
+
+            foreach (var res in reservations)
+            {
+                res.IsCancelled = true;
+                res.Status = ReservationStatus.Cancelled;
+                res.ReservationStatus = ReservationStatus.Cancelled;
+            }
 
             var auditLog = new OrderAuditLog
             {
                 OrderId = order.Id,
                 ActionType = "Order Cancelled",
-                Changes = "Order was cancelled and reserved inventory released back to ledger.",
+                Changes = $"Order cancelled. Reason: {reason}",
                 ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             };
@@ -271,7 +282,7 @@ namespace LechonSystem.Api.Services
                     BalanceDue = (o.GrandTotal - o.Downpayment) > 0 ? (o.GrandTotal - o.Downpayment) : 0,
                     IsTrustedCustomer = o.IsTrustedCustomer,
                     IsCancelled = o.IsCancelled,
-                    CancellationReason = null,
+                    CancellationReason = o.CancellationReason,
                     CreatedBy = o.CreatedBy,
                     UpdatedAt = o.UpdatedAt,
                     HasRecentEdits = o.UpdatedAt.HasValue && o.UpdatedAt.Value >= recentCutoff
@@ -480,6 +491,79 @@ namespace LechonSystem.Api.Services
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             return order;
+        }
+
+        public async Task<OrderDetailsDto?> GetOrderDetailsAsync(int orderId)
+        {
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.ItemCategory)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null) return null;
+
+            var dto = new OrderDetailsDto
+            {
+                Id = order.Id,
+                CustomerName = order.CustomerName,
+                ContactNumber = order.ContactNumber ?? string.Empty,
+                Source = order.Source ?? string.Empty,
+                DeliveryAddress = order.DeliveryAddress ?? string.Empty,
+                Remarks = order.Remarks,
+                Price = order.Price,
+                AddOns = order.AddOns,
+                DeliveryFee = order.DeliveryFee,
+                Downpayment = order.Downpayment,
+                Discount = order.Discount,
+                GrandTotal = order.GrandTotal,
+                BalanceDue = (order.GrandTotal - order.Downpayment) > 0 ? (order.GrandTotal - order.Downpayment) : 0,
+                IsTrustedCustomer = order.IsTrustedCustomer,
+                TargetDeliveryTime = order.TargetDeliveryTime,
+                IsDeliveryDetailsConfirmed = order.IsDeliveryDetailsConfirmed,
+                IsCancelled = order.IsCancelled,
+                CancellationReason = order.CancellationReason,
+                IsPriceWaived = order.IsPriceWaived,
+                CreatedBy = order.CreatedBy,
+                CreatedAt = order.CreatedAt,
+                UpdatedAt = order.UpdatedAt,
+                Fulfillment = (int)order.Fulfillment,
+                RoutingStatus = order.RoutingStatus.ToString(),
+                DeliveryTripId = order.DeliveryTripId,
+                OrderItems = order.OrderItems.Select(i => new OrderDetailItemDto
+                {
+                    Id = i.Id,
+                    OrderId = i.OrderId,
+                    ItemCategoryId = i.ItemCategoryId,
+                    Quantity = i.Quantity,
+                    Price = i.Price,
+                    TotalPrice = i.TotalPrice,
+                    ItemCategory = i.ItemCategory == null ? null : new OrderDetailCategoryDto
+                    {
+                        Id = i.ItemCategory.Id,
+                        Name = i.ItemCategory.Name,
+                        BasePrice = i.ItemCategory.BasePrice,
+                        MinimumWeightKg = i.ItemCategory.MinimumWeightKg,
+                        MaximumWeightKg = i.ItemCategory.MaximumWeightKg
+                    }
+                }).ToList()
+            };
+
+            var trip = order.DeliveryTripId.HasValue
+                ? await _context.DeliveryTrips.AsNoTracking().FirstOrDefaultAsync(t => t.Id == order.DeliveryTripId.Value)
+                : await _context.DeliveryTrips.AsNoTracking().FirstOrDefaultAsync(t => t.Orders.Any(o => o.Id == orderId));
+
+            if (trip != null)
+            {
+                dto.AssignedRiderName = trip.RiderName;
+                // Resolve phone number from Riders table if available
+                var rider = await _context.Riders
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.FullName == trip.RiderName);
+                dto.AssignedRiderPhone = rider?.PhoneNumber;
+            }
+
+            return dto;
         }
 
 

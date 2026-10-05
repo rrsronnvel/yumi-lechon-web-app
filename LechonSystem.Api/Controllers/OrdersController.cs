@@ -72,9 +72,13 @@ namespace LechonSystem.Api.Controllers
         }
 
         [HttpPatch("{id}/cancel")]
-        public async Task<IActionResult> CancelOrder(int id)
+        public async Task<IActionResult> CancelOrder(int id, [FromBody] CancelOrderRequest? request = null)
         {
-            var success = await _orderService.CancelOrderAsync(id);
+            var reason = !string.IsNullOrWhiteSpace(request?.Reason)
+                ? request.Reason.Trim()
+                : "Cancelled by dispatcher";
+
+            var success = await _orderService.CancelOrderAsync(id, reason);
 
             if (!success)
                 return NotFound($"Order ID {id} not found or could not be cancelled.");
@@ -126,7 +130,7 @@ namespace LechonSystem.Api.Controllers
         {
             try
             {
-                var order = await _orderService.GetOrderByIdAsync(id);
+                var order = await _orderService.GetOrderDetailsAsync(id);
 
                 if (order == null)
                     return NotFound($"Order {id} not found.");

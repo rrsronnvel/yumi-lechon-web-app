@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
@@ -38,8 +37,34 @@ import OrderForm from "@/components/ui/orders/OrderForm";
 import { useOrderDetails } from "@/hooks/useOrderDetails";
 import { useLogPayment } from "@/hooks/useLogPayment";
 import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
+import { toast } from "sonner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "@/services/apiClient";
+import {
+  generateBookingConfirmation,
+  TemplateOrderData,
+} from "@/utils/messengerTemplates";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+const PRESET_CANCEL_REASONS = [
+  "Customer Change of Mind",
+  "Event Postponed",
+  "Weather / Flooded Access",
+  "Duplicate Entry",
+];
 
 export default function OrdersPage() {
+  const queryClient = useQueryClient();
   const [filterTab, setFilterTab] = useState("upcoming");
   const [rawSearch, setRawSearch] = useState("");
   const debouncedSearch = useDebounce(rawSearch, 300);
@@ -54,6 +79,8 @@ export default function OrdersPage() {
   );
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
   const paymentMutation = useLogPayment();
 
   const { data, isLoading: isDetailsLoading } = useOrderDetails(
@@ -64,6 +91,69 @@ export default function OrdersPage() {
     selectedOrder?.id || null
   );
   const orderDetails = data as any;
+
+  const cancelOrderMutation = useMutation({
+    mutationFn: async ({
+      orderId,
+      reason,
+    }: {
+      orderId: number;
+      reason: string;
+    }) => {
+      const response = await apiClient.patch(`/orders/${orderId}/cancel`, {
+        reason,
+      });
+      return response.data;
+    },
+    onSuccess: (_, variables) => {
+      setIsCancelDialogOpen(false);
+      setCancellationReason("");
+      toast.success(`Order #${variables.orderId} has been cancelled.`);
+      queryClient.invalidateQueries({ queryKey: ["orders", "directory"] });
+      queryClient.invalidateQueries({
+        queryKey: ["orders", variables.orderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["order", variables.orderId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: any) => {
+      toast.error(
+        error?.response?.data?.message || "Failed to cancel order."
+      );
+    },
+  });
+
+  const handleShareDetails = () => {
+    if (!orderDetails) return;
+    const bookingData: TemplateOrderData = {
+      orderNumber: orderDetails.id,
+      customerName: orderDetails.customerName || "Customer",
+      targetDeliveryTime: orderDetails.targetDeliveryTime,
+      fulfillment: Number(orderDetails.fulfillment ?? 1),
+      deliveryAddress: orderDetails.deliveryAddress || "",
+      items: (orderDetails.orderItems || []).map((item: any) => ({
+        categoryName: item.itemCategory?.name || "Lechon Size",
+        quantity: item.quantity || 1,
+      })),
+      subtotal: Number(orderDetails.price || 0),
+      deliveryFee: Number(orderDetails.deliveryFee || 0),
+      grandTotal: Number(orderDetails.grandTotal || 0),
+      downpayment: Number(orderDetails.downpayment || 0),
+      balanceDue: Number(
+        orderDetails.balanceDue ??
+          (Number(orderDetails.grandTotal || 0) -
+            Number(orderDetails.downpayment || 0))
+      ),
+      remarks: orderDetails.remarks || "",
+    };
+
+    const text = generateBookingConfirmation(bookingData);
+    navigator.clipboard.writeText(text);
+    toast.success("Booking receipt copied for Messenger!");
+  };
 
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
 
@@ -451,34 +541,96 @@ export default function OrdersPage() {
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="w-full sm:max-w-[600px] overflow-y-auto bg-slate-50">
           <SheetHeader className="mb-6">
-            <div className="flex justify-between items-start">
-              <div>
-                <SheetTitle className="text-2xl">
-                  Order #{selectedOrder?.id}
-                </SheetTitle>
-                <SheetDescription className="mt-1">
-                  {isEditing
-                    ? "Modifying the Delivery Time or Item Size will recalculate the kitchen schedule."
-                    : "Read-only view. Click 'Edit' to unlock modifications."}
-                </SheetDescription>
-              </div>
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-between items-start gap-2">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <SheetTitle className="text-2xl font-bold font-mono text-slate-900">
+                      #{orderDetails?.id || selectedOrder?.id}
+                    </SheetTitle>
+                    {/* Semantic Status Pill */}
+                    {orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-red-50 text-red-700 border-red-300 font-semibold text-xs"
+                      >
+                        🛑 Cancelled
+                      </Badge>
+                    ) : (orderDetails?.routingStatus || selectedOrder?.routingStatus) ===
+                      "Delivered" ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold text-xs"
+                      >
+                        🟢 Delivered
+                      </Badge>
+                    ) : (orderDetails?.routingStatus || selectedOrder?.routingStatus) ===
+                      "Assigned" ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-50 text-blue-700 border-blue-300 font-semibold text-xs"
+                      >
+                        🛵 Assigned
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="bg-slate-100 text-slate-700 border-slate-300 font-semibold text-xs"
+                      >
+                        ⚪ Unassigned
+                      </Badge>
+                    )}
 
-              {selectedOrder && (
-                <div className="flex gap-2">
-                  <Button
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={() => setIsPaymentOpen(true)}
-                  >
-                    💳 Log Payment
-                  </Button>
-                  <Button
-                    variant={isEditing ? "outline" : "default"}
-                    onClick={() => setIsEditing(!isEditing)}
-                  >
-                    {isEditing ? "Cancel Edit" : "Edit Details"}
-                  </Button>
+                    {/* VIP Badge */}
+                    {(orderDetails?.isTrustedCustomer ||
+                      selectedOrder?.isTrustedCustomer) && (
+                      <Badge
+                        variant="outline"
+                        className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
+                      >
+                        👑 VIP
+                      </Badge>
+                    )}
+                  </div>
+                  <SheetDescription className="mt-1">
+                    {isEditing
+                      ? "Modifying the Delivery Time or Item Size will recalculate the kitchen schedule."
+                      : "Read-only view. Click 'Edit Details' to unlock modifications."}
+                  </SheetDescription>
                 </div>
-              )}
+
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {orderDetails && !isEditing && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-9 gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs"
+                      onClick={handleShareDetails}
+                    >
+                      📋 Share Details
+                    </Button>
+                  )}
+                  {selectedOrder && (
+                    <>
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white h-9"
+                        size="sm"
+                        onClick={() => setIsPaymentOpen(true)}
+                      >
+                        💳 Log Payment
+                      </Button>
+                      <Button
+                        variant={isEditing ? "outline" : "default"}
+                        size="sm"
+                        className="h-9"
+                        onClick={() => setIsEditing(!isEditing)}
+                      >
+                        {isEditing ? "Cancel Edit" : "Edit Details"}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </SheetHeader>
 
@@ -532,10 +684,12 @@ export default function OrdersPage() {
                       <div>
                         <p className="text-gray-500">Delivery Method</p>
                         <p className="font-medium flex items-center gap-1">
-                          {String(orderDetails?.fulfillment).toLowerCase() ===
-                            "pickup" ||
-                          String(orderDetails?.fulfillment) === "0"
+                          {Number(orderDetails?.fulfillment) === 0 ||
+                          String(orderDetails?.fulfillment).toLowerCase() === "pickup"
                             ? "🏪 Walk-in Store Pickup"
+                            : Number(orderDetails?.fulfillment) === 2 ||
+                              String(orderDetails?.fulfillment).toLowerCase() === "lalamove"
+                            ? "📦 Lalamove Courier"
                             : "🚚 Standard Delivery"}
                         </p>
                       </div>
@@ -551,6 +705,128 @@ export default function OrdersPage() {
                             )}
                         </p>
                       </div>
+
+                      {/* Dedicated Courier / Handover Status section */}
+                      <div className="col-span-2 mt-1 pt-3 border-t border-slate-100">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                          Courier / Handover Status
+                        </p>
+                        {Number(orderDetails.fulfillment) === 1 ? (
+                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {orderDetails.assignedRiderName ? (
+                                  <>
+                                    🛵 {orderDetails.assignedRiderName}
+                                    {orderDetails.assignedRiderPhone ? (
+                                      <span className="text-slate-500 font-normal">
+                                        {" "}
+                                        • {orderDetails.assignedRiderPhone}
+                                      </span>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <span className="text-slate-600 font-medium">
+                                    Pending Rider Assignment
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Freelance Delivery Courier
+                              </p>
+                            </div>
+                            <div>
+                              {orderDetails.assignedRiderName ? (
+                                orderDetails.routingStatus === "Assigned" ||
+                                orderDetails.routingStatus === "Delivered" ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-blue-50 text-blue-700 border-blue-300 font-medium"
+                                  >
+                                    🛵 Out for Delivery
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-slate-100 text-slate-700 border-slate-300 font-medium"
+                                  >
+                                    ⚪ Pending Dispatch
+                                  </Badge>
+                                )
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-50 text-amber-700 border-amber-300 font-medium"
+                                >
+                                  ⚪ Pending Rider Assignment
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ) : Number(orderDetails.fulfillment) === 2 ? (
+                          <div className="flex items-center justify-between p-3 bg-orange-50/60 rounded-lg border border-orange-200">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-slate-900">
+                                📦 Customer-Booked Lalamove Courier
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Third-Party Courier App Handover
+                              </p>
+                            </div>
+                            <div>
+                              {Number(
+                                orderDetails.balanceDue ??
+                                  (Number(orderDetails.grandTotal || 0) -
+                                    Number(orderDetails.downpayment || 0))
+                              ) <= 0 ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold"
+                                >
+                                  🟢 Cleared for Release
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-rose-100 text-rose-800 border-rose-300 font-semibold"
+                                >
+                                  🛑 Hold: Unpaid Balance
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-slate-900">
+                                🏪 Walk-in Store Pickup
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Direct Counter Handover
+                              </p>
+                            </div>
+                            <div>
+                              <Badge
+                                variant="outline"
+                                className="bg-blue-50 text-blue-700 border-blue-300 font-medium"
+                              >
+                                Ready for Counter Pickup
+                              </Badge>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {orderDetails.isCancelled && (
+                        <div className="col-span-2 bg-rose-50 p-3 rounded-lg border border-rose-200 mt-2">
+                          <p className="text-xs text-rose-800 font-bold uppercase mb-1">
+                            Booking Voided / Cancelled
+                          </p>
+                          <p className="text-sm text-rose-900 font-medium">
+                            Reason: {orderDetails.cancellationReason || "No cancellation reason logged."}
+                          </p>
+                        </div>
+                      )}
 
                       {orderDetails.remarks && (
                         <div className="col-span-2 bg-amber-50 p-3 rounded border border-amber-100">
@@ -719,6 +995,23 @@ export default function OrdersPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Bottom Actions / In-Dossier Cancellation Gate */}
+                  {!orderDetails.isCancelled &&
+                    orderDetails.routingStatus !== "Delivered" && (
+                      <div className="pt-2 flex justify-end">
+                        <Button
+                          variant="outline"
+                          className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700 shadow-2xs font-medium"
+                          onClick={() => {
+                            setCancellationReason("");
+                            setIsCancelDialogOpen(true);
+                          }}
+                        >
+                          🚫 Cancel Order
+                        </Button>
+                      </div>
+                    )}
                 </div>
               ) : (
                 <div className="text-center text-red-500 py-10">
@@ -788,6 +1081,86 @@ export default function OrdersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* In-Dossier Cancellation Confirmation Modal */}
+      <AlertDialog
+        open={isCancelDialogOpen}
+        onOpenChange={setIsCancelDialogOpen}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Cancel Order #{orderDetails?.id || selectedOrder?.id}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action will void the booking, immediately release the
+              reserved pig back into sellable inventory, and log your name in
+              the audit ledger.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 py-2">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Select Preset Reason
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_CANCEL_REASONS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setCancellationReason(preset)}
+                  className={cn(
+                    "text-xs px-2.5 py-1.5 rounded-full border transition-all cursor-pointer font-medium",
+                    cancellationReason === preset
+                      ? "bg-rose-100 border-rose-300 text-rose-800 shadow-2xs"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  )}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-700 block">
+                Custom or Adjusted Notes <span className="text-rose-500">*</span>
+              </label>
+              <Textarea
+                placeholder="Enter detailed reason for voiding this booking..."
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                rows={3}
+                className="resize-none bg-white text-sm"
+                required
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsCancelDialogOpen(false)}>
+              Keep Booking
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={
+                cancelOrderMutation.isPending || !cancellationReason.trim()
+              }
+              onClick={() => {
+                const targetId = orderDetails?.id || selectedOrder?.id;
+                if (!targetId) return;
+                cancelOrderMutation.mutate({
+                  orderId: targetId,
+                  reason: cancellationReason.trim(),
+                });
+              }}
+            >
+              {cancelOrderMutation.isPending
+                ? "Cancelling..."
+                : "Confirm Cancellation"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
