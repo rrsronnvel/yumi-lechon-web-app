@@ -83,7 +83,7 @@ namespace LechonSystem.Api.Controllers
         }
 
         [HttpGet("directory")]
-        public async Task<IActionResult> GetOrderDirectory([FromQuery] string? searchTerm, [FromQuery] string? filterTab)
+        public async Task<IActionResult> GetOrderDirectory([FromQuery] string? searchTerm, [FromQuery] string? filterTab = "upcoming")
         {
             // Hand the URL search words directly to the fast query we just built
             var directory = await _orderService.GetOrderDirectoryAsync(searchTerm, filterTab);

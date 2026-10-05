@@ -1,23 +1,21 @@
-namespace LechonSystem.Api.Models.DTOs
+namespace LechonSystem.Api.DTOs;
+
+public class OrderDirectoryDto
 {
-    public class OrderDirectoryDto
-    {
-        public int Id { get; set; } // We need this so the frontend can click to edit!
-        public string CustomerName { get; set; } = string.Empty;
-        public DateTime TargetDeliveryTime { get; set; }
-        public decimal TotalAmount { get; set; }
-        public string Status { get; set; } = string.Empty;
-
-        // You can add other flat fields your Shadcn Data Table will need:
-        public string ContactNumber { get; set; } = string.Empty;
-        public string Location { get; set; } = string.Empty;
-
-        public decimal Downpayment { get; set; }
-
-        public bool IsTrustedCustomer { get; set; }
-
-        public string? DeliveryAddress { get; set; } // Nullable because it might be a Store Pickup
-
-        public int Fulfillment { get; set; }
-    }
+    public int Id { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public string ContactNumber { get; set; } = string.Empty;
+    public string DeliveryAddress { get; set; } = string.Empty;
+    public int Fulfillment { get; set; } // 0 = Pickup, 1 = Delivery, 2 = Lalamove
+    public string RoutingStatus { get; set; } = string.Empty; // "Unassigned", "Assigned", "Delivered"
+    public DateTime TargetDeliveryTime { get; set; }
+    public decimal GrandTotal { get; set; }
+    public decimal Downpayment { get; set; }
+    public decimal BalanceDue { get; set; }
+    public bool IsTrustedCustomer { get; set; }
+    public bool IsCancelled { get; set; }
+    public string? CancellationReason { get; set; }
+    public string CreatedBy { get; set; } = "System";
+    public DateTime? UpdatedAt { get; set; }
+    public bool HasRecentEdits { get; set; }
 }

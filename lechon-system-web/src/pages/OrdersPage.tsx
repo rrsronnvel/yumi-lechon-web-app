@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useOrdersDirectory } from "@/hooks/useOrdersDirectory";
+import {
+  useOrdersDirectory,
+  OrderDirectoryDto,
+} from "@/hooks/useOrdersDirectory";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -19,10 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-// Plus the Plus icon if you want a nice button!
-import { Plus } from "lucide-react";
-
-// 1. Import the shadcn Sheet & Tabs components!
+import { Plus, Search } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -30,7 +30,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // <-- NEW IMPORT
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import { Button } from "@/components/ui/button";
 import OrderForm from "@/components/ui/orders/OrderForm";
@@ -39,34 +40,30 @@ import { useLogPayment } from "@/hooks/useLogPayment";
 import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
 
 export default function OrdersPage() {
-  const [searchInput, setSearchInput] = useState("");
-  const debouncedSearchTerm = useDebounce(searchInput, 300);
+  const [filterTab, setFilterTab] = useState("upcoming");
+  const [rawSearch, setRawSearch] = useState("");
+  const debouncedSearch = useDebounce(rawSearch, 300);
 
-  // 1. Add this new state variable to track the clicked tab
-  const [activeTab, setActiveTab] = useState("upcoming");
-
-  // 2. Pass the activeTab directly into your hook!
   const { data: orders, isLoading } = useOrdersDirectory(
-    debouncedSearchTerm,
-    activeTab,
+    debouncedSearch,
+    filterTab
   );
-  // The State Tracker: Who did we just click on?
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
+  const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(
+    null
+  );
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const paymentMutation = useLogPayment();
 
-  // 1. We use || null to prevent 'undefined' errors
-  // 2. We pull out 'data' and explicitly cast it as 'any' so TS lets us do math!
   const { data, isLoading: isDetailsLoading } = useOrderDetails(
-    selectedOrder?.id || null,
+    selectedOrder?.id || null
   );
 
   const { data: auditLogs, isLoading: isAuditLoading } = useOrderAuditLogs(
-    selectedOrder?.id || null,
+    selectedOrder?.id || null
   );
-  const orderDetails = data as any; // <-- This silences all the red lines below!
+  const orderDetails = data as any;
 
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
 
@@ -74,140 +71,311 @@ export default function OrdersPage() {
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentMethod, setPaymentMethod] = useState("GCash");
 
-  // Helper to open the drawer
-  const handleRowClick = (order: any) => {
+  const handleRowClick = (order: OrderDirectoryDto) => {
     setSelectedOrder(order);
-    setIsEditing(false); // 2. NEW: Always default to safe Read-Only mode!
+    setIsEditing(false);
     setIsSheetOpen(true);
   };
 
-  // 3. UPGRADED: The Location Truncation & Badging Helper
-  const formatLocation = (order: any) => {
-    // 1. ALWAYS check for pickup first!
-    const rawFulfill = String(order?.fulfillment).toLowerCase();
-    const isPickup = rawFulfill === "0" || rawFulfill === "pickup";
+  const renderLocation = (order: OrderDirectoryDto) => {
+    const fulfillment = Number(order.fulfillment);
+    const address = (order.deliveryAddress || "").trim();
 
-    if (isPickup) {
+    if (fulfillment === 0) {
       return (
         <Badge
           variant="outline"
-          className="bg-slate-50 text-slate-500 border-slate-200 shadow-sm"
+          className="bg-slate-50 text-slate-600 border-slate-200 shadow-xs font-normal"
         >
           🏪 Store Pickup
         </Badge>
       );
     }
 
-    // 2. Only if it's NOT a pickup, check for the address.
-    const address = order?.deliveryAddress || order?.location || "";
+    const truncated =
+      address.length > 32 ? `${address.substring(0, 32)}...` : address;
 
-    if (address.trim() === "") {
+    if (fulfillment === 2) {
       return (
-        <span className="text-sm text-gray-400 italic">
-          No Address Provided
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge
+            variant="outline"
+            className="bg-orange-50 text-orange-700 border-orange-200 text-xs font-medium"
+          >
+            📦 Lalamove
+          </Badge>
+          <span
+            className="text-sm text-slate-600 truncate max-w-[200px]"
+            title={address}
+          >
+            {truncated || (
+              <span className="italic text-slate-400">No Address</span>
+            )}
+          </span>
+        </div>
       );
     }
 
-    if (address.length > 30) {
-      return (
-        <span title={address} className="text-sm text-gray-600">
-          {address.substring(0, 30)}...
-        </span>
-      );
-    }
-    return <span className="text-sm text-gray-600">{address}</span>;
+    // fulfillment === 1 (Delivery) or default
+    return (
+      <span className="text-sm text-slate-700" title={address}>
+        {truncated || (
+          <span className="italic text-slate-400">No Address Provided</span>
+        )}
+      </span>
+    );
   };
 
-  // 2. The Clean Code Trick:
-  // We wrap your entire table in a helper function so we don't have to
-  // copy-paste this 100 lines of code into every single Tab!
-  const renderDataGrid = () => (
-    <div className="bg-white border rounded-md shadow-sm">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Order ID</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Delivery Time</TableHead>
-            <TableHead>Total Amount</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center py-8">
-                {" "}
-                {/* <-- Updated to 6 */}
-                Loading orders...
-              </TableCell>
-            </TableRow>
-          ) : orders?.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center py-8">
-                {" "}
-                {/* <-- Updated to 6 */}
-                No orders found.
-              </TableCell>
-            </TableRow>
+  const renderTargetSchedule = (deliveryTime: string | Date) => {
+    const targetDate = new Date(deliveryTime);
+    if (isNaN(targetDate.getTime())) {
+      return <span className="text-sm text-slate-400">Invalid Date</span>;
+    }
+
+    const now = new Date();
+    const isToday =
+      targetDate.getFullYear() === now.getFullYear() &&
+      targetDate.getMonth() === now.getMonth() &&
+      targetDate.getDate() === now.getDate();
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow =
+      targetDate.getFullYear() === tomorrow.getFullYear() &&
+      targetDate.getMonth() === tomorrow.getMonth() &&
+      targetDate.getDate() === tomorrow.getDate();
+
+    const formattedDate = targetDate.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const formattedTime = targetDate.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    return (
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
+          <span>{formattedDate}</span>
+          {isToday && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              Today
+            </span>
+          )}
+          {isTomorrow && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+              Tomorrow
+            </span>
+          )}
+        </div>
+        <div className="text-xs font-medium text-slate-700">
+          {formattedTime}
+        </div>
+      </div>
+    );
+  };
+
+  const renderFinancialGrid = (order: OrderDirectoryDto) => {
+    const isPaid = Number(order.balanceDue || 0) <= 0;
+    return (
+      <div className="tabular-nums font-mono text-right space-y-0.5">
+        <div className="font-bold text-slate-900 text-sm">
+          ₱{Number(order.grandTotal || 0).toLocaleString()}
+        </div>
+        <div className="text-xs font-medium">
+          {isPaid ? (
+            <span className="text-emerald-700">🟢 Paid in Full</span>
           ) : (
-            orders?.map((order: any) => (
-              <TableRow
-                key={order.id}
-                className="cursor-pointer hover:bg-orange-50 transition-colors"
-                onClick={() => handleRowClick(order)}
-              >
-                <TableCell className="font-medium">#{order.id}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {order.customerName}
-                    {order.isTrustedCustomer && (
-                      <Badge
-                        variant="outline"
-                        className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-sm"
-                      >
-                        👑 VIP
-                      </Badge>
-                    )}
+            <span className="text-red-600">
+              🔴 ₱{Number(order.balanceDue || 0).toLocaleString()} Due
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderStatus = (order: OrderDirectoryDto) => {
+    if (order.isCancelled) {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-red-50 text-red-700 border-red-200 font-medium"
+        >
+          🛑 Cancelled
+        </Badge>
+      );
+    }
+
+    const status = (order.routingStatus || "").trim();
+    if (status === "Assigned") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-blue-50 text-blue-700 border-blue-200 font-medium"
+        >
+          🛵 Assigned
+        </Badge>
+      );
+    }
+    if (status === "Delivered") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-emerald-50 text-emerald-700 border-emerald-200 font-medium"
+        >
+          🟢 Delivered
+        </Badge>
+      );
+    }
+    return (
+      <Badge
+        variant="outline"
+        className="bg-slate-50 text-slate-700 border-slate-200 font-medium"
+      >
+        ⚪ Unassigned
+      </Badge>
+    );
+  };
+
+  const renderDataGrid = () => (
+    <Card className="bg-white border rounded-xl shadow-xs overflow-hidden">
+      <CardHeader className="py-3 px-4 border-b bg-slate-50/60 flex flex-row items-center justify-between">
+        <CardTitle className="text-sm font-semibold text-slate-800">
+          Order Directory Records
+        </CardTitle>
+        <div className="text-xs font-mono font-medium text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
+          Showing{" "}
+          <strong className="text-slate-900">{orders?.length ?? 0}</strong>{" "}
+          orders
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-slate-50/80">
+              <TableHead className="w-[150px]">Order</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Target Schedule</TableHead>
+              <TableHead className="text-right">Total / Balance</TableHead>
+              <TableHead className="w-[140px]">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-12 text-slate-500">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+                    <span className="text-sm">Loading orders...</span>
                   </div>
                 </TableCell>
-
-                {/* 🚀 THE FIX: Pass the whole 'order' object! */}
-                <TableCell>{formatLocation(order)}</TableCell>
-
-                <TableCell>
-                  {new Date(order.targetDeliveryTime).toLocaleString()}
-                </TableCell>
-                <TableCell>₱{order.totalAmount?.toLocaleString()}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{order.status}</Badge>
+              </TableRow>
+            ) : orders?.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-12 text-slate-500">
+                  <div className="flex flex-col items-center justify-center gap-1">
+                    <p className="font-medium text-slate-700">No orders found.</p>
+                    <p className="text-xs text-slate-400">
+                      Try adjusting your search terms or active tab filter.
+                    </p>
+                  </div>
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+            ) : (
+              orders?.map((order: OrderDirectoryDto) => (
+                <TableRow
+                  key={order.id}
+                  className="cursor-pointer hover:bg-amber-50/40 transition-colors"
+                  onClick={() => handleRowClick(order)}
+                >
+                  {/* Order Column */}
+                  <TableCell>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-semibold text-slate-900">
+                          #{order.id}
+                        </span>
+                        {order.hasRecentEdits && (
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-50 text-amber-800 border-amber-300 font-medium text-[10px] h-4.5 px-1.5"
+                          >
+                            ✏️ Edited
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 font-normal">
+                        by {order.createdBy || "System"}
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  {/* Customer Column */}
+                  <TableCell>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-slate-900">
+                          {order.customerName}
+                        </span>
+                        {order.isTrustedCustomer && (
+                          <Badge
+                            variant="outline"
+                            className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
+                          >
+                            👑 VIP
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="font-mono text-xs text-slate-500">
+                        {order.contactNumber || "N/A"}
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  {/* Location Column */}
+                  <TableCell>{renderLocation(order)}</TableCell>
+
+                  {/* Target Schedule Column */}
+                  <TableCell>
+                    {renderTargetSchedule(order.targetDeliveryTime)}
+                  </TableCell>
+
+                  {/* Total / Balance Column */}
+                  <TableCell>{renderFinancialGrid(order)}</TableCell>
+
+                  {/* Status Column */}
+                  <TableCell>{renderStatus(order)}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header with New Order Button */}
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
             Master Order Directory
           </h1>
-          <p className="text-gray-500 mt-2">
-            Search and safely modify historical and active orders.
+          <p className="text-gray-500 mt-1">
+            Search, filter, and inspect financial balances across all active and historical bookings.
           </p>
         </div>
 
         {/* The New Order Modal */}
         <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
-          <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-orange-600 text-primary-foreground shadow hover:bg-orange-700 h-9 px-4 py-2">
+          <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-orange-600 text-primary-foreground shadow-xs hover:bg-orange-700 h-9 px-4 py-2">
             <Plus className="h-4 w-4" /> New Order
           </DialogTrigger>
           {/* Widescreen POS Terminal Modal Shell */}
@@ -223,30 +391,60 @@ export default function OrdersPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="max-w-md">
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
         <Input
-          placeholder="Search by Customer Name..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="bg-white"
+          placeholder="Search by customer name, phone, or #order ID..."
+          value={rawSearch}
+          onChange={(e) => setRawSearch(e.target.value)}
+          className="bg-white pl-9"
         />
       </div>
 
-      {/* 3. The Tabs Scaffold */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* The Clickable Buttons */}
-        <TabsList className="mb-4">
-          <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-          <TabsTrigger value="past-30">Past 30 Days</TabsTrigger>
-          <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
-          <TabsTrigger value="all-time">All Time</TabsTrigger>
+      {/* 6-Tab Switch Slicing */}
+      <Tabs value={filterTab} onValueChange={setFilterTab} className="w-full">
+        <TabsList className="flex flex-wrap gap-1 h-auto p-1 bg-slate-100/90 rounded-lg">
+          <TabsTrigger
+            value="upcoming"
+            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+          >
+            📅 Upcoming
+          </TabsTrigger>
+          <TabsTrigger
+            value="recent"
+            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+          >
+            ✏️ Recently Modified
+          </TabsTrigger>
+          <TabsTrigger
+            value="balance-due"
+            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+          >
+            💵 Balance Due
+          </TabsTrigger>
+          <TabsTrigger
+            value="past-30"
+            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+          >
+            ⏳ Past 30 Days
+          </TabsTrigger>
+          <TabsTrigger
+            value="cancelled"
+            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+          >
+            🚫 Cancelled
+          </TabsTrigger>
+          <TabsTrigger
+            value="all"
+            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+          >
+            📚 All Time
+          </TabsTrigger>
         </TabsList>
 
-        {/* The Content Folders */}
-        <TabsContent value="upcoming">{renderDataGrid()}</TabsContent>
-        <TabsContent value="past-30">{renderDataGrid()}</TabsContent>
-        <TabsContent value="cancelled">{renderDataGrid()}</TabsContent>
-        <TabsContent value="all-time">{renderDataGrid()}</TabsContent>
+        <TabsContent value={filterTab} className="mt-4">
+          {renderDataGrid()}
+        </TabsContent>
       </Tabs>
 
       {/* The Slide-Out Safety Drawer */}
@@ -265,7 +463,6 @@ export default function OrdersPage() {
                 </SheetDescription>
               </div>
 
-              {/* 3. The Safety Switches */}
               {selectedOrder && (
                 <div className="flex gap-2">
                   <Button
@@ -288,22 +485,18 @@ export default function OrdersPage() {
           {selectedOrder && (
             <div className="mt-4">
               {isEditing ? (
-                /* --- THE UNLOCKED EDIT FORM --- */
                 <EditOrderForm
-                  order={
-                    orderDetails
-                  } /* <--- CHANGE THIS from selectedOrder to orderDetails! */
+                  order={orderDetails}
                   onClose={() => setIsSheetOpen(false)}
                 />
-              ) : /* --- THE PROTECTED READ-ONLY VIEW --- */
-              isDetailsLoading ? (
+              ) : isDetailsLoading ? (
                 <div className="py-16 text-center text-slate-500 animate-pulse">
                   Pulling heavy dossier from the vault...
                 </div>
               ) : orderDetails ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   {/* Card 1: Logistics & Contact */}
-                  <div className="bg-white p-5 rounded-md border shadow-sm">
+                  <div className="bg-white p-5 rounded-md border shadow-xs">
                     <h3 className="font-semibold text-lg border-b pb-2 mb-3 text-gray-800">
                       Customer & Logistics
                     </h3>
@@ -312,11 +505,10 @@ export default function OrdersPage() {
                         <p className="text-gray-500">Name</p>
                         <div className="font-medium text-base flex items-center gap-2">
                           {orderDetails.customerName}
-                          {/* THE VIP BADGE INJECTION */}
                           {orderDetails.isTrustedCustomer && (
                             <Badge
                               variant="outline"
-                              className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-sm"
+                              className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
                             >
                               👑 VIP
                             </Badge>
@@ -333,15 +525,13 @@ export default function OrdersPage() {
                         <p className="text-gray-500">Delivery Target</p>
                         <p className="font-medium text-blue-700">
                           {new Date(
-                            orderDetails.targetDeliveryTime,
+                            orderDetails.targetDeliveryTime
                           ).toLocaleString()}
                         </p>
                       </div>
-                      {/* Explicit Delivery Method Display */}
                       <div>
                         <p className="text-gray-500">Delivery Method</p>
                         <p className="font-medium flex items-center gap-1">
-                          {/* 🚀 THE FIX: Check for the word "pickup" or "0" */}
                           {String(orderDetails?.fulfillment).toLowerCase() ===
                             "pickup" ||
                           String(orderDetails?.fulfillment) === "0"
@@ -350,7 +540,6 @@ export default function OrdersPage() {
                         </p>
                       </div>
 
-                      {/* Explicit Address Display */}
                       <div>
                         <p className="text-gray-500">Address / Location</p>
                         <p className="font-medium text-gray-800">
@@ -362,7 +551,7 @@ export default function OrdersPage() {
                             )}
                         </p>
                       </div>
-                      {/* The Special Remarks Highlight */}
+
                       {orderDetails.remarks && (
                         <div className="col-span-2 bg-amber-50 p-3 rounded border border-amber-100">
                           <p className="text-xs text-amber-800 font-bold uppercase mb-1">
@@ -377,12 +566,11 @@ export default function OrdersPage() {
                   </div>
 
                   {/* Card 2: Order Manifest & Add-ons */}
-                  <div className="bg-white p-5 rounded-md border shadow-sm">
+                  <div className="bg-white p-5 rounded-md border shadow-xs">
                     <h3 className="font-semibold text-lg border-b pb-2 mb-3 text-gray-800">
                       Order Manifest
                     </h3>
                     <div className="space-y-3">
-                      {/* CHANGED: Now mapping over orderItems to match the C# JSON */}
                       {orderDetails.orderItems?.map(
                         (item: any, index: number) => (
                           <div
@@ -396,7 +584,6 @@ export default function OrdersPage() {
                               </p>
                             </div>
 
-                            {/* 🚀 THE IRONCLAD FIX: Cleanly display the old 4500 price! */}
                             <p className="font-semibold text-sm text-gray-800">
                               {item.totalPrice > 0 ? (
                                 `₱${item.totalPrice.toLocaleString()}`
@@ -409,7 +596,7 @@ export default function OrdersPage() {
                               )}
                             </p>
                           </div>
-                        ),
+                        )
                       )}
 
                       {orderDetails.addOns && (
@@ -426,7 +613,7 @@ export default function OrdersPage() {
                   </div>
 
                   {/* Card 3: Exact Financial Splits */}
-                  <div className="bg-white p-5 rounded-md border shadow-sm">
+                  <div className="bg-white p-5 rounded-md border shadow-xs">
                     <h3 className="font-semibold text-lg border-b pb-2 mb-3 text-gray-800">
                       Financial Splits
                     </h3>
@@ -438,7 +625,6 @@ export default function OrdersPage() {
                         </span>
                       </div>
 
-                      {/* 🚀 NEW: The Reverse-Engineered Add-Ons Row */}
                       {(orderDetails.grandTotal || 0) -
                         (orderDetails.price || 0) -
                         (orderDetails.deliveryFee || 0) +
@@ -500,7 +686,7 @@ export default function OrdersPage() {
                   </div>
 
                   {/* Card 4: Security Audit Log */}
-                  <div className="bg-white p-5 rounded-md border shadow-sm">
+                  <div className="bg-white p-5 rounded-md border shadow-xs">
                     <h3 className="font-semibold text-lg border-b pb-2 mb-4 text-gray-800 flex items-center gap-2">
                       🛡️ Audit Log
                     </h3>
@@ -518,7 +704,6 @@ export default function OrdersPage() {
                         <div className="relative border-l-2 border-slate-200 ml-3 space-y-6">
                           {auditLogs?.map((log: any) => (
                             <div key={log.id} className="relative ml-6">
-                              {/* The Timeline Dot */}
                               <span className="absolute flex items-center justify-center w-3 h-3 bg-slate-400 rounded-full -left-[31px] ring-4 ring-white mt-1"></span>
 
                               <p className="text-xs text-slate-500 font-semibold tracking-wider uppercase">
@@ -539,8 +724,7 @@ export default function OrdersPage() {
                 <div className="text-center text-red-500 py-10">
                   Data unavailable.
                 </div>
-              )}{" "}
-              {/* <--- THIS EXTRA PARENTHESIS FIXES THE ERROR! */}
+              )}
             </div>
           )}
         </SheetContent>
@@ -583,7 +767,7 @@ export default function OrdersPage() {
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2 h-11"
               disabled={paymentMutation.isPending || !paymentAmount}
               onClick={() => {
-                // Ensure field names perfectly match your C# DTO!
+                if (!selectedOrder) return;
                 paymentMutation.mutate(
                   {
                     orderId: selectedOrder.id,
@@ -595,7 +779,7 @@ export default function OrdersPage() {
                       setIsPaymentOpen(false);
                       setPaymentAmount("");
                     },
-                  },
+                  }
                 );
               }}
             >
@@ -604,7 +788,6 @@ export default function OrdersPage() {
           </div>
         </DialogContent>
       </Dialog>
-      {/* -------------------------------------- */}
     </div>
   );
 }

@@ -11,26 +11,6 @@ using LechonSystem.Api.Models.DTOs;
 
 namespace LechonSystem.Api.Services
 {
-    // Step 1: The Menu (Interface) - Only signatures!
-    public interface IOrderService
-    {
-        Task<Order> CreateOrderAsync(CreateOrderRequest request);
-        Task<bool> ConfirmPaymentAsync(int orderId);
-        Task<bool> ConfirmDeliveryDetailsAsync(int orderId);
-
-        Task<bool> CancelOrderAsync(int orderId);
-
-        Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
-        Task UpdateOrderAsync(int id, UpdateOrderDto request);
-
-        Task<Order?> GetOrderByIdAsync(int orderId);
-
-        Task<bool> ApplyNewMenuPricesAsync(int orderId);
-        Task<bool> WaivePriceHikeAsync(int orderId);
-
-        Task<List<OrderAuditLog>> GetOrderAuditLogsAsync(int orderId);
-    }
-
     // Step 2: The Kitchen (Class) - The actual logic!
     public class OrderService : IOrderService
     {
@@ -222,44 +202,80 @@ namespace LechonSystem.Api.Services
 
         public async Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab)
         {
-            // 1. The Foundation: Start looking at Orders, but tell Entity Framework 
-            // NOT to track changes (.AsNoTracking()). This makes read operations lightning fast!
             var query = _context.Orders.AsNoTracking().AsQueryable();
 
-            // 2. The Search Engine: If the user typed something, filter the database rows 
-            // BEFORE bringing them into memory.
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
-                query = query.Where(o => o.CustomerName.Contains(searchTerm));
+                var term = searchTerm.Trim().TrimStart('#');
+                query = query.Where(o => 
+                    o.CustomerName.Contains(term) ||
+                    o.ContactNumber.Contains(term) ||
+                    o.Id.ToString().Contains(term));
             }
 
-            // 3. Tab Filtering (Prep for later): 
-            // For example, if (filterTab == "Upcoming") { query = query.Where(o => o.TargetDeliveryTime >= DateTime.UtcNow); }
-            // We will leave this simple for now, but the hook is there!
+            var tab = (filterTab ?? "upcoming").Trim().ToLowerInvariant();
+            switch (tab)
+            {
+                case "recent":
+                    var cutoff = DateTime.UtcNow.AddHours(-48);
+                    query = query.Where(o => 
+                        (o.UpdatedAt.HasValue && o.UpdatedAt.Value >= cutoff) ||
+                        _context.OrderAuditLogs.Any(a => a.OrderId == o.Id && a.Timestamp >= cutoff));
+                    query = query.OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt);
+                    break;
 
-            // 4. The Projection (N+1 Killer): Only pull the exact columns we need, directly into our DTO.
+                case "balance-due":
+                    query = query.Where(o => (o.GrandTotal - o.Downpayment) > 0 && !o.IsCancelled);
+                    query = query.OrderBy(o => o.TargetDeliveryTime);
+                    break;
+
+                case "past-30":
+                    var past30Cutoff = DateTime.Today.AddDays(-30);
+                    var today = DateTime.Today;
+                    query = query.Where(o => o.TargetDeliveryTime < today && o.TargetDeliveryTime >= past30Cutoff && !o.IsCancelled);
+                    query = query.OrderByDescending(o => o.TargetDeliveryTime);
+                    break;
+
+                case "cancelled":
+                    query = query.Where(o => o.IsCancelled == true);
+                    query = query.OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt);
+                    break;
+
+                case "all":
+                case "all-time":
+                    query = query.OrderByDescending(o => o.TargetDeliveryTime);
+                    break;
+
+                case "upcoming":
+                default:
+                    var upcomingToday = DateTime.Today;
+                    query = query.Where(o => o.TargetDeliveryTime >= upcomingToday && !o.IsCancelled);
+                    query = query.OrderBy(o => o.TargetDeliveryTime);
+                    break;
+            }
+
+            var recentCutoff = DateTime.UtcNow.AddHours(-48);
+
             var directory = await query
                 .Select(o => new OrderDirectoryDto
                 {
                     Id = o.Id,
                     CustomerName = o.CustomerName,
-                    TargetDeliveryTime = o.TargetDeliveryTime,
-                    TotalAmount = o.Price + o.DeliveryFee,
-
-                    Status = o.RoutingStatus.ToString(),
-
                     ContactNumber = o.ContactNumber ?? string.Empty,
-
-                    Location = o.DeliveryAddress ?? string.Empty,
-
+                    DeliveryAddress = o.DeliveryAddress ?? string.Empty,
+                    Fulfillment = (int)o.Fulfillment,
+                    RoutingStatus = o.RoutingStatus.ToString(),
+                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    GrandTotal = o.GrandTotal,
                     Downpayment = o.Downpayment,
-
+                    BalanceDue = (o.GrandTotal - o.Downpayment) > 0 ? (o.GrandTotal - o.Downpayment) : 0,
                     IsTrustedCustomer = o.IsTrustedCustomer,
-                    DeliveryAddress = o.DeliveryAddress,
-
-                    Fulfillment = (int)o.Fulfillment
+                    IsCancelled = o.IsCancelled,
+                    CancellationReason = null,
+                    CreatedBy = o.CreatedBy,
+                    UpdatedAt = o.UpdatedAt,
+                    HasRecentEdits = o.UpdatedAt.HasValue && o.UpdatedAt.Value >= recentCutoff
                 })
-                .OrderByDescending(o => o.TargetDeliveryTime)
                 .ToListAsync();
 
             return directory;
@@ -329,6 +345,7 @@ namespace LechonSystem.Api.Services
             order.Downpayment = request.Downpayment;
             order.Discount = request.Discount;
             order.GrandTotal = request.GrandTotal;
+            order.UpdatedAt = DateTime.UtcNow;
 
             // --- NEW: Highly Detailed Item Tracking ---
             var incomingItemIds = request.Items.Select(i => i.Id).ToList();
