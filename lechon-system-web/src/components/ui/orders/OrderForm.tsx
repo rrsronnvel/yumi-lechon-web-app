@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useMemo } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMenuCategories, ItemCategory } from "@/hooks/useCms";
@@ -86,14 +86,13 @@ export default function OrderForm({
     [categories],
   );
 
-  // 2. Initialize React Hook Form
-  const form = useForm<OrderFormData>({
-    resolver: zodResolver(orderFormSchema as any),
-    defaultValues: {
+  // 2. Form Defaults & Initialization (Cart starts empty)
+  const DEFAULT_ORDER_VALUES: OrderFormData = useMemo(
+    () => ({
       customerName: "",
       customerPhone: "",
       targetDeliveryTime: "",
-      fulfillment: 1, // Default: 🚗 Delivery Routing
+      fulfillment: 1, // Default: 🚗 Freelance Delivery
       distanceKm: 0,
       address: "",
       remarks: "",
@@ -104,22 +103,41 @@ export default function OrderForm({
       isTrustedCustomer: false,
       discount: 0,
       grandTotal: 0,
-      items: [{ itemCategoryId: 1, quantity: 1 }],
-    },
+      items: [],
+    }),
+    [],
+  );
+
+  const form = useForm<OrderFormData>({
+    resolver: zodResolver(orderFormSchema as any),
+    defaultValues: DEFAULT_ORDER_VALUES,
   });
 
-  const { fields, append, remove, replace } = useFieldArray({
+  const { fields, append, remove, update, replace } = useFieldArray({
     name: "items",
     control: form.control,
   });
 
+  // Watch items deeply using useWatch for instant reactivity across steppers and calculations
+  const watchedItems = useWatch({
+    control: form.control,
+    name: "items",
+    defaultValue: [],
+  });
+
   // Watch key fields for reactive calculations
   const watchedFulfillment = form.watch("fulfillment");
-  const watchedItems = form.watch("items");
   const watchedDeliveryFee = form.watch("deliveryFee");
   const watchedDiscount = form.watch("discount");
   const watchedDownpayment = form.watch("downpayment");
   const watchedIsTrusted = form.watch("isTrustedCustomer");
+
+  // Reset form to clean empty state when modal opens
+  useEffect(() => {
+    if (_open) {
+      form.reset(DEFAULT_ORDER_VALUES);
+    }
+  }, [_open, form, DEFAULT_ORDER_VALUES]);
 
   // 3. Interactive Store Pickup & Lalamove Safeguards
   useEffect(() => {
@@ -129,21 +147,12 @@ export default function OrderForm({
     }
   }, [watchedFulfillment, form]);
 
-  // Ensure default item matches an actual category once loaded
-  useEffect(() => {
-    if (categories.length > 0 && fields.length === 1 && fields[0].itemCategoryId === 1) {
-      const exists = categories.some((c) => c.id === 1);
-      if (!exists && roastCategories.length > 0) {
-        form.setValue("items.0.itemCategoryId", roastCategories[0].id);
-      }
-    }
-  }, [categories, fields, roastCategories, form]);
-
   // 4. Instant Reactive Math Calculations
   const cartSubtotal = useMemo(() => {
     if (!watchedItems || watchedItems.length === 0) return 0;
     return watchedItems.reduce((acc, item) => {
-      const cat = categories.find((c: any) => c.id === item.itemCategoryId);
+      if (!item || !item.itemCategoryId) return acc;
+      const cat = categories.find((c: any) => c.id === Number(item.itemCategoryId));
       const unitPrice = cat?.basePrice ?? 0;
       const qty = Number(item.quantity) || 0;
       return acc + unitPrice * qty;
@@ -153,7 +162,8 @@ export default function OrderForm({
   const roastSubtotal = useMemo(() => {
     if (!watchedItems || watchedItems.length === 0) return 0;
     return watchedItems.reduce((acc, item) => {
-      const cat = categories.find((c: any) => c.id === item.itemCategoryId);
+      if (!item || !item.itemCategoryId) return acc;
+      const cat = categories.find((c: any) => c.id === Number(item.itemCategoryId));
       if (!cat || cat.minimumWeightKg <= 0) return acc;
       const unitPrice = cat.basePrice ?? 0;
       const qty = Number(item.quantity) || 0;
@@ -174,26 +184,29 @@ export default function OrderForm({
   );
   const balanceDue = grandTotal - effectiveDownpayment;
 
-  // Stepper quantity update helper
+  // Stepper quantity update helper using useFieldArray.update
   const updateQuantity = (index: number, newQty: number) => {
     if (newQty < 1) return;
-    form.setValue(`items.${index}.quantity`, newQty, {
-      shouldValidate: true,
-      shouldDirty: true,
+    const currentItem = watchedItems?.[index] || fields[index];
+    if (!currentItem) return;
+    update(index, {
+      ...currentItem,
+      quantity: newQty,
     });
   };
 
   // Quick add item to cart from header selector
   const handleAddItem = (categoryId: number) => {
-    const currentItems = form.getValues("items") || [];
+    const currentItems = watchedItems || [];
     const existingIndex = currentItems.findIndex(
       (i) => i.itemCategoryId === categoryId,
     );
     if (existingIndex >= 0) {
-      const currentQty = Number(currentItems[existingIndex].quantity) || 1;
-      form.setValue(`items.${existingIndex}.quantity`, currentQty + 1, {
-        shouldValidate: true,
-        shouldDirty: true,
+      const currentItem = currentItems[existingIndex] || fields[existingIndex];
+      const currentQty = Number(currentItem?.quantity) || 1;
+      update(existingIndex, {
+        ...currentItem,
+        quantity: currentQty + 1,
       });
     } else {
       append({ itemCategoryId: categoryId, quantity: 1 });
@@ -256,6 +269,13 @@ export default function OrderForm({
   });
 
   function onSubmit(data: OrderFormData) {
+    if (!data.items || data.items.length === 0) {
+      toast.error("Cart is empty", {
+        description: "Please add at least one item to the cart.",
+      });
+      return;
+    }
+
     let computedCartSubtotal = 0;
     let computedRoastSubtotal = 0;
     const addOnStrings: string[] = [];
@@ -686,7 +706,8 @@ export default function OrderForm({
                   Unified Order Cart
                 </h3>
                 <p className="text-[11px] text-muted-foreground">
-                  {fields.length} line item{fields.length === 1 ? "" : "s"} selected
+                  {(watchedItems?.length ?? 0)} line item
+                  {(watchedItems?.length ?? 0) === 1 ? "" : "s"} selected
                 </p>
               </div>
 
@@ -735,18 +756,23 @@ export default function OrderForm({
 
             {/* Added Cart Line Items */}
             <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-              {fields.length === 0 ? (
-                <div className="text-center py-6 border border-dashed rounded-lg bg-slate-50 text-slate-400 text-xs">
-                  Cart is currently empty. Use the selector above to add Lechon or Extras.
+              {(watchedItems?.length ?? 0) === 0 ? (
+                <div className="text-center py-8 border border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500 space-y-1">
+                  <p className="font-semibold text-xs text-slate-700">Cart is empty</p>
+                  <p className="text-[11px] text-slate-400">
+                    Select a roast or add-on from the dropdown above to begin.
+                  </p>
                 </div>
               ) : (
                 fields.map((fieldItem, index) => {
+                  const currentItem = watchedItems?.[index] || fieldItem;
                   const category = categories.find(
-                    (c: any) => c.id === fieldItem.itemCategoryId,
+                    (c: any) => c.id === currentItem.itemCategoryId,
                   );
                   const unitPrice = category?.basePrice ?? 0;
                   const isRoast = (category?.minimumWeightKg ?? 0) > 0;
-                  const lineTotal = unitPrice * (fieldItem.quantity || 1);
+                  const currentQty = Number(currentItem.quantity) || 1;
+                  const lineTotal = unitPrice * currentQty;
 
                   return (
                     <div
@@ -756,7 +782,7 @@ export default function OrderForm({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-semibold text-gray-900 truncate">
-                            {category?.name || `Item #${fieldItem.itemCategoryId}`}
+                            {category?.name || `Item #${currentItem.itemCategoryId}`}
                           </span>
                           {isRoast && category ? (
                             <Badge
@@ -787,17 +813,15 @@ export default function OrderForm({
                           variant="outline"
                           size="icon"
                           className="h-6 w-6 text-slate-600 bg-white"
-                          disabled={fieldItem.quantity <= 1}
-                          onClick={() =>
-                            updateQuantity(index, fieldItem.quantity - 1)
-                          }
+                          disabled={currentQty <= 1}
+                          onClick={() => updateQuantity(index, currentQty - 1)}
                         >
                           <Minus className="w-3 h-3" />
                         </Button>
                         <Input
                           type="number"
                           min={1}
-                          value={fieldItem.quantity}
+                          value={currentQty}
                           onChange={(e) => {
                             const val = parseInt(e.target.value, 10);
                             updateQuantity(
@@ -812,9 +836,7 @@ export default function OrderForm({
                           variant="outline"
                           size="icon"
                           className="h-6 w-6 text-slate-600 bg-white"
-                          onClick={() =>
-                            updateQuantity(index, fieldItem.quantity + 1)
-                          }
+                          onClick={() => updateQuantity(index, currentQty + 1)}
                         >
                           <Plus className="w-3 h-3" />
                         </Button>
@@ -1042,7 +1064,9 @@ export default function OrderForm({
             {/* Ergonomic Submission Button */}
             <Button
               type="submit"
-              disabled={createOrderMutation.isPending || fields.length === 0}
+              disabled={
+                createOrderMutation.isPending || (watchedItems?.length ?? 0) === 0
+              }
               className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold h-10 shadow-sm text-xs flex items-center justify-center gap-2 mt-2"
             >
               {createOrderMutation.isPending ? (
@@ -1068,7 +1092,7 @@ export default function OrderForm({
           if (!open) {
             setIsSuccessModalOpen(false);
             setSavedOrderForModal(null);
-            form.reset();
+            form.reset(DEFAULT_ORDER_VALUES);
             onClose?.();
             onOpenChange?.(false);
           }
@@ -1130,7 +1154,7 @@ export default function OrderForm({
               onClick={() => {
                 setIsSuccessModalOpen(false);
                 setSavedOrderForModal(null);
-                form.reset();
+                form.reset(DEFAULT_ORDER_VALUES);
                 onClose?.();
                 onOpenChange?.(false);
               }}

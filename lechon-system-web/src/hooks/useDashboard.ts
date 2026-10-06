@@ -20,7 +20,7 @@ export interface DeliveryVerificationDto {
 
 export interface DefrostRosterDto {
   id: number;
-  orderId?: number;
+  orderId: number;
   weightCategory: string;
   quantity: number;
   tahiStartTime: string;

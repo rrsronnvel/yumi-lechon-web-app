@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { parseOrderScreenshot } from "@/services/apiClient";
 import { ParsedOrderDraftDto } from "@/schemas/orderSchema";
+import { compressScreenshot } from "@/utils/imageCompressor";
 import { Camera, UploadCloud, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -15,6 +16,7 @@ export default function OrderScreenshotUploader({
   onError,
 }: OrderScreenshotUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useMutation({
@@ -37,12 +39,20 @@ export default function OrderScreenshotUploader({
   });
 
   const processImageFile = useCallback(
-    (file: File) => {
+    async (file: File) => {
       if (!file.type.startsWith("image/")) {
         onError?.("Uploaded file must be a valid image format (PNG, JPG, WebP).");
         return;
       }
-      uploadMutation.mutate(file);
+      try {
+        setIsCompressing(true);
+        const optimizedFile = await compressScreenshot(file);
+        setIsCompressing(false);
+        uploadMutation.mutate(optimizedFile);
+      } catch {
+        setIsCompressing(false);
+        uploadMutation.mutate(file);
+      }
     },
     [uploadMutation, onError]
   );
@@ -119,7 +129,15 @@ export default function OrderScreenshotUploader({
         onChange={handleFileInputChange}
       />
 
-      {uploadMutation.isPending ? (
+      {isCompressing ? (
+        <div className="flex items-center gap-2 text-orange-700 font-medium py-0.5">
+          <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
+          <span className="flex items-center gap-1.5 text-xs truncate">
+            <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-pulse shrink-0" />
+            Optimizing screenshot size...
+          </span>
+        </div>
+      ) : uploadMutation.isPending ? (
         <div className="flex items-center gap-2 text-orange-700 font-medium py-0.5">
           <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
           <span className="flex items-center gap-1.5 text-xs truncate">
@@ -146,7 +164,7 @@ export default function OrderScreenshotUploader({
         variant="outline"
         size="sm"
         onClick={() => fileInputRef.current?.click()}
-        disabled={uploadMutation.isPending}
+        disabled={isCompressing || uploadMutation.isPending}
         className="text-[11px] h-6 px-2.5 border-amber-300 bg-white text-amber-900 hover:bg-amber-100 shrink-0 font-medium shadow-none"
       >
         <UploadCloud className="w-3 h-3 mr-1 text-amber-700" />

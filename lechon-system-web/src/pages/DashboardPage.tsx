@@ -688,7 +688,7 @@ export default function DashboardPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-100/70 border-b border-slate-200">
-                      <TableHead className="font-bold text-slate-800">Item #</TableHead>
+                      <TableHead className="font-bold text-slate-800">Order #</TableHead>
                       <TableHead className="font-bold text-slate-800">Customer & Routing</TableHead>
                       <TableHead className="font-bold text-slate-800">Size / Qty</TableHead>
                       <TableHead className="font-bold text-slate-800">Prep (Tahi) Deadline</TableHead>
@@ -703,7 +703,7 @@ export default function DashboardPage() {
                       return (
                         <TableRow
                           key={item.id}
-                          onClick={() => handleEditClick(item.id)}
+                          onClick={() => handleEditClick(item.orderId || item.id)}
                           className={`cursor-pointer transition-colors border-b border-slate-200 ${
                             item.isRush
                               ? "bg-rose-50/60 hover:bg-rose-100/70"
@@ -713,7 +713,7 @@ export default function DashboardPage() {
                           }`}
                         >
                           <TableCell className="font-mono font-medium text-slate-700">
-                            #{item.id}
+                            #{item.orderId || item.id}
                           </TableCell>
                           <TableCell>
                             <div className="font-semibold text-slate-900 flex items-center gap-2">
@@ -781,7 +781,8 @@ export default function DashboardPage() {
                               size="icon"
                               className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                               title="Copy 1-Day Verification for Messenger"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 const orderData: TemplateOrderData = {
                                   orderNumber: item.orderId || item.id,
                                   customerName: item.customerName,

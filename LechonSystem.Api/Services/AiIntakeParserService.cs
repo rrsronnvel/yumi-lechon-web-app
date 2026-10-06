@@ -61,6 +61,10 @@ public class AiIntakeParserService : IAiIntakeParserService
         var imageBytes = memoryStream.ToArray();
         var base64Data = Convert.ToBase64String(imageBytes);
 
+        _logger.LogInformation(
+            "Processing screenshot intake. File: '{FileName}', Size: {SizeKb:F1} KB, ContentType: '{MimeType}'",
+            file.FileName, imageBytes.Length / 1024.0, mimeType);
+
         // 2. Query active item categories from DB
         var activeCategories = await _context.ItemCategories
             .Where(c => c.IsActive)
@@ -189,14 +193,28 @@ public class AiIntakeParserService : IAiIntakeParserService
         var httpClient = _httpClientFactory.CreateClient();
         httpClient.Timeout = TimeSpan.FromSeconds(60);
 
-        var preferredModel = _configuration["Gemini:Model"] ?? "gemini-3.8-flash";
-        var modelsToTry = new List<string> { preferredModel };
-        if (preferredModel.Equals("gemini-3.8-flash", StringComparison.OrdinalIgnoreCase))
+        // Prioritized multi-model cascade: Preferred Model -> Modern Flash alternatives -> General fallbacks
+        var configuredModel = _configuration["Gemini:Model"];
+        if (string.IsNullOrWhiteSpace(configuredModel) || configuredModel.Equals("gemini-3.8-flash", StringComparison.OrdinalIgnoreCase))
         {
-            modelsToTry.Add("gemini-flash-latest");
+            configuredModel = "gemini-2.5-flash";
         }
 
-        const int maxRetriesPerModel = 3;
+        var candidateModels = new[]
+        {
+            configuredModel,
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-flash-latest"
+        };
+
+        var modelsToTry = candidateModels
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        const int maxRetriesPerModel = 2; // Maximum 2 tries per model before cascading to the next model cluster
         HttpResponseMessage? response = null;
         string? lastError = null;
 
@@ -216,13 +234,14 @@ public class AiIntakeParserService : IAiIntakeParserService
 
                     if (response.IsSuccessStatusCode)
                     {
+                        _logger.LogInformation("Successfully invoked Gemini model '{Model}' on attempt {Attempt}", currentModel, attempt);
                         break;
                     }
 
-                    // If 404 (Model not found/deprecated), don't retry same model - break to next model
+                    // If 404 (Model not found/deprecated), don't retry same model - immediately cascade to next model
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
-                        _logger.LogWarning("Model {Model} returned 404 Not Found. Skipping to next model...", currentModel);
+                        _logger.LogWarning("Model '{Model}' returned 404 Not Found. Skipping to next candidate model...", currentModel);
                         break;
                     }
 
@@ -231,37 +250,48 @@ public class AiIntakeParserService : IAiIntakeParserService
                     if (statusCode == 503 || statusCode == 429 || statusCode == 502 || statusCode == 504)
                     {
                         _logger.LogWarning(
-                            "Gemini API high demand on {Model} (Status {StatusCode}, Attempt {Attempt}/{MaxRetries}). Waiting before automatic retry...",
-                            currentModel, statusCode, attempt, maxRetriesPerModel);
+                            "Gemini API returned status {StatusCode} on '{Model}' (Attempt {Attempt}/{MaxRetries}).",
+                            statusCode, currentModel, attempt, maxRetriesPerModel);
 
                         if (attempt < maxRetriesPerModel)
                         {
-                            // Exponential backoff: 1s, 2s
-                            await Task.Delay(1000 * attempt);
+                            // Jittered exponential backoff: ~1.2s - 1.8s
+                            var baseDelayMs = 1200 * attempt;
+                            var jitterMs = Random.Shared.Next(100, 600);
+                            await Task.Delay(baseDelayMs + jitterMs);
                             continue;
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "Model '{Model}' still overloaded after {MaxRetries} attempts. Cascading to next model in cluster...",
+                                currentModel, maxRetriesPerModel);
+                            break; // Break attempt loop to cascade to next model in modelsToTry
                         }
                     }
 
-                    // For client errors (e.g. 400 Bad Request), don't retry blindly
+                    // For other errors (e.g. 400 Bad Request), don't retry blindly
                     break;
                 }
                 catch (HttpRequestException ex)
                 {
                     lastError = ex.Message;
                     _logger.LogWarning(
-                        "Transient network exception calling model {Model} (Attempt {Attempt}/{MaxRetries}): {Message}",
+                        "Transient network exception calling model '{Model}' (Attempt {Attempt}/{MaxRetries}): {Message}",
                         currentModel, attempt, maxRetriesPerModel, ex.Message);
 
                     if (attempt < maxRetriesPerModel)
                     {
-                        await Task.Delay(1000 * attempt);
+                        var baseDelayMs = 1200 * attempt;
+                        var jitterMs = Random.Shared.Next(100, 600);
+                        await Task.Delay(baseDelayMs + jitterMs);
                         continue;
                     }
                 }
                 catch (Exception ex)
                 {
                     lastError = ex.Message;
-                    _logger.LogWarning("Unexpected error calling model {Model}: {Message}", currentModel, ex.Message);
+                    _logger.LogWarning("Unexpected error calling model '{Model}': {Message}", currentModel, ex.Message);
                     break;
                 }
             }

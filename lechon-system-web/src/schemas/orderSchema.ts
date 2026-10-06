@@ -33,7 +33,7 @@ export const orderFormSchema = z
           quantity: z.number().min(1, { message: "Quantity must be at least 1." }),
         })
       )
-      .min(1, { message: "Order must contain at least one item." }),
+      .min(1, { message: "At least one item is required." }),
 
     // Backward-compatible fields
     fulfillmentType: z.string().optional(),
