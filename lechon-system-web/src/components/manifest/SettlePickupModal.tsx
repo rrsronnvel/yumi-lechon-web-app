@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import { toast } from "sonner";
-import { useSettlePickupPaymentMutation } from "@/hooks/useManifest";
+import { useCounterCollectPickupMutation } from "@/hooks/useManifest";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +48,7 @@ export function SettlePickupModal({
   const [referenceNumber, setReferenceNumber] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const settleMutation = useSettlePickupPaymentMutation();
+  const collectMutation = useCounterCollectPickupMutation();
 
   const handleClose = () => {
     setPaymentMethod("Cash");
@@ -67,11 +67,11 @@ export function SettlePickupModal({
 
     setErrorMessage(null);
 
-    settleMutation.mutate(
+    collectMutation.mutate(
       {
         orderId: order.orderId,
         amount: order.balanceDue,
-        paymentMethod: paymentMethod === "Cash" ? "Physical Cash" : "Store GCash",
+        paymentMethod: paymentMethod === "Cash" ? "Cash" : "GCash",
         referenceNumber: referenceNumber.trim() || undefined,
       },
       {
@@ -81,8 +81,8 @@ export function SettlePickupModal({
               ? "Physical Cash (Store Drawer)"
               : "Store GCash QR";
 
-          toast.success(`Settlement recorded for Order #${order.orderId}!`, {
-            description: `₱${order.balanceDue.toLocaleString()} collected from ${order.customerName} via ${methodLabel}.`,
+          toast.success(`Counter Collection Recorded for Order #${order.orderId}!`, {
+            description: `₱${order.balanceDue.toLocaleString()} collected from ${order.customerName} via ${methodLabel} and placed into Staff Drawer custody.`,
           });
           handleClose();
           onSuccess?.();
@@ -90,9 +90,9 @@ export function SettlePickupModal({
         onError: (err: any) => {
           const apiError =
             err?.response?.data?.message ||
-            "Failed to record settlement. Please check the amount and try again.";
+            "Failed to record counter collection. Please check the amount and try again.";
           setErrorMessage(apiError);
-          toast.error("Settlement Error", {
+          toast.error("Collection Error", {
             description: apiError,
           });
         },
@@ -119,7 +119,7 @@ export function SettlePickupModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
-            <span>Settle Pickup Order #{order.orderId}</span>
+            <span>Collect Pickup Order #{order.orderId}</span>
             {order.isTrustedCustomer && (
               <Badge
                 variant="outline"
@@ -130,7 +130,7 @@ export function SettlePickupModal({
             )}
           </DialogTitle>
           <DialogDescription>
-            Record store register handover payment for {order.customerName}.
+            Collect walk-in customer handover payment and place into staff drawer custody.
           </DialogDescription>
         </DialogHeader>
 
@@ -216,18 +216,18 @@ export function SettlePickupModal({
           <Button
             variant="outline"
             onClick={handleClose}
-            disabled={settleMutation.isPending}
+            disabled={collectMutation.isPending}
           >
             Cancel
           </Button>
           <Button
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
             onClick={handleConfirm}
-            disabled={settleMutation.isPending}
+            disabled={collectMutation.isPending}
           >
-            {settleMutation.isPending
+            {collectMutation.isPending
               ? "Recording..."
-              : "Confirm & Record Settlement"}
+              : "Confirm & Receive into Drawer"}
           </Button>
         </DialogFooter>
       </DialogContent>

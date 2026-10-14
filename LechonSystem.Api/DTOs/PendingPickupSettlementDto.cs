@@ -13,4 +13,9 @@ public class PendingPickupSettlementDto
     public bool IsTrustedCustomer { get; set; }
     public string? Address { get; set; }
     public string? Remarks { get; set; }
+
+    public string CustodyStatus { get; set; } = "Uncollected";
+    public string? RiderSignedBy { get; set; }
+    public string? HeldByStaffName { get; set; }
+    public string? HeldPaymentMethod { get; set; }
 }

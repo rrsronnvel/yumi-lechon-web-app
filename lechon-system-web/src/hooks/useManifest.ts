@@ -11,6 +11,10 @@ export interface PendingSettlementDrop {
   totalCollected: number;
   riderDeliveryFee: number;
   netRemittance: number;
+  custodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
+  riderSignedBy?: string | null;
+  heldByStaffName?: string | null;
+  heldPaymentMethod?: string | null;
   createdAt?: string;
   targetDeliveryTime?: string;
   dispatchTime?: string | null;
@@ -36,6 +40,10 @@ export interface PendingPickupSettlement {
   isTrustedCustomer: boolean;
   address?: string;
   remarks?: string;
+  custodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
+  riderSignedBy?: string | null;
+  heldByStaffName?: string | null;
+  heldPaymentMethod?: string | null;
 }
 
 export interface PendingLalamoveSettlement {
@@ -50,6 +58,67 @@ export interface PendingLalamoveSettlement {
   isClearedForRelease: boolean;
   isReleased: boolean;
   remarks?: string;
+}
+
+// QR Settlement Data Types
+export interface CreateQrSessionPayload {
+  orderId: number;
+  hopStage: "RiderToStaff" | "StaffToOwner";
+  paymentMethod: "Cash" | "ManualGCash" | "GCash" | string;
+  expectedAmount: number;
+  referenceNumber?: string;
+}
+
+export interface QrSessionStatus {
+  token: string;
+  orderId: number;
+  customerName: string;
+  assignedRiderName: string;
+  hopStage: "RiderToStaff" | "StaffToOwner" | string;
+  paymentMethod: string;
+  expectedAmount: number;
+  status: "PendingScan" | "SignedByRider" | "ValidatedByStaff" | "ApprovedByOwner" | "Expired" | string;
+  riderSignedBy?: string | null;
+  riderRemittedAmount?: number | null;
+  riderSignedAt?: string | null;
+  staffValidatedBy?: string | null;
+  staffValidatedAt?: string | null;
+  ownerApprovedBy?: string | null;
+  ownerApprovedAt?: string | null;
+  expiresAt: string;
+  isExpired: boolean;
+  isUsed: boolean;
+}
+
+export interface RiderSignPayload {
+  token: string;
+  riderName: string;
+  remittedAmount: number;
+}
+
+export interface StaffValidatePayload {
+  token: string;
+  manualOverrideRiderName?: string;
+  manualOverrideAmount?: number;
+}
+
+export interface OwnerApprovePayload {
+  token: string;
+  ownerUsername?: string;
+  ownerPinOrPassword?: string;
+}
+
+export interface CounterCollectPickupPayload {
+  orderId: number;
+  paymentMethod: string;
+  amount?: number;
+  referenceNumber?: string;
+}
+
+export interface DirectGcashPayload {
+  orderId: number;
+  amount: number;
+  referenceNumber: string;
 }
 
 // Tab 1: Freelance Rider Settlements
@@ -147,6 +216,180 @@ export const useReleaseLalamoveMutation = () => {
     onSuccess: () => {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: ["manifest", "lalamove"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
+// ==========================================
+// TWO-HOP QR DIGITAL SETTLEMENT HOOKS
+// ==========================================
+
+// 1. Create QR Session
+export const useCreateQrSessionMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CreateQrSessionPayload) => {
+      const response = await apiClient.post<QrSessionStatus>(
+        "/logistics/settlements/qr-session",
+        payload
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["manifest", "qr-session", data.token], data);
+    },
+  });
+};
+
+// 2. Poll QR Session Status
+export const useQrSessionStatusQuery = (token: string | null, enabled: boolean = true) => {
+  return useQuery<QrSessionStatus>({
+    queryKey: ["manifest", "qr-session", token],
+    queryFn: async () => {
+      if (!token) throw new Error("Token is required");
+      const response = await apiClient.get<QrSessionStatus>(
+        `/logistics/settlements/qr-session/${token}`
+      );
+      return response.data;
+    },
+    enabled: Boolean(token) && enabled,
+    refetchInterval: 2000,
+  });
+};
+
+// 3. Rider Digital Signature
+export const useRiderSignQrMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: RiderSignPayload) => {
+      const response = await apiClient.post<QrSessionStatus>(
+        `/logistics/settlements/qr-session/${payload.token}/rider-sign`,
+        {
+          riderName: payload.riderName,
+          remittedAmount: payload.remittedAmount,
+        }
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: ["manifest", "qr-session", data.token],
+      });
+    },
+  });
+};
+
+// 4. Staff Validate into Drawer
+export const useStaffValidateQrMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: StaffValidatePayload) => {
+      const response = await apiClient.post<QrSessionStatus>(
+        `/logistics/settlements/qr-session/${payload.token}/staff-validate`,
+        {
+          manualOverrideRiderName: payload.manualOverrideRiderName,
+          manualOverrideAmount: payload.manualOverrideAmount,
+        }
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "qr-session", data.token],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "pending-settlement"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
+// 5. Store Counter Collection (Tab 2 Pickup)
+export const useCounterCollectPickupMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CounterCollectPickupPayload) => {
+      const response = await apiClient.post(
+        "/logistics/settlements/counter-collect",
+        payload
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "pending-settlement"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
+// 6. Owner Verification & Final Settlement
+export const useOwnerApproveQrMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: OwnerApprovePayload) => {
+      const response = await apiClient.post<QrSessionStatus>(
+        `/logistics/settlements/qr-session/${payload.token}/owner-approve`,
+        {
+          ownerUsername: payload.ownerUsername,
+          ownerPinOrPassword: payload.ownerPinOrPassword,
+        }
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "qr-session", data.token],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "pending-settlement"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "lalamove"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
+// 7. Direct Store GCash Bypass Settlement
+export const useDirectGcashSettlementMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: DirectGcashPayload) => {
+      const response = await apiClient.post(
+        "/logistics/settlements/direct-gcash",
+        payload
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "pending-settlement"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);

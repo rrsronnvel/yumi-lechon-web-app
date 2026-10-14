@@ -316,6 +316,9 @@ namespace LechonSystem.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("HeldByStaffMethod")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsCancelled")
                         .HasColumnType("bit");
 
@@ -328,6 +331,12 @@ namespace LechonSystem.Api.Migrations
                     b.Property<bool>("IsTrustedCustomer")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime?>("OwnerApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OwnerApprovedBy")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal>("Price")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -335,11 +344,31 @@ namespace LechonSystem.Api.Migrations
                     b.Property<string>("Remarks")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal?>("RiderRemittedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("RiderSignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RiderSignedBy")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("RoutingStatus")
                         .HasColumnType("int");
 
+                    b.Property<string>("SettlementCustodyStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Source")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("StaffValidatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("StaffValidatedBy")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("TargetDeliveryTime")
@@ -774,6 +803,81 @@ namespace LechonSystem.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("LechonSystem.Api.Models.SettlementQrSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ExpectedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HopStage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsUsed")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("OwnerApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OwnerApprovedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReferenceNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("RiderRemittedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("RiderSignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RiderSignedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("StaffValidatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("StaffValidatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.ToTable("SettlementQrSessions");
+                });
+
             modelBuilder.Entity("LechonSystem.Api.Models.User", b =>
                 {
                     b.Property<int>("Id")
@@ -948,6 +1052,17 @@ namespace LechonSystem.Api.Migrations
                     b.Navigation("ItemCategory");
 
                     b.Navigation("PurchaseOrder");
+                });
+
+            modelBuilder.Entity("LechonSystem.Api.Models.SettlementQrSession", b =>
+                {
+                    b.HasOne("LechonSystem.Api.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("LechonSystem.Api.Models.DeliveryTrip", b =>

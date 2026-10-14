@@ -11,10 +11,20 @@ namespace LechonSystem.Api.Services
         Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync();
         Task<DeliveryTrip> AssignRiderAsync(string riderName, string vehicleType, List<int> orderIds);
         Task<IEnumerable<object>> GetTodayDispatchesAsync();
-        Task<IEnumerable<object>> GetPendingSettlementDropsAsync();
+        Task<IEnumerable<PendingSettlementDropDto>> GetPendingSettlementDropsAsync();
 
         Task<IEnumerable<PendingPickupSettlementDto>> GetPendingPickupSettlementsAsync();
         Task<IEnumerable<PendingLalamoveSettlementDto>> GetPendingLalamoveSettlementsAsync();
         Task<bool> ConfirmLalamoveReleaseAsync(int orderId);
+
+        // Two-Hop QR Custody Chain
+        Task<QrSessionStatusDto> CreateQrSessionAsync(CreateQrSessionRequest request);
+        Task<QrSessionStatusDto?> GetQrSessionByTokenAsync(string token);
+        Task<QrSessionStatusDto> RiderSignQrSessionAsync(string token, RiderSignRequest request);
+        Task<QrSessionStatusDto> StaffValidateQrSessionAsync(string token, StaffValidateRequest? request, string staffUsername);
+        Task<QrSessionStatusDto> CounterCollectQrSessionAsync(string token, string staffUsername);
+        Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null);
+        Task<QrSessionStatusDto> OwnerApproveQrSessionAsync(string token, OwnerApproveRequest? request, string? currentUsername, bool isOwnerRole);
+        Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername);
     }
 }

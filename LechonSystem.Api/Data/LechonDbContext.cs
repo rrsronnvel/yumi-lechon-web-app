@@ -28,6 +28,7 @@ public class LechonDbContext : DbContext
     public DbSet<OrderAuditLog> OrderAuditLogs { get; set; }
     public DbSet<Rider> Riders => Set<Rider>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<SettlementQrSession> SettlementQrSessions => Set<SettlementQrSession>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -91,6 +92,10 @@ public class LechonDbContext : DbContext
 
         modelBuilder.Entity<PaymentLog>()
                 .HasIndex(p => p.GatewayReferenceId)
+                .IsUnique();
+
+        modelBuilder.Entity<SettlementQrSession>()
+                .HasIndex(s => s.Token)
                 .IsUnique();
     }
 }

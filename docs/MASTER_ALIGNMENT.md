@@ -413,6 +413,30 @@ The Manifest is elevated from a driver-only cash sheet into the centralized "Dai
 - Time-Blind State Retention: Orders with an unsettled balance ((\text{GrandTotal} - \text{Downpayment} > 0)) never expire, auto-archive, or vanish from settlement queues based on the clock. They persist indefinitely across days until a digital payment log is recorded.
 - Overnight Overdue Radar: Any unremitted orders from past calendar dates automatically escalate on the Command Center Dashboard's Floating Remittance Radar in high-contrast amber/red, prompting the owner to reconcile physical drawer envelopes and staff notebooks immediately upon morning login.
 
+#### 9.3 Two-Hop Cash Custody Chain & One-Time QR Digital Signature Governance
+To eliminate physical signature logbooks and prevent custody disputes between freelance riders, counter staff, and the business owner, the Daily Manifest enforces a two-stage digital custody chain powered by one-time cryptographic QR handshakes:
+
+1. Three-Stage Settlement Custody State Machine:
+   - `Uncollected` (Stage 1): Order is out with the freelance rider or awaiting walk-in counter payment.
+   - `InStaffDrawer` (Stage 2): Physical cash or rider transfer has been handed over to the counter cashier. The rider is officially cleared of liability, and financial accountability transfers strictly to the authenticated staff member (`StaffValidatedBy` via JWT claims).
+   - `Settled` (Stage 3): The staff member remits the specific order's cash envelope to the Business Owner (order-by-order). Upon Owner verification, the system writes the final `PaymentLog`, stamps `OwnerApprovedBy`, and clears the record from the Manifest and Dashboard.
+
+2. Hop 1: Rider-to-Staff Handshake (Tab 1: Freelance Riders):
+   - Full 2-Hop QR Chain (`Cash` & `ManualGCash`):
+     - When settling Physical Cash or Rider GCash Remittance, the PC generates a 10-minute cryptographic `OneTimeToken` and renders a dynamic QR code pointing to `${window.location.origin}/qr-settle/${token}`.
+     - The rider scans the QR code using their personal smartphone (via mobile data or Wi-Fi), inputs their Name (`RiderSignedBy`) and Remitted Amount (`RiderRemittedAmount`), and submits their digital signature.
+     - The PC modal polls the session every 2 seconds, displaying the rider's signed declaration in real time. The cashier counts the physical bills and clicks `[Validate & Receive into Drawer]`.
+     - The rider's phone immediately transitions to an official green Digital Handover Receipt for screenshot proof, while the order moves to `InStaffDrawer`.
+     - Includes a `[Manual Counter Override]` fallback on the PC modal if a rider's phone battery is dead or lacks a working camera.
+   - 1-Hop Direct Bypass (`GCash` - Direct to Store):
+     - If the customer paid directly to the Store's GCash QR, the rider holds ₱0 of store funds. The transaction bypasses the Rider-to-Staff QR signature and logs the GCash reference number directly for settlement.
+
+3. Counter Collection & Hop 2: Staff-to-Owner Remittance (Order-by-Order):
+   - Walk-in Store Pickups (Tab 2): Because no rider is involved, counter collection immediately stamps the logged-in cashier's JWT identity and places the cash into `InStaffDrawer`.
+   - Order-by-Order Owner Verification: For any order sitting in `InStaffDrawer` (across Tab 1 or Tab 2), clicking `[👑 Remit to Owner]` generates a One-Time Owner Verification QR Code on the PC monitor.
+   - The Owner scans the QR code on their phone to review the custody trail (Rider Name, Staff Holder, Exact Peso Amount) and taps `[👑 Owner Approve & Settle]`. If the Owner is actively logged into the PC terminal with an `Owner` role account, they may also execute a 1-click `[Owner Quick-Approve]` directly on screen.
+   - Token Self-Destruction: Once approved, the `OneTimeToken` is permanently invalidated (`IsUsed = true`) to prevent replay attacks.
+
 ### 10. Content Management System (CMS), Pricing & Catalog Governance
 
 The CMS serves as the centralized operational control board for catalog metadata, base pricing, inventory safety buffers, and kitchen cooking profiles.

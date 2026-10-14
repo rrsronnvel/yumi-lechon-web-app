@@ -22,7 +22,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 1. GET: api/logistics/unassigned
-        // Fetches all live delivery orders currently waiting for a rider assignment
         [HttpGet("unassigned")]
         public async Task<IActionResult> GetUnassignedOrders()
         {
@@ -31,7 +30,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 2. POST: api/logistics/assign-rider
-        // Executes defensive batch validation and assigns a rider to a set of orders
         [HttpPost("assign-rider")]
         public async Task<IActionResult> AssignRider([FromBody] AssignRiderRequest request)
         {
@@ -51,7 +49,6 @@ namespace LechonSystem.Api.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                // Catches our kitchen bouncer's rules if food isn't completely Packaged/ReadyForDelivery
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
@@ -61,7 +58,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 3. GET: api/logistics/today
-        // Fetches all active delivery orders scheduled for today
         [HttpGet("today")]
         public async Task<IActionResult> GetTodayDispatches()
         {
@@ -70,7 +66,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 4. GET: api/logistics/trips/pending-settlement
-        // Fetches individual customer drops pending cash reconciliation
         [HttpGet("trips/pending-settlement")]
         public async Task<IActionResult> GetPendingSettlements()
         {
@@ -79,7 +74,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 5. GET: api/logistics/settlements/pickups
-        // Fetches all store pickups with pending balance to collect
         [HttpGet("settlements/pickups")]
         public async Task<IActionResult> GetPendingPickupSettlements()
         {
@@ -88,7 +82,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 6. GET: api/logistics/settlements/lalamove
-        // Fetches active Lalamove courier orders for anti-loss verification gate
         [HttpGet("settlements/lalamove")]
         public async Task<IActionResult> GetPendingLalamoveSettlements()
         {
@@ -97,7 +90,6 @@ namespace LechonSystem.Api.Controllers
         }
 
         // 7. POST: api/logistics/settlements/lalamove/{orderId}/release
-        // Confirms physical handover to Lalamove courier (guards against unpaid balance)
         [HttpPost("settlements/lalamove/{orderId}/release")]
         public async Task<IActionResult> ConfirmLalamoveRelease(int orderId)
         {
@@ -119,13 +111,196 @@ namespace LechonSystem.Api.Controllers
                 return StatusCode(500, new { message = "An unexpected error occurred during courier release.", error = ex.Message });
             }
         }
+
+        // ==========================================
+        // TWO-HOP QR CUSTODY CHAIN ENDPOINTS
+        // ==========================================
+
+        // 1. Create QR Session
+        [HttpPost("settlements/qr-session")]
+        public async Task<IActionResult> CreateQrSession([FromBody] CreateQrSessionRequest request)
+        {
+            try
+            {
+                var session = await _logisticsService.CreateQrSessionAsync(request);
+                return Ok(session);
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error generating QR session.", error = ex.Message });
+            }
+        }
+
+        // 2. Poll QR Session Status (Public / AllowAnonymous)
+        [HttpGet("settlements/qr-session/{token}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetQrSession(string token)
+        {
+            var session = await _logisticsService.GetQrSessionByTokenAsync(token);
+            if (session == null)
+            {
+                return NotFound(new { message = "QR session not found or invalid." });
+            }
+            return Ok(session);
+        }
+
+        // 3. Rider Digital Signature (Public / AllowAnonymous)
+        [HttpPost("settlements/qr-session/{token}/rider-sign")]
+        [AllowAnonymous]
+        public async Task<IActionResult> RiderSign(string token, [FromBody] RiderSignRequest request)
+        {
+            try
+            {
+                var session = await _logisticsService.RiderSignQrSessionAsync(token, request);
+                return Ok(session);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to record rider signature.", error = ex.Message });
+            }
+        }
+
+        // 4. Staff Validates Cash into Drawer
+        [HttpPost("settlements/qr-session/{token}/staff-validate")]
+        public async Task<IActionResult> StaffValidate(string token, [FromBody] StaffValidateRequest? request)
+        {
+            try
+            {
+                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var session = await _logisticsService.StaffValidateQrSessionAsync(token, request, staffUsername);
+                return Ok(session);
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to validate drawer custody.", error = ex.Message });
+            }
+        }
+
+        // 5. Store Counter Collection (Tab 2: Walk-in Store Pickups)
+        [HttpPost("settlements/qr-session/{token}/counter-collect")]
+        public async Task<IActionResult> CounterCollectQr(string token)
+        {
+            try
+            {
+                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var session = await _logisticsService.CounterCollectQrSessionAsync(token, staffUsername);
+                return Ok(session);
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to record counter pickup.", error = ex.Message });
+            }
+        }
+
+        [HttpPost("settlements/counter-collect")]
+        public async Task<IActionResult> CounterCollectPickup([FromBody] CounterCollectRequest request)
+        {
+            try
+            {
+                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var result = await _logisticsService.CounterCollectPickupAsync(
+                    request.OrderId,
+                    request.PaymentMethod,
+                    staffUsername,
+                    request.Amount,
+                    request.ReferenceNumber);
+                return Ok(new { success = result, message = $"Order #{request.OrderId} placed into staff drawer custody." });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to collect counter pickup.", error = ex.Message });
+            }
+        }
+
+        // 6. Owner Verification & Final Settlement (AllowAnonymous for mobile QR scan with Master PIN / Password)
+        [HttpPost("settlements/qr-session/{token}/owner-approve")]
+        [AllowAnonymous]
+        public async Task<IActionResult> OwnerApprove(string token, [FromBody] OwnerApproveRequest? request)
+        {
+            try
+            {
+                var isAuthenticated = User.Identity?.IsAuthenticated == true;
+                var isOwnerRole = isAuthenticated && User.IsInRole("Owner");
+                var currentUsername = User.Identity?.Name;
+
+                var session = await _logisticsService.OwnerApproveQrSessionAsync(token, request, currentUsername, isOwnerRole);
+                return Ok(session);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to process owner approval.", error = ex.Message });
+            }
+        }
+
+        // 7. Direct Store GCash Settlement Bypass
+        [HttpPost("settlements/direct-gcash")]
+        public async Task<IActionResult> DirectGcashSettlement([FromBody] SettleDirectGcashRequest request)
+        {
+            try
+            {
+                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var result = await _logisticsService.SettleDirectStoreGcashAsync(
+                    request.OrderId,
+                    request.Amount,
+                    request.ReferenceNumber,
+                    staffUsername);
+                return Ok(new { success = result, message = $"Order #{request.OrderId} settled via Direct Store GCash." });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to settle Direct Store GCash.", error = ex.Message });
+            }
+        }
     }
 
-    // Tiny Request Data Container Carrier (DTO)
     public class AssignRiderRequest
     {
         public string RiderName { get; set; } = string.Empty;
-        public string VehicleType { get; set; } = string.Empty; // e.g., "Motorcycle", "Van"
+        public string VehicleType { get; set; } = string.Empty;
         public List<int> OrderIds { get; set; } = new List<int>();
     }
 }

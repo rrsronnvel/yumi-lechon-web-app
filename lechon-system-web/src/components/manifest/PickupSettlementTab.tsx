@@ -7,21 +7,37 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SettlePickupModal } from "./SettlePickupModal";
+import { QrSettlementModal } from "./QrSettlementModal";
 
 export function PickupSettlementTab() {
   const { data: pickups = [], isLoading } = usePendingPickupsQuery();
+
+  // Tab 2 Counter Collect modal state (Uncollected -> InStaffDrawer)
   const [selectedPickup, setSelectedPickup] =
     useState<PendingPickupSettlement | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isCounterCollectOpen, setIsCounterCollectOpen] =
+    useState<boolean>(false);
 
-  const handleOpenSettle = (pickup: PendingPickupSettlement) => {
+  // Tab 2 Remit to Owner QR modal state (InStaffDrawer -> Settled)
+  const [selectedOwnerRemit, setSelectedOwnerRemit] =
+    useState<PendingPickupSettlement | null>(null);
+
+  const handleOpenCounterCollect = (pickup: PendingPickupSettlement) => {
     setSelectedPickup(pickup);
-    setIsModalOpen(true);
+    setIsCounterCollectOpen(true);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
+  const handleCloseCounterCollect = () => {
+    setIsCounterCollectOpen(false);
     setSelectedPickup(null);
+  };
+
+  const handleOpenOwnerRemit = (pickup: PendingPickupSettlement) => {
+    setSelectedOwnerRemit(pickup);
+  };
+
+  const handleCloseOwnerRemit = () => {
+    setSelectedOwnerRemit(null);
   };
 
   if (isLoading) {
@@ -41,7 +57,7 @@ export function PickupSettlementTab() {
               Walk-in Store Pickup Handovers ({pickups.length})
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              The "Notebook Rule": Unsettled store pickups remain visible indefinitely until drawer cash is reconciled.
+              The &quot;Notebook Rule&quot;: Unsettled store pickups remain visible indefinitely until drawer cash is reconciled with the Business Owner.
             </p>
           </div>
         </div>
@@ -54,6 +70,7 @@ export function PickupSettlementTab() {
                 <th className="p-4">Contact Number</th>
                 <th className="p-4">Pickup Time</th>
                 <th className="p-4">Address / Landmark</th>
+                <th className="p-4">Custody Status</th>
                 <th className="p-4 text-right">Grand Total</th>
                 <th className="p-4 text-right">Downpayment</th>
                 <th className="p-4 text-right text-emerald-700 bg-emerald-50/30">
@@ -66,7 +83,7 @@ export function PickupSettlementTab() {
               {pickups.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="p-10 text-center text-muted-foreground"
                   >
                     🎉 No store pickup balances pending settlement.
@@ -84,10 +101,14 @@ export function PickupSettlementTab() {
                     hour12: true,
                   });
 
+                  const isInDrawer = pickup.custodyStatus === "InStaffDrawer";
+
                   return (
                     <tr
                       key={pickup.orderId}
-                      className="hover:bg-slate-50/50 transition-colors"
+                      className={`hover:bg-slate-50/50 transition-colors ${
+                        isInDrawer ? "bg-amber-50/20" : ""
+                      }`}
                     >
                       {/* Customer Column */}
                       <td className="p-4">
@@ -121,6 +142,29 @@ export function PickupSettlementTab() {
                         {pickup.address || pickup.remarks || "Store Counter"}
                       </td>
 
+                      {/* Custody Status Badge */}
+                      <td className="p-4 whitespace-nowrap">
+                        {isInDrawer ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-50 text-amber-900 border-amber-300 text-xs font-semibold py-1 px-2.5 flex items-center gap-1.5 w-fit shadow-xs"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                            <span>
+                              🟡 In Staff Drawer: Held by {pickup.heldByStaffName || "Cashier"}
+                            </span>
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="bg-slate-50 text-slate-600 border-slate-300 text-xs py-1 px-2 flex items-center gap-1.5 w-fit"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-slate-400" />
+                            <span>⚪ Uncollected</span>
+                          </Badge>
+                        )}
+                      </td>
+
                       {/* Grand Total */}
                       <td className="p-4 text-right font-mono text-slate-700">
                         ₱{pickup.grandTotal.toLocaleString()}
@@ -138,13 +182,23 @@ export function PickupSettlementTab() {
 
                       {/* Action */}
                       <td className="p-4 text-center whitespace-nowrap">
-                        <Button
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
-                          onClick={() => handleOpenSettle(pickup)}
-                        >
-                          Collect & Settle
-                        </Button>
+                        {isInDrawer ? (
+                          <Button
+                            size="sm"
+                            className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
+                            onClick={() => handleOpenOwnerRemit(pickup)}
+                          >
+                            👑 Remit to Owner
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+                            onClick={() => handleOpenCounterCollect(pickup)}
+                          >
+                            Collect at Counter
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -155,12 +209,12 @@ export function PickupSettlementTab() {
         </div>
       </Card>
 
-      {/* Settle Pickup Modal */}
+      {/* Counter Collection Modal (Step 1 for Store Pickups: Uncollected -> InStaffDrawer) */}
       {selectedPickup && (
         <SettlePickupModal
-          open={isModalOpen}
+          open={isCounterCollectOpen}
           onOpenChange={(open) => {
-            if (!open) handleCloseModal();
+            if (!open) handleCloseCounterCollect();
           }}
           order={{
             orderId: selectedPickup.orderId,
@@ -170,7 +224,26 @@ export function PickupSettlementTab() {
             deliveryFee: 0,
             isTrustedCustomer: selectedPickup.isTrustedCustomer,
           }}
-          onSuccess={handleCloseModal}
+          onSuccess={handleCloseCounterCollect}
+        />
+      )}
+
+      {/* Hop 2 QR Settlement Modal for Pickups (InStaffDrawer -> Settled by Owner) */}
+      {selectedOwnerRemit && (
+        <QrSettlementModal
+          open={Boolean(selectedOwnerRemit)}
+          onOpenChange={(open) => {
+            if (!open) handleCloseOwnerRemit();
+          }}
+          orderId={selectedOwnerRemit.orderId}
+          customerName={selectedOwnerRemit.customerName}
+          expectedAmount={selectedOwnerRemit.balanceDue}
+          riderName="Walk-in Store Pickup"
+          hopStage="StaffToOwner"
+          heldByStaffName={selectedOwnerRemit.heldByStaffName}
+          heldPaymentMethod={selectedOwnerRemit.heldPaymentMethod}
+          riderSignedBy="Walk-in Customer"
+          onSuccess={handleCloseOwnerRemit}
         />
       )}
     </div>

@@ -11,6 +11,7 @@ import AnalyticsPage from "./pages/AnalyticsPage";
 import DailySheetsPage from "./pages/DailySheetsPage";
 import CmsPage from "./pages/CmsPage";
 import LoginPage from "./pages/LoginPage";
+import QrSignPage from "./pages/QrSignPage";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -19,8 +20,9 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Authentication Route */}
+          {/* Public Authentication and QR Signature Routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/qr-settle/:token" element={<QrSignPage />} />
 
           {/* Protected Application Shell */}
           <Route

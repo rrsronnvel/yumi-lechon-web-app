@@ -36,4 +36,14 @@ public class Order : BaseEntity
 
     public int? DeliveryTripId { get; set; }
     public DeliveryTrip? DeliveryTrip { get; set; }
+
+    public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected" | "InStaffDrawer" | "Settled"
+    public string? HeldByStaffMethod { get; set; } // "Cash" | "ManualGCash" | "GCash"
+    public string? RiderSignedBy { get; set; }
+    public decimal? RiderRemittedAmount { get; set; }
+    public DateTime? RiderSignedAt { get; set; }
+    public string? StaffValidatedBy { get; set; }
+    public DateTime? StaffValidatedAt { get; set; }
+    public string? OwnerApprovedBy { get; set; }
+    public DateTime? OwnerApprovedAt { get; set; }
 }

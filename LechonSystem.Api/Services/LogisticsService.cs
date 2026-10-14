@@ -21,7 +21,7 @@ namespace LechonSystem.Api.Services
             _notificationSender = notificationSender;
         }
 
-        // 1. Fetching unassigned orders (Optimized/Grouped can be handled on the frontend using this payload)
+        // 1. Fetching unassigned orders
         public async Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync()
         {
             return await _context.Orders
@@ -42,20 +42,17 @@ namespace LechonSystem.Api.Services
                 throw new ArgumentException("You must provide at least one order ID to assign a rider.");
             }
 
-            // Pull matching orders from the database
             var ordersToAssign = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.OrderItemSchedule)
                 .Where(o => orderIds.Contains(o.Id))
                 .ToListAsync();
 
-            // Safety check: Yell an error if any of the requested order IDs don't exist
             if (ordersToAssign.Count != orderIds.Count)
             {
                 throw new ArgumentException("One or more provided Order IDs were not found in the system database.");
             }
 
-            // Defensive validation check for production completeness
             foreach (var order in ordersToAssign)
             {
                 if (order.Fulfillment != FulfillmentType.Delivery)
@@ -64,7 +61,6 @@ namespace LechonSystem.Api.Services
                 }
             }
 
-            // If all checks pass, create the clipboard trip record
             var newTrip = new DeliveryTrip
             {
                 RiderName = riderName,
@@ -73,23 +69,18 @@ namespace LechonSystem.Api.Services
                 DispatchTime = DateTime.UtcNow
             };
 
-            // PROCESS THE BATCH: Update orders, send texts, and write audit logs in a single pass!
             foreach (var order in ordersToAssign)
             {
                 order.RoutingStatus = DeliveryStatus.Assigned;
                 newTrip.Orders.Add(order);
 
-                // 1. MUTE THE TEXT MESSAGE (Just create a silent internal log for now)
                 string message = $"Internal Log: Rider {riderName} assigned for tomorrow's delivery route.";
-
-                // We pass 'false' or bypass the actual SMS sender so we don't text the customer the night before!
                 bool dispatchSuccess = true;
 
-                // 2. RECORD THE PERMANENT AUDIT TRAIL RECORD
                 var log = new NotificationLog
                 {
                     OrderId = order.Id,
-                    RecipientPhone = order.ContactNumber, // Kept for record-keeping
+                    RecipientPhone = order.ContactNumber,
                     MessageBody = message,
                     SentAt = DateTime.UtcNow,
                     IsSuccess = dispatchSuccess
@@ -98,7 +89,6 @@ namespace LechonSystem.Api.Services
                 _context.NotificationLogs.Add(log);
             }
 
-            // Commit everything to the physical database inside a single atomic save operation
             _context.DeliveryTrips.Add(newTrip);
             await _context.SaveChangesAsync();
 
@@ -126,40 +116,46 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<object>> GetPendingSettlementDropsAsync()
+        // Tab 1: Freelance Rider Settlements (Remains visible while SettlementCustodyStatus != "Settled")
+        public async Task<IEnumerable<PendingSettlementDropDto>> GetPendingSettlementDropsAsync()
         {
             return await _context.Orders
+                .AsNoTracking()
                 .Include(o => o.DeliveryTrip)
                 .Where(o => o.DeliveryTripId != null
                          && o.Fulfillment == FulfillmentType.Delivery
                          && !o.IsCancelled
-                         && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0) // 👈 True Settlement Filter
+                         && o.SettlementCustodyStatus != "Settled"
+                         && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0)
                 .OrderByDescending(o => o.CreatedAt)
-                .Select(o => new
+                .Select(o => new PendingSettlementDropDto
                 {
-                    id = o.Id,
-                    orderId = o.Id,
-                    riderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : "Unassigned",
-                    customerName = o.CustomerName,
-                    isTrustedCustomer = o.IsTrustedCustomer,
-                    deliveryAddress = o.DeliveryAddress,
-                    totalCollected = o.GrandTotal - o.Downpayment,
-                    riderDeliveryFee = o.DeliveryFee,
-                    netRemittance = (o.GrandTotal - o.Downpayment) - o.DeliveryFee
+                    Id = o.Id,
+                    OrderId = o.Id,
+                    RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : (o.RiderSignedBy ?? "Unassigned"),
+                    CustomerName = o.CustomerName,
+                    IsTrustedCustomer = o.IsTrustedCustomer,
+                    DeliveryAddress = o.DeliveryAddress,
+                    TotalCollected = o.GrandTotal - o.Downpayment,
+                    RiderDeliveryFee = o.DeliveryFee,
+                    NetRemittance = (o.GrandTotal - o.Downpayment) - o.DeliveryFee,
+                    CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
+                    RiderSignedBy = o.RiderSignedBy,
+                    HeldByStaffName = o.StaffValidatedBy,
+                    HeldPaymentMethod = o.HeldByStaffMethod
                 })
                 .ToListAsync();
         }
 
-        // --- Tri-Tab Manifest Settlement Methods ---
-
         // Tab 2: Walk-in Store Pickup Handovers (Counter Settlement)
-        // "The Notebook Rule": Do not filter by date. All orders with an unsettled balance remain visible regardless of how many days ago they were created.
+        // Remains visible while SettlementCustodyStatus != "Settled" and balance > 0
         public async Task<IEnumerable<PendingPickupSettlementDto>> GetPendingPickupSettlementsAsync()
         {
             return await _context.Orders
                 .AsNoTracking()
                 .Where(o => o.Fulfillment == FulfillmentType.Pickup
                          && !o.IsCancelled
+                         && o.SettlementCustodyStatus != "Settled"
                          && ((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0)
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .Select(o => new PendingPickupSettlementDto
@@ -172,7 +168,11 @@ namespace LechonSystem.Api.Services
                     Downpayment = o.Downpayment,
                     IsTrustedCustomer = o.IsTrustedCustomer,
                     Address = o.DeliveryAddress,
-                    Remarks = o.Remarks
+                    Remarks = o.Remarks,
+                    CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
+                    RiderSignedBy = o.RiderSignedBy,
+                    HeldByStaffName = o.StaffValidatedBy,
+                    HeldPaymentMethod = o.HeldByStaffMethod
                 })
                 .ToListAsync();
         }
@@ -237,6 +237,439 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
             return true;
+        }
+
+        // ==========================================
+        // TWO-HOP QR CUSTODY CHAIN METHODS
+        // ==========================================
+
+        // 1. Create QR Session (10-minute validity)
+        public async Task<QrSessionStatusDto> CreateQrSessionAsync(CreateQrSessionRequest request)
+        {
+            var order = await _context.Orders
+                .Include(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(o => o.Id == request.OrderId);
+
+            if (order == null)
+            {
+                throw new ArgumentException($"Order #{request.OrderId} does not exist.");
+            }
+
+            // Invalidate any previously unconsumed sessions for this order to ensure fresh single-session flow
+            var previousActiveSessions = await _context.SettlementQrSessions
+                .Where(s => s.OrderId == request.OrderId && !s.IsUsed && s.ExpiresAt > DateTime.UtcNow)
+                .ToListAsync();
+
+            foreach (var prev in previousActiveSessions)
+            {
+                prev.IsUsed = true;
+            }
+
+            var session = new SettlementQrSession
+            {
+                Token = Guid.NewGuid().ToString("N"),
+                OrderId = request.OrderId,
+                HopStage = request.HopStage, // "RiderToStaff" or "StaffToOwner"
+                PaymentMethod = request.PaymentMethod,
+                ExpectedAmount = request.ExpectedAmount,
+                ReferenceNumber = request.ReferenceNumber,
+                Status = "PendingScan",
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                IsUsed = false,
+                RiderSignedBy = order.RiderSignedBy,
+                RiderRemittedAmount = order.RiderRemittedAmount,
+                RiderSignedAt = order.RiderSignedAt,
+                StaffValidatedBy = order.StaffValidatedBy,
+                StaffValidatedAt = order.StaffValidatedAt
+            };
+
+            _context.SettlementQrSessions.Add(session);
+            await _context.SaveChangesAsync();
+
+            return MapToStatusDto(session, order);
+        }
+
+        // 2. Query QR Session Status by Token
+        public async Task<QrSessionStatusDto?> GetQrSessionByTokenAsync(string token)
+        {
+            var session = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.Token == token);
+
+            if (session == null)
+            {
+                return null;
+            }
+
+            if (DateTime.UtcNow > session.ExpiresAt && session.Status == "PendingScan")
+            {
+                session.Status = "Expired";
+                await _context.SaveChangesAsync();
+            }
+
+            return MapToStatusDto(session, session.Order);
+        }
+
+        // 3. Rider Digital Signature
+        public async Task<QrSessionStatusDto> RiderSignQrSessionAsync(string token, RiderSignRequest request)
+        {
+            var session = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.Token == token);
+
+            if (session == null)
+            {
+                throw new ArgumentException("QR session not found or invalid.");
+            }
+
+            if (session.IsUsed)
+            {
+                throw new InvalidOperationException("This QR session has already been used and finalized.");
+            }
+
+            if (DateTime.UtcNow > session.ExpiresAt)
+            {
+                session.Status = "Expired";
+                await _context.SaveChangesAsync();
+                throw new InvalidOperationException("This QR session has expired (10-minute limit). Please ask counter staff to generate a new QR code.");
+            }
+
+            if (session.HopStage != "RiderToStaff")
+            {
+                throw new InvalidOperationException($"Invalid hop stage: {session.HopStage}. Rider signature is only valid for RiderToStaff stage.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.RiderName))
+            {
+                throw new ArgumentException("Rider name is required.");
+            }
+
+            if (request.RemittedAmount < 0)
+            {
+                throw new ArgumentException("Remitted amount cannot be negative.");
+            }
+
+            session.RiderSignedBy = request.RiderName.Trim();
+            session.RiderRemittedAmount = request.RemittedAmount;
+            session.RiderSignedAt = DateTime.UtcNow;
+            session.Status = "SignedByRider";
+
+            await _context.SaveChangesAsync();
+            return MapToStatusDto(session, session.Order);
+        }
+
+        // 4. Staff Validates Cash into Drawer
+        public async Task<QrSessionStatusDto> StaffValidateQrSessionAsync(string token, StaffValidateRequest? request, string staffUsername)
+        {
+            var session = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.Token == token);
+
+            if (session == null)
+            {
+                throw new ArgumentException("QR session not found.");
+            }
+
+            if (session.IsUsed)
+            {
+                throw new InvalidOperationException("This QR session has already been processed.");
+            }
+
+            if (DateTime.UtcNow > session.ExpiresAt)
+            {
+                session.Status = "Expired";
+                await _context.SaveChangesAsync();
+                throw new InvalidOperationException("This QR session has expired.");
+            }
+
+            // If rider's phone is dead, manual counter override supplies details
+            if (!string.IsNullOrWhiteSpace(request?.ManualOverrideRiderName))
+            {
+                session.RiderSignedBy = request.ManualOverrideRiderName.Trim();
+                session.RiderRemittedAmount = request.ManualOverrideAmount ?? session.ExpectedAmount;
+                session.RiderSignedAt = DateTime.UtcNow;
+            }
+            else if (session.Status != "SignedByRider")
+            {
+                throw new InvalidOperationException("Cannot validate: Rider has not yet submitted digital signature.");
+            }
+
+            session.StaffValidatedBy = staffUsername;
+            session.StaffValidatedAt = DateTime.UtcNow;
+            session.Status = "ValidatedByStaff";
+            session.IsUsed = true;
+
+            var order = session.Order;
+            order.SettlementCustodyStatus = "InStaffDrawer";
+            order.HeldByStaffMethod = session.PaymentMethod;
+            order.RiderSignedBy = session.RiderSignedBy;
+            order.RiderRemittedAmount = session.RiderRemittedAmount;
+            order.RiderSignedAt = session.RiderSignedAt;
+            order.StaffValidatedBy = staffUsername;
+            order.StaffValidatedAt = DateTime.UtcNow;
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Custody: In Staff Drawer",
+                Changes = $"Rider {session.RiderSignedBy} remitted ₱{session.RiderRemittedAmount:N2} via {session.PaymentMethod}. Validated into drawer by {staffUsername}.",
+                ChangedBy = staffUsername,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            return MapToStatusDto(session, order);
+        }
+
+        // 5. Store Counter Collection (Tab 2: Walk-in Store Pickups)
+        public async Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null)
+        {
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null)
+            {
+                throw new ArgumentException($"Order #{orderId} not found.");
+            }
+
+            var balance = (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment;
+            var collectedAmount = amount ?? balance;
+
+            order.SettlementCustodyStatus = "InStaffDrawer";
+            order.HeldByStaffMethod = paymentMethod;
+            order.StaffValidatedBy = staffUsername;
+            order.StaffValidatedAt = DateTime.UtcNow;
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Counter Pickup Collected",
+                Changes = $"Store counter collected ₱{collectedAmount:N2} via {paymentMethod}. Held in drawer by {staffUsername}.",
+                ChangedBy = staffUsername,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<QrSessionStatusDto> CounterCollectQrSessionAsync(string token, string staffUsername)
+        {
+            var session = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.Token == token);
+
+            if (session == null)
+            {
+                throw new ArgumentException("QR session not found.");
+            }
+
+            session.StaffValidatedBy = staffUsername;
+            session.StaffValidatedAt = DateTime.UtcNow;
+            session.Status = "ValidatedByStaff";
+            session.IsUsed = true;
+
+            var order = session.Order;
+            order.SettlementCustodyStatus = "InStaffDrawer";
+            order.HeldByStaffMethod = session.PaymentMethod;
+            order.StaffValidatedBy = staffUsername;
+            order.StaffValidatedAt = DateTime.UtcNow;
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Counter Pickup Collected",
+                Changes = $"Store counter collected ₱{session.ExpectedAmount:N2} via {session.PaymentMethod}. Held in drawer by {staffUsername}.",
+                ChangedBy = staffUsername,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            return MapToStatusDto(session, order);
+        }
+
+        // 6. Owner Verification & Final Settlement
+        public async Task<QrSessionStatusDto> OwnerApproveQrSessionAsync(
+            string token,
+            OwnerApproveRequest? request,
+            string? authenticatedUsername,
+            bool isOwnerRole)
+        {
+            string? verifiedOwnerUsername = null;
+
+            if (isOwnerRole && !string.IsNullOrWhiteSpace(authenticatedUsername))
+            {
+                verifiedOwnerUsername = authenticatedUsername;
+            }
+            else if (!string.IsNullOrWhiteSpace(request?.OwnerPinOrPassword))
+            {
+                var pinOrPassword = request.OwnerPinOrPassword.Trim();
+                var ownerQuery = _context.Users.Where(u => u.Role == "Owner" && u.IsActive);
+                if (!string.IsNullOrWhiteSpace(request.OwnerUsername))
+                {
+                    var reqUser = request.OwnerUsername.Trim().ToLower();
+                    ownerQuery = ownerQuery.Where(u => u.Username.ToLower() == reqUser);
+                }
+
+                var candidateOwners = await ownerQuery.ToListAsync();
+                foreach (var owner in candidateOwners)
+                {
+                    if (BCrypt.Net.BCrypt.Verify(pinOrPassword, owner.PasswordHash))
+                    {
+                        verifiedOwnerUsername = owner.Username;
+                        break;
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(verifiedOwnerUsername))
+            {
+                throw new UnauthorizedAccessException("Invalid Owner credentials. Owner approval required.");
+            }
+
+            var session = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.Token == token);
+
+            if (session == null)
+            {
+                throw new ArgumentException("QR session not found.");
+            }
+
+            if (session.IsUsed && session.Status == "ApprovedByOwner")
+            {
+                return MapToStatusDto(session, session.Order);
+            }
+
+            if (DateTime.UtcNow > session.ExpiresAt && session.Status != "SignedByRider" && session.Status != "ValidatedByStaff")
+            {
+                session.Status = "Expired";
+                await _context.SaveChangesAsync();
+                throw new InvalidOperationException("This QR session has expired.");
+            }
+
+            session.Status = "ApprovedByOwner";
+            session.OwnerApprovedBy = verifiedOwnerUsername;
+            session.OwnerApprovedAt = DateTime.UtcNow;
+            session.IsUsed = true;
+
+            var order = session.Order;
+            order.SettlementCustodyStatus = "Settled";
+            order.OwnerApprovedBy = verifiedOwnerUsername;
+            order.OwnerApprovedAt = DateTime.UtcNow;
+
+            decimal amountToSettle = session.ExpectedAmount > 0
+                ? session.ExpectedAmount
+                : Math.Max(0, (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment);
+
+            if (amountToSettle > 0)
+            {
+                order.Downpayment += amountToSettle;
+
+                PaymentProvider provider = PaymentProvider.Cash;
+                if (session.PaymentMethod == "ManualGCash") provider = PaymentProvider.ManualGCash;
+                else if (session.PaymentMethod == "GCash") provider = PaymentProvider.GCash;
+
+                var refId = session.ReferenceNumber;
+                if (string.IsNullOrWhiteSpace(refId))
+                {
+                    refId = $"QR_SETTLE_{session.Token[..Math.Min(8, session.Token.Length)].ToUpperInvariant()}_{Guid.NewGuid().ToString()[..4]}";
+                }
+
+                var paymentLog = new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = refId,
+                    Provider = provider,
+                    Amount = amountToSettle,
+                    Status = PaymentStatus.Success
+                };
+                _context.PaymentLogs.Add(paymentLog);
+
+                _context.OrderAuditLogs.Add(new OrderAuditLog
+                {
+                    OrderId = order.Id,
+                    ActionType = "Custody: Settled by Owner",
+                    Changes = $"Owner {verifiedOwnerUsername} verified and approved custody settlement of ₱{amountToSettle:N2} via {session.PaymentMethod}. Order marked Settled.",
+                    ChangedBy = verifiedOwnerUsername,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            return MapToStatusDto(session, order);
+        }
+
+        // 7. Direct Store GCash Bypass Settlement
+        public async Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername)
+        {
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null)
+            {
+                throw new ArgumentException($"Order #{orderId} not found.");
+            }
+
+            order.SettlementCustodyStatus = "Settled";
+            order.HeldByStaffMethod = "GCash";
+            order.StaffValidatedBy = staffUsername;
+            order.StaffValidatedAt = DateTime.UtcNow;
+            order.OwnerApprovedBy = staffUsername;
+            order.OwnerApprovedAt = DateTime.UtcNow;
+            order.Downpayment += amount;
+
+            var refId = !string.IsNullOrWhiteSpace(referenceNumber)
+                ? referenceNumber
+                : $"GCASH_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+
+            var paymentLog = new PaymentLog
+            {
+                OrderId = order.Id,
+                GatewayReferenceId = refId,
+                Provider = PaymentProvider.GCash,
+                Amount = amount,
+                Status = PaymentStatus.Success
+            };
+            _context.PaymentLogs.Add(paymentLog);
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Direct GCash Settlement",
+                Changes = $"Direct Store GCash payment of ₱{amount:N2} settled with Ref #{refId}. Verified by {staffUsername}.",
+                ChangedBy = staffUsername,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        private static QrSessionStatusDto MapToStatusDto(SettlementQrSession session, Order order)
+        {
+            return new QrSessionStatusDto
+            {
+                Token = session.Token,
+                OrderId = session.OrderId,
+                CustomerName = order.CustomerName,
+                AssignedRiderName = order.DeliveryTrip?.RiderName ?? session.RiderSignedBy ?? order.RiderSignedBy ?? "Unassigned",
+                HopStage = session.HopStage,
+                PaymentMethod = session.PaymentMethod,
+                ExpectedAmount = session.ExpectedAmount,
+                Status = session.Status,
+                RiderSignedBy = session.RiderSignedBy,
+                RiderRemittedAmount = session.RiderRemittedAmount,
+                RiderSignedAt = session.RiderSignedAt,
+                StaffValidatedBy = session.StaffValidatedBy,
+                StaffValidatedAt = session.StaffValidatedAt,
+                OwnerApprovedBy = session.OwnerApprovedBy,
+                OwnerApprovedAt = session.OwnerApprovedAt,
+                ExpiresAt = session.ExpiresAt,
+                IsUsed = session.IsUsed
+            };
         }
     }
 }
