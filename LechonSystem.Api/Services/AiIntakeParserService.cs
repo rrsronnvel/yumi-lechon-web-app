@@ -192,45 +192,59 @@ public class AiIntakeParserService : IAiIntakeParserService
 
         var httpClient = _httpClientFactory.CreateClient();
         httpClient.Timeout = TimeSpan.FromSeconds(60);
+        httpClient.DefaultRequestHeaders.Clear();
+        httpClient.DefaultRequestHeaders.Authorization = null;
 
-        // Prioritized multi-model cascade: Preferred Model -> Modern Flash alternatives -> General fallbacks
+        // Prioritized multi-model cascade: Preferred Model -> Stable Flash -> Flash Lite -> Legacy fallbacks
         var configuredModel = _configuration["Gemini:Model"];
-        if (string.IsNullOrWhiteSpace(configuredModel) || configuredModel.Equals("gemini-3.8-flash", StringComparison.OrdinalIgnoreCase))
+        var candidateList = new List<string>();
+        if (!string.IsNullOrWhiteSpace(configuredModel))
         {
-            configuredModel = "gemini-2.5-flash";
+            candidateList.Add(configuredModel);
         }
-
-        var candidateModels = new[]
+        candidateList.AddRange(new[]
         {
-            configuredModel,
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-3.5-flash",
             "gemini-1.5-flash",
-            "gemini-flash-latest"
-        };
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro"
+        });
 
-        var modelsToTry = candidateModels
+        var modelsToTry = candidateList
             .Where(m => !string.IsNullOrWhiteSpace(m))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        const int maxRetriesPerModel = 2; // Maximum 2 tries per model before cascading to the next model cluster
+        const int maxRetriesPerModel = 2; // Maximum 2 tries per model before cascading to the next candidate
         HttpResponseMessage? response = null;
-        string? lastError = null;
+        string? lastErrorDetails = null;
 
         var jsonContentString = JsonSerializer.Serialize(requestPayload);
 
         foreach (var currentModel in modelsToTry)
         {
-            var requestUri = $"https://generativelanguage.googleapis.com/v1beta/models/{currentModel}:generateContent?key={apiKey}";
+            var requestUri = $"https://generativelanguage.googleapis.com/v1beta/models/{currentModel}:generateContent";
 
             for (int attempt = 1; attempt <= maxRetriesPerModel; attempt++)
             {
-                using var httpContent = new StringContent(jsonContentString, Encoding.UTF8, "application/json");
+                response = null;
+                using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+                {
+                    Content = new StringContent(jsonContentString, Encoding.UTF8, "application/json")
+                };
+
+                // Clear any existing Authorization headers on the outgoing request
+                request.Headers.Authorization = null;
+
+                // Use the official Gemini API key header:
+                request.Headers.Remove("x-goog-api-key");
+                request.Headers.Add("x-goog-api-key", apiKey);
 
                 try
                 {
-                    response = await httpClient.PostAsync(requestUri, httpContent);
+                    response = await httpClient.SendAsync(request);
 
                     if (response.IsSuccessStatusCode)
                     {
@@ -238,60 +252,62 @@ public class AiIntakeParserService : IAiIntakeParserService
                         break;
                     }
 
-                    // If 404 (Model not found/deprecated), don't retry same model - immediately cascade to next model
-                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    var statusCode = (int)response.StatusCode;
+                    var errorBody = await response.Content.ReadAsStringAsync();
+                    lastErrorDetails = $"Model '{currentModel}' failed with status {statusCode}: {errorBody}";
+                    _logger.LogWarning(
+                        "Gemini API returned status {StatusCode} on '{Model}' (Attempt {Attempt}/{MaxRetries}): {ErrorBody}",
+                        statusCode, currentModel, attempt, maxRetriesPerModel, errorBody);
+
+                    // If 404 (Model not found/deprecated) or 400 (Bad Request), don't retry same model - immediately cascade to next model
+                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound || response.StatusCode == System.Net.HttpStatusCode.BadRequest)
                     {
-                        _logger.LogWarning("Model '{Model}' returned 404 Not Found. Skipping to next candidate model...", currentModel);
+                        _logger.LogWarning("Model '{Model}' returned {StatusCode}. Skipping to next candidate model...", currentModel, statusCode);
                         break;
                     }
 
                     // If 503 (High demand / overloaded), 429 (Rate limit), or 502/504 (Transient Gateway errors)
-                    int statusCode = (int)response.StatusCode;
                     if (statusCode == 503 || statusCode == 429 || statusCode == 502 || statusCode == 504)
                     {
-                        _logger.LogWarning(
-                            "Gemini API returned status {StatusCode} on '{Model}' (Attempt {Attempt}/{MaxRetries}).",
-                            statusCode, currentModel, attempt, maxRetriesPerModel);
-
                         if (attempt < maxRetriesPerModel)
                         {
-                            // Jittered exponential backoff: ~1.2s - 1.8s
-                            var baseDelayMs = 1200 * attempt;
-                            var jitterMs = Random.Shared.Next(100, 600);
+                            // Jittered backoff: ~1.5s - 2.1s
+                            var baseDelayMs = 1500 * attempt;
+                            var jitterMs = Random.Shared.Next(200, 600);
                             await Task.Delay(baseDelayMs + jitterMs);
                             continue;
                         }
                         else
                         {
                             _logger.LogWarning(
-                                "Model '{Model}' still overloaded after {MaxRetries} attempts. Cascading to next model in cluster...",
+                                "Model '{Model}' still overloaded after {MaxRetries} attempts. Cascading to next candidate model...",
                                 currentModel, maxRetriesPerModel);
-                            break; // Break attempt loop to cascade to next model in modelsToTry
+                            break;
                         }
                     }
 
-                    // For other errors (e.g. 400 Bad Request), don't retry blindly
+                    // For any other unexpected HTTP status codes, break attempt loop to try next model
                     break;
                 }
                 catch (HttpRequestException ex)
                 {
-                    lastError = ex.Message;
-                    _logger.LogWarning(
+                    lastErrorDetails = $"Model '{currentModel}' network exception (Attempt {attempt}/{maxRetriesPerModel}): {ex.Message}";
+                    _logger.LogWarning(ex,
                         "Transient network exception calling model '{Model}' (Attempt {Attempt}/{MaxRetries}): {Message}",
                         currentModel, attempt, maxRetriesPerModel, ex.Message);
 
                     if (attempt < maxRetriesPerModel)
                     {
-                        var baseDelayMs = 1200 * attempt;
-                        var jitterMs = Random.Shared.Next(100, 600);
+                        var baseDelayMs = 1500 * attempt;
+                        var jitterMs = Random.Shared.Next(200, 600);
                         await Task.Delay(baseDelayMs + jitterMs);
                         continue;
                     }
                 }
                 catch (Exception ex)
                 {
-                    lastError = ex.Message;
-                    _logger.LogWarning("Unexpected error calling model '{Model}': {Message}", currentModel, ex.Message);
+                    lastErrorDetails = $"Model '{currentModel}' unexpected exception: {ex.Message}";
+                    _logger.LogWarning(ex, "Unexpected error calling model '{Model}': {Message}", currentModel, ex.Message);
                     break;
                 }
             }
@@ -304,15 +320,9 @@ public class AiIntakeParserService : IAiIntakeParserService
 
         if (response == null || !response.IsSuccessStatusCode)
         {
-            var errorBody = response != null ? await response.Content.ReadAsStringAsync() : lastError;
-            _logger.LogError("Gemini API call failed with status {StatusCode}: {Error}", response?.StatusCode, errorBody);
-
-            if (response != null && ((int)response.StatusCode == 503 || (int)response.StatusCode == 429))
-            {
-                throw new HttpRequestException("Google AI servers are currently experiencing high demand. Automatic retries were attempted. Please try uploading the image again in a few moments.");
-            }
-
-            throw new HttpRequestException($"Gemini API call failed ({response?.StatusCode}): {errorBody}");
+            var finalError = lastErrorDetails ?? "All candidate Gemini models failed to return a valid response.";
+            _logger.LogError("Gemini vision intake failed across all models. Details: {Details}", finalError);
+            throw new HttpRequestException($"Gemini vision parsing failed: {finalError}");
         }
 
         var responseJson = await response.Content.ReadAsStringAsync();

@@ -14,11 +14,16 @@ namespace LechonSystem.Api.Controllers
     {
         private readonly IOrderService _orderService;
         private readonly IAiIntakeParserService _aiParserService;
+        private readonly ILogger<OrdersController> _logger;
 
-        public OrdersController(IOrderService orderService, IAiIntakeParserService aiParserService)
+        public OrdersController(
+            IOrderService orderService,
+            IAiIntakeParserService aiParserService,
+            ILogger<OrdersController> logger)
         {
             _orderService = orderService;
             _aiParserService = aiParserService;
+            _logger = logger;
         }
 
         [HttpPost("parse-screenshot")]
@@ -38,6 +43,7 @@ namespace LechonSystem.Api.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Screenshot intake parsing failed: {Message}", ex.Message);
                 return StatusCode(500, new { Message = "Failed to parse booking screenshot.", Details = ex.Message });
             }
         }
