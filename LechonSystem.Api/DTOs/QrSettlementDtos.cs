@@ -29,6 +29,7 @@ public class QrSessionStatusDto
     public DateTime ExpiresAt { get; set; }
     public bool IsExpired => DateTime.UtcNow > ExpiresAt && Status == "PendingScan";
     public bool IsUsed { get; set; }
+    public bool WasRejected { get; set; }
 }
 
 public class RiderSignRequest
@@ -45,6 +46,7 @@ public class StaffValidateRequest
 
 public class OwnerApproveRequest
 {
+    public decimal CountedAmount { get; set; }
     public string? OwnerUsername { get; set; }
     public string? OwnerPinOrPassword { get; set; }
 }

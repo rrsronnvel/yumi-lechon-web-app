@@ -243,7 +243,7 @@ namespace LechonSystem.Api.Services
         // TWO-HOP QR CUSTODY CHAIN METHODS
         // ==========================================
 
-        // 1. Create QR Session (10-minute validity)
+        // 1. Create QR Session (10-minute validity) or Resume Active
         public async Task<QrSessionStatusDto> CreateQrSessionAsync(CreateQrSessionRequest request)
         {
             var order = await _context.Orders
@@ -253,6 +253,29 @@ namespace LechonSystem.Api.Services
             if (order == null)
             {
                 throw new ArgumentException($"Order #{request.OrderId} does not exist.");
+            }
+
+            var existingSession = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.OrderId == request.OrderId
+                                       && s.HopStage == request.HopStage
+                                       && !s.IsUsed
+                                       && s.Status != "Expired"
+                                       && s.ExpiresAt > DateTime.UtcNow);
+
+            if (existingSession != null)
+            {
+                if (!string.IsNullOrWhiteSpace(request.PaymentMethod) && existingSession.PaymentMethod != request.PaymentMethod)
+                {
+                    existingSession.PaymentMethod = request.PaymentMethod;
+                }
+                if (request.ExpectedAmount > 0)
+                {
+                    existingSession.ExpectedAmount = request.ExpectedAmount;
+                }
+                await _context.SaveChangesAsync();
+                return MapToStatusDto(existingSession, existingSession.Order ?? order);
             }
 
             // Invalidate any previously unconsumed sessions for this order to ensure fresh single-session flow
@@ -359,6 +382,36 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
             return MapToStatusDto(session, session.Order);
+        }
+
+        // 3b. Safeguard 1 — Discrepancy Rejection
+        public async Task<QrSessionStatusDto> RejectRiderSignatureAsync(string token)
+        {
+            var session = await _context.SettlementQrSessions
+                .Include(s => s.Order)
+                    .ThenInclude(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(s => s.Token == token);
+
+            if (session == null)
+            {
+                throw new KeyNotFoundException("QR session not found or invalid.");
+            }
+
+            if (session.HopStage != "RiderToStaff" || session.IsUsed)
+            {
+                throw new InvalidOperationException($"Cannot reject signature: session HopStage is '{session.HopStage}' and IsUsed is '{session.IsUsed}'.");
+            }
+
+            session.Status = "PendingScan";
+            session.RiderSignedBy = null;
+            session.RiderRemittedAmount = null;
+            session.RiderSignedAt = null;
+
+            await _context.SaveChangesAsync();
+
+            var dto = MapToStatusDto(session, session.Order);
+            dto.WasRejected = true;
+            return dto;
         }
 
         // 4. Staff Validates Cash into Drawer
@@ -491,6 +544,59 @@ namespace LechonSystem.Api.Services
             return MapToStatusDto(session, order);
         }
 
+        // 5b. Safeguard 3 — Staff Custody Undo
+        public async Task<bool> RevertCustodyAsync(int orderId, string currentUser, bool isOwner)
+        {
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null)
+            {
+                throw new KeyNotFoundException($"Order #{orderId} not found.");
+            }
+
+            if (order.SettlementCustodyStatus != "InStaffDrawer")
+            {
+                throw new InvalidOperationException($"Cannot revert custody: Order #{orderId} status is '{order.SettlementCustodyStatus}', expected 'InStaffDrawer'.");
+            }
+
+            // RBAC Guard: Ensure isOwner || string.Equals(order.StaffValidatedBy, currentUser, StringComparison.OrdinalIgnoreCase)
+            if (!isOwner && !string.Equals(order.StaffValidatedBy, currentUser, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("Only the holding staff member or the Owner can revert drawer custody.");
+            }
+
+            order.SettlementCustodyStatus = "Uncollected";
+            order.StaffValidatedBy = null;
+            order.StaffValidatedAt = null;
+            order.HeldByStaffMethod = null;
+            order.RiderSignedBy = null;
+            order.RiderRemittedAmount = null;
+            order.RiderSignedAt = null;
+
+            // Query any unclosed Hop 2 (HopStage == "StaffToOwner" && !IsUsed) SettlementQrSessions for this orderId and mark them Status = "Expired" and IsUsed = true
+            var unclosedHop2Sessions = await _context.SettlementQrSessions
+                .Where(s => s.OrderId == orderId && s.HopStage == "StaffToOwner" && !s.IsUsed)
+                .ToListAsync();
+
+            foreach (var s in unclosedHop2Sessions)
+            {
+                s.Status = "Expired";
+                s.IsUsed = true;
+            }
+
+            // Write immutable record to OrderAuditLogs
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = orderId,
+                ActionType = "Custody Reverted",
+                Changes = $"Custody for Order #{orderId} reverted from InStaffDrawer to Uncollected by {currentUser}",
+                ChangedBy = currentUser,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
         // 6. Owner Verification & Final Settlement
         public async Task<QrSessionStatusDto> OwnerApproveQrSessionAsync(
             string token,
@@ -537,12 +643,19 @@ namespace LechonSystem.Api.Services
 
             if (session == null)
             {
-                throw new ArgumentException("QR session not found.");
+                throw new KeyNotFoundException("QR session not found.");
             }
 
             if (session.IsUsed && session.Status == "ApprovedByOwner")
             {
                 return MapToStatusDto(session, session.Order);
+            }
+
+            // Safeguard 4 — Owner Counted-Amount Enforcement
+            if (request == null || request.CountedAmount != session.ExpectedAmount)
+            {
+                var counted = request?.CountedAmount ?? 0m;
+                throw new ArgumentException($"Counted bills (₱{counted:N2}) do not match expected remittance (₱{session.ExpectedAmount:N2}). Recount envelope before closing.");
             }
 
             if (DateTime.UtcNow > session.ExpiresAt && session.Status != "SignedByRider" && session.Status != "ValidatedByStaff")
@@ -668,7 +781,8 @@ namespace LechonSystem.Api.Services
                 OwnerApprovedBy = session.OwnerApprovedBy,
                 OwnerApprovedAt = session.OwnerApprovedAt,
                 ExpiresAt = session.ExpiresAt,
-                IsUsed = session.IsUsed
+                IsUsed = session.IsUsed,
+                WasRejected = false
             };
         }
     }

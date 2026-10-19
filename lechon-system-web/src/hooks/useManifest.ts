@@ -88,6 +88,7 @@ export interface QrSessionStatus {
   expiresAt: string;
   isExpired: boolean;
   isUsed: boolean;
+  wasRejected?: boolean;
 }
 
 export interface RiderSignPayload {
@@ -104,6 +105,7 @@ export interface StaffValidatePayload {
 
 export interface OwnerApprovePayload {
   token: string;
+  countedAmount: number;
   ownerUsername?: string;
   ownerPinOrPassword?: string;
 }
@@ -284,6 +286,25 @@ export const useRiderSignQrMutation = () => {
   });
 };
 
+// 3b. Safeguard 1: Discrepancy Rejection
+export const useRejectRiderSignatureMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const response = await apiClient.post<QrSessionStatus>(
+        `/logistics/settlements/qr-session/${token}/reject`
+      );
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: ["manifest", "qr-session", data.token],
+      });
+    },
+  });
+};
+
 // 4. Staff Validate into Drawer
 export const useStaffValidateQrMutation = () => {
   const queryClient = useQueryClient();
@@ -304,6 +325,30 @@ export const useStaffValidateQrMutation = () => {
         queryClient.invalidateQueries({
           queryKey: ["manifest", "qr-session", data.token],
         }),
+        queryClient.invalidateQueries({
+          queryKey: ["manifest", "pending-settlement"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
+// 4b. Safeguard 3: Revert Custody to Uncollected
+export const useRevertCustodyMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post(
+        `/logistics/settlements/orders/${orderId}/revert-custody`
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      return Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["manifest", "pending-settlement"],
         }),
@@ -349,6 +394,7 @@ export const useOwnerApproveQrMutation = () => {
       const response = await apiClient.post<QrSessionStatus>(
         `/logistics/settlements/qr-session/${payload.token}/owner-approve`,
         {
+          countedAmount: payload.countedAmount,
           ownerUsername: payload.ownerUsername,
           ownerPinOrPassword: payload.ownerPinOrPassword,
         }

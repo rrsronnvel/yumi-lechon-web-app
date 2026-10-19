@@ -6,6 +6,8 @@ import {
   useStaffValidateQrMutation,
   useOwnerApproveQrMutation,
   useDirectGcashSettlementMutation,
+  useRejectRiderSignatureMutation,
+  useRevertCustodyMutation,
 } from "@/hooks/useManifest";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -74,6 +76,9 @@ export function QrSettlementModal({
   );
   const [directGcashRef, setDirectGcashRef] = useState<string>("");
 
+  // Hop 2 Counted Envelope Bills state
+  const [countedBills, setCountedBills] = useState<string>("");
+
   // Manual Override State
   const [showOverride, setShowOverride] = useState<boolean>(false);
   const [overrideRiderName, setOverrideRiderName] = useState<string>(
@@ -90,6 +95,14 @@ export function QrSettlementModal({
   const staffValidateMutation = useStaffValidateQrMutation();
   const ownerApproveMutation = useOwnerApproveQrMutation();
   const directGcashMutation = useDirectGcashSettlementMutation();
+  const rejectRiderMutation = useRejectRiderSignatureMutation();
+  const revertCustodyMutation = useRevertCustodyMutation();
+
+  const canRevertCustody =
+    isOwner ||
+    (Boolean(user?.username) &&
+      Boolean(heldByStaffName) &&
+      user!.username.toLowerCase() === heldByStaffName!.toLowerCase());
 
   // Poll current session status every 2 seconds
   const { data: sessionStatus } = useQrSessionStatusQuery(
@@ -135,7 +148,9 @@ export function QrSettlementModal({
       setErrorMessage(null);
       setShowOverride(false);
       setDirectGcashRef("");
+      setCountedBills("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, orderId, hopStage, paymentMethod]);
 
   const handleClose = () => {
@@ -213,14 +228,22 @@ export function QrSettlementModal({
     );
   };
 
-  // Owner Quick-Approve via PC shortcut (Logged In as Owner)
+  // Owner Quick-Approve via PC shortcut (Logged In as Owner) with Counted-Amount Speed Bump
   const handleOwnerQuickApprove = () => {
     if (!sessionToken) return;
+
+    const countedVal = Number(countedBills);
+    const targetExpected = sessionStatus?.expectedAmount ?? expectedAmount;
+    if (countedBills === "" || countedVal !== targetExpected) {
+      toast.error("Counted bills do not match expected remittance amount.");
+      return;
+    }
 
     setErrorMessage(null);
     ownerApproveMutation.mutate(
       {
         token: sessionToken,
+        countedAmount: countedVal,
       },
       {
         onSuccess: () => {
@@ -240,6 +263,42 @@ export function QrSettlementModal({
         },
       }
     );
+  };
+
+  const handleRejectRiderSignature = () => {
+    if (!sessionToken) return;
+    setErrorMessage(null);
+    rejectRiderMutation.mutate(sessionToken, {
+      onSuccess: () => {
+        toast.info("Rider signature rejected.", {
+          description: "Rider requested to re-check and re-enter remittance amount.",
+        });
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err: any) => {
+        const msg =
+          err?.response?.data?.message || "Failed to reject signature.";
+        setErrorMessage(msg);
+      },
+    });
+  };
+
+  const handleRevertCustody = () => {
+    if (!orderId) return;
+    setErrorMessage(null);
+    revertCustodyMutation.mutate(orderId, {
+      onSuccess: () => {
+        toast.success(`Custody for Order #${orderId} reverted to Uncollected!`);
+        handleClose();
+        onSuccess?.();
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err: any) => {
+        const msg =
+          err?.response?.data?.message || "Failed to revert custody.";
+        setErrorMessage(msg);
+      },
+    });
   };
 
   const qrUrl = sessionToken
@@ -375,18 +434,43 @@ export function QrSettlementModal({
 
                 {/* Real-time State Alert */}
                 {isSignedByRider ? (
-                  <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-900 space-y-1 animate-pulse">
-                    <div className="flex items-center gap-2 font-bold text-xs sm:text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>
-                        ✍️ Signed by {sessionStatus.riderSignedBy}
-                      </span>
-                    </div>
-                    <div className="text-xs font-mono text-emerald-800">
-                      Declared Amount: ₱
-                      {(sessionStatus.riderRemittedAmount ?? expectedAmount).toLocaleString()}
-                    </div>
-                  </div>
+                  (() => {
+                    const riderRemitted = sessionStatus?.riderRemittedAmount ?? 0;
+                    const expected = sessionStatus?.expectedAmount ?? expectedAmount;
+                    const isExact = riderRemitted === expected;
+                    const isShort = riderRemitted < expected;
+                    const diff = Math.abs(expected - riderRemitted);
+
+                    return (
+                      <div
+                        className={`p-3 rounded-lg space-y-1 ${
+                          isExact
+                            ? "bg-emerald-50 border border-emerald-300 text-emerald-900 animate-pulse"
+                            : "bg-rose-50 border border-rose-300 text-rose-800"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 font-bold text-xs sm:text-sm">
+                          {isExact ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 text-rose-600" />
+                          )}
+                          <span>
+                            ✍️ Signed by {sessionStatus?.riderSignedBy || riderName}
+                          </span>
+                        </div>
+                        {isExact ? (
+                          <div className="text-xs font-mono text-emerald-800">
+                            Declared Amount: ₱{riderRemitted.toLocaleString()}
+                          </div>
+                        ) : (
+                          <div className="text-xs font-semibold text-rose-800">
+                            ⚠️ {isShort ? `SHORT BY ₱${diff.toLocaleString()}` : `OVER BY ₱${diff.toLocaleString()}`} (Expected ₱{expected.toLocaleString()} • Rider Declared ₱{riderRemitted.toLocaleString()})
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
                 ) : isValidated ? (
                   <div className="p-3 bg-emerald-100 border border-emerald-400 rounded-lg text-emerald-900 text-xs font-semibold flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-700" />
@@ -399,20 +483,34 @@ export function QrSettlementModal({
                   </div>
                 )}
 
-                {/* Primary Validate Button (Unlocked once rider signs) */}
-                <Button
-                  onClick={() => handleStaffValidate(false)}
-                  disabled={!isSignedByRider || staffValidateMutation.isPending}
-                  className={`w-full font-bold text-xs sm:text-sm h-11 ${
-                    isSignedByRider
-                      ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md animate-bounce"
-                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                  }`}
-                >
-                  {staffValidateMutation.isPending
-                    ? "Validating Bills..."
-                    : "✅ Validate & Receive into Drawer"}
-                </Button>
+                {/* Primary Validate Button & Reject Button */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => handleStaffValidate(false)}
+                    disabled={!isSignedByRider || staffValidateMutation.isPending || rejectRiderMutation.isPending}
+                    className={`flex-1 font-bold text-xs sm:text-sm h-11 ${
+                      isSignedByRider
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md animate-bounce"
+                        : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    }`}
+                  >
+                    {staffValidateMutation.isPending
+                      ? "Validating Bills..."
+                      : "✅ Validate & Receive into Drawer"}
+                  </Button>
+
+                  {isSignedByRider && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRejectRiderSignature}
+                      disabled={rejectRiderMutation.isPending || staffValidateMutation.isPending}
+                      className="border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800 h-11 font-semibold text-xs px-3"
+                    >
+                      {rejectRiderMutation.isPending ? "Rejecting..." : "🔄 Ask Rider to Re-enter"}
+                    </Button>
+                  )}
+                </div>
 
                 {/* Collapsible Manual Counter Override (Phone Dead) */}
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -536,27 +634,68 @@ export function QrSettlementModal({
                 ✅ Verified & Approved by {sessionStatus?.ownerApprovedBy || "Owner"}! Closing ledger...
               </div>
             ) : (
-              /* Owner PC Shortcut Button */
+              /* Owner PC Shortcut Card with Counted-Amount Speed Bump */
               isOwner && (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900">
-                    <Crown className="w-4 h-4 text-amber-600" />
-                    <span>Owner PC Shortcut Active ({user?.fullName || "Owner"})</span>
+                <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-3">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900">
+                    <Crown className="w-4 h-4 text-amber-500" />
+                    <span>Owner PC Verification & Settlement ({user?.fullName || "Owner"})</span>
                   </div>
-                  <p className="text-[11px] text-amber-800">
-                    You are actively authenticated as Business Owner on this PC. You can 1-click approve without scanning.
-                  </p>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="owner-counted-bills" className="text-xs font-semibold text-slate-800">
+                      Physical Bills Counted in Envelope (₱) <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="owner-counted-bills"
+                      type="number"
+                      step="any"
+                      value={countedBills}
+                      onChange={(e) => setCountedBills(e.target.value)}
+                      placeholder={`Enter exact ₱${expectedAmount.toLocaleString()}`}
+                      className="font-mono text-sm bg-white"
+                    />
+                    {countedBills !== "" && Number(countedBills) !== (sessionStatus?.expectedAmount ?? expectedAmount) && (
+                      <p className="text-xs text-rose-600 font-medium pt-0.5">
+                        Counted bills (₱{Number(countedBills).toLocaleString()}) do not match expected remittance (₱{(sessionStatus?.expectedAmount ?? expectedAmount).toLocaleString()}). Recount envelope before closing.
+                      </p>
+                    )}
+                  </div>
+
                   <Button
                     onClick={handleOwnerQuickApprove}
-                    disabled={ownerApproveMutation.isPending}
-                    className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs sm:text-sm h-10 shadow-md"
+                    disabled={
+                      countedBills === "" ||
+                      Number(countedBills) !== (sessionStatus?.expectedAmount ?? expectedAmount) ||
+                      ownerApproveMutation.isPending
+                    }
+                    className="w-full bg-purple-700 hover:bg-purple-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm h-10 shadow-md"
                   >
                     {ownerApproveMutation.isPending
                       ? "Closing Ledger..."
-                      : "👑 Owner Quick-Approve (Logged In)"}
+                      : `👑 Confirm & Close Order #${orderId}`}
                   </Button>
                 </div>
               )
+            )}
+
+            {/* Custody Reversion Trigger */}
+            {canRevertCustody && (
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                <span className="text-[11px] text-slate-500">
+                  Drawer custody error?
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRevertCustody}
+                  disabled={revertCustodyMutation.isPending}
+                  className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 text-xs h-8"
+                >
+                  {revertCustodyMutation.isPending ? "Reverting..." : "↩️ Revert Custody to Uncollected"}
+                </Button>
+              </div>
             )}
           </div>
         )}

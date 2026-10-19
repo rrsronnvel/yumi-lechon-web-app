@@ -437,6 +437,31 @@ To eliminate physical signature logbooks and prevent custody disputes between fr
    - The Owner scans the QR code on their phone to review the custody trail (Rider Name, Staff Holder, Exact Peso Amount) and taps `[👑 Owner Approve & Settle]`. If the Owner is actively logged into the PC terminal with an `Owner` role account, they may also execute a 1-click `[Owner Quick-Approve]` directly on screen.
    - Token Self-Destruction: Once approved, the `OneTimeToken` is permanently invalidated (`IsUsed = true`) to prevent replay attacks.
 
+#### 9.4 Settlement Hardening, Active Session Resume & Custody Verification Guards
+
+To safeguard against multi-device discrepancies, accidental handovers, envelope shortages, and rogue approvals, the settlement engine enforces four cryptographic and RBAC verification guards:
+
+1. **Safeguard 1 — Discrepancy Rejection Protocol (`RejectRiderSignatureAsync`):**
+   - When a freelance rider submits a digital remittance signature where `RiderRemittedAmount != ExpectedAmount`, the PC modal displays a prominent high-contrast amber/rose discrepancy alert (`⚠️ SHORT BY ₱X,XXX` or `⚠️ OVER BY ₱X,XXX`).
+   - Counter cashiers are provided an immediate `[🔄 Ask Rider to Re-enter]` action calling `POST /api/logistics/settlements/qr-session/{token}/reject`.
+   - The session resets from `SignedByRider` back to `PendingScan`, clearing `RiderSignedBy`, `RiderRemittedAmount`, and `RiderSignedAt`.
+   - The rider's smartphone polls the transition and immediately surfaces a high-priority alert banner (`⚠️ The cashier requested you re-check and re-submit your remittance amount.`), requiring recount and resubmission.
+
+2. **Safeguard 2 — Active Session Resume (`CreateQrSessionAsync`):**
+   - To eliminate token bloat and prevent broken QR codes when a modal is reopened or re-rendered, `CreateQrSessionAsync` queries for an existing active session matching `OrderId`, `HopStage`, `!IsUsed`, `Status != "Expired"`, and `ExpiresAt > DateTime.UtcNow`.
+   - If an active session exists, the backend updates its `PaymentMethod` (if changed), saves, and returns the existing token rather than minting a new GUID. The rider scanning the screen never suffers invalidation due to dispatcher UI actions.
+
+3. **Safeguard 3 — Staff Custody Undo & Reversion Protocol (`RevertCustodyAsync`):**
+   - If cash was mistakenly validated into staff drawer custody (or if an envelope recount reveals errors prior to owner turnover), the system supports an authorized custody rollback via `POST /api/logistics/settlements/orders/{orderId}/revert-custody`.
+   - **RBAC Guard:** Strictly limited to the holding staff member (`User.Identity.Name == order.StaffValidatedBy`) or an authenticated `Owner`.
+   - Reverts `SettlementCustodyStatus` to `Uncollected`, zeroes `StaffValidatedBy`, `StaffValidatedAt`, and `HeldByStaffMethod`, expires any active Hop 2 QR sessions, and commits a permanent diff record to `OrderAuditLogs`.
+
+4. **Safeguard 4 — Owner Counted-Amount Verification Gate (`OwnerApproveQrSessionAsync`):**
+   - Eliminates blind 1-click approvals across both mobile QR views and desktop PC shortcuts.
+   - Requires explicit numerical entry of `CountedAmount` (`Physical Bills Counted in Envelope (₱)`).
+   - Approval is strictly disabled and rejected with `400 BadRequest` if `CountedAmount != ExpectedAmount` (`Counted bills (₱X,XXX.XX) do not match expected remittance (₱X,XXX.XX). Recount envelope before closing.`).
+   - Guarantees that physical envelope contents are audited against the system ledger before any `PaymentLog` is committed or order closed.
+
 ### 10. Content Management System (CMS), Pricing & Catalog Governance
 
 The CMS serves as the centralized operational control board for catalog metadata, base pricing, inventory safety buffers, and kitchen cooking profiles.

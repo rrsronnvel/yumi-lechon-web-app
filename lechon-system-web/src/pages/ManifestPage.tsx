@@ -3,8 +3,10 @@ import {
   usePendingSettlements,
   usePendingPickupsQuery,
   usePendingLalamoveQuery,
+  useRevertCustodyMutation,
   PendingSettlementDrop,
 } from "@/hooks/useManifest";
+import { useAuth } from "@/context/AuthContext";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,11 +14,26 @@ import { Badge } from "@/components/ui/badge";
 import { PickupSettlementTab } from "@/components/manifest/PickupSettlementTab";
 import { LalamoveSettlementTab } from "@/components/manifest/LalamoveSettlementTab";
 import { QrSettlementModal } from "@/components/manifest/QrSettlementModal";
+import { toast } from "sonner";
 
 export default function ManifestPage() {
+  const { user, isOwner } = useAuth();
   const { data: drops = [], isLoading: isLoadingRiders } = usePendingSettlements();
   const { data: pickupDrops = [] } = usePendingPickupsQuery();
   const { data: lalamoveDrops = [] } = usePendingLalamoveQuery();
+  const revertCustodyMutation = useRevertCustodyMutation();
+
+  const handleRevertCustody = (orderId: number) => {
+    revertCustodyMutation.mutate(orderId, {
+      onSuccess: () => {
+        toast.success(`Order #${orderId} custody reverted to Uncollected!`);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.message || "Failed to revert custody.");
+      },
+    });
+  };
 
   // QR Modal State for Tab 1 & Tab 2
   const [qrModalData, setQrModalData] = useState<{
@@ -232,13 +249,33 @@ export default function ManifestPage() {
                             {/* Action Buttons */}
                             <td className="p-4 text-center whitespace-nowrap">
                               {isInDrawer ? (
-                                <Button
-                                  size="sm"
-                                  className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
-                                  onClick={() => handleOpenStaffToOwner(drop)}
-                                >
-                                  👑 Remit to Owner
-                                </Button>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
+                                    onClick={() => handleOpenStaffToOwner(drop)}
+                                  >
+                                    👑 Remit to Owner
+                                  </Button>
+                                  {(isOwner ||
+                                    (Boolean(user?.username) &&
+                                      Boolean(drop.heldByStaffName) &&
+                                      user!.username.toLowerCase() ===
+                                        drop.heldByStaffName!.toLowerCase())) && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-xs px-2 h-8"
+                                      title="Revert Custody to Uncollected"
+                                      disabled={revertCustodyMutation.isPending}
+                                      onClick={() =>
+                                        handleRevertCustody(drop.orderId || drop.id)
+                                      }
+                                    >
+                                      ↩️
+                                    </Button>
+                                  )}
+                                </div>
                               ) : (
                                 <Button
                                   size="sm"

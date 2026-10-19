@@ -38,15 +38,25 @@ export default function QrSignPage() {
   // Rider Form State
   const [riderName, setRiderName] = useState("");
   const [remittedAmount, setRemittedAmount] = useState<number | "">("");
+  const [wasRejected, setWasRejected] = useState(false);
+  const prevStatusRef = React.useRef<string | undefined>(undefined);
 
   // Owner Form State
+  const [ownerCountedBills, setOwnerCountedBills] = useState<number | "">("");
   const [ownerPin, setOwnerPin] = useState("");
   const [ownerUsername, setOwnerUsername] = useState("owner");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Initialize rider form values once session is loaded
+  // Initialize rider form values once session is loaded & track rejection
   useEffect(() => {
     if (session) {
+      if (prevStatusRef.current === "SignedByRider" && session.status === "PendingScan") {
+        setWasRejected(true);
+      } else if (session.wasRejected) {
+        setWasRejected(true);
+      }
+      prevStatusRef.current = session.status;
+
       if (!riderName) {
         setRiderName(
           session.assignedRiderName && session.assignedRiderName !== "Unassigned"
@@ -58,6 +68,7 @@ export default function QrSignPage() {
         setRemittedAmount(session.expectedAmount);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   const handleRiderSign = (e: React.FormEvent) => {
@@ -76,6 +87,7 @@ export default function QrSignPage() {
     }
 
     setErrorMessage(null);
+    setWasRejected(false);
     riderSignMutation.mutate(
       {
         token,
@@ -99,7 +111,13 @@ export default function QrSignPage() {
 
   const handleOwnerApprove = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) return;
+    if (!token || !session) return;
+
+    const countedNum = Number(ownerCountedBills);
+    if (ownerCountedBills === "" || countedNum !== session.expectedAmount) {
+      toast.error("Counted envelope bills do not match expected remittance amount.");
+      return;
+    }
 
     if (!ownerPin.trim()) {
       toast.error("Please enter the Owner Password or PIN.");
@@ -110,6 +128,7 @@ export default function QrSignPage() {
     ownerApproveMutation.mutate(
       {
         token,
+        countedAmount: countedNum,
         ownerPinOrPassword: ownerPin.trim(),
         ownerUsername: ownerUsername.trim() || undefined,
       },
@@ -370,6 +389,13 @@ export default function QrSignPage() {
           </CardHeader>
 
           <CardContent className="p-6 space-y-6">
+            {wasRejected && (
+              <div className="p-4 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2.5 shadow-xs">
+                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+                <span>⚠️ The cashier requested you re-check and re-submit your remittance amount.</span>
+              </div>
+            )}
+
             {/* Amount Summary */}
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
               <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
@@ -547,6 +573,37 @@ export default function QrSignPage() {
             {/* Owner Pin Form */}
             <form onSubmit={handleOwnerApprove} className="space-y-4">
               <div className="space-y-2">
+                <Label
+                  htmlFor="countedBills"
+                  className="text-sm font-semibold text-slate-800"
+                >
+                  Physical Bills Counted in Envelope (₱) <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <Banknote className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <Input
+                    id="countedBills"
+                    type="number"
+                    step="any"
+                    value={ownerCountedBills}
+                    onChange={(e) =>
+                      setOwnerCountedBills(
+                        e.target.value === "" ? "" : Number(e.target.value)
+                      )
+                    }
+                    placeholder="Enter exact counted bills"
+                    className="pl-9 font-mono font-bold text-lg"
+                    required
+                  />
+                </div>
+                {ownerCountedBills !== "" && Number(ownerCountedBills) !== session.expectedAmount && (
+                  <p className="text-xs text-rose-600 font-medium pt-0.5">
+                    Counted bills (₱{Number(ownerCountedBills).toLocaleString()}) do not match expected remittance (₱{session.expectedAmount.toLocaleString()}). Recount envelope before closing.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="ownerUsername" className="text-xs font-semibold text-slate-700">
                   Owner Username
                 </Label>
@@ -579,8 +636,12 @@ export default function QrSignPage() {
 
               <Button
                 type="submit"
-                disabled={ownerApproveMutation.isPending}
-                className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold h-12 text-base shadow-md"
+                disabled={
+                  ownerCountedBills === "" ||
+                  Number(ownerCountedBills) !== session.expectedAmount ||
+                  ownerApproveMutation.isPending
+                }
+                className="w-full bg-purple-700 hover:bg-purple-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold h-12 text-base shadow-md"
               >
                 {ownerApproveMutation.isPending ? (
                   "Verifying & Closing..."

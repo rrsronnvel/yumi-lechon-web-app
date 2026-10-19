@@ -1,16 +1,33 @@
 import { useState } from "react";
 import {
   usePendingPickupsQuery,
+  useRevertCustodyMutation,
   PendingPickupSettlement,
 } from "@/hooks/useManifest";
+import { useAuth } from "@/context/AuthContext";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SettlePickupModal } from "./SettlePickupModal";
 import { QrSettlementModal } from "./QrSettlementModal";
+import { toast } from "sonner";
 
 export function PickupSettlementTab() {
+  const { user, isOwner } = useAuth();
   const { data: pickups = [], isLoading } = usePendingPickupsQuery();
+  const revertCustodyMutation = useRevertCustodyMutation();
+
+  const handleRevertCustody = (orderId: number) => {
+    revertCustodyMutation.mutate(orderId, {
+      onSuccess: () => {
+        toast.success(`Order #${orderId} custody reverted to Uncollected!`);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.message || "Failed to revert custody.");
+      },
+    });
+  };
 
   // Tab 2 Counter Collect modal state (Uncollected -> InStaffDrawer)
   const [selectedPickup, setSelectedPickup] =
@@ -183,13 +200,31 @@ export function PickupSettlementTab() {
                       {/* Action */}
                       <td className="p-4 text-center whitespace-nowrap">
                         {isInDrawer ? (
-                          <Button
-                            size="sm"
-                            className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
-                            onClick={() => handleOpenOwnerRemit(pickup)}
-                          >
-                            👑 Remit to Owner
-                          </Button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              size="sm"
+                              className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
+                              onClick={() => handleOpenOwnerRemit(pickup)}
+                            >
+                              👑 Remit to Owner
+                            </Button>
+                            {(isOwner ||
+                              (Boolean(user?.username) &&
+                                Boolean(pickup.heldByStaffName) &&
+                                user!.username.toLowerCase() ===
+                                  pickup.heldByStaffName!.toLowerCase())) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-xs px-2 h-8"
+                                title="Revert Custody to Uncollected"
+                                disabled={revertCustodyMutation.isPending}
+                                onClick={() => handleRevertCustody(pickup.orderId)}
+                              >
+                                ↩️
+                              </Button>
+                            )}
+                          </div>
                         ) : (
                           <Button
                             size="sm"

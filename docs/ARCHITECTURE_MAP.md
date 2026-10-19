@@ -155,9 +155,9 @@
     
 - lechon-system-web/src/utils/messengerTemplates.ts: Formatter utilities generating polite Taglish Messenger clipboard strings for booking confirmations, 1-day verifications, and dispatches.
     
-- lechon-system-web/src/components/manifest/QrSettlementModal.tsx: Interactive PC modal rendering dynamic one-time QR codes (qrcode.react), 2-second live signature polling, staff cash validation triggers, and Owner quick-approval controls.
+- lechon-system-web/src/components/manifest/QrSettlementModal.tsx: Interactive PC modal rendering dynamic one-time QR codes (qrcode.react), 2-second live signature polling, Hop 1 discrepancy warning banner with [🔄 Ask Rider to Re-enter] rejection trigger, Hop 2 Owner counted-amount physical envelope speed bump, and authenticated [↩️ Revert Custody to Uncollected] undo trigger.
     
-- lechon-system-web/src/pages/QrSignPage.tsx: Standalone mobile-first public web view (/qr-settle/:token) allowing riders to digitally sign remittances and owners to approve staff cash handovers from their smartphones, culminating in a screenshot-ready Digital Receipt.  
+- lechon-system-web/src/pages/QrSignPage.tsx: Standalone mobile-first public web view (/qr-settle/:token) allowing riders to digitally sign remittances (with reactive rejection notification alert when cashier requests re-entry) and owners to verify counted envelope cash bills and approve staff cash handovers from their smartphones, culminating in a screenshot-ready Digital Receipt.  
       
     
 
@@ -277,7 +277,7 @@
 - lechon-system-web/src/hooks/useLogistics.ts: Hooks for unassigned order queues, today's operations, and driver assignment mutations.  
       
     
-- lechon-system-web/src/hooks/useManifest.ts: Hooks and mutations for pending settlements across Riders, Store Pickups, and Lalamove couriers.  
+- lechon-system-web/src/hooks/useManifest.ts: Hooks and mutations for pending settlements across Riders, Store Pickups, and Lalamove couriers, including useRejectRiderSignatureMutation, useRevertCustodyMutation, and counted-amount enforced useOwnerApproveQrMutation.  
       
     
 - lechon-system-web/src/hooks/useOrdersDirectory.ts: Hook managing polling, filtering, and retrieval of the Master Order Directory and audit logs.  
@@ -411,9 +411,13 @@
     
 - POST /api/logistics/settlements/qr-session/{token}/rider-sign | Public (Token-Guarded) | Payload: RiderSignRequest { RiderName: string, RemittedAmount: decimal } | Returns: QrSessionStatusDto
     
-- POST /api/logistics/settlements/qr-session/{token}/staff-validate | Headers: Authorization: Bearer | Payload: { ManualOverrideRiderName?: string } | Returns: 200 OK (Transitions order custody to InStaffDrawer and stamps StaffValidatedBy from JWT)
+- POST /api/logistics/settlements/qr-session/{token}/reject | Headers: Authorization: Bearer (Roles = "Owner,Cashier") | Resets session status from SignedByRider to PendingScan, clears rider remittance fields, and notifies mobile client of discrepancy rejection.
     
-- POST /api/logistics/settlements/qr-session/{token}/owner-approve | Public (Owner PIN/Credentials) or Headers: Authorization: Bearer | Payload: OwnerApproveRequest { OwnerPinOrPassword?: string } | Returns: PaymentLog (Transitions order to Settled, writes PaymentLog, and burns token)  
+- POST /api/logistics/settlements/qr-session/{token}/staff-validate | Headers: Authorization: Bearer | Payload: { ManualOverrideRiderName?: string, ManualOverrideAmount?: decimal } | Returns: 200 OK (Transitions order custody to InStaffDrawer and stamps StaffValidatedBy from JWT)
+    
+- POST /api/logistics/settlements/orders/{orderId}/revert-custody | Headers: Authorization: Bearer (Roles = "Owner,Cashier") | Reverts order custody from InStaffDrawer back to Uncollected, expires active Hop 2 QR sessions, and records immutable OrderAuditLog (authorized only to holding cashier or owner).
+    
+- POST /api/logistics/settlements/qr-session/{token}/owner-approve | Public (Owner PIN/Credentials) or Headers: Authorization: Bearer | Payload: OwnerApproveRequest { CountedAmount: decimal, OwnerUsername?: string, OwnerPinOrPassword?: string } | Enforces physical envelope counted cash verification matching expected amount (returns 400 BadRequest on mismatch), transitions order to Settled, writes PaymentLog, and burns token.  
       
     
 

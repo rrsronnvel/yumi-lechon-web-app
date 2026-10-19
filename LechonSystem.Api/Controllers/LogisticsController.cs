@@ -172,6 +172,34 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
+        // 3b. Safeguard 1 — Discrepancy Rejection
+        [HttpPost("settlements/qr-session/{token}/reject")]
+        [Authorize(Roles = "Owner,Cashier")]
+        public async Task<IActionResult> RejectRiderSignature(string token)
+        {
+            try
+            {
+                var session = await _logisticsService.RejectRiderSignatureAsync(token);
+                return Ok(session);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to reject rider signature.", error = ex.Message });
+            }
+        }
+
         // 4. Staff Validates Cash into Drawer
         [HttpPost("settlements/qr-session/{token}/staff-validate")]
         public async Task<IActionResult> StaffValidate(string token, [FromBody] StaffValidateRequest? request)
@@ -193,6 +221,40 @@ namespace LechonSystem.Api.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Failed to validate drawer custody.", error = ex.Message });
+            }
+        }
+
+        // 4b. Safeguard 3 — Staff Custody Undo
+        [HttpPost("settlements/orders/{orderId}/revert-custody")]
+        [Authorize(Roles = "Owner,Cashier")]
+        public async Task<IActionResult> RevertCustody(int orderId)
+        {
+            try
+            {
+                var currentUser = User.Identity?.Name ?? "System";
+                var isOwner = User.IsInRole("Owner");
+                await _logisticsService.RevertCustodyAsync(orderId, currentUser, isOwner);
+                return Ok(new { success = true, message = $"Custody for Order #{orderId} reverted to Uncollected." });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to revert custody.", error = ex.Message });
             }
         }
 
@@ -258,9 +320,13 @@ namespace LechonSystem.Api.Controllers
             {
                 return Unauthorized(new { message = ex.Message });
             }
-            catch (ArgumentException ex)
+            catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
