@@ -2,6 +2,7 @@ namespace LechonSystem.Api.DTOs;
 
 public class PendingLalamoveSettlementDto
 {
+    public int Id => OrderId;
     public int OrderId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string ContactNumber { get; set; } = string.Empty;

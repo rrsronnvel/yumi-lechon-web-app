@@ -45,18 +45,51 @@ public class LechonDbContext : DbContext
 
         // 1. Seed Item Categories with explicitly pinned CreatedAt times
         modelBuilder.Entity<ItemCategory>().HasData(
-            new ItemCategory { Id = 1, Name = "Small Whole", MinimumWeightKg = 13.0m, MaximumWeightKg = 20.9m, BasePrice = 4500.00m, CreatedAt = seedDate },
-            new ItemCategory { Id = 2, Name = "Medium Whole", MinimumWeightKg = 21.0m, MaximumWeightKg = 25.9m, BasePrice = 5500.00m, CreatedAt = seedDate },
-            new ItemCategory { Id = 3, Name = "Large Whole", MinimumWeightKg = 26.0m, MaximumWeightKg = 30.9m, BasePrice = 6500.00m, CreatedAt = seedDate },
-            new ItemCategory { Id = 4, Name = "Lechon Belly - Medium", MinimumWeightKg = 4.0m, MaximumWeightKg = 5.9m, BasePrice = 2500.00m, CreatedAt = seedDate }
+            // A. Whole Lechon
+            new ItemCategory { Id = 1, Name = "XXS", MinimumWeightKg = 13.0m, MaximumWeightKg = 15.0m, BasePrice = 10000.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 2, Name = "XS", MinimumWeightKg = 16.0m, MaximumWeightKg = 19.0m, BasePrice = 11000.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 3, Name = "S", MinimumWeightKg = 20.0m, MaximumWeightKg = 21.0m, BasePrice = 12000.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 4, Name = "M", MinimumWeightKg = 22.0m, MaximumWeightKg = 24.0m, BasePrice = 12700.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 5, Name = "L", MinimumWeightKg = 25.0m, MaximumWeightKg = 27.0m, BasePrice = 13500.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 6, Name = "XL", MinimumWeightKg = 28.0m, MaximumWeightKg = 30.0m, BasePrice = 14000.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 7, Name = "XXL", MinimumWeightKg = 32.0m, MaximumWeightKg = 35.0m, BasePrice = 15000.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 8, Name = "Jumbo", MinimumWeightKg = 37.0m, MaximumWeightKg = 40.0m, BasePrice = 16500.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 9, Name = "S. Jumbo", MinimumWeightKg = 41.0m, MaximumWeightKg = 45.0m, BasePrice = 17500.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+
+            // Lechon Bellies
+            new ItemCategory { Id = 10, Name = "Belly 2kg", MinimumWeightKg = 2.0m, MaximumWeightKg = 2.0m, BasePrice = 1700.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 11, Name = "Belly 3kg", MinimumWeightKg = 3.0m, MaximumWeightKg = 3.0m, BasePrice = 2500.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 12, Name = "Belly 4kg", MinimumWeightKg = 4.0m, MaximumWeightKg = 4.0m, BasePrice = 3300.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 13, Name = "Belly 5kg", MinimumWeightKg = 5.0m, MaximumWeightKg = 5.0m, BasePrice = 4200.00m, MinimumSafetyStock = 3, IsActive = true, CreatedAt = seedDate },
+
+            // B. Lightweight Add-Ons (Weights 0.0kg, BasePrice 50.00, MinimumSafetyStock 0, IsActive true)
+            new ItemCategory { Id = 14, Name = "Sarsa", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 15, Name = "1.5 L coke", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 16, Name = "Pancit", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 17, Name = "Palabok", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 18, Name = "Spaghetti", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 19, Name = "Dinuguan", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 20, Name = "Puto", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate }
         );
 
         // 2. Seed Product Cooking Profiles with explicitly pinned CreatedAt times
         modelBuilder.Entity<ProductCookingProfile>().HasData(
-            new ProductCookingProfile { Id = 1, ItemCategoryId = 1, Name = "Small Profile", Description = "Small whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 120, PackagingDurationMinutes = 30, CreatedAt = seedDate },
-            new ProductCookingProfile { Id = 2, ItemCategoryId = 2, Name = "Medium Profile", Description = "Medium whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 180, PackagingDurationMinutes = 30, CreatedAt = seedDate },
-            new ProductCookingProfile { Id = 3, ItemCategoryId = 3, Name = "Large Profile", Description = "Large whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 240, PackagingDurationMinutes = 30, CreatedAt = seedDate },
-            new ProductCookingProfile { Id = 4, ItemCategoryId = 4, Name = "Belly Profile", Description = "Standard belly duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 90, PackagingDurationMinutes = 15, CreatedAt = seedDate }
+            // Whole Lechon (Tahi: 60 mins, Packaging: 30 mins)
+            new ProductCookingProfile { Id = 1, ItemCategoryId = 1, Name = "XXS Profile", Description = "XXS whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 150, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 2, ItemCategoryId = 2, Name = "XS Profile", Description = "XS whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 150, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 3, ItemCategoryId = 3, Name = "S Profile", Description = "Small whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 150, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 4, ItemCategoryId = 4, Name = "M Profile", Description = "Medium whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 180, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 5, ItemCategoryId = 5, Name = "L Profile", Description = "Large whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 180, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 6, ItemCategoryId = 6, Name = "XL Profile", Description = "XL whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 210, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 7, ItemCategoryId = 7, Name = "XXL Profile", Description = "XXL whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 225, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 8, ItemCategoryId = 8, Name = "Jumbo Profile", Description = "Jumbo whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 270, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 9, ItemCategoryId = 9, Name = "S. Jumbo Profile", Description = "S. Jumbo whole pig duration metrics", TahiDurationMinutes = 60, SalangDurationMinutes = 300, PackagingDurationMinutes = 30, CreatedAt = seedDate },
+
+            // Lechon Belly (Tahi: 30 mins, Packaging: 15 mins)
+            new ProductCookingProfile { Id = 10, ItemCategoryId = 10, Name = "Belly 2kg Profile", Description = "Belly 2kg duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 120, PackagingDurationMinutes = 15, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 11, ItemCategoryId = 11, Name = "Belly 3kg Profile", Description = "Belly 3kg duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 120, PackagingDurationMinutes = 15, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 12, ItemCategoryId = 12, Name = "Belly 4kg Profile", Description = "Belly 4kg duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 120, PackagingDurationMinutes = 15, CreatedAt = seedDate },
+            new ProductCookingProfile { Id = 13, ItemCategoryId = 13, Name = "Belly 5kg Profile", Description = "Belly 5kg duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 135, PackagingDurationMinutes = 15, CreatedAt = seedDate }
         );
 
         // 3. Seed Regular Freelance Riders

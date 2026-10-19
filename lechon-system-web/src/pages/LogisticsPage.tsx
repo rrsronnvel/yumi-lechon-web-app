@@ -3,8 +3,10 @@ import {
   useUnassignedOrders,
   useTodayOperations,
   useAssignRider,
+  useUnassignRider,
   useConfirmDelivery,
   TodayDispatchOrder,
+  UnassignedOrder,
 } from "../hooks/useLogistics";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -29,13 +31,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Printer, CalendarDays, Radio, CheckCircle2, UserCog, Truck } from "lucide-react";
 import { toast } from "sonner";
 
-interface UnassignedOrder {
-  id: number;
-  customerName: string;
-  deliveryAddress: string;
-  targetDeliveryTime: string;
-}
-
 export default function LogisticsPage() {
   // Tab A Data & Mutations
   const { data: todayOrders = [], isLoading: isLoadingToday } = useTodayOperations();
@@ -44,6 +39,7 @@ export default function LogisticsPage() {
   // Tab B Data & Mutations
   const { data: unassignedOrders = [], isLoading: isLoadingUnassigned, isError } = useUnassignedOrders();
   const assignRiderMutation = useAssignRider();
+  const unassignRiderMutation = useUnassignRider();
 
   // Tab B State (Batch Assign)
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
@@ -58,6 +54,10 @@ export default function LogisticsPage() {
   const [isReassignDialogOpen, setIsReassignDialogOpen] = useState(false);
 
   const handleSelectOrder = (orderId: number) => {
+    const targetOrder = unassignedOrders.find((o) => o.id === orderId);
+    if (targetOrder && targetOrder.fulfillment !== undefined && targetOrder.fulfillment !== 1) {
+      return; // Do not select non-delivery orders
+    }
     setSelectedOrderIds((prev) =>
       prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]
     );
@@ -112,6 +112,21 @@ export default function LogisticsPage() {
         },
       }
     );
+  };
+
+  const handleUnassignRider = () => {
+    if (!reassignOrder) return;
+
+    unassignRiderMutation.mutate(reassignOrder.id, {
+      onSuccess: () => {
+        toast.success(`Order #${reassignOrder.id} unassigned from rider.`);
+        setIsReassignDialogOpen(false);
+        setReassignOrder(null);
+      },
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.message || "Failed to unassign rider.");
+      },
+    });
   };
 
   const handleMarkDelivered = (orderId: number) => {
@@ -213,7 +228,15 @@ export default function LogisticsPage() {
                             })}
                           </td>
                           <td className="p-4">
-                            {order.riderName ? (
+                            {order.fulfillment === 0 ? (
+                              <Badge variant="outline" className="text-stone-600 bg-stone-100 border-stone-300 font-medium text-xs">
+                                🏪 Store Pickup
+                              </Badge>
+                            ) : order.fulfillment === 2 ? (
+                              <Badge variant="outline" className="text-stone-600 bg-stone-100 border-stone-300 font-medium text-xs">
+                                📦 Lalamove Courier
+                              </Badge>
+                            ) : order.riderName ? (
                               <div className="flex items-center gap-1.5 font-medium text-stone-800">
                                 <Truck className="h-4 w-4 text-emerald-600" />
                                 {order.riderName}
@@ -342,25 +365,51 @@ export default function LogisticsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-200/70 text-stone-900">
-                  {unassignedOrders.map((order: UnassignedOrder) => (
-                    <tr key={order.id} className="hover:bg-stone-50/80 transition-colors">
-                      <td className="p-4">
-                        <Checkbox
-                          checked={selectedOrderIds.includes(order.id)}
-                          onCheckedChange={() => handleSelectOrder(order.id)}
-                        />
-                      </td>
-                      <td className="p-4 font-mono font-bold text-stone-900">#{order.id}</td>
-                      <td className="p-4 font-medium text-stone-900">{order.customerName}</td>
-                      <td className="p-4 text-stone-600">{order.deliveryAddress}</td>
-                      <td className="p-4 font-semibold text-amber-800">
-                        {new Date(order.targetDeliveryTime).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                    </tr>
-                  ))}
+                  {unassignedOrders.map((order: UnassignedOrder) => {
+                    const isDelivery = order.fulfillment === undefined || order.fulfillment === 1;
+                    const isPickup = order.fulfillment === 0;
+                    const isLalamove = order.fulfillment === 2;
+
+                    return (
+                      <tr key={order.id} className="hover:bg-stone-50/80 transition-colors">
+                        <td className="p-4">
+                          {isDelivery ? (
+                            <Checkbox
+                              checked={selectedOrderIds.includes(order.id)}
+                              onCheckedChange={() => handleSelectOrder(order.id)}
+                            />
+                          ) : (
+                            <div className="w-4 h-4" />
+                          )}
+                        </td>
+                        <td className="p-4 font-mono font-bold text-stone-900">#{order.id}</td>
+                        <td className="p-4 font-medium text-stone-900">
+                          <div className="flex items-center gap-2">
+                            <span>{order.customerName}</span>
+                            {isLalamove && (
+                              <Badge variant="outline" className="bg-stone-100 text-stone-600 border-stone-300 font-medium text-xs">
+                                📦 Lalamove Courier
+                              </Badge>
+                            )}
+                            {isPickup && (
+                              <Badge variant="outline" className="bg-stone-100 text-stone-600 border-stone-300 font-medium text-xs">
+                                🏪 Store Pickup
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 text-stone-600">
+                          {isPickup ? "Store Counter (Pickup)" : (order.deliveryAddress || "-")}
+                        </td>
+                        <td className="p-4 font-semibold text-amber-800">
+                          {new Date(order.targetDeliveryTime).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -380,6 +429,18 @@ export default function LogisticsPage() {
             <p className="text-sm text-stone-500">
               Reassign this transit order immediately due to vehicle breakdown or delay.
             </p>
+
+            {reassignOrder?.fulfillment === 0 && (
+              <div className="p-2.5 rounded-md bg-stone-100 border border-stone-200 text-xs text-stone-700 font-medium">
+                🏪 Store Pickup Order — Freelance rider assignment is not applicable. Click [Unassign Rider] below to clear any trip attachment.
+              </div>
+            )}
+            {reassignOrder?.fulfillment === 2 && (
+              <div className="p-2.5 rounded-md bg-stone-100 border border-stone-200 text-xs text-stone-700 font-medium">
+                📦 Lalamove Courier Order — Customer arranged transport. Click [Unassign Rider] below to clear any trip attachment.
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label className="text-stone-700 font-semibold">New Rider Name</Label>
               <Input
@@ -387,6 +448,7 @@ export default function LogisticsPage() {
                 value={newRiderName}
                 onChange={(e) => setNewRiderName(e.target.value)}
                 placeholder="e.g., Kuya Berto"
+                disabled={reassignOrder?.fulfillment !== undefined && reassignOrder.fulfillment !== 1}
               />
             </div>
             <div className="space-y-1.5">
@@ -396,15 +458,31 @@ export default function LogisticsPage() {
                 value={newVehicleType}
                 onChange={(e) => setNewVehicleType(e.target.value)}
                 placeholder="e.g., Backup Motorcycle"
+                disabled={reassignOrder?.fulfillment !== undefined && reassignOrder.fulfillment !== 1}
               />
             </div>
-            <Button
-              onClick={handleEmergencyReassign}
-              disabled={assignRiderMutation.isPending}
-              className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-sm"
-            >
-              {assignRiderMutation.isPending ? "Reassigning..." : "Confirm Emergency Swap"}
-            </Button>
+            <div className="flex items-center gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleUnassignRider}
+                disabled={unassignRiderMutation.isPending || !reassignOrder?.riderName}
+                className="w-1/2 h-10 border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold"
+              >
+                {unassignRiderMutation.isPending ? "Unassigning..." : "Unassign Rider"}
+              </Button>
+              <Button
+                onClick={handleEmergencyReassign}
+                disabled={
+                  assignRiderMutation.isPending ||
+                  !newRiderName.trim() ||
+                  (reassignOrder?.fulfillment !== undefined && reassignOrder.fulfillment !== 1)
+                }
+                className="w-1/2 h-10 bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-sm"
+              >
+                {assignRiderMutation.isPending ? "Reassigning..." : "Confirm Swap"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -57,6 +57,25 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
+        // 2b. POST: api/logistics/unassign-rider/{orderId}
+        [HttpPost("unassign-rider/{orderId}")]
+        public async Task<IActionResult> UnassignRider(int orderId)
+        {
+            try
+            {
+                var result = await _logisticsService.UnassignRiderAsync(orderId);
+                return Ok(new { success = result, message = $"Order #{orderId} unassigned from delivery trip." });
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to unassign rider.", error = ex.Message });
+            }
+        }
+
         // 3. GET: api/logistics/today
         [HttpGet("today")]
         public async Task<IActionResult> GetTodayDispatches()

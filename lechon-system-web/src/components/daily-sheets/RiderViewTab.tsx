@@ -231,15 +231,25 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                   >
                     <div className="flex flex-col items-center justify-center gap-0.5">
                       <div className="flex items-center justify-center gap-1">
-                        <span
-                          className={
-                            item.riderName && item.riderName !== "Unassigned"
-                              ? "text-blue-700 font-bold"
-                              : "text-slate-400 italic font-normal"
-                          }
-                        >
-                          {item.riderName || "Unassigned"}
-                        </span>
+                        {item.fulfillment === 0 ? (
+                          <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
+                            🏪 Store Pickup
+                          </span>
+                        ) : item.fulfillment === 2 ? (
+                          <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
+                            📦 Lalamove Courier
+                          </span>
+                        ) : (
+                          <span
+                            className={
+                              item.riderName && item.riderName !== "Unassigned"
+                                ? "text-blue-700 font-bold"
+                                : "text-slate-400 italic font-normal"
+                            }
+                          >
+                            {item.riderName || "Unassigned"}
+                          </span>
+                        )}
                         {isEdit && (
                           <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
                         )}

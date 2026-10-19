@@ -182,46 +182,222 @@ namespace LechonSystem.Api.Migrations
                         new
                         {
                             Id = 1,
-                            BasePrice = 4500.00m,
+                            BasePrice = 10000.00m,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            MaximumWeightKg = 20.9m,
-                            MinimumSafetyStock = 0,
+                            MaximumWeightKg = 15.0m,
+                            MinimumSafetyStock = 3,
                             MinimumWeightKg = 13.0m,
-                            Name = "Small Whole"
+                            Name = "XXS"
                         },
                         new
                         {
                             Id = 2,
-                            BasePrice = 5500.00m,
+                            BasePrice = 11000.00m,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            MaximumWeightKg = 25.9m,
-                            MinimumSafetyStock = 0,
-                            MinimumWeightKg = 21.0m,
-                            Name = "Medium Whole"
+                            MaximumWeightKg = 19.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 16.0m,
+                            Name = "XS"
                         },
                         new
                         {
                             Id = 3,
-                            BasePrice = 6500.00m,
+                            BasePrice = 12000.00m,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            MaximumWeightKg = 30.9m,
-                            MinimumSafetyStock = 0,
-                            MinimumWeightKg = 26.0m,
-                            Name = "Large Whole"
+                            MaximumWeightKg = 21.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 20.0m,
+                            Name = "S"
                         },
                         new
                         {
                             Id = 4,
+                            BasePrice = 12700.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 24.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 22.0m,
+                            Name = "M"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            BasePrice = 13500.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 27.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 25.0m,
+                            Name = "L"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            BasePrice = 14000.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 30.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 28.0m,
+                            Name = "XL"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            BasePrice = 15000.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 35.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 32.0m,
+                            Name = "XXL"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            BasePrice = 16500.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 40.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 37.0m,
+                            Name = "Jumbo"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            BasePrice = 17500.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 45.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 41.0m,
+                            Name = "S. Jumbo"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            BasePrice = 1700.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 2.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 2.0m,
+                            Name = "Belly 2kg"
+                        },
+                        new
+                        {
+                            Id = 11,
                             BasePrice = 2500.00m,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            MaximumWeightKg = 5.9m,
-                            MinimumSafetyStock = 0,
+                            MaximumWeightKg = 3.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 3.0m,
+                            Name = "Belly 3kg"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            BasePrice = 3300.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 4.0m,
+                            MinimumSafetyStock = 3,
                             MinimumWeightKg = 4.0m,
-                            Name = "Lechon Belly - Medium"
+                            Name = "Belly 4kg"
+                        },
+                        new
+                        {
+                            Id = 13,
+                            BasePrice = 4200.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 5.0m,
+                            MinimumSafetyStock = 3,
+                            MinimumWeightKg = 5.0m,
+                            Name = "Belly 5kg"
+                        },
+                        new
+                        {
+                            Id = 14,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Sarsa"
+                        },
+                        new
+                        {
+                            Id = 15,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "1.5 L coke"
+                        },
+                        new
+                        {
+                            Id = 16,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Pancit"
+                        },
+                        new
+                        {
+                            Id = 17,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Palabok"
+                        },
+                        new
+                        {
+                            Id = 18,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Spaghetti"
+                        },
+                        new
+                        {
+                            Id = 19,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Dinuguan"
+                        },
+                        new
+                        {
+                            Id = 20,
+                            BasePrice = 50.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Puto"
                         });
                 });
 
@@ -641,44 +817,143 @@ namespace LechonSystem.Api.Migrations
                         {
                             Id = 1,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Small whole pig duration metrics",
+                            Description = "XXS whole pig duration metrics",
                             ItemCategoryId = 1,
-                            Name = "Small Profile",
+                            Name = "XXS Profile",
                             PackagingDurationMinutes = 30,
-                            SalangDurationMinutes = 120,
+                            SalangDurationMinutes = 150,
                             TahiDurationMinutes = 60
                         },
                         new
                         {
                             Id = 2,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Medium whole pig duration metrics",
+                            Description = "XS whole pig duration metrics",
                             ItemCategoryId = 2,
-                            Name = "Medium Profile",
+                            Name = "XS Profile",
                             PackagingDurationMinutes = 30,
-                            SalangDurationMinutes = 180,
+                            SalangDurationMinutes = 150,
                             TahiDurationMinutes = 60
                         },
                         new
                         {
                             Id = 3,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Large whole pig duration metrics",
+                            Description = "Small whole pig duration metrics",
                             ItemCategoryId = 3,
-                            Name = "Large Profile",
+                            Name = "S Profile",
                             PackagingDurationMinutes = 30,
-                            SalangDurationMinutes = 240,
+                            SalangDurationMinutes = 150,
                             TahiDurationMinutes = 60
                         },
                         new
                         {
                             Id = 4,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Standard belly duration metrics",
+                            Description = "Medium whole pig duration metrics",
                             ItemCategoryId = 4,
-                            Name = "Belly Profile",
+                            Name = "M Profile",
+                            PackagingDurationMinutes = 30,
+                            SalangDurationMinutes = 180,
+                            TahiDurationMinutes = 60
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Large whole pig duration metrics",
+                            ItemCategoryId = 5,
+                            Name = "L Profile",
+                            PackagingDurationMinutes = 30,
+                            SalangDurationMinutes = 180,
+                            TahiDurationMinutes = 60
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "XL whole pig duration metrics",
+                            ItemCategoryId = 6,
+                            Name = "XL Profile",
+                            PackagingDurationMinutes = 30,
+                            SalangDurationMinutes = 210,
+                            TahiDurationMinutes = 60
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "XXL whole pig duration metrics",
+                            ItemCategoryId = 7,
+                            Name = "XXL Profile",
+                            PackagingDurationMinutes = 30,
+                            SalangDurationMinutes = 225,
+                            TahiDurationMinutes = 60
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Jumbo whole pig duration metrics",
+                            ItemCategoryId = 8,
+                            Name = "Jumbo Profile",
+                            PackagingDurationMinutes = 30,
+                            SalangDurationMinutes = 270,
+                            TahiDurationMinutes = 60
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "S. Jumbo whole pig duration metrics",
+                            ItemCategoryId = 9,
+                            Name = "S. Jumbo Profile",
+                            PackagingDurationMinutes = 30,
+                            SalangDurationMinutes = 300,
+                            TahiDurationMinutes = 60
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Belly 2kg duration metrics",
+                            ItemCategoryId = 10,
+                            Name = "Belly 2kg Profile",
                             PackagingDurationMinutes = 15,
-                            SalangDurationMinutes = 90,
+                            SalangDurationMinutes = 120,
+                            TahiDurationMinutes = 30
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Belly 3kg duration metrics",
+                            ItemCategoryId = 11,
+                            Name = "Belly 3kg Profile",
+                            PackagingDurationMinutes = 15,
+                            SalangDurationMinutes = 120,
+                            TahiDurationMinutes = 30
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Belly 4kg duration metrics",
+                            ItemCategoryId = 12,
+                            Name = "Belly 4kg Profile",
+                            PackagingDurationMinutes = 15,
+                            SalangDurationMinutes = 120,
+                            TahiDurationMinutes = 30
+                        },
+                        new
+                        {
+                            Id = 13,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Belly 5kg duration metrics",
+                            ItemCategoryId = 13,
+                            Name = "Belly 5kg Profile",
+                            PackagingDurationMinutes = 15,
+                            SalangDurationMinutes = 135,
                             TahiDurationMinutes = 30
                         });
                 });

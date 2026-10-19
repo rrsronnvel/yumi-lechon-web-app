@@ -21,14 +21,14 @@ namespace LechonSystem.Api.Services
             _notificationSender = notificationSender;
         }
 
-        // 1. Fetching unassigned orders
+        // 1. Fetching unassigned orders (Returns all tomorrow orders so UI can flag non-delivery with badges)
         public async Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync()
         {
             return await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.OrderItemSchedule)
-                .Where(o => o.Fulfillment == FulfillmentType.Delivery
-                         && o.RoutingStatus == DeliveryStatus.Unassigned
+                .Where(o => o.RoutingStatus == DeliveryStatus.Unassigned
+                         && !o.IsCancelled
                          && o.TargetDeliveryTime.Date == DateTime.Today.AddDays(1).Date)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ToListAsync();
@@ -57,7 +57,7 @@ namespace LechonSystem.Api.Services
             {
                 if (order.Fulfillment != FulfillmentType.Delivery)
                 {
-                    throw new InvalidOperationException($"Order #{order.Id} is a {order.Fulfillment} order and cannot be assigned to a delivery trip.");
+                    throw new InvalidOperationException("Only Delivery orders can be assigned to freelance riders.");
                 }
             }
 
@@ -95,11 +95,46 @@ namespace LechonSystem.Api.Services
             return newTrip;
         }
 
+        public Task<DeliveryTrip> AssignRiderToOrdersAsync(string riderName, string vehicleType, List<int> orderIds)
+            => AssignRiderAsync(riderName, vehicleType, orderIds);
+
+        public async Task<bool> UnassignRiderAsync(int orderId)
+        {
+            var order = await _context.Orders
+                .Include(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null)
+            {
+                throw new ArgumentException($"Order #{orderId} not found.");
+            }
+
+            var oldTripId = order.DeliveryTripId;
+            order.DeliveryTripId = null;
+            order.RoutingStatus = DeliveryStatus.Unassigned;
+
+            if (oldTripId.HasValue)
+            {
+                var hasOtherOrders = await _context.Orders.AnyAsync(o => o.DeliveryTripId == oldTripId.Value && o.Id != orderId);
+                if (!hasOtherOrders)
+                {
+                    var trip = await _context.DeliveryTrips.FindAsync(oldTripId.Value);
+                    if (trip != null)
+                    {
+                        _context.DeliveryTrips.Remove(trip);
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
         public async Task<IEnumerable<object>> GetTodayDispatchesAsync()
         {
             return await _context.Orders
                 .Include(o => o.DeliveryTrip)
-                .Where(o => o.Fulfillment == FulfillmentType.Delivery
+                .Where(o => !o.IsCancelled
                          && o.TargetDeliveryTime.Date == DateTime.Today.Date)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .Select(o => new
@@ -111,7 +146,8 @@ namespace LechonSystem.Api.Services
                     riderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : null,
                     vehicleType = o.DeliveryTrip != null ? o.DeliveryTrip.VehicleType : null,
                     isDeliveryDetailsConfirmed = o.IsDeliveryDetailsConfirmed,
-                    routingStatus = o.RoutingStatus.ToString()
+                    routingStatus = o.RoutingStatus.ToString(),
+                    fulfillment = (int)o.Fulfillment
                 })
                 .ToListAsync();
         }
@@ -495,10 +531,35 @@ namespace LechonSystem.Api.Services
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
 
+            // When collecting payment for a Lalamove order:
+            // Courier orders must be paid in full prior to release. Update Downpayment so BalanceDue evaluates to ₱0
+            // and GateStatus evaluates to ClearToRelease (🟢 CLEAR TO RELEASE).
+            if (order.Fulfillment == FulfillmentType.Lalamove)
+            {
+                order.Downpayment += collectedAmount;
+
+                PaymentProvider provider = paymentMethod?.Contains("GCash", StringComparison.OrdinalIgnoreCase) == true
+                    ? PaymentProvider.ManualGCash
+                    : PaymentProvider.Cash;
+
+                var refId = !string.IsNullOrWhiteSpace(referenceNumber)
+                    ? referenceNumber
+                    : $"LALAMOVE_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = refId,
+                    Provider = provider,
+                    Amount = collectedAmount,
+                    Status = PaymentStatus.Success
+                });
+            }
+
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = order.Id,
-                ActionType = "Counter Pickup Collected",
+                ActionType = order.Fulfillment == FulfillmentType.Lalamove ? "Lalamove Payment Collected" : "Counter Pickup Collected",
                 Changes = $"Store counter collected ₱{collectedAmount:N2} via {paymentMethod}. Held in drawer by {staffUsername}.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow
@@ -531,10 +592,32 @@ namespace LechonSystem.Api.Services
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
 
+            if (order.Fulfillment == FulfillmentType.Lalamove)
+            {
+                order.Downpayment += session.ExpectedAmount;
+
+                PaymentProvider provider = session.PaymentMethod?.Contains("GCash", StringComparison.OrdinalIgnoreCase) == true
+                    ? PaymentProvider.ManualGCash
+                    : PaymentProvider.Cash;
+
+                var refId = !string.IsNullOrWhiteSpace(session.ReferenceNumber)
+                    ? session.ReferenceNumber
+                    : $"LALAMOVE_QR_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = refId,
+                    Provider = provider,
+                    Amount = session.ExpectedAmount,
+                    Status = PaymentStatus.Success
+                });
+            }
+
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = order.Id,
-                ActionType = "Counter Pickup Collected",
+                ActionType = order.Fulfillment == FulfillmentType.Lalamove ? "Lalamove Payment Collected" : "Counter Pickup Collected",
                 Changes = $"Store counter collected ₱{session.ExpectedAmount:N2} via {session.PaymentMethod}. Held in drawer by {staffUsername}.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow

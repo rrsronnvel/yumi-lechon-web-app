@@ -10,11 +10,20 @@ export interface TodayDispatchOrder {
   vehicleType?: string;
   isDeliveryDetailsConfirmed?: boolean;
   routingStatus?: string;
+  fulfillment?: number;
+}
+
+export interface UnassignedOrder {
+  id: number;
+  customerName: string;
+  deliveryAddress: string;
+  targetDeliveryTime: string;
+  fulfillment?: number;
 }
 
 // 1. Fetch unassigned orders for tomorrow's planner
 export const useUnassignedOrders = () => {
-  return useQuery({
+  return useQuery<UnassignedOrder[]>({
     queryKey: ["logistics", "unassigned-orders"],
     queryFn: async () => {
       const response = await apiClient.get("/logistics/unassigned");
@@ -47,6 +56,25 @@ export const useAssignRider = () => {
       vehicleType: string;
     }) => {
       const response = await apiClient.post("/logistics/assign-rider", dispatchData);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["logistics", "unassigned-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
+      queryClient.invalidateQueries({ queryKey: ["roster"] });
+      queryClient.invalidateQueries({ queryKey: ["orders", "directory"] });
+      queryClient.invalidateQueries({ queryKey: ["logistics", "today"] });
+    },
+  });
+};
+
+// 3b. Unassign order from delivery trip
+export const useUnassignRider = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post(`/logistics/unassign-rider/${orderId}`);
       return response.data;
     },
     onSuccess: () => {

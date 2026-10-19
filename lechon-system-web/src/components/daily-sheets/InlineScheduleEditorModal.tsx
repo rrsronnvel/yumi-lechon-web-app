@@ -252,14 +252,39 @@ export function InlineScheduleEditorModal({
               <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
                 <User className="w-3.5 h-3.5" /> Assigned Rider
               </Label>
-              <span className="text-[10px] text-muted-foreground">
-                Select registered rider or enter ad-hoc
-              </span>
+              {riderName && riderName !== "Unassigned" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setRiderName("");
+                    setRiderPhone("");
+                    toast.info("Rider unassigned. Click Save Overrides to apply.");
+                  }}
+                  className="h-6 text-[11px] px-2 border-rose-300 text-rose-700 hover:bg-rose-50"
+                >
+                  Unassign Rider
+                </Button>
+              )}
             </div>
+
+            {item.fulfillment === 0 && (
+              <div className="p-2 rounded-md bg-stone-100 border border-stone-200 text-xs text-stone-700 font-medium">
+                🏪 Store Pickup — Non-delivery order. Freelance rider assignment is disabled.
+              </div>
+            )}
+
+            {item.fulfillment === 2 && (
+              <div className="p-2 rounded-md bg-stone-100 border border-stone-200 text-xs text-stone-700 font-medium">
+                📦 Lalamove Courier — Customer-booked courier. Freelance rider assignment is disabled.
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <select
-                className="w-full h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                disabled={item.fulfillment === 0 || item.fulfillment === 2}
+                className="w-full h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:bg-stone-100"
                 value={
                   registeredRiders.find(
                     (r) => r.fullName.toLowerCase() === riderName.trim().toLowerCase()
@@ -297,7 +322,8 @@ export function InlineScheduleEditorModal({
                   placeholder="e.g., Kuya Boy"
                   value={riderName}
                   onChange={(e) => setRiderName(e.target.value)}
-                  className="h-8 text-xs bg-white"
+                  disabled={item.fulfillment === 0 || item.fulfillment === 2}
+                  className="h-8 text-xs bg-white disabled:opacity-50 disabled:bg-stone-100"
                 />
               </div>
 
@@ -311,7 +337,8 @@ export function InlineScheduleEditorModal({
                   placeholder="e.g., 09171234567"
                   value={riderPhone}
                   onChange={(e) => setRiderPhone(e.target.value)}
-                  className="h-8 text-xs font-mono bg-white"
+                  disabled={item.fulfillment === 0 || item.fulfillment === 2}
+                  className="h-8 text-xs font-mono bg-white disabled:opacity-50 disabled:bg-stone-100"
                 />
               </div>
             </div>

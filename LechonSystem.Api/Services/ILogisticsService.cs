@@ -10,6 +10,8 @@ namespace LechonSystem.Api.Services
     {
         Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync();
         Task<DeliveryTrip> AssignRiderAsync(string riderName, string vehicleType, List<int> orderIds);
+        Task<DeliveryTrip> AssignRiderToOrdersAsync(string riderName, string vehicleType, List<int> orderIds);
+        Task<bool> UnassignRiderAsync(int orderId);
         Task<IEnumerable<object>> GetTodayDispatchesAsync();
         Task<IEnumerable<PendingSettlementDropDto>> GetPendingSettlementDropsAsync();
 

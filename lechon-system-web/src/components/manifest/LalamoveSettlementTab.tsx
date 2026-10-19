@@ -9,6 +9,17 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { SettlePickupModal } from "./SettlePickupModal";
 
 export function LalamoveSettlementTab() {
@@ -30,20 +41,11 @@ export function LalamoveSettlementTab() {
     setSelectedOrderForPayment(null);
   };
 
-  const handleRelease = (order: PendingLalamoveSettlement) => {
-    if (!order.isClearedForRelease && order.balanceDue > 0) {
-      toast.error("Cannot Release Order", {
-        description: `Order #${order.orderId} has an unpaid balance of ₱${order.balanceDue.toLocaleString()}. Please verify and collect payment first.`,
-      });
-      return;
-    }
-
-    setReleasingOrderId(order.orderId);
-    releaseMutation.mutate(order.orderId, {
+  const handleReleaseCourier = (orderId: number) => {
+    setReleasingOrderId(orderId);
+    releaseMutation.mutate(orderId, {
       onSuccess: () => {
-        toast.success(`Order #${order.orderId} Handover Confirmed!`, {
-          description: `Dispatched to Lalamove courier for ${order.customerName}.`,
-        });
+        toast.success(`Order #${orderId} successfully released to courier!`);
         setReleasingOrderId(null);
       },
       onError: (err: any) => {
@@ -182,21 +184,42 @@ export function LalamoveSettlementTab() {
                       {/* Action Button */}
                       <td className="px-3 py-3 text-center whitespace-nowrap w-[140px]">
                         {isCleared ? (
-                          <Button
-                            size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-xs"
-                            onClick={() => handleRelease(order)}
-                            disabled={isReleasing}
-                          >
-                            {isReleasing
-                              ? "Dispatching..."
-                              : "Handover to Courier"}
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm text-xs cursor-pointer"
+                                size="sm"
+                                disabled={isReleasing}
+                              >
+                                {isReleasing ? "Releasing..." : "Release to Courier"}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Courier Release</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to hand over <strong>Order #{order.id ?? order.orderId} ({order.customerName})</strong> to the courier?
+                                  <br /><br />
+                                  Please ensure the lechon has been packed, the parcel is sealed, and the driver&apos;s app booking matches this order.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                                  onClick={() => handleReleaseCourier(order.id ?? order.orderId)}
+                                  disabled={isReleasing}
+                                >
+                                  {isReleasing ? "Releasing..." : "Confirm & Release"}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         ) : (
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-medium"
+                            className="border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-medium cursor-pointer"
                             onClick={() => handleOpenPayment(order)}
                           >
                             Verify Payment

@@ -117,29 +117,58 @@ namespace LechonSystem.Api.Services
             if (!string.IsNullOrWhiteSpace(request.Remarks) && schedule.OrderItem?.Order != null)
                 schedule.OrderItem.Order.Remarks = request.Remarks;
 
-            if (!string.IsNullOrWhiteSpace(request.RiderName) && schedule.OrderItem?.Order != null)
+            if (request.RiderName != null && schedule.OrderItem?.Order != null)
             {
-                // Update assigned rider on active DeliveryTrip if present
-                var trip = schedule.OrderItem.Order.DeliveryTrip
-                    ?? await _context.DeliveryTrips.Include(t => t.Orders)
-                        .FirstOrDefaultAsync(t => t.Orders.Any(o => o.Id == schedule.OrderItem.OrderId));
-
-                if (trip != null)
+                var cleanRider = request.RiderName.Trim();
+                if (string.IsNullOrWhiteSpace(cleanRider) || cleanRider.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
                 {
-                    trip.RiderName = request.RiderName;
+                    // Detach / Unassign rider
+                    var oldTripId = schedule.OrderItem.Order.DeliveryTripId;
+                    schedule.OrderItem.Order.DeliveryTripId = null;
+                    schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Unassigned;
+
+                    if (oldTripId.HasValue)
+                    {
+                        var hasOtherOrders = await _context.Orders.AnyAsync(o => o.DeliveryTripId == oldTripId.Value && o.Id != schedule.OrderItem.OrderId);
+                        if (!hasOtherOrders)
+                        {
+                            var trip = await _context.DeliveryTrips.FindAsync(oldTripId.Value);
+                            if (trip != null)
+                            {
+                                _context.DeliveryTrips.Remove(trip);
+                            }
+                        }
+                    }
                 }
                 else
                 {
-                    trip = new DeliveryTrip
+                    if (schedule.OrderItem.Order.Fulfillment != FulfillmentType.Delivery)
                     {
-                        RiderName = request.RiderName,
-                        VehicleType = "Motorcycle",
-                        Status = DeliveryStatus.Assigned,
-                        DispatchTime = DateTime.UtcNow
-                    };
-                    trip.Orders.Add(schedule.OrderItem.Order);
-                    schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Assigned;
-                    _context.DeliveryTrips.Add(trip);
+                        throw new InvalidOperationException("Only Delivery orders can be assigned to freelance riders.");
+                    }
+
+                    // Update assigned rider on active DeliveryTrip if present
+                    var trip = schedule.OrderItem.Order.DeliveryTrip
+                        ?? await _context.DeliveryTrips.Include(t => t.Orders)
+                            .FirstOrDefaultAsync(t => t.Orders.Any(o => o.Id == schedule.OrderItem.OrderId));
+
+                    if (trip != null)
+                    {
+                        trip.RiderName = cleanRider;
+                    }
+                    else
+                    {
+                        trip = new DeliveryTrip
+                        {
+                            RiderName = cleanRider,
+                            VehicleType = "Motorcycle",
+                            Status = DeliveryStatus.Assigned,
+                            DispatchTime = DateTime.UtcNow
+                        };
+                        trip.Orders.Add(schedule.OrderItem.Order);
+                        schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Assigned;
+                        _context.DeliveryTrips.Add(trip);
+                    }
                 }
             }
 

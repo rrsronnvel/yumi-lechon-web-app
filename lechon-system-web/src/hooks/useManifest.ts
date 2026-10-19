@@ -47,6 +47,7 @@ export interface PendingPickupSettlement {
 }
 
 export interface PendingLalamoveSettlement {
+  id?: number;
   orderId: number;
   customerName: string;
   contactNumber: string;
@@ -353,6 +354,7 @@ export const useRevertCustodyMutation = () => {
           queryKey: ["manifest", "pending-settlement"],
         }),
         queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "lalamove"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
@@ -360,7 +362,7 @@ export const useRevertCustodyMutation = () => {
   });
 };
 
-// 5. Store Counter Collection (Tab 2 Pickup)
+// 5. Store Counter Collection (Tab 2 Pickup & Tab 3 Lalamove)
 export const useCounterCollectPickupMutation = () => {
   const queryClient = useQueryClient();
 
@@ -374,10 +376,11 @@ export const useCounterCollectPickupMutation = () => {
     },
     onSuccess: () => {
       return Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "lalamove"] }),
         queryClient.invalidateQueries({
           queryKey: ["manifest", "pending-settlement"],
         }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
@@ -436,6 +439,7 @@ export const useDirectGcashSettlementMutation = () => {
           queryKey: ["manifest", "pending-settlement"],
         }),
         queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "lalamove"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
