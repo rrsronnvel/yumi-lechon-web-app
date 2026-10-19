@@ -50,17 +50,17 @@ export function PriceHistorySheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md overflow-y-auto bg-slate-50 p-6">
-        <SheetHeader className="pb-4 border-b border-slate-200">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-orange-100 rounded-lg text-orange-700">
+      <SheetContent className="w-full sm:max-w-md overflow-y-auto overflow-x-hidden bg-[#FAF6F4] p-6 border-l border-stone-200">
+        <SheetHeader className="pb-4 border-b border-stone-200 p-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-amber-100 rounded-lg text-amber-800 border border-amber-200/80">
               <History className="w-5 h-5" />
             </div>
             <div>
-              <SheetTitle className="text-xl font-bold text-slate-900">
+              <SheetTitle className="text-xl font-bold text-stone-900">
                 {category?.name ?? "Item"} Price History
               </SheetTitle>
-              <SheetDescription className="text-xs text-muted-foreground mt-0.5">
+              <SheetDescription className="text-xs text-stone-500 mt-0.5">
                 {getWeightSubtitle()}
               </SheetDescription>
             </div>
@@ -73,20 +73,20 @@ export function PriceHistorySheet({
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="p-4 bg-white rounded-lg border border-slate-200 animate-pulse space-y-2"
+                  className="p-4 bg-white rounded-xl border border-stone-200 animate-pulse space-y-2"
                 >
-                  <div className="h-4 bg-slate-200 rounded w-1/3"></div>
-                  <div className="h-6 bg-slate-200 rounded w-2/3"></div>
+                  <div className="h-4 bg-stone-200 rounded w-1/3"></div>
+                  <div className="h-6 bg-stone-200 rounded w-2/3"></div>
                 </div>
               ))}
             </div>
           ) : history.length === 0 ? (
-            <div className="text-center py-12 px-4 bg-white rounded-xl border border-dashed border-slate-300">
-              <Clock className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <h4 className="text-sm font-semibold text-slate-700">
+            <div className="text-center py-12 px-4 bg-white rounded-xl border border-dashed border-stone-300">
+              <Clock className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+              <h4 className="text-sm font-semibold text-stone-700">
                 No Price Adjustments Logged
               </h4>
-              <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+              <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto">
                 This item has maintained its base rate of ₱
                 {category?.basePrice.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
@@ -95,7 +95,7 @@ export function PriceHistorySheet({
               </p>
             </div>
           ) : (
-            <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+            <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-stone-200">
               {history.map((log) => {
                 const isHike = log.delta > 0;
                 const isDrop = log.delta < 0;
@@ -109,14 +109,14 @@ export function PriceHistorySheet({
                           ? "border-amber-500 ring-2 ring-amber-100"
                           : isDrop
                             ? "border-emerald-500 ring-2 ring-emerald-100"
-                            : "border-slate-400"
+                            : "border-stone-400"
                       }`}
                     />
 
                     {/* Timeline Card */}
-                    <div className="p-4 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:border-slate-300 transition-colors">
+                    <div className="p-4 bg-white rounded-xl border border-stone-200/90 shadow-xs hover:border-stone-300 transition-colors">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-slate-500">
+                        <span className="text-xs font-medium text-stone-500">
                           {formatDate(log.dateChanged)}
                         </span>
 
@@ -124,10 +124,10 @@ export function PriceHistorySheet({
                           variant="outline"
                           className={
                             isHike
-                              ? "bg-amber-50 text-amber-700 border-amber-200 font-semibold"
+                              ? "bg-amber-50 text-amber-800 border-amber-300 font-semibold font-mono"
                               : isDrop
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold"
-                                : "bg-slate-100 text-slate-700 border-slate-200"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold font-mono"
+                                : "bg-stone-100 text-stone-700 border-stone-200 font-mono"
                           }
                         >
                           {isHike && <TrendingUp className="w-3 h-3 mr-1" />}
@@ -140,15 +140,15 @@ export function PriceHistorySheet({
                       </div>
 
                       {/* Price Transition */}
-                      <div className="mt-2 flex items-baseline gap-2">
-                        <span className="text-xs text-slate-400 line-through">
+                      <div className="mt-2 flex items-baseline gap-2 font-mono">
+                        <span className="text-xs text-stone-400 line-through">
                           ₱
                           {log.oldPrice.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                           })}
                         </span>
-                        <span className="text-xs text-slate-400">→</span>
-                        <span className="text-base font-bold text-slate-900">
+                        <span className="text-xs text-stone-400">→</span>
+                        <span className="text-base font-bold text-stone-900">
                           ₱
                           {log.newPrice.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
@@ -157,12 +157,12 @@ export function PriceHistorySheet({
                       </div>
 
                       {/* User Signature */}
-                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                      <div className="mt-2.5 pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
                         <span className="flex items-center gap-1">
-                          <UserCheck className="w-3 h-3 text-slate-400" />
+                          <UserCheck className="w-3 h-3 text-stone-400" />
                           Changed by:
                         </span>
-                        <span className="font-medium text-slate-700">
+                        <span className="font-semibold text-stone-700">
                           {log.changedBy || "System"}
                         </span>
                       </div>

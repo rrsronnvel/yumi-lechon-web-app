@@ -333,45 +333,45 @@ export default function OrdersPage() {
   };
 
   const renderDataGrid = () => (
-    <Card className="bg-white border rounded-xl shadow-xs overflow-hidden">
-      <CardHeader className="py-3 px-4 border-b bg-slate-50/60 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-semibold text-slate-800">
+    <Card className="bg-white border border-stone-200/90 rounded-xl shadow-sm overflow-hidden">
+      <CardHeader className="py-3 px-4 border-b border-stone-200 bg-stone-50/80 flex flex-row items-center justify-between">
+        <CardTitle className="text-sm font-semibold text-stone-900">
           Order Directory Records
         </CardTitle>
-        <div className="text-xs font-mono font-medium text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
+        <div className="text-xs font-mono font-medium text-stone-600 bg-white px-2.5 py-1 rounded-md border border-stone-200 shadow-2xs">
           Showing{" "}
-          <strong className="text-slate-900">{orders?.length ?? 0}</strong>{" "}
+          <strong className="text-stone-900">{orders?.length ?? 0}</strong>{" "}
           orders
         </div>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50/80">
-              <TableHead className="w-[150px]">Order</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Target Schedule</TableHead>
-              <TableHead className="text-right">Total / Balance</TableHead>
-              <TableHead className="w-[140px]">Status</TableHead>
+            <TableRow className="bg-stone-100/70 border-b border-stone-200">
+              <TableHead className="w-[150px] text-stone-600 font-semibold uppercase tracking-wider text-xs">Order</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Customer</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Location</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Target Schedule</TableHead>
+              <TableHead className="text-right text-stone-600 font-semibold uppercase tracking-wider text-xs">Total / Balance</TableHead>
+              <TableHead className="w-[140px] text-stone-600 font-semibold uppercase tracking-wider text-xs">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-slate-500">
+                <TableCell colSpan={6} className="text-center py-12 text-stone-500">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#C81E1E]"></div>
                     <span className="text-sm">Loading orders...</span>
                   </div>
                 </TableCell>
               </TableRow>
             ) : orders?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-slate-500">
+                <TableCell colSpan={6} className="text-center py-12 text-stone-500">
                   <div className="flex flex-col items-center justify-center gap-1">
-                    <p className="font-medium text-slate-700">No orders found.</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="font-medium text-stone-700">No orders found.</p>
+                    <p className="text-xs text-stone-400">
                       Try adjusting your search terms or active tab filter.
                     </p>
                   </div>
@@ -381,14 +381,14 @@ export default function OrdersPage() {
               orders?.map((order: OrderDirectoryDto) => (
                 <TableRow
                   key={order.id}
-                  className="cursor-pointer hover:bg-amber-50/40 transition-colors"
+                  className="cursor-pointer hover:bg-amber-50/40 transition-colors border-b border-stone-100"
                   onClick={() => handleRowClick(order)}
                 >
                   {/* Order Column */}
                   <TableCell>
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-semibold text-slate-900">
+                        <span className="font-mono font-semibold text-stone-900">
                           #{order.id}
                         </span>
                         {order.hasRecentEdits && (
@@ -400,7 +400,7 @@ export default function OrdersPage() {
                           </Badge>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 font-normal">
+                      <div className="text-xs text-stone-500 font-normal">
                         by {order.createdBy || "System"}
                       </div>
                     </div>
@@ -410,7 +410,7 @@ export default function OrdersPage() {
                   <TableCell>
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-slate-900">
+                        <span className="font-medium text-stone-900">
                           {order.customerName}
                         </span>
                         {order.isTrustedCustomer && (
@@ -422,7 +422,7 @@ export default function OrdersPage() {
                           </Badge>
                         )}
                       </div>
-                      <div className="font-mono text-xs text-slate-500">
+                      <div className="font-mono text-xs text-stone-500">
                         {order.contactNumber || "N/A"}
                       </div>
                     </div>
@@ -451,25 +451,25 @@ export default function OrdersPage() {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
       {/* Header with New Order Button */}
-      <div className="flex justify-between items-start gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200/90 pb-5">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
             Master Order Directory
           </h1>
-          <p className="text-gray-500 mt-1">
+          <p className="text-sm text-stone-500 mt-1">
             Search, filter, and inspect financial balances across all active and historical bookings.
           </p>
         </div>
 
         {/* The New Order Modal */}
         <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
-          <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-orange-600 text-primary-foreground shadow-xs hover:bg-orange-700 h-9 px-4 py-2">
+          <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-[#C81E1E] hover:bg-[#A81818] text-white shadow-sm h-10 px-4 py-2 cursor-pointer">
             <Plus className="h-4 w-4" /> New Order
           </DialogTrigger>
           {/* Widescreen POS Terminal Modal Shell */}
-          <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0">
+          <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0 rounded-xl border-stone-200">
             <DialogHeader className="sr-only">
               <DialogTitle>New POS Order Entry</DialogTitle>
             </DialogHeader>
@@ -482,51 +482,51 @@ export default function OrdersPage() {
 
       {/* Search Bar */}
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+        <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
         <Input
           placeholder="Search by customer name, phone, or #order ID..."
           value={rawSearch}
           onChange={(e) => setRawSearch(e.target.value)}
-          className="bg-white pl-9"
+          className="bg-white pl-9 h-10 border-stone-300"
         />
       </div>
 
       {/* 6-Tab Switch Slicing */}
       <Tabs value={filterTab} onValueChange={setFilterTab} className="w-full">
-        <TabsList className="flex flex-wrap gap-1 h-auto p-1 bg-slate-100/90 rounded-lg">
+        <TabsList className="flex flex-wrap gap-1 h-auto p-1 bg-stone-200/60 border border-stone-200 rounded-lg">
           <TabsTrigger
             value="upcoming"
-            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+            className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             📅 Upcoming
           </TabsTrigger>
           <TabsTrigger
             value="recent"
-            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+            className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             ✏️ Recently Modified
           </TabsTrigger>
           <TabsTrigger
             value="balance-due"
-            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+            className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             💵 Balance Due
           </TabsTrigger>
           <TabsTrigger
             value="past-30"
-            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+            className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             ⏳ Past 30 Days
           </TabsTrigger>
           <TabsTrigger
             value="cancelled"
-            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+            className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             🚫 Cancelled
           </TabsTrigger>
           <TabsTrigger
             value="all"
-            className="data-[state=active]:bg-white data-[state=active]:shadow-xs"
+            className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             📚 All Time
           </TabsTrigger>
@@ -539,20 +539,20 @@ export default function OrdersPage() {
 
       {/* The Slide-Out Safety Drawer */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent className="w-full sm:max-w-[600px] overflow-y-auto bg-slate-50">
-          <SheetHeader className="mb-6">
+        <SheetContent className="w-full sm:max-w-[600px] overflow-y-auto bg-[#FAF6F4] p-6">
+          <SheetHeader className="mb-6 p-0">
             <div className="flex flex-col gap-3">
               <div className="flex justify-between items-start gap-2">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <SheetTitle className="text-2xl font-bold font-mono text-slate-900">
+                    <SheetTitle className="text-2xl font-bold font-mono text-stone-900">
                       #{orderDetails?.id || selectedOrder?.id}
                     </SheetTitle>
                     {/* Semantic Status Pill */}
                     {orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
                       <Badge
                         variant="outline"
-                        className="bg-red-50 text-red-700 border-red-300 font-semibold text-xs"
+                        className="bg-rose-50 text-rose-700 border-rose-300 font-semibold text-xs"
                       >
                         🛑 Cancelled
                       </Badge>
@@ -575,7 +575,7 @@ export default function OrdersPage() {
                     ) : (
                       <Badge
                         variant="outline"
-                        className="bg-slate-100 text-slate-700 border-slate-300 font-semibold text-xs"
+                        className="bg-stone-100 text-stone-700 border-stone-300 font-semibold text-xs"
                       >
                         ⚪ Unassigned
                       </Badge>
@@ -592,7 +592,7 @@ export default function OrdersPage() {
                       </Badge>
                     )}
                   </div>
-                  <SheetDescription className="mt-1">
+                  <SheetDescription className="mt-1 text-stone-500">
                     {isEditing
                       ? "Modifying the Delivery Time or Item Size will recalculate the kitchen schedule."
                       : "Read-only view. Click 'Edit Details' to unlock modifications."}
@@ -604,7 +604,7 @@ export default function OrdersPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs h-9 gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs"
+                      className="text-xs h-9 gap-1.5 border-stone-300 bg-white text-stone-700 hover:bg-stone-100 shadow-2xs"
                       onClick={handleShareDetails}
                     >
                       📋 Share Details
@@ -622,7 +622,10 @@ export default function OrdersPage() {
                       <Button
                         variant={isEditing ? "outline" : "default"}
                         size="sm"
-                        className="h-9"
+                        className={cn(
+                          "h-9",
+                          !isEditing && "bg-[#C81E1E] hover:bg-[#A81818] text-white"
+                        )}
                         onClick={() => setIsEditing(!isEditing)}
                       >
                         {isEditing ? "Cancel Edit" : "Edit Details"}
@@ -642,20 +645,20 @@ export default function OrdersPage() {
                   onClose={() => setIsSheetOpen(false)}
                 />
               ) : isDetailsLoading ? (
-                <div className="py-16 text-center text-slate-500 animate-pulse">
+                <div className="py-16 text-center text-stone-500 animate-pulse">
                   Pulling heavy dossier from the vault...
                 </div>
               ) : orderDetails ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   {/* Card 1: Logistics & Contact */}
-                  <div className="bg-white p-5 rounded-md border shadow-xs">
-                    <h3 className="font-semibold text-lg border-b pb-2 mb-3 text-gray-800">
+                  <div className="bg-white p-5 rounded-xl border border-stone-200/90 shadow-xs">
+                    <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-3 text-stone-900">
                       Customer & Logistics
                     </h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="col-span-2">
-                        <p className="text-gray-500">Name</p>
-                        <div className="font-medium text-base flex items-center gap-2">
+                        <p className="text-stone-500">Name</p>
+                        <div className="font-medium text-base text-stone-900 flex items-center gap-2">
                           {orderDetails.customerName}
                           {orderDetails.isTrustedCustomer && (
                             <Badge
@@ -668,22 +671,22 @@ export default function OrdersPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-gray-500">Contact Number</p>
-                        <p className="font-medium">
+                        <p className="text-stone-500">Contact Number</p>
+                        <p className="font-medium text-stone-800">
                           {orderDetails.contactNumber || "N/A"}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Delivery Target</p>
-                        <p className="font-medium text-blue-700">
+                        <p className="text-stone-500">Delivery Target</p>
+                        <p className="font-medium text-amber-900">
                           {new Date(
                             orderDetails.targetDeliveryTime
                           ).toLocaleString()}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Delivery Method</p>
-                        <p className="font-medium flex items-center gap-1">
+                        <p className="text-stone-500">Delivery Method</p>
+                        <p className="font-medium text-stone-800 flex items-center gap-1">
                           {Number(orderDetails?.fulfillment) === 0 ||
                           String(orderDetails?.fulfillment).toLowerCase() === "pickup"
                             ? "🏪 Walk-in Store Pickup"
@@ -695,11 +698,11 @@ export default function OrdersPage() {
                       </div>
 
                       <div>
-                        <p className="text-gray-500">Address / Location</p>
-                        <p className="font-medium text-gray-800">
+                        <p className="text-stone-500">Address / Location</p>
+                        <p className="font-medium text-stone-800">
                           {orderDetails?.deliveryAddress ||
                             orderDetails?.location || (
-                              <span className="text-gray-400 italic">
+                              <span className="text-stone-400 italic">
                                 None Provided
                               </span>
                             )}
@@ -707,31 +710,31 @@ export default function OrdersPage() {
                       </div>
 
                       {/* Dedicated Courier / Handover Status section */}
-                      <div className="col-span-2 mt-1 pt-3 border-t border-slate-100">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                      <div className="col-span-2 mt-1 pt-3 border-t border-stone-100">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-2">
                           Courier / Handover Status
                         </p>
                         {Number(orderDetails.fulfillment) === 1 ? (
-                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                          <div className="flex items-center justify-between p-3 bg-stone-50 rounded-lg border border-stone-200">
                             <div className="space-y-0.5">
-                              <p className="text-sm font-semibold text-slate-900">
+                              <p className="text-sm font-semibold text-stone-900">
                                 {orderDetails.assignedRiderName ? (
                                   <>
                                     🛵 {orderDetails.assignedRiderName}
                                     {orderDetails.assignedRiderPhone ? (
-                                      <span className="text-slate-500 font-normal">
+                                      <span className="text-stone-500 font-normal">
                                         {" "}
                                         • {orderDetails.assignedRiderPhone}
                                       </span>
                                     ) : null}
                                   </>
                                 ) : (
-                                  <span className="text-slate-600 font-medium">
+                                  <span className="text-stone-600 font-medium">
                                     Pending Rider Assignment
                                   </span>
                                 )}
                               </p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-xs text-stone-500">
                                 Freelance Delivery Courier
                               </p>
                             </div>
@@ -748,7 +751,7 @@ export default function OrdersPage() {
                                 ) : (
                                   <Badge
                                     variant="outline"
-                                    className="bg-slate-100 text-slate-700 border-slate-300 font-medium"
+                                    className="bg-stone-100 text-stone-700 border-stone-300 font-medium"
                                   >
                                     ⚪ Pending Dispatch
                                   </Badge>
@@ -764,12 +767,12 @@ export default function OrdersPage() {
                             </div>
                           </div>
                         ) : Number(orderDetails.fulfillment) === 2 ? (
-                          <div className="flex items-center justify-between p-3 bg-orange-50/60 rounded-lg border border-orange-200">
+                          <div className="flex items-center justify-between p-3 bg-amber-50/60 rounded-lg border border-amber-200">
                             <div className="space-y-0.5">
-                              <p className="text-sm font-semibold text-slate-900">
+                              <p className="text-sm font-semibold text-stone-900">
                                 📦 Customer-Booked Lalamove Courier
                               </p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-xs text-stone-500">
                                 Third-Party Courier App Handover
                               </p>
                             </div>
@@ -796,19 +799,19 @@ export default function OrdersPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                          <div className="flex items-center justify-between p-3 bg-stone-50 rounded-lg border border-stone-200">
                             <div className="space-y-0.5">
-                              <p className="text-sm font-semibold text-slate-900">
+                              <p className="text-sm font-semibold text-stone-900">
                                 🏪 Walk-in Store Pickup
                               </p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-xs text-stone-500">
                                 Direct Counter Handover
                               </p>
                             </div>
                             <div>
                               <Badge
                                 variant="outline"
-                                className="bg-blue-50 text-blue-700 border-blue-300 font-medium"
+                                className="bg-emerald-50 text-emerald-700 border-emerald-300 font-medium"
                               >
                                 Ready for Counter Pickup
                               </Badge>
@@ -829,11 +832,11 @@ export default function OrdersPage() {
                       )}
 
                       {orderDetails.remarks && (
-                        <div className="col-span-2 bg-amber-50 p-3 rounded border border-amber-100">
+                        <div className="col-span-2 bg-amber-50 p-3 rounded-lg border border-amber-200">
                           <p className="text-xs text-amber-800 font-bold uppercase mb-1">
                             Customer Remarks
                           </p>
-                          <p className="text-sm text-gray-800">
+                          <p className="text-sm text-stone-800">
                             {orderDetails.remarks}
                           </p>
                         </div>
@@ -842,8 +845,8 @@ export default function OrdersPage() {
                   </div>
 
                   {/* Card 2: Order Manifest & Add-ons */}
-                  <div className="bg-white p-5 rounded-md border shadow-xs">
-                    <h3 className="font-semibold text-lg border-b pb-2 mb-3 text-gray-800">
+                  <div className="bg-white p-5 rounded-xl border border-stone-200/90 shadow-xs">
+                    <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-3 text-stone-900">
                       Order Manifest
                     </h3>
                     <div className="space-y-3">
@@ -851,22 +854,22 @@ export default function OrdersPage() {
                         (item: any, index: number) => (
                           <div
                             key={index}
-                            className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100"
+                            className="flex justify-between items-center bg-stone-50 p-2.5 rounded-lg border border-stone-100"
                           >
                             <div>
-                              <p className="font-medium text-sm text-gray-800">
+                              <p className="font-medium text-sm text-stone-800">
                                 {item.quantity}x{" "}
                                 {item.itemCategory?.name || "Lechon Size"}
                               </p>
                             </div>
 
-                            <p className="font-semibold text-sm text-gray-800">
+                            <p className="font-semibold text-sm text-stone-900 font-mono">
                               {item.totalPrice > 0 ? (
                                 `₱${item.totalPrice.toLocaleString()}`
                               ) : orderDetails.orderItems?.length === 1 ? (
                                 `₱${(orderDetails.price || 0).toLocaleString()}`
                               ) : (
-                                <span className="text-gray-400 italic text-xs">
+                                <span className="text-stone-400 italic text-xs font-sans">
                                   Included in Subtotal
                                 </span>
                               )}
@@ -876,11 +879,11 @@ export default function OrdersPage() {
                       )}
 
                       {orderDetails.addOns && (
-                        <div className="pt-3 border-t border-dashed mt-2">
-                          <p className="text-xs text-gray-500 uppercase mb-1 tracking-wider">
+                        <div className="pt-3 border-t border-dashed border-stone-200 mt-2">
+                          <p className="text-xs text-stone-500 uppercase mb-1 tracking-wider">
                             Add-Ons Requested
                           </p>
-                          <p className="text-sm font-medium text-gray-800">
+                          <p className="text-sm font-medium text-stone-800">
                             {orderDetails.addOns}
                           </p>
                         </div>
@@ -889,14 +892,14 @@ export default function OrdersPage() {
                   </div>
 
                   {/* Card 3: Exact Financial Splits */}
-                  <div className="bg-white p-5 rounded-md border shadow-xs">
-                    <h3 className="font-semibold text-lg border-b pb-2 mb-3 text-gray-800">
+                  <div className="bg-white p-5 rounded-xl border border-stone-200/90 shadow-xs">
+                    <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-3 text-stone-900">
                       Financial Splits
                     </h3>
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between text-gray-600">
+                      <div className="flex justify-between text-stone-600">
                         <span>Subtotal (Lechon):</span>
-                        <span>
+                        <span className="font-mono">
                           ₱{orderDetails.price?.toLocaleString() || 0}
                         </span>
                       </div>
@@ -906,9 +909,9 @@ export default function OrdersPage() {
                         (orderDetails.deliveryFee || 0) +
                         (orderDetails.discount || 0) >
                         0 && (
-                        <div className="flex justify-between text-indigo-600 font-medium">
+                        <div className="flex justify-between text-amber-800 font-medium">
                           <span>Add-Ons:</span>
-                          <span>
+                          <span className="font-mono">
                             ₱
                             {(
                               (orderDetails.grandTotal || 0) -
@@ -920,37 +923,37 @@ export default function OrdersPage() {
                         </div>
                       )}
 
-                      <div className="flex justify-between text-gray-600 border-b pb-2">
+                      <div className="flex justify-between text-stone-600 border-b border-stone-200 pb-2">
                         <span>Delivery Fee:</span>
-                        <span>
+                        <span className="font-mono">
                           ₱{orderDetails.deliveryFee?.toLocaleString() || 0}
                         </span>
                       </div>
 
                       {orderDetails.discount > 0 && (
-                        <div className="flex justify-between text-red-500 pt-1">
+                        <div className="flex justify-between text-rose-600 pt-1">
                           <span>Discount Applied:</span>
-                          <span>
+                          <span className="font-mono">
                             - ₱{orderDetails.discount?.toLocaleString()}
                           </span>
                         </div>
                       )}
 
-                      <div className="flex justify-between font-semibold pt-1">
+                      <div className="flex justify-between font-semibold text-stone-900 pt-1">
                         <span>Grand Total:</span>
-                        <span>
+                        <span className="font-mono">
                           ₱{orderDetails.grandTotal?.toLocaleString() || 0}
                         </span>
                       </div>
-                      <div className="flex justify-between text-green-700">
+                      <div className="flex justify-between text-emerald-700">
                         <span>Downpayment:</span>
-                        <span>
+                        <span className="font-mono">
                           - ₱{orderDetails.downpayment?.toLocaleString() || 0}
                         </span>
                       </div>
-                      <div className="flex justify-between text-red-600 font-bold text-lg border-t pt-2 mt-2">
+                      <div className="flex justify-between text-rose-600 font-bold text-lg border-t border-stone-200 pt-2 mt-2">
                         <span>Balance to Collect:</span>
-                        <span>
+                        <span className="font-mono">
                           ₱
                           {(
                             (orderDetails.grandTotal || 0) -
@@ -962,31 +965,31 @@ export default function OrdersPage() {
                   </div>
 
                   {/* Card 4: Security Audit Log */}
-                  <div className="bg-white p-5 rounded-md border shadow-xs">
-                    <h3 className="font-semibold text-lg border-b pb-2 mb-4 text-gray-800 flex items-center gap-2">
+                  <div className="bg-white p-5 rounded-xl border border-stone-200/90 shadow-xs">
+                    <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-4 text-stone-900 flex items-center gap-2">
                       🛡️ Audit Log
                     </h3>
                     <div className="space-y-4">
                       {isAuditLoading ? (
-                        <p className="text-sm text-slate-500 animate-pulse">
+                        <p className="text-sm text-stone-500 animate-pulse">
                           Decrypting logs...
                         </p>
                       ) : auditLogs?.length === 0 ? (
-                        <p className="text-sm text-slate-500 italic">
+                        <p className="text-sm text-stone-500 italic">
                           No modifications logged. Order is in its original
                           state.
                         </p>
                       ) : (
-                        <div className="relative border-l-2 border-slate-200 ml-3 space-y-6">
+                        <div className="relative border-l-2 border-stone-200 ml-3 space-y-6">
                           {auditLogs?.map((log: any) => (
                             <div key={log.id} className="relative ml-6">
-                              <span className="absolute flex items-center justify-center w-3 h-3 bg-slate-400 rounded-full -left-[31px] ring-4 ring-white mt-1"></span>
+                              <span className="absolute flex items-center justify-center w-3 h-3 bg-stone-400 rounded-full -left-[31px] ring-4 ring-white mt-1"></span>
 
-                              <p className="text-xs text-slate-500 font-semibold tracking-wider uppercase">
+                              <p className="text-xs text-stone-500 font-semibold tracking-wider uppercase">
                                 {new Date(log.timestamp).toLocaleString()} •{" "}
                                 {log.changedBy}
                               </p>
-                              <p className="text-sm text-slate-800 mt-1 font-medium bg-slate-50 p-2 rounded border border-slate-100">
+                              <p className="text-sm text-stone-800 mt-1 font-medium bg-stone-50 p-2 rounded border border-stone-100">
                                 {log.changes}
                               </p>
                             </div>
@@ -1014,7 +1017,7 @@ export default function OrdersPage() {
                     )}
                 </div>
               ) : (
-                <div className="text-center text-red-500 py-10">
+                <div className="text-center text-rose-600 py-10">
                   Data unavailable.
                 </div>
               )}
@@ -1024,13 +1027,13 @@ export default function OrdersPage() {
       </Sheet>
 
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="overflow-x-hidden max-w-md w-full p-6 rounded-xl border-stone-200 bg-white">
           <DialogHeader>
-            <DialogTitle>Log Additional Payment</DialogTitle>
+            <DialogTitle className="text-lg font-bold text-stone-900">Log Additional Payment</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-stone-700 block">
                 Amount Received (₱)
               </label>
               <Input
@@ -1040,16 +1043,17 @@ export default function OrdersPage() {
                   setPaymentAmount(parseFloat(e.target.value) || "")
                 }
                 placeholder="e.g., 3000"
+                className="h-10 border-stone-300"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-stone-700 block">
                 Payment Method
               </label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full h-10 mt-1 rounded-md border border-input bg-white px-3"
+                className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm"
               >
                 <option value="GCash">GCash</option>
                 <option value="Cash">Physical Cash</option>
@@ -1057,7 +1061,7 @@ export default function OrdersPage() {
               </select>
             </div>
             <Button
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2 h-11"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2 h-11 font-semibold"
               disabled={paymentMutation.isPending || !paymentAmount}
               onClick={() => {
                 if (!selectedOrder) return;
@@ -1087,12 +1091,12 @@ export default function OrdersPage() {
         open={isCancelDialogOpen}
         onOpenChange={setIsCancelDialogOpen}
       >
-        <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogContent className="sm:max-w-md rounded-xl border-stone-200 bg-white">
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="text-stone-900">
               Cancel Order #{orderDetails?.id || selectedOrder?.id}?
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-stone-600">
               This action will void the booking, immediately release the
               reserved pig back into sellable inventory, and log your name in
               the audit ledger.
@@ -1100,7 +1104,7 @@ export default function OrdersPage() {
           </AlertDialogHeader>
 
           <div className="space-y-3 py-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
               Select Preset Reason
             </p>
             <div className="flex flex-wrap gap-2">
@@ -1113,7 +1117,7 @@ export default function OrdersPage() {
                     "text-xs px-2.5 py-1.5 rounded-full border transition-all cursor-pointer font-medium",
                     cancellationReason === preset
                       ? "bg-rose-100 border-rose-300 text-rose-800 shadow-2xs"
-                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                      : "bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100"
                   )}
                 >
                   {preset}
@@ -1122,7 +1126,7 @@ export default function OrdersPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-700 block">
+              <label className="text-xs font-medium text-stone-700 block">
                 Custom or Adjusted Notes <span className="text-rose-500">*</span>
               </label>
               <Textarea
@@ -1130,7 +1134,7 @@ export default function OrdersPage() {
                 value={cancellationReason}
                 onChange={(e) => setCancellationReason(e.target.value)}
                 rows={3}
-                className="resize-none bg-white text-sm"
+                className="resize-none bg-white text-sm border-stone-300"
                 required
               />
             </div>
@@ -1142,6 +1146,7 @@ export default function OrdersPage() {
             </AlertDialogCancel>
             <Button
               variant="destructive"
+              className="bg-rose-600 hover:bg-rose-700 text-white"
               disabled={
                 cancelOrderMutation.isPending || !cancellationReason.trim()
               }

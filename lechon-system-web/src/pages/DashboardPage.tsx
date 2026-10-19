@@ -253,15 +253,14 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
         {/* Operational Header HUD */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/80 pb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-stone-200/90 pb-5">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
               Daily Operations
             </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-stone-500 mt-1">
               {new Intl.DateTimeFormat("en-US", {
                 weekday: "long",
                 month: "short",
@@ -275,7 +274,7 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               onClick={() => window.open("/daily-sheets", "_blank")}
-              className="border-slate-300 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm shadow-2xs"
+              className="border-stone-300 bg-white hover:bg-stone-100 text-stone-700 text-xs sm:text-sm h-10 px-4 shadow-2xs"
             >
               <FileText className="w-4 h-4 mr-1.5" />
               Daily Sheets
@@ -283,7 +282,7 @@ export default function DashboardPage() {
 
             <Button
               onClick={() => setIsOrderModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm shadow-xs font-semibold"
+              className="bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium shadow-sm transition-colors text-xs sm:text-sm h-10 px-4"
             >
               <Plus className="w-4 h-4 mr-1.5" />
               New Order
@@ -294,19 +293,19 @@ export default function DashboardPage() {
         {/* 🚀 Symmetrical 3-Card KPI Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Card 1: Tomorrow's Roasting Demand */}
-          <Card className="min-h-[140px] flex flex-col justify-between border-slate-200 shadow-2xs">
+          <Card className="min-h-[140px] flex flex-col justify-between bg-white border-stone-200/90 shadow-sm rounded-xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-5">
-              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Tomorrow's Roasting Demand
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+                Tomorrow&apos;s Roasting Demand
               </CardTitle>
               <span className="text-lg">🍖</span>
             </CardHeader>
             <CardContent className="px-5 pb-4 pt-1">
-              <div className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              <div className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">
                 {tomorrowCount} {tomorrowCount === 1 ? "Head" : "Heads"} Locked
               </div>
               <p
-                className="text-xs text-muted-foreground mt-1 truncate"
+                className="text-xs text-stone-500 mt-1 truncate"
                 title={carcassBreakdown}
               >
                 {carcassBreakdown}
@@ -316,17 +315,17 @@ export default function DashboardPage() {
 
           {/* Card 2: Floating Rider Remittances */}
           <Card
-            className={`min-h-[140px] flex flex-col justify-between border-slate-200 shadow-2xs ${
-              hasOverdueRemittance ? "border-rose-300 bg-rose-50/20" : ""
+            className={`min-h-[140px] flex flex-col justify-between bg-white border-stone-200/90 shadow-sm rounded-xl ${
+              hasOverdueRemittance ? "border-rose-300 bg-rose-50/40" : ""
             }`}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-5">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-stone-500">
                   Unremitted Cash Radar
                 </CardTitle>
                 {hasOverdueRemittance && (
-                  <Badge variant="destructive" className="text-[10px] py-0 px-1.5 bg-rose-600">
+                  <Badge variant="destructive" className="text-[10px] py-0 px-1.5 bg-rose-600 text-white">
                     Overdue Remittance
                   </Badge>
                 )}
@@ -334,16 +333,16 @@ export default function DashboardPage() {
               <span className="text-lg">🛵</span>
             </CardHeader>
             <CardContent className="px-5 pb-4 pt-1">
-              <div className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 font-mono">
+              <div className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900 font-mono">
                 ₱{totalPendingRemittance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-stone-500">
                   {settlements.length} active drop{settlements.length === 1 ? "" : "s"} pending
                 </span>
                 <Link
                   to="/manifest"
-                  className="text-xs text-blue-600 hover:underline font-medium inline-flex items-center"
+                  className="text-xs text-[#C81E1E] hover:underline font-semibold inline-flex items-center"
                 >
                   Settle in Manifest &rarr;
                 </Link>
@@ -352,9 +351,9 @@ export default function DashboardPage() {
           </Card>
 
           {/* Card 3: Freezer Safety Stock Health */}
-          <Card className="min-h-[140px] flex flex-col justify-between border-slate-200 shadow-2xs">
+          <Card className="min-h-[140px] flex flex-col justify-between bg-white border-stone-200/90 shadow-sm rounded-xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-5">
-              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-stone-500">
                 Freezer Safety Stock
               </CardTitle>
               {safetyStockHealth.isLow ? (
@@ -380,12 +379,12 @@ export default function DashboardPage() {
                     ⚠️ {safetyStockHealth.count} {safetyStockHealth.count === 1 ? "Category" : "Categories"} Low
                   </div>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-stone-500">
                       Stock below safety threshold
                     </span>
                     <Link
                       to="/inventory"
-                      className="text-xs text-blue-600 hover:underline font-medium inline-flex items-center"
+                      className="text-xs text-[#C81E1E] hover:underline font-semibold inline-flex items-center"
                     >
                       Manage Stock &rarr;
                     </Link>
@@ -397,12 +396,12 @@ export default function DashboardPage() {
                     🟢 All Categories Stocked
                   </div>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-stone-500">
                       Carcass buffers above thresholds
                     </span>
                     <Link
                       to="/inventory"
-                      className="text-xs text-blue-600 hover:underline font-medium inline-flex items-center"
+                      className="text-xs text-[#C81E1E] hover:underline font-semibold inline-flex items-center"
                     >
                       View Balances &rarr;
                     </Link>
@@ -415,9 +414,9 @@ export default function DashboardPage() {
 
         {/* ⚠️ Peak Season Renegotiation Alarm (Collapses completely to null when 0) */}
         {renegotiations && renegotiations.length > 0 && (
-          <div className="rounded-lg border-2 border-red-500 bg-red-50 p-4 shadow-sm">
+          <div className="rounded-xl border-2 border-rose-500 bg-rose-50 p-4 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-2">
-              <h2 className="text-xl font-bold text-red-700 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-rose-800 flex items-center gap-2">
                 <span>⚠️ Action Required: Peak Season Price Updates</span>
               </h2>
               {!isOwner && (
@@ -430,7 +429,7 @@ export default function DashboardPage() {
                 </span>
               )}
             </div>
-            <p className="mb-4 text-sm text-red-600">
+            <p className="mb-4 text-sm text-rose-700">
               The following advance bookings are locked at old menu prices. Please contact the
               customers.
             </p>
@@ -439,19 +438,19 @@ export default function DashboardPage() {
               {renegotiations.map((task) => (
                 <div
                   key={task.orderId}
-                  className="flex items-center justify-between rounded-md bg-white p-3 shadow-sm"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3.5 shadow-sm border border-rose-200"
                 >
                   <div>
-                    <p className="font-semibold text-gray-900">
+                    <p className="font-semibold text-stone-900">
                       Order #{task.orderId} - {task.customerName}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-stone-500">
                       Delivery: {new Date(task.targetDeliveryTime).toLocaleDateString()}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <span className="font-bold text-red-600 bg-red-100 px-2 py-1 rounded">
+                    <span className="font-bold text-rose-700 bg-rose-100 px-2.5 py-1 rounded text-xs font-mono">
                       Gap: ₱{task.priceGap.toLocaleString()}
                     </span>
 
@@ -461,15 +460,15 @@ export default function DashboardPage() {
                           type="button"
                           disabled
                           title="Owner authorization required to adjust peak season rates."
-                          className="text-xs bg-slate-100 text-slate-400 border border-slate-300 px-3 py-1 rounded cursor-not-allowed opacity-60 flex items-center gap-1 font-medium select-none"
+                          className="text-xs bg-stone-100 text-stone-400 border border-stone-300 px-3 py-1.5 rounded cursor-not-allowed opacity-60 flex items-center gap-1 font-medium select-none"
                         >
-                          <Lock className="w-3 h-3 text-slate-400" />
+                          <Lock className="w-3 h-3 text-stone-400" />
                           <span>Customer Agreed</span>
                         </button>
                       ) : (
                         <AlertDialog>
                           <AlertDialogTrigger
-                            className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+                            className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
                             disabled={agreeToHikeMutation.isPending}
                           >
                             {agreeToHikeMutation.isPending ? "Updating..." : "Customer Agreed"}
@@ -478,15 +477,15 @@ export default function DashboardPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Update Order Price?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will mathematically increase Order #{task.orderId}'s locked
-                                price to match the live menu price. The customer's remaining
+                                This will mathematically increase Order #{task.orderId}&apos;s locked
+                                price to match the live menu price. The customer&apos;s remaining
                                 balance will increase by ₱{task.priceGap.toLocaleString()}.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                className="bg-green-600 hover:bg-green-700"
+                                className="bg-emerald-600 hover:bg-emerald-700"
                                 onClick={() => agreeToHikeMutation.mutate(task.orderId)}
                               >
                                 Yes, Customer Agreed
@@ -501,15 +500,15 @@ export default function DashboardPage() {
                           type="button"
                           disabled
                           title="Owner authorization required to adjust peak season rates."
-                          className="text-xs bg-slate-100 text-slate-400 border border-slate-300 px-3 py-1 rounded cursor-not-allowed opacity-60 flex items-center gap-1 font-medium select-none"
+                          className="text-xs bg-stone-100 text-stone-400 border border-stone-300 px-3 py-1.5 rounded cursor-not-allowed opacity-60 flex items-center gap-1 font-medium select-none"
                         >
-                          <Lock className="w-3 h-3 text-slate-400" />
+                          <Lock className="w-3 h-3 text-stone-400" />
                           <span>Waive Hike</span>
                         </button>
                       ) : (
                         <AlertDialog>
                           <AlertDialogTrigger
-                            className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 disabled:opacity-50 cursor-pointer"
+                            className="text-xs bg-stone-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-stone-700 disabled:opacity-50 cursor-pointer"
                             disabled={waiveHikeMutation.isPending}
                           >
                             {waiveHikeMutation.isPending ? "Waiving..." : "Waive Hike"}
@@ -525,7 +524,7 @@ export default function DashboardPage() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                className="bg-gray-600 hover:bg-gray-700"
+                                className="bg-stone-700 hover:bg-stone-800"
                                 onClick={() => waiveHikeMutation.mutate(task.orderId)}
                               >
                                 Yes, Waive Hike
@@ -537,7 +536,7 @@ export default function DashboardPage() {
 
                       <AlertDialog>
                         <AlertDialogTrigger
-                          className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 disabled:opacity-50"
+                          className="text-xs bg-rose-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-rose-700 disabled:opacity-50"
                           disabled={cancelOrderMutation.isPending}
                         >
                           Cancel
@@ -553,7 +552,7 @@ export default function DashboardPage() {
                           <AlertDialogFooter>
                             <AlertDialogCancel>Keep Order</AlertDialogCancel>
                             <AlertDialogAction
-                              className="bg-red-600 hover:bg-red-700"
+                              className="bg-rose-600 hover:bg-rose-700"
                               onClick={() => cancelOrderMutation.mutate(task.orderId)}
                             >
                               Yes, Cancel Order
@@ -571,28 +570,28 @@ export default function DashboardPage() {
 
         {/* 🚨 PRIORITY 1: Pending Confirmations (Collapses completely to null when 0) */}
         {pending && pending.length > 0 && (
-          <Card className="border-t-4 border-t-red-500 border-slate-200 shadow-sm">
+          <Card className="bg-white border-t-4 border-t-rose-600 border-stone-200/90 shadow-sm rounded-xl">
             <CardHeader className="pb-3">
-              <CardTitle className="text-red-700 flex justify-between items-center text-lg">
+              <CardTitle className="text-rose-700 flex justify-between items-center text-lg">
                 <span>Action Required: Pending Downpayments</span>
-                <Badge variant="destructive">{pending.length}</Badge>
+                <Badge variant="destructive" className="bg-rose-600 text-white">{pending.length}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
               {pendingLoading && <DashboardSkeleton />}
               {pendingError && (
-                <p className="text-red-500">Failed to load pending confirmations.</p>
+                <p className="text-rose-600">Failed to load pending confirmations.</p>
               )}
 
-              <div className="rounded-md border border-slate-200 overflow-hidden">
+              <div className="rounded-xl border border-stone-200 overflow-hidden">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-100/70 border-b border-slate-200">
-                      <TableHead className="font-bold text-slate-800">Order #</TableHead>
-                      <TableHead className="font-bold text-slate-800">Customer</TableHead>
-                      <TableHead className="font-bold text-slate-800">Target Delivery</TableHead>
-                      <TableHead className="font-bold text-slate-800">Phone</TableHead>
-                      <TableHead className="text-right font-bold text-slate-800">Total Amount</TableHead>
+                    <TableRow className="bg-stone-100/70 border-b border-stone-200">
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Order #</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Customer</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Target Delivery</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Phone</TableHead>
+                      <TableHead className="text-right text-stone-600 font-semibold uppercase tracking-wider text-xs">Total Amount</TableHead>
                       <TableHead className="w-[180px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -602,35 +601,35 @@ export default function DashboardPage() {
                       return (
                         <TableRow
                           key={item.id}
-                          className={`border-b border-slate-200 ${
-                            isEven ? "bg-white hover:bg-slate-50" : "bg-slate-50/50 hover:bg-slate-100/60"
+                          className={`border-b border-stone-200 ${
+                            isEven ? "bg-white hover:bg-stone-50" : "bg-stone-50/40 hover:bg-stone-100/60"
                           }`}
                         >
-                          <TableCell className="font-medium font-mono text-slate-800">
+                          <TableCell className="font-medium font-mono text-stone-800">
                             #{item.id}
                           </TableCell>
-                          <TableCell className="font-semibold text-slate-900">
+                          <TableCell className="font-semibold text-stone-900">
                             {item.customerName}
                           </TableCell>
-                          <TableCell className="font-mono text-xs text-slate-700">
+                          <TableCell className="font-mono text-xs text-stone-700">
                             {new Date(item.targetDeliveryTime).toLocaleString()}
                           </TableCell>
-                          <TableCell className="text-slate-600">{item.phoneNumber}</TableCell>
-                          <TableCell className="text-right font-bold text-red-600 font-mono">
+                          <TableCell className="text-stone-600">{item.phoneNumber}</TableCell>
+                          <TableCell className="text-right font-bold text-rose-600 font-mono">
                             ₱{(item?.totalAmount ?? 0).toLocaleString()}
                           </TableCell>
                           <TableCell className="text-right flex justify-end gap-2 items-center">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 text-blue-600 border-blue-200 hover:bg-blue-50 text-xs"
+                              className="h-8 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs font-medium"
                               onClick={() => handleEditClick(item.id)}
                             >
                               Log Payment / Edit
                             </Button>
 
                             <AlertDialog>
-                              <AlertDialogTrigger className="inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
+                              <AlertDialogTrigger className="inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 hover:text-rose-700">
                                 Cancel
                               </AlertDialogTrigger>
                               <AlertDialogContent>
@@ -644,7 +643,7 @@ export default function DashboardPage() {
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Keep Order</AlertDialogCancel>
                                   <AlertDialogAction
-                                    className="bg-red-600 hover:bg-red-700"
+                                    className="bg-rose-600 hover:bg-rose-700"
                                     onClick={() => cancelOrderMutation.mutate(item.id)}
                                   >
                                     Yes, cancel this order
@@ -664,37 +663,37 @@ export default function DashboardPage() {
         )}
 
         {/* 🚀 UNIFIED OPERATIONS ROSTER */}
-        <Card className="border-t-4 border-t-blue-600 border-slate-200 shadow-sm">
+        <Card className="bg-white border-t-4 border-t-[#C81E1E] border-stone-200/90 shadow-sm rounded-xl">
           <CardHeader className="pb-3">
-            <CardTitle className="text-blue-800 flex justify-between items-center text-lg">
+            <CardTitle className="text-stone-900 flex justify-between items-center text-lg">
               <span>Operations Roster: Defrost & Dispatch</span>
               {unifiedRoster.length > 0 && (
-                <Badge className="bg-blue-600">{unifiedRoster.length} Active</Badge>
+                <Badge className="bg-[#C81E1E] text-white">{unifiedRoster.length} Active</Badge>
               )}
             </CardTitle>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              Combined view of tonight's prep requirements and tomorrow's delivery targets. Click any row to inspect customer dossier.
+            <p className="text-xs sm:text-sm text-stone-500">
+              Combined view of tonight&apos;s prep requirements and tomorrow&apos;s delivery targets. Click any row to inspect customer dossier.
             </p>
           </CardHeader>
           <CardContent>
             {defrostLoading || deliveriesLoading ? (
               <DashboardSkeleton />
             ) : unifiedRoster.length === 0 ? (
-              <div className="text-center py-8 text-green-600 font-medium bg-green-50 rounded-md border border-green-200">
+              <div className="text-center py-8 text-emerald-700 font-medium bg-emerald-50 rounded-xl border border-emerald-200">
                 ✅ All clear! No items scheduled for prep or delivery.
               </div>
             ) : (
-              <div className="rounded-md border border-slate-200 overflow-hidden">
+              <div className="rounded-xl border border-stone-200 overflow-hidden">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-100/70 border-b border-slate-200">
-                      <TableHead className="font-bold text-slate-800">Order #</TableHead>
-                      <TableHead className="font-bold text-slate-800">Customer & Routing</TableHead>
-                      <TableHead className="font-bold text-slate-800">Size / Qty</TableHead>
-                      <TableHead className="font-bold text-slate-800">Prep (Tahi) Deadline</TableHead>
-                      <TableHead className="font-bold text-slate-800">Target Delivery</TableHead>
-                      <TableHead className="text-right font-bold text-slate-800">Status</TableHead>
-                      <TableHead className="w-[50px] text-center font-bold text-slate-800"></TableHead>
+                    <TableRow className="bg-stone-100/70 border-b border-stone-200">
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Order #</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Customer & Routing</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Size / Qty</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Prep (Tahi) Deadline</TableHead>
+                      <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Target Delivery</TableHead>
+                      <TableHead className="text-right text-stone-600 font-semibold uppercase tracking-wider text-xs">Status</TableHead>
+                      <TableHead className="w-[50px] text-center text-stone-600 font-semibold uppercase tracking-wider text-xs"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -704,19 +703,19 @@ export default function DashboardPage() {
                         <TableRow
                           key={item.id}
                           onClick={() => handleEditClick(item.orderId || item.id)}
-                          className={`cursor-pointer transition-colors border-b border-slate-200 ${
+                          className={`cursor-pointer transition-colors border-b border-stone-200 ${
                             item.isRush
                               ? "bg-rose-50/60 hover:bg-rose-100/70"
                               : isEven
-                                ? "bg-white hover:bg-slate-50"
-                                : "bg-slate-50/50 hover:bg-slate-100/60"
+                                ? "bg-white hover:bg-stone-50"
+                                : "bg-stone-50/40 hover:bg-stone-100/60"
                           }`}
                         >
-                          <TableCell className="font-mono font-medium text-slate-700">
+                          <TableCell className="font-mono font-medium text-stone-700">
                             #{item.orderId || item.id}
                           </TableCell>
                           <TableCell>
-                            <div className="font-semibold text-slate-900 flex items-center gap-2">
+                            <div className="font-semibold text-stone-900 flex items-center gap-2">
                               {item.customerName}
                               {item.isTrustedCustomer && (
                                 <Badge
@@ -727,21 +726,21 @@ export default function DashboardPage() {
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-xs text-muted-foreground truncate max-w-[220px]">
+                            <div className="text-xs text-stone-500 truncate max-w-[220px]">
                               {item.deliveryAddress}
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="bg-white border-slate-200 text-slate-800">
+                            <Badge variant="outline" className="bg-white border-stone-200 text-stone-800">
                               {item.weightCategory}
                             </Badge>
-                            <span className="ml-2 text-sm font-semibold text-slate-700">
+                            <span className="ml-2 text-sm font-semibold text-stone-700">
                               x{item.quantity}
                             </span>
                           </TableCell>
                           <TableCell
                             className={`font-mono text-xs sm:text-sm font-semibold ${
-                              item.isRush ? "text-rose-600" : "text-blue-700"
+                              item.isRush ? "text-rose-600" : "text-amber-800"
                             }`}
                           >
                             {new Date(item.tahiStartTime).toLocaleTimeString([], {
@@ -749,7 +748,7 @@ export default function DashboardPage() {
                               minute: "2-digit",
                             })}
                           </TableCell>
-                          <TableCell className="font-mono text-xs sm:text-sm font-medium text-slate-700">
+                          <TableCell className="font-mono text-xs sm:text-sm font-medium text-stone-700">
                             {new Date(item.targetDeliveryTime).toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -779,7 +778,7 @@ export default function DashboardPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                              className="h-8 w-8 text-stone-500 hover:text-[#C81E1E] hover:bg-stone-100"
                               title="Copy 1-Day Verification for Messenger"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -821,11 +820,10 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      </div>
 
       {/* 🚀 New Order POS Terminal Dialog Modal */}
       <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
-        <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0">
+        <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0 rounded-xl border-stone-200">
           <DialogHeader className="sr-only">
             <DialogTitle>New POS Order Entry</DialogTitle>
           </DialogHeader>
@@ -840,21 +838,21 @@ export default function DashboardPage() {
 
       {/* Master Action Center Slide-Out */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent className="overflow-y-auto sm:max-w-xl bg-slate-50">
-          <SheetHeader className="mb-6 border-b pb-4">
-            <div className="flex justify-between items-start">
+        <SheetContent className="overflow-y-auto sm:max-w-xl bg-[#FAF6F4] p-6">
+          <SheetHeader className="mb-6 border-b border-stone-200 pb-4 p-0">
+            <div className="flex justify-between items-start gap-2">
               <div>
-                <SheetTitle className="text-2xl text-slate-800">
+                <SheetTitle className="text-2xl font-bold text-stone-900">
                   Action Center: Order #{selectedOrderId}
                 </SheetTitle>
-                <SheetDescription>
+                <SheetDescription className="text-stone-500">
                   Log GCash deposits or update operational details.
                 </SheetDescription>
               </div>
 
               {selectedOrderId && (
                 <Button
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-10"
                   onClick={() => setIsPaymentOpen(true)}
                 >
                   💳 Log Payment
@@ -864,7 +862,7 @@ export default function DashboardPage() {
           </SheetHeader>
 
           {isDetailsLoading ? (
-            <div className="py-16 text-center text-slate-500 animate-pulse">
+            <div className="py-16 text-center text-stone-500 animate-pulse">
               Securely fetching financial dossier...
             </div>
           ) : orderDetails ? (
@@ -875,7 +873,7 @@ export default function DashboardPage() {
               />
             </div>
           ) : (
-            <div className="text-center text-red-500 py-10">
+            <div className="text-center text-rose-600 py-10">
               Failed to load order details.
             </div>
           )}
@@ -884,13 +882,13 @@ export default function DashboardPage() {
 
       {/* Payment Modal */}
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="overflow-x-hidden max-w-md w-full p-6 rounded-xl border-stone-200 bg-white">
           <DialogHeader>
-            <DialogTitle>Log Additional Payment</DialogTitle>
+            <DialogTitle className="text-lg font-bold text-stone-900">Log Additional Payment</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-stone-700 block">
                 Amount Received (₱)
               </label>
               <Input
@@ -900,16 +898,17 @@ export default function DashboardPage() {
                   setPaymentAmount(parseFloat(e.target.value) || "")
                 }
                 placeholder="e.g., 3000"
+                className="h-10 border-stone-300"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-stone-700 block">
                 Payment Method
               </label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full h-10 mt-1 rounded-md border border-input bg-white px-3"
+                className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm"
               >
                 <option value="GCash">GCash</option>
                 <option value="Cash">Physical Cash</option>
@@ -917,7 +916,7 @@ export default function DashboardPage() {
               </select>
             </div>
             <Button
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2 h-11"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2 h-11 font-semibold"
               disabled={paymentMutation.isPending || !paymentAmount}
               onClick={() => {
                 if (!selectedOrderId) return;

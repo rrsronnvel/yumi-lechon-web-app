@@ -220,26 +220,26 @@ export default function ReceiveStockModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-6 rounded-xl border-stone-200">
         {/* Header */}
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900">
+          <DialogTitle className="text-xl font-bold flex items-center gap-2 text-stone-900">
             <Warehouse className="w-5 h-5 text-emerald-600" />
             Freezer-Gate Stock Intake
           </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
+          <DialogDescription className="text-sm text-stone-500">
             Log clean carcasses and bellies arriving at store chest freezers.
           </DialogDescription>
         </DialogHeader>
 
         {/* Item Intake Selection Section */}
-        <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-3 mt-1">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+        <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/90 space-y-3 mt-1">
+          <div className="text-xs font-semibold uppercase tracking-wider text-stone-600">
             Select Carcass or Belly to Receive
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-            <div className="sm:col-span-8 space-y-1">
-              <label className="text-xs font-medium text-slate-700">
+            <div className="sm:col-span-8 space-y-1.5">
+              <label className="text-xs font-semibold text-stone-700">
                 Weight Bracket / Category
               </label>
               <Select
@@ -248,7 +248,7 @@ export default function ReceiveStockModal({
                   if (val) setCategoryToAdd(Number(val));
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full h-10 bg-white border-stone-300">
                   <SelectValue placeholder="Select category / bracket...">
                     {(val: any) => {
                       if (!val) return null;
@@ -272,13 +272,14 @@ export default function ReceiveStockModal({
               </Select>
             </div>
 
-            <div className="sm:col-span-2 space-y-1">
-              <label className="text-xs font-medium text-slate-700">
+            <div className="sm:col-span-2 space-y-1.5">
+              <label className="text-xs font-semibold text-stone-700">
                 Quantity
               </label>
               <Input
                 type="number"
                 min={1}
+                className="h-10 bg-white border-stone-300 font-mono"
                 value={quantityToAdd}
                 onChange={(e) =>
                   setQuantityToAdd(Math.max(1, parseInt(e.target.value) || 1))
@@ -290,7 +291,7 @@ export default function ReceiveStockModal({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                className="w-full h-10 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-semibold"
                 onClick={handleAddItem}
                 disabled={isCategoriesLoading || !categoryToAdd}
               >
@@ -305,15 +306,15 @@ export default function ReceiveStockModal({
         {items.length > 0 && (
           <div className="space-y-3 pt-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <span className="text-xs font-semibold uppercase tracking-wider text-stone-600">
                 Staged Carcass Intake List
               </span>
-              <span className="text-xs text-muted-foreground font-mono">
+              <span className="text-xs text-stone-500 font-mono">
                 {items.length} line item{items.length === 1 ? "" : "s"}
               </span>
             </div>
 
-            <div className="border rounded-md divide-y overflow-hidden bg-white shadow-xs">
+            <div className="border border-stone-200 rounded-xl divide-y divide-stone-200/70 overflow-hidden bg-white shadow-xs">
               {items.map((item) => {
                 const cat = categoryMap.get(item.itemCategoryId);
                 const weightRange =
@@ -324,16 +325,16 @@ export default function ReceiveStockModal({
                 return (
                   <div
                     key={item.itemCategoryId}
-                    className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50/50 transition-colors"
+                    className="p-3 flex items-center justify-between gap-3 hover:bg-stone-50/70 transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-900 text-sm">
+                      <span className="font-semibold text-stone-900 text-sm">
                         {item.categoryName}
                       </span>
                       {weightRange && (
                         <Badge
                           variant="secondary"
-                          className="font-mono text-xs font-normal"
+                          className="font-mono text-xs font-normal bg-stone-100 text-stone-700 border-stone-200"
                         >
                           {weightRange}
                         </Badge>
@@ -341,12 +342,12 @@ export default function ReceiveStockModal({
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center border rounded-md overflow-hidden bg-slate-50">
+                      <div className="flex items-center border border-stone-300 rounded-md overflow-hidden bg-stone-50">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 rounded-none text-slate-600 hover:bg-slate-200"
+                          className="h-8 w-8 p-0 rounded-none text-stone-600 hover:bg-stone-200"
                           onClick={() =>
                             handleUpdateQuantity(item.itemCategoryId, -1)
                           }
@@ -364,13 +365,13 @@ export default function ReceiveStockModal({
                               parseInt(e.target.value) || 1
                             )
                           }
-                          className="h-8 w-14 text-center font-mono font-bold text-sm border-0 border-x rounded-none bg-white focus-visible:ring-0 focus-visible:ring-offset-0"
+                          className="h-8 w-14 text-center font-mono font-bold text-sm border-0 border-x border-stone-300 rounded-none bg-white focus-visible:ring-0 focus-visible:ring-offset-0"
                         />
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 rounded-none text-slate-600 hover:bg-slate-200"
+                          className="h-8 w-8 p-0 rounded-none text-stone-600 hover:bg-stone-200"
                           onClick={() =>
                             handleUpdateQuantity(item.itemCategoryId, 1)
                           }
@@ -383,7 +384,7 @@ export default function ReceiveStockModal({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
                         onClick={() => handleRemoveItem(item.itemCategoryId)}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -399,7 +400,7 @@ export default function ReceiveStockModal({
         {/* Delivery Documentation Section (2-Column Grid) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">
+            <label className="text-xs font-semibold text-stone-700">
               Supplier DR / Delivery Receipt #
             </label>
             <Input
@@ -407,12 +408,12 @@ export default function ReceiveStockModal({
               placeholder="e.g., DR-98241"
               value={supplierDrNumber}
               onChange={(e) => setSupplierDrNumber(e.target.value)}
-              className="text-sm"
+              className="h-10 text-sm border-stone-300"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">
+            <label className="text-xs font-semibold text-stone-700">
               Operational Notes
             </label>
             <Input
@@ -420,7 +421,7 @@ export default function ReceiveStockModal({
               placeholder="e.g., Batangas batch, dressed by Kuya Bert"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="text-sm"
+              className="h-10 text-sm border-stone-300"
             />
           </div>
         </div>
@@ -428,28 +429,28 @@ export default function ReceiveStockModal({
         {/* Live Impact Verification Table */}
         {items.length > 0 && (
           <div className="space-y-2 pt-1">
-            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-700">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-stone-700">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
               Live Impact Verification
             </div>
 
-            <div className="border rounded-lg overflow-hidden bg-white shadow-xs">
+            <div className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-xs">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50/80 text-xs">
-                    <TableHead className="font-semibold">Category</TableHead>
-                    <TableHead className="text-right font-semibold">
+                  <TableRow className="bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs border-b border-stone-200">
+                    <TableHead className="font-semibold text-stone-600">Category</TableHead>
+                    <TableHead className="text-right font-semibold text-stone-600">
                       Current On-Hand
                     </TableHead>
-                    <TableHead className="text-right font-semibold">
+                    <TableHead className="text-right font-semibold text-stone-600">
                       Incoming (+)
                     </TableHead>
-                    <TableHead className="text-right font-semibold">
+                    <TableHead className="text-right font-semibold text-stone-600">
                       Projected New Stock
                     </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="divide-y divide-stone-200/70">
                   {items.map((item) => {
                     const cat = categoryMap.get(item.itemCategoryId);
                     const currentOnHand = balanceMap.get(item.itemCategoryId) ?? 0;
@@ -457,17 +458,17 @@ export default function ReceiveStockModal({
                     const projectedStock = currentOnHand + incomingQty;
 
                     return (
-                      <TableRow key={item.itemCategoryId} className="text-sm">
-                        <TableCell className="font-medium text-slate-800">
+                      <TableRow key={item.itemCategoryId} className="text-sm hover:bg-stone-50/70">
+                        <TableCell className="font-medium text-stone-900">
                           {item.categoryName}
                           {cat && (cat.minimumWeightKg > 0 || cat.maximumWeightKg > 0) && (
-                            <span className="ml-2 text-xs text-muted-foreground font-mono">
+                            <span className="ml-2 text-xs text-stone-500 font-mono">
                               ({cat.minimumWeightKg.toFixed(1)}–
                               {cat.maximumWeightKg.toFixed(1)} kg)
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-slate-600">
+                        <TableCell className="text-right font-mono text-stone-600">
                           {currentOnHand}
                         </TableCell>
                         <TableCell className="text-right font-mono text-emerald-600 font-semibold">
@@ -486,10 +487,10 @@ export default function ReceiveStockModal({
         )}
 
         {/* Footer Action & Dynamic Button Guard */}
-        <DialogFooter className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t pt-4">
-          <div className="text-sm text-slate-600">
+        <DialogFooter className="mx-0 mb-0 bg-transparent mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-stone-200 pt-4 px-0 pb-0">
+          <div className="text-sm text-stone-600">
             Total Incoming Carcasses:{" "}
-            <span className="font-bold text-slate-900 font-mono">
+            <span className="font-bold text-stone-900 font-mono">
               {totalIncoming}
             </span>
           </div>
@@ -498,6 +499,7 @@ export default function ReceiveStockModal({
             <Button
               type="button"
               variant="outline"
+              className="h-10 border-stone-300 text-stone-700"
               onClick={() => {
                 resetForm();
                 onOpenChange(false);
@@ -510,7 +512,7 @@ export default function ReceiveStockModal({
               type="button"
               onClick={handleSubmit}
               disabled={receiveMutation.isPending || totalIncoming === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+              className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
             >
               {receiveMutation.isPending ? (
                 <>

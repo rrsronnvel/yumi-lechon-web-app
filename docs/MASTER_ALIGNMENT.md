@@ -512,9 +512,24 @@ To ensure cognitive focus and operational ergonomics for store cashiers and owne
 
 - Command Center Viewport Standards:
 
-- Fluid Layout Hierarchy: The administrative shell adopts a widescreen-first container (max-w-7xl) centered on a subtle neutral canvas (bg-slate-50/50), preventing artificial horizontal truncation on desktop terminals.
+- Fluid Layout Hierarchy: The administrative shell adopts a widescreen-first container (max-w-7xl) centered on a warm alabaster/stone-cream canvas (`bg-[#FAF6F4]` / `bg-stone-50`), preventing artificial horizontal truncation on desktop terminals while eliminating cold blue-light eye strain during 12-hour store shifts.
 - Dynamic Zero-Inbox Visibility: Action-required banners (Pending Downpayments, Peak Season Renegotiations) render strictly when actionable records exist. When queues are clear, banners collapse entirely to preserve screen space for live rosters.
 - Global Action Triggers: The dashboard header houses direct entry triggers for [+ New Order] and [Generate Daily Sheets], eliminating unnecessary page hopping during order intake.
+
+#### 11.3 Brand Identity & "Warm Culinary Enterprise" Visual Governance
+
+To align the software platform with the official Yumi's Lechon brand identity (`/yumi-logo.png`, featuring Warm Dusty Terracotta Rose `#DDA196`, Yumi's Lechon Crimson Red `#C81E1E`, and Golden Yellow `#FACC15`) while preserving 12-hour shift ergonomics and unmistakable financial status clarity:
+
+- **Official Brand Asset Placement (`/yumi-logo.png`):**
+  - Mounted as the browser favicon (`index.html`), in the global navigation sidebar header (`Sidebar.tsx`) with a golden-amber ring, prominently above the shift authentication card (`LoginPage.tsx`), and on operational print/mobile headers (`DailySheetsPage.tsx` and `QrSignPage.tsx`).
+- **Surface & Navigation Palette:**
+  - **Main Application Canvas:** Warm Alabaster / Stone-Cream (`#FAF6F4` / `bg-stone-50`) across `RootLayout` and all administrative views, paired with crisp `bg-white` cards, `border-stone-200/90` borders, and `bg-stone-100/70` uppercase stone table headers.
+  - **Global Sidebar Navigation (`Sidebar.tsx`):** Deep Roasted Espresso (`#181312` / `bg-stone-950`) with Golden Amber active route highlights (`bg-amber-500/15 text-amber-400 border-l-4 border-amber-400`) and a warm stone shift profile HUD distinguishing `👑 Owner` vs. `🧑‍💼 Cashier`.
+  - **Primary Brand Action Triggers:** Yumi's Lechon Crimson (`bg-[#C81E1E] hover:bg-[#A81818] text-white`) is reserved for primary creation and submission actions (`[+ New Order]`, `[Sign In to Shift]`, `[Submit Order Ticket]`, `[+ Add New Item]`, and CMS save actions).
+- **Strict Semantic Status Guardrails (Non-Negotiable):**
+  - **Emerald Green (`bg-emerald-600` / `text-emerald-700`):** Strictly reserved for financial validation (`[✅ Validate & Receive into Drawer]`), `[PAID IN FULL]` badges, positive stock balances, `[Settle Payment]`, and the Official Rider Handover Receipt.
+  - **Golden Amber (`bg-amber-500` / `text-amber-800`):** Strictly reserved for `👑 VIP` badges, `🟡 In Staff Drawer` custody indicators, and low-stock warnings.
+  - **Rose / Destructive Red (`bg-rose-50` / `bg-rose-600`):** Strictly reserved for cash shortage warnings (`⚠️ SHORT BY ₱...`), overdue remittance alerts, and cancellation/reversion confirmation triggers.
 
 12. AI-Assisted POS Intake Bridge (Screenshot Extraction)
 

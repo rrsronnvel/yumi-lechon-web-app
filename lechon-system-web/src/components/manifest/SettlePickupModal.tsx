@@ -116,9 +116,9 @@ export function SettlePickupModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+      <DialogContent className="overflow-x-hidden max-w-md w-full p-6 rounded-xl border-stone-200/90 bg-white">
+        <DialogHeader className="w-full min-w-0">
+          <DialogTitle className="text-xl font-bold text-stone-900 flex items-center gap-2">
             <span>Collect Pickup Order #{order.orderId}</span>
             {order.isTrustedCustomer && (
               <Badge
@@ -129,32 +129,32 @@ export function SettlePickupModal({
               </Badge>
             )}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-stone-500">
             Collect walk-in customer handover payment and place into staff drawer custody.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 py-2 w-full min-w-0">
           {/* Order Details Summary Card */}
-          <div className="p-4 border border-slate-200 rounded-lg bg-slate-50 space-y-2 text-sm">
+          <div className="p-4 border border-stone-200 rounded-xl bg-stone-50 space-y-2 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Customer:</span>
-              <span className="font-semibold text-slate-800">
+              <span className="text-stone-500">Customer:</span>
+              <span className="font-semibold text-stone-900">
                 {order.customerName}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Scheduled Time:</span>
-              <span className="font-medium text-slate-700">
+              <span className="text-stone-500">Scheduled Time:</span>
+              <span className="font-medium text-stone-700">
                 {formattedTime}
               </span>
             </div>
-            <div className="flex justify-between items-center text-slate-500">
+            <div className="flex justify-between items-center text-stone-500">
               <span>Delivery Fee:</span>
               <span className="font-mono font-medium">₱0.00</span>
             </div>
-            <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
-              <span className="font-bold text-slate-900">
+            <div className="pt-2 border-t border-stone-200 flex justify-between items-center">
+              <span className="font-bold text-stone-900">
                 Balance to Collect:
               </span>
               <span className="font-mono text-xl font-extrabold text-emerald-600">
@@ -165,8 +165,8 @@ export function SettlePickupModal({
 
           {/* Payment Method Selector */}
           <div className="space-y-2">
-            <Label htmlFor="pickup-payment-method" className="text-sm font-semibold">
-              Payment Method <span className="text-red-500">*</span>
+            <Label htmlFor="pickup-payment-method" className="text-sm font-semibold text-stone-800">
+              Payment Method <span className="text-rose-500">*</span>
             </Label>
             <Select
               value={paymentMethod}
@@ -177,7 +177,7 @@ export function SettlePickupModal({
                 }
               }}
             >
-              <SelectTrigger id="pickup-payment-method" className="w-full">
+              <SelectTrigger id="pickup-payment-method" className="w-full h-10 border-stone-300">
                 <SelectValue placeholder="Select payment method..." />
               </SelectTrigger>
               <SelectContent>
@@ -193,7 +193,7 @@ export function SettlePickupModal({
 
           {/* Optional Reference Number */}
           <div className="space-y-2">
-            <Label htmlFor="ref-num" className="text-sm font-medium">
+            <Label htmlFor="ref-num" className="text-sm font-medium text-stone-700">
               Reference / Receipt # (Optional)
             </Label>
             <Input
@@ -201,27 +201,29 @@ export function SettlePickupModal({
               value={referenceNumber}
               onChange={(e) => setReferenceNumber(e.target.value)}
               placeholder="e.g., GCash Ref # or Counter Receipt #"
+              className="h-10 border-stone-300"
             />
           </div>
 
           {/* Error Message */}
           {errorMessage && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-md">
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-md">
               {errorMessage}
             </div>
           )}
         </div>
 
-        <DialogFooter className="gap-2 sm:space-x-0">
+        <DialogFooter className="mx-0 mb-0 bg-transparent border-t border-stone-200 pt-3 px-0 pb-0 gap-2 sm:space-x-0">
           <Button
             variant="outline"
             onClick={handleClose}
             disabled={collectMutation.isPending}
+            className="border-stone-300 text-stone-700 h-10"
           >
             Cancel
           </Button>
           <Button
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-10 shadow-xs"
             onClick={handleConfirm}
             disabled={collectMutation.isPending}
           >

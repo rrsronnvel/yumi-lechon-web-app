@@ -26,22 +26,34 @@ export default function DailySheetsPage() {
   return (
     <PrintLayout>
       {/* 1. Mode Switcher & Top Control Banner (Hidden in Print) */}
-      <div className="mb-4 flex flex-col md:flex-row items-center justify-between gap-3 pb-3 border-b border-slate-200 print:hidden">
+      <div className="mb-4 flex flex-col md:flex-row items-center justify-between gap-3 pb-3 border-b border-stone-200 print:hidden">
         {mode === "edit" ? (
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-600" /> Daily Dispatch Planner
-            </h1>
-            <p className="text-xs font-semibold text-slate-500 mt-0.5">
-              Scheduled Date: <span className="font-bold text-slate-800">{formattedDate}</span>
-            </p>
+          <div className="flex items-center gap-3">
+            <img
+              src="/yumi-logo.png"
+              alt="Yumi's Lechon Logo"
+              className="w-9 h-9 rounded-full object-cover ring-2 ring-amber-400/80 shadow-sm shrink-0"
+            />
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-stone-900 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-600" /> Daily Dispatch Planner
+              </h1>
+              <p className="text-xs font-medium text-stone-500 mt-0.5">
+                Scheduled Date: <span className="font-bold text-stone-800">{formattedDate}</span>
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-black text-white text-xs font-black uppercase tracking-wider">
-              <Camera className="w-3.5 h-3.5" /> Clean Screenshot View
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/yumi-logo.png"
+              alt="Yumi's Lechon Logo"
+              className="w-9 h-9 rounded-full object-cover ring-2 ring-amber-400/80 shadow-sm shrink-0"
+            />
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#181312] text-white text-xs font-black uppercase tracking-wider">
+              <Camera className="w-3.5 h-3.5 text-amber-400" /> Clean Screenshot View
             </span>
-            <span className="text-xs font-medium text-slate-600">
+            <span className="text-xs font-medium text-stone-600">
               Zero-scroll high-contrast view • Ready to capture for Group Chat
             </span>
           </div>
@@ -51,14 +63,14 @@ export default function DailySheetsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* View Switcher in Clean Mode */}
           {mode === "clean" && (
-            <div className="flex items-center border border-slate-300 rounded-lg p-0.5 bg-slate-100 text-xs">
+            <div className="flex items-center border border-stone-300 rounded-lg p-0.5 bg-stone-100 text-xs">
               <button
                 type="button"
                 onClick={() => setActiveTab("kitchen")}
                 className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 text-xs ${
                   activeTab === "kitchen"
-                    ? "bg-white text-slate-900 shadow-xs border border-slate-200"
-                    : "text-slate-600 hover:text-slate-900"
+                    ? "bg-white text-stone-900 shadow-xs border border-stone-200"
+                    : "text-stone-600 hover:text-stone-900"
                 }`}
               >
                 <UtensilsCrossed className="w-3.5 h-3.5" /> Kitchen Sheet
@@ -68,8 +80,8 @@ export default function DailySheetsPage() {
                 onClick={() => setActiveTab("rider")}
                 className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 text-xs ${
                   activeTab === "rider"
-                    ? "bg-white text-slate-900 shadow-xs border border-slate-200"
-                    : "text-slate-600 hover:text-slate-900"
+                    ? "bg-white text-stone-900 shadow-xs border border-stone-200"
+                    : "text-stone-600 hover:text-stone-900"
                 }`}
               >
                 <Truck className="w-3.5 h-3.5" /> Rider Sheet
@@ -83,14 +95,14 @@ export default function DailySheetsPage() {
             size="sm"
             variant="outline"
             onClick={handlePrint}
-            className="h-8 text-xs font-semibold px-2.5"
+            className="h-8 text-xs font-semibold px-2.5 border-stone-300"
             title="Print or Save as PDF"
           >
             <Printer className="w-3.5 h-3.5 mr-1" /> Print / PDF
           </Button>
 
           {/* Mode Toggle */}
-          <div className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5 shadow-xs">
+          <div className="inline-flex rounded-lg border border-stone-300 bg-stone-100 p-0.5 shadow-xs">
             <Button
               type="button"
               size="sm"
@@ -98,8 +110,8 @@ export default function DailySheetsPage() {
               onClick={() => setMode("edit")}
               className={`h-7 text-xs font-bold px-2.5 ${
                 mode === "edit"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                  ? "bg-[#C81E1E] hover:bg-[#A81818] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
               }`}
             >
               <Pencil className="w-3.5 h-3.5 mr-1" /> Edit Mode
@@ -111,8 +123,8 @@ export default function DailySheetsPage() {
               onClick={() => setMode("clean")}
               className={`h-7 text-xs font-bold px-2.5 ${
                 mode === "clean"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                  ? "bg-[#181312] text-white shadow-xs"
+                  : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
               }`}
             >
               <Camera className="w-3.5 h-3.5 mr-1" /> Clean View
@@ -164,11 +176,17 @@ export default function DailySheetsPage() {
         {/* Tab Switcher & Content */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {mode === "edit" && (
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-4">
-              <TabsTrigger value="kitchen" className="font-bold flex items-center gap-1.5 text-xs">
+            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 h-auto p-1.5 gap-1.5 bg-stone-200/60 rounded-xl mb-4">
+              <TabsTrigger
+                value="kitchen"
+                className="font-semibold flex items-center justify-center gap-1.5 text-xs py-1.5 px-4 rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
+              >
                 <UtensilsCrossed className="w-3.5 h-3.5" /> Kitchen View (Timings)
               </TabsTrigger>
-              <TabsTrigger value="rider" className="font-bold flex items-center gap-1.5 text-xs">
+              <TabsTrigger
+                value="rider"
+                className="font-semibold flex items-center justify-center gap-1.5 text-xs py-1.5 px-4 rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
+              >
                 <Truck className="w-3.5 h-3.5" /> Rider View (Cash Splits)
               </TabsTrigger>
             </TabsList>

@@ -67,13 +67,13 @@ export function PickupSettlementTab() {
 
   return (
     <div className="space-y-4">
-      <Card className="border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+      <Card className="bg-white border border-stone-200/90 shadow-sm rounded-xl overflow-hidden">
+        <div className="p-4 bg-stone-50 border-b border-stone-200 flex justify-between items-center">
           <div>
-            <h3 className="font-semibold text-slate-800">
+            <h3 className="font-semibold text-stone-900">
               Walk-in Store Pickup Handovers ({pickups.length})
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs text-stone-500 mt-0.5">
               The &quot;Notebook Rule&quot;: Unsettled store pickups remain visible indefinitely until drawer cash is reconciled with the Business Owner.
             </p>
           </div>
@@ -82,26 +82,26 @@ export function PickupSettlementTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/50 text-xs font-semibold uppercase text-slate-500 tracking-wider">
-                <th className="p-4">Customer</th>
-                <th className="p-4">Contact Number</th>
-                <th className="p-4">Pickup Time</th>
-                <th className="p-4">Address / Landmark</th>
-                <th className="p-4">Custody Status</th>
-                <th className="p-4 text-right">Grand Total</th>
-                <th className="p-4 text-right">Downpayment</th>
-                <th className="p-4 text-right text-emerald-700 bg-emerald-50/30">
+              <tr className="border-b border-stone-200 bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs">
+                <th className="px-3 py-3">Customer</th>
+                <th className="px-3 py-3">Contact Number</th>
+                <th className="px-3 py-3">Pickup Time</th>
+                <th className="px-3 py-3">Address / Landmark</th>
+                <th className="px-3 py-3">Custody Status</th>
+                <th className="px-3 py-3 text-right">Grand Total</th>
+                <th className="px-3 py-3 text-right">Downpayment</th>
+                <th className="px-3 py-3 text-right text-emerald-700 bg-emerald-50/30">
                   Balance to Collect
                 </th>
-                <th className="p-4 text-center">Actions</th>
+                <th className="px-3 py-3 text-center w-[140px]">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="divide-y divide-stone-100 text-sm">
               {pickups.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
-                    className="p-10 text-center text-muted-foreground"
+                    className="p-10 text-center text-stone-500"
                   >
                     🎉 No store pickup balances pending settlement.
                   </td>
@@ -123,44 +123,52 @@ export function PickupSettlementTab() {
                   return (
                     <tr
                       key={pickup.orderId}
-                      className={`hover:bg-slate-50/50 transition-colors ${
+                      className={`hover:bg-stone-50/70 transition-colors ${
                         isInDrawer ? "bg-amber-50/20" : ""
                       }`}
                     >
                       {/* Customer Column */}
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-900">
-                            #{pickup.orderId} • {pickup.customerName}
+                      <td className="px-3 py-2.5 min-w-[140px] max-w-[200px]">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-semibold text-stone-500">
+                              #{pickup.orderId}
+                            </span>
+                            {pickup.isTrustedCustomer && (
+                              <Badge
+                                variant="outline"
+                                className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0 font-bold shrink-0"
+                              >
+                                👑 VIP
+                              </Badge>
+                            )}
+                          </div>
+                          <span
+                            className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
+                            title={pickup.customerName}
+                          >
+                            {pickup.customerName}
                           </span>
-                          {pickup.isTrustedCustomer && (
-                            <Badge
-                              variant="outline"
-                              className="bg-amber-50 text-amber-800 border-amber-300 text-xs font-semibold"
-                            >
-                              👑 VIP
-                            </Badge>
-                          )}
                         </div>
                       </td>
 
                       {/* Contact Number */}
-                      <td className="p-4 font-mono text-slate-600">
+                      <td className="px-3 py-3 font-mono text-stone-600 whitespace-nowrap">
                         {pickup.contactNumber || "—"}
                       </td>
 
                       {/* Pickup Time */}
-                      <td className="p-4 text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-3 text-stone-700 whitespace-nowrap">
                         {formattedPickupTime}
                       </td>
 
                       {/* Address / Landmark */}
-                      <td className="p-4 text-muted-foreground max-w-xs truncate">
+                      <td className="px-3 py-3 text-stone-500 max-w-[180px] lg:max-w-[220px] truncate" title={pickup.address || pickup.remarks || "Store Counter"}>
                         {pickup.address || pickup.remarks || "Store Counter"}
                       </td>
 
                       {/* Custody Status Badge */}
-                      <td className="p-4 whitespace-nowrap">
+                      <td className="px-3 py-3 whitespace-nowrap">
                         {isInDrawer ? (
                           <Badge
                             variant="outline"
@@ -174,36 +182,36 @@ export function PickupSettlementTab() {
                         ) : (
                           <Badge
                             variant="outline"
-                            className="bg-slate-50 text-slate-600 border-slate-300 text-xs py-1 px-2 flex items-center gap-1.5 w-fit"
+                            className="bg-stone-50 text-stone-600 border-stone-300 text-xs py-1 px-2 flex items-center gap-1.5 w-fit"
                           >
-                            <span className="w-2 h-2 rounded-full bg-slate-400" />
+                            <span className="w-2 h-2 rounded-full bg-stone-400" />
                             <span>⚪ Uncollected</span>
                           </Badge>
                         )}
                       </td>
 
                       {/* Grand Total */}
-                      <td className="p-4 text-right font-mono text-slate-700">
+                      <td className="px-3 py-3 text-right font-mono text-stone-700">
                         ₱{pickup.grandTotal.toLocaleString()}
                       </td>
 
                       {/* Downpayment */}
-                      <td className="p-4 text-right font-mono text-slate-500">
+                      <td className="px-3 py-3 text-right font-mono text-stone-500">
                         ₱{pickup.downpayment.toLocaleString()}
                       </td>
 
                       {/* Balance to Collect */}
-                      <td className="p-4 text-right font-mono font-bold text-emerald-600 bg-emerald-50/20 whitespace-nowrap">
+                      <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600 bg-emerald-50/20 whitespace-nowrap">
                         ₱{pickup.balanceDue.toLocaleString()}
                       </td>
 
                       {/* Action */}
-                      <td className="p-4 text-center whitespace-nowrap">
+                      <td className="px-3 py-3 w-[140px] text-center whitespace-nowrap">
                         {isInDrawer ? (
                           <div className="flex items-center justify-center gap-1.5">
                             <Button
                               size="sm"
-                              className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
+                              className="bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold shadow-xs"
                               onClick={() => handleOpenOwnerRemit(pickup)}
                             >
                               👑 Remit to Owner
@@ -216,7 +224,7 @@ export function PickupSettlementTab() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-xs px-2 h-8"
+                                className="text-stone-400 hover:text-rose-600 hover:bg-rose-50 text-xs px-2 h-8"
                                 title="Revert Custody to Uncollected"
                                 disabled={revertCustodyMutation.isPending}
                                 onClick={() => handleRevertCustody(pickup.orderId)}
@@ -228,7 +236,7 @@ export function PickupSettlementTab() {
                         ) : (
                           <Button
                             size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-xs"
                             onClick={() => handleOpenCounterCollect(pickup)}
                           >
                             Collect at Counter

@@ -83,26 +83,26 @@ export default function ManifestPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">
+        <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
           Daily Manifest & Cash Reconciliation
         </h1>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-sm text-stone-500 mt-1">
           Two-Hop Custody & Tri-Stream Reconciliation Center — Settle returning freelance riders via one-time QR handshakes, track staff drawer custody, and remit to store owner.
         </p>
       </div>
 
       <Tabs defaultValue="riders" className="w-full space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-3 h-10 p-1 bg-slate-100 border border-slate-200">
+        <TabsList className="grid w-full max-w-2xl grid-cols-3 h-auto p-1.5 gap-1.5 bg-stone-200/60 rounded-xl mb-6">
           <TabsTrigger
             value="riders"
-            className="flex items-center justify-center gap-1.5 font-semibold text-xs sm:text-sm data-active:bg-white data-active:shadow-sm"
+            className="flex items-center justify-center gap-1.5 py-1.5 px-4 text-sm font-medium rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
           >
             <span>🛵 Freelance Riders</span>
             <Badge
               variant="secondary"
-              className="ml-1 px-1.5 py-0 text-xs font-mono bg-slate-200 text-slate-800"
+              className="ml-1 px-1.5 py-0 text-xs font-mono bg-stone-200 text-stone-800"
             >
               {drops.length}
             </Badge>
@@ -110,12 +110,12 @@ export default function ManifestPage() {
 
           <TabsTrigger
             value="pickups"
-            className="flex items-center justify-center gap-1.5 font-semibold text-xs sm:text-sm data-active:bg-white data-active:shadow-sm"
+            className="flex items-center justify-center gap-1.5 py-1.5 px-4 text-sm font-medium rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
           >
             <span>🏪 Store Pickups</span>
             <Badge
               variant="secondary"
-              className="ml-1 px-1.5 py-0 text-xs font-mono bg-slate-200 text-slate-800"
+              className="ml-1 px-1.5 py-0 text-xs font-mono bg-stone-200 text-stone-800"
             >
               {pickupDrops.length}
             </Badge>
@@ -123,12 +123,12 @@ export default function ManifestPage() {
 
           <TabsTrigger
             value="lalamove"
-            className="flex items-center justify-center gap-1.5 font-semibold text-xs sm:text-sm data-active:bg-white data-active:shadow-sm"
+            className="flex items-center justify-center gap-1.5 py-1.5 px-4 text-sm font-medium rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
           >
             <span>📦 Lalamove Couriers</span>
             <Badge
               variant="secondary"
-              className="ml-1 px-1.5 py-0 text-xs font-mono bg-slate-200 text-slate-800"
+              className="ml-1 px-1.5 py-0 text-xs font-mono bg-stone-200 text-stone-800"
             >
               {lalamoveDrops.length}
             </Badge>
@@ -137,45 +137,45 @@ export default function ManifestPage() {
 
         {/* Tab 1: Freelance Rider Remittance */}
         <TabsContent value="riders" className="space-y-4">
-          <Card className="border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+          <Card className="bg-white border border-stone-200/90 shadow-sm rounded-xl overflow-hidden">
+            <div className="p-4 bg-stone-50 border-b border-stone-200 flex justify-between items-center">
               <div>
-                <h3 className="font-semibold text-slate-800">
+                <h3 className="font-semibold text-stone-900">
                   Freelance Rider Collections ({drops.length})
                 </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-stone-500 mt-0.5">
                   Two-Hop Custody Chain: Hop 1 transfers cash to Staff Drawer (Rider QR). Hop 2 remits drawer cash to Owner.
                 </p>
               </div>
             </div>
 
             {isLoadingRiders ? (
-              <div className="p-8 text-center text-muted-foreground">
+              <div className="p-8 text-center text-stone-500">
                 Loading pending rider reconciliations...
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto w-full">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/50 text-xs font-semibold uppercase text-slate-500 tracking-wider">
-                      <th className="p-4">Rider</th>
-                      <th className="p-4">Customer</th>
-                      <th className="p-4">Delivery Address</th>
-                      <th className="p-4">Custody Status</th>
-                      <th className="p-4 text-right">Total Collected</th>
-                      <th className="p-4 text-right">Rider Fee</th>
-                      <th className="p-4 text-right text-emerald-700 bg-emerald-50/30">
+                    <tr className="border-b border-stone-200 bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs">
+                      <th className="px-3 py-3">Rider</th>
+                      <th className="px-3 py-3 max-w-[160px]">Customer</th>
+                      <th className="px-3 py-3 max-w-[180px] lg:max-w-[220px]">Delivery Address</th>
+                      <th className="px-3 py-3">Custody Status</th>
+                      <th className="px-3 py-3 text-right">Total Collected</th>
+                      <th className="px-3 py-3 text-right">Rider Fee</th>
+                      <th className="px-3 py-3 text-right text-emerald-700 bg-emerald-50/30">
                         Net Remittance
                       </th>
-                      <th className="p-4 text-center">Actions</th>
+                      <th className="px-3 py-3 w-[140px] text-center whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm">
+                  <tbody className="divide-y divide-stone-100 text-sm">
                     {drops.length === 0 ? (
                       <tr>
                         <td
                           colSpan={8}
-                          className="p-10 text-center text-muted-foreground"
+                          className="p-10 text-center text-stone-500"
                         >
                           🎉 All caught up! No pending delivery drops to reconcile.
                         </td>
@@ -187,34 +187,45 @@ export default function ManifestPage() {
                         return (
                           <tr
                             key={drop.id}
-                            className={`hover:bg-slate-50/50 transition-colors ${
+                            className={`hover:bg-stone-50/70 transition-colors ${
                               isInDrawer ? "bg-amber-50/20" : ""
                             }`}
                           >
-                            <td className="p-4 font-medium text-slate-900">
+                            <td className="px-3 py-3 font-medium text-stone-900 text-xs sm:text-sm">
                               {drop.riderName}
                             </td>
-                            <td className="p-4">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-slate-800">
-                                  #{drop.orderId || drop.id} • {drop.customerName}
+                            <td className="px-3 py-2.5 min-w-[140px] max-w-[200px]">
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-xs font-semibold text-stone-500">
+                                    #{drop.orderId || drop.id}
+                                  </span>
+                                  {drop.isTrustedCustomer && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0 font-bold shrink-0"
+                                    >
+                                      👑 VIP
+                                    </Badge>
+                                  )}
+                                </div>
+                                <span
+                                  className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
+                                  title={drop.customerName}
+                                >
+                                  {drop.customerName}
                                 </span>
-                                {drop.isTrustedCustomer && (
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-amber-50 text-amber-800 border-amber-300 text-xs"
-                                  >
-                                    👑 VIP
-                                  </Badge>
-                                )}
                               </div>
                             </td>
-                            <td className="p-4 text-muted-foreground max-w-xs truncate">
+                            <td
+                              className="px-3 py-3 text-stone-500 text-xs sm:text-sm max-w-[180px] lg:max-w-[220px] truncate"
+                              title={drop.deliveryAddress || "Store Delivery"}
+                            >
                               {drop.deliveryAddress || "Store Delivery"}
                             </td>
 
                             {/* Custody Status Badge */}
-                            <td className="p-4 whitespace-nowrap">
+                            <td className="px-3 py-3 whitespace-nowrap text-xs sm:text-sm">
                               {isInDrawer ? (
                                 <Badge
                                   variant="outline"
@@ -228,31 +239,31 @@ export default function ManifestPage() {
                               ) : (
                                 <Badge
                                   variant="outline"
-                                  className="bg-slate-50 text-slate-600 border-slate-300 text-xs py-1 px-2 flex items-center gap-1.5 w-fit"
+                                  className="bg-stone-50 text-stone-600 border-stone-300 text-xs py-1 px-2 flex items-center gap-1.5 w-fit"
                                 >
-                                  <span className="w-2 h-2 rounded-full bg-slate-400" />
+                                  <span className="w-2 h-2 rounded-full bg-stone-400" />
                                   <span>⚪ Uncollected</span>
                                 </Badge>
                               )}
                             </td>
 
-                            <td className="p-4 text-right font-mono">
+                            <td className="px-3 py-3 text-right font-mono text-stone-800 text-xs sm:text-sm">
                               ₱{drop.totalCollected.toLocaleString()}
                             </td>
-                            <td className="p-4 text-right font-mono text-red-600">
+                            <td className="px-3 py-3 text-right font-mono text-rose-600 text-xs sm:text-sm">
                               - ₱{drop.riderDeliveryFee.toLocaleString()}
                             </td>
-                            <td className="p-4 text-right font-mono font-semibold text-emerald-600 bg-emerald-50/20">
+                            <td className="px-3 py-3 text-right font-mono font-semibold text-emerald-600 bg-emerald-50/20 text-xs sm:text-sm">
                               ₱{drop.netRemittance.toLocaleString()}
                             </td>
 
                             {/* Action Buttons */}
-                            <td className="p-4 text-center whitespace-nowrap">
+                            <td className="px-3 py-3 w-[140px] text-center whitespace-nowrap text-xs sm:text-sm">
                               {isInDrawer ? (
                                 <div className="flex items-center justify-center gap-1.5">
                                   <Button
                                     size="sm"
-                                    className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold shadow-sm"
+                                    className="bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold shadow-xs"
                                     onClick={() => handleOpenStaffToOwner(drop)}
                                   >
                                     👑 Remit to Owner
@@ -265,7 +276,7 @@ export default function ManifestPage() {
                                     <Button
                                       size="sm"
                                       variant="ghost"
-                                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-xs px-2 h-8"
+                                      className="text-stone-400 hover:text-rose-600 hover:bg-rose-50 text-xs px-2 h-8"
                                       title="Revert Custody to Uncollected"
                                       disabled={revertCustodyMutation.isPending}
                                       onClick={() =>
@@ -279,7 +290,7 @@ export default function ManifestPage() {
                               ) : (
                                 <Button
                                   size="sm"
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-xs"
                                   onClick={() => handleOpenRiderToStaff(drop)}
                                 >
                                   Settle Payment

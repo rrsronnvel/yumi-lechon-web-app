@@ -155,16 +155,16 @@
     
 - lechon-system-web/src/utils/messengerTemplates.ts: Formatter utilities generating polite Taglish Messenger clipboard strings for booking confirmations, 1-day verifications, and dispatches.
     
-- lechon-system-web/src/components/manifest/QrSettlementModal.tsx: Interactive PC modal rendering dynamic one-time QR codes (qrcode.react), 2-second live signature polling, Hop 1 discrepancy warning banner with [🔄 Ask Rider to Re-enter] rejection trigger, Hop 2 Owner counted-amount physical envelope speed bump, and authenticated [↩️ Revert Custody to Uncollected] undo trigger.
+- lechon-system-web/src/components/manifest/QrSettlementModal.tsx: Interactive PC modal with overflow-locked widescreen/mobile-safe container (`overflow-x-hidden max-w-lg w-full p-6 rounded-xl`), rendering dynamic one-time QR codes (qrcode.react), 2-second live signature polling, symmetrical 2-column Hop 1 discrepancy action grid (`h-11` aligned `[✅ Validate & Receive into Drawer]` and `[🔄 Ask Rider to Re-enter]` buttons), Hop 2 Owner counted-amount physical envelope speed bump, and authenticated `[↩️ Revert Custody to Uncollected]` undo trigger.
     
-- lechon-system-web/src/pages/QrSignPage.tsx: Standalone mobile-first public web view (/qr-settle/:token) allowing riders to digitally sign remittances (with reactive rejection notification alert when cashier requests re-entry) and owners to verify counted envelope cash bills and approve staff cash handovers from their smartphones, culminating in a screenshot-ready Digital Receipt.  
+- lechon-system-web/src/pages/QrSignPage.tsx: Standalone mobile-first public web view (/qr-settle/:token) branded with `/yumi-logo.png` and Deep Roasted Espresso header, allowing riders to digitally sign remittances (with reactive rejection notification alert when cashier requests re-entry) and owners to verify counted envelope cash bills and approve staff cash handovers from their smartphones, culminating in a screenshot-ready Digital Receipt.  
       
     
 
 - Pages (Views):
     
 
-- lechon-system-web/src/pages/LoginPage.tsx: Clean, high-contrast shift login screen with username, password, and error handling.  
+- lechon-system-web/src/pages/LoginPage.tsx: Warm Culinary Enterprise shift login screen featuring prominent `/yumi-logo.png` emblem, warm espresso-to-terracotta gradient backdrop, Yumi's Lechon Crimson (`#C81E1E`) sign-in trigger, and 1-click demo credential hydration.  
       
     
 - lechon-system-web/src/pages/DashboardPage.tsx: Widescreen operational command center with balanced 3-card KPI grid, collapsible zero-inbox alert feeds, and direct POS quick-launch triggers.  
@@ -172,7 +172,7 @@
     
 - lechon-system-web/src/pages/OrdersPage.tsx: Slide-out Customer Dossier enhanced with live rider contact telemetry, in-dossier cancellation dialog with mandatory reason, and 1-click Messenger sharing.
     
-- lechon-system-web/src/pages/DailySheetsPage.tsx: Print-friendly operational sheet hosting and with live rider contact hydration.  
+- lechon-system-web/src/pages/DailySheetsPage.tsx: Print-friendly operational sheet hosting `/yumi-logo.png` store branding with live rider contact hydration.  
       
     
 - lechon-system-web/src/pages/LogisticsPage.tsx: Outbound trip dispatcher for batching ready orders to drivers with emergency swap modal.  
@@ -200,7 +200,7 @@
 - lechon-system-web/src/components/auth/ProtectedRoute.tsx: Route wrapper enforcing authentication status and role-based permissions (Owner vs. Cashier).  
       
     
-- lechon-system-web/src/components/Sidebar.tsx: Persistent navigation sidebar with role-aware CMS visibility, live route switching, and active user profile/logout HUD.  
+- lechon-system-web/src/components/ui/Sidebar.tsx: Persistent Deep Roasted Espresso (`#181312`) navigation sidebar mounting `/yumi-logo.png`, Golden Amber active route indicators, role-aware CMS visibility, and active user shift profile/logout HUD with distinct Golden Crown (`Owner`) vs. warm stone (`Cashier`) badges.  
       
     
 - lechon-system-web/src/components/ui/orders/OrderForm.tsx: Widescreen POS terminal with tri-modal fulfillment controls (Delivery, Pickup, Lalamove), unlocked address retention for pickups, dynamic handover balance calculations, and post-submit confirmation modal.  

@@ -83,12 +83,12 @@ export function EditCategoryModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="overflow-x-hidden sm:max-w-[480px] w-full p-6 rounded-xl border-stone-200">
         <DialogHeader>
-          <DialogTitle className="text-lg font-bold">
+          <DialogTitle className="text-lg font-bold text-stone-900">
             Edit Category Specification
           </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
+          <DialogDescription className="text-xs text-stone-500">
             Configure catalog metadata, weight classification, and safety buffer.
           </DialogDescription>
         </DialogHeader>
@@ -96,25 +96,25 @@ export function EditCategoryModal({
         <div className="space-y-4 py-2">
           {/* Item Name */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">
+            <label className="text-xs font-semibold text-stone-700">
               Item Name
             </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Medium Whole Lechon"
-              className="focus-visible:ring-orange-500"
+              className="h-10 border-stone-300 focus-visible:ring-[#C81E1E]"
             />
           </div>
 
           {/* Weight Bracket (Roasts only, disabled on Add-ons) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700">
+              <label className="text-xs font-semibold text-stone-700">
                 Weight Classification Bracket (kg)
               </label>
               {isAddOn && (
-                <span className="text-[11px] text-muted-foreground italic">
+                <span className="text-[11px] text-stone-500 italic">
                   Non-meat add-on (0 kg locked)
                 </span>
               )}
@@ -122,7 +122,7 @@ export function EditCategoryModal({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <span className="text-[11px] text-slate-500 font-medium">
+                <span className="text-[11px] text-stone-500 font-medium">
                   Min Weight (kg)
                 </span>
                 <Input
@@ -134,14 +134,14 @@ export function EditCategoryModal({
                   onChange={(e) => setMinWeight(e.target.value)}
                   className={
                     isAddOn
-                      ? "bg-slate-100 text-slate-500 cursor-not-allowed"
-                      : "focus-visible:ring-orange-500"
+                      ? "h-10 bg-stone-100 border-stone-200 text-stone-500 font-mono cursor-not-allowed"
+                      : "h-10 border-stone-300 font-mono focus-visible:ring-[#C81E1E]"
                   }
                 />
               </div>
 
               <div className="space-y-1">
-                <span className="text-[11px] text-slate-500 font-medium">
+                <span className="text-[11px] text-stone-500 font-medium">
                   Max Weight (kg)
                 </span>
                 <Input
@@ -153,8 +153,8 @@ export function EditCategoryModal({
                   onChange={(e) => setMaxWeight(e.target.value)}
                   className={
                     isAddOn
-                      ? "bg-slate-100 text-slate-500 cursor-not-allowed"
-                      : "focus-visible:ring-orange-500"
+                      ? "h-10 bg-stone-100 border-stone-200 text-stone-500 font-mono cursor-not-allowed"
+                      : "h-10 border-stone-300 font-mono focus-visible:ring-[#C81E1E]"
                   }
                 />
               </div>
@@ -164,11 +164,11 @@ export function EditCategoryModal({
           {/* Safety Stock */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700">
+              <label className="text-xs font-semibold text-stone-700">
                 Minimum Safety Stock Buffer (heads)
               </label>
               {isAddOn && (
-                <span className="text-[11px] text-muted-foreground italic">
+                <span className="text-[11px] text-stone-500 italic">
                   Excluded from freezer tracking
                 </span>
               )}
@@ -182,11 +182,11 @@ export function EditCategoryModal({
               onChange={(e) => setSafetyStock(e.target.value)}
               className={
                 isAddOn
-                  ? "bg-slate-100 text-slate-500 cursor-not-allowed"
-                  : "focus-visible:ring-orange-500"
+                  ? "h-10 bg-stone-100 border-stone-200 text-stone-500 font-mono cursor-not-allowed"
+                  : "h-10 border-stone-300 font-mono focus-visible:ring-[#C81E1E]"
               }
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-stone-500">
               {isAddOn
                 ? "Add-ons, sauces, and drinks do not occupy freezer slots."
                 : "Freezer alert threshold before triggering restock notifications."}
@@ -195,8 +195,8 @@ export function EditCategoryModal({
 
           {/* Non-Meat Exclusion Shield Badge for Add-Ons */}
           {isAddOn && (
-            <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 flex gap-2.5 items-center">
-              <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0" />
+            <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950 flex gap-2.5 items-center">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
               <p className="text-xs">
                 <strong>Non-Meat Exclusion Shield:</strong> This item is classified as an
                 add-on and automatically bypasses the roasting schedule and freezer reservation ledger.
@@ -206,17 +206,18 @@ export function EditCategoryModal({
 
           {/* Validation Error Banner */}
           {validationError && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 flex gap-2 items-center text-xs">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex gap-2 items-center text-xs">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{validationError}</span>
             </div>
           )}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="mx-0 mb-0 bg-transparent border-t border-stone-200 pt-4 px-0 pb-0 flex flex-row justify-end gap-2">
           <Button
             type="button"
             variant="outline"
+            className="h-10 border-stone-300 text-stone-700"
             onClick={() => onOpenChange(false)}
             disabled={updateDetailsMutation.isPending}
           >
@@ -224,7 +225,7 @@ export function EditCategoryModal({
           </Button>
           <Button
             type="button"
-            className="bg-orange-600 hover:bg-orange-700 text-white"
+            className="h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium shadow-sm transition-colors"
             onClick={handleSave}
             disabled={!isFormValid || updateDetailsMutation.isPending}
           >

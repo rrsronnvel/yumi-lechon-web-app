@@ -434,12 +434,12 @@ export default function OrderForm({
         {/* ========================================================= */}
         {/* Left Column: Who & Where Logistics                        */}
         {/* ========================================================= */}
-        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] border-b lg:border-b-0 lg:border-r border-slate-200 space-y-4">
-          <div className="border-b pb-3">
-            <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center gap-2">
+        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] border-b lg:border-b-0 lg:border-r border-stone-200 space-y-4">
+          <div className="border-b border-stone-200 pb-3">
+            <h2 className="text-lg font-bold text-stone-900 tracking-tight flex items-center gap-2">
               <span>🐷</span> Order Entry Terminal
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-stone-500">
               Customer demographics, fulfillment routing & event logistics.
             </p>
           </div>
@@ -451,19 +451,19 @@ export default function OrderForm({
           />
 
           {/* 2. Customer Identity Fields */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <FormField
               control={form.control}
               name="customerName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     Customer Name
                   </FormLabel>
                   <FormControl>
                     <Input
                       placeholder="e.g., Juan Dela Cruz"
-                      className="h-9 text-xs"
+                      className="h-10 text-xs border-stone-300"
                       {...field}
                     />
                   </FormControl>
@@ -477,13 +477,13 @@ export default function OrderForm({
               name="customerPhone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     Mobile Number
                   </FormLabel>
                   <FormControl>
                     <Input
                       placeholder="e.g., 09171234567"
-                      className="h-9 text-xs"
+                      className="h-10 text-xs border-stone-300"
                       {...field}
                     />
                   </FormControl>
@@ -499,7 +499,7 @@ export default function OrderForm({
             name="fulfillment"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-xs font-semibold text-gray-700">
+                <FormLabel className="text-xs font-semibold text-stone-700">
                   Fulfillment Method
                 </FormLabel>
                 <FormControl>
@@ -511,22 +511,22 @@ export default function OrderForm({
                     }}
                     className="w-full"
                   >
-                    <TabsList className="grid w-full grid-cols-3 h-9 p-0.5 bg-slate-100">
+                    <TabsList className="grid w-full grid-cols-3 h-10 p-1 bg-stone-100 border border-stone-200">
                       <TabsTrigger
                         value="1"
-                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
+                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-[#C81E1E] data-[state=active]:shadow-xs"
                       >
                         🚗 Freelance Delivery
                       </TabsTrigger>
                       <TabsTrigger
                         value="0"
-                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
+                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-[#C81E1E] data-[state=active]:shadow-xs"
                       >
                         🏪 Store Pickup
                       </TabsTrigger>
                       <TabsTrigger
                         value="2"
-                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-xs"
+                        className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-[#C81E1E] data-[state=active]:shadow-xs"
                       >
                         📦 Lalamove Courier
                       </TabsTrigger>
@@ -539,13 +539,13 @@ export default function OrderForm({
           />
 
           {/* 4 & 5. Logistics Details: Target Date/Time & Distance (KM) */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <FormField
               control={form.control}
               name="targetDeliveryTime"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     {watchedFulfillment === 0
                       ? "Target Pickup Time"
                       : watchedFulfillment === 2
@@ -556,7 +556,7 @@ export default function OrderForm({
                     <Input
                       type="datetime-local"
                       step={900}
-                      className="h-9 text-xs focus-visible:ring-orange-500"
+                      className="h-10 text-xs border-stone-300"
                       value={field.value}
                       onChange={(e) => {
                         const rawValue = e.target.value;
@@ -601,7 +601,7 @@ export default function OrderForm({
               name="distanceKm"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     Distance (KM)
                   </FormLabel>
                   <FormControl>
@@ -626,10 +626,10 @@ export default function OrderForm({
                           shouldDirty: true,
                         });
                       }}
-                      className="h-9 text-xs disabled:bg-slate-100 disabled:cursor-not-allowed"
+                      className="h-10 text-xs border-stone-300 disabled:bg-stone-100 disabled:cursor-not-allowed"
                     />
                   </FormControl>
-                  <p className="text-[10px] text-muted-foreground leading-tight">
+                  <p className="text-[10px] text-stone-500 leading-tight">
                     {watchedFulfillment === 1
                       ? "Formula: ₱50 + (₱15 x KM). Override if needed."
                       : "N/A for Store Pickup & Lalamove."}
@@ -646,7 +646,7 @@ export default function OrderForm({
             name="address"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-xs font-semibold text-gray-700">
+                <FormLabel className="text-xs font-semibold text-stone-700">
                   {watchedFulfillment === 0
                     ? "Customer Address / Landmark (For records)"
                     : watchedFulfillment === 2
@@ -662,7 +662,7 @@ export default function OrderForm({
                         : "House/Unit, Street, Barangay, City / Landmark"
                     }
                     {...field}
-                    className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-xs shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs shadow-2xs placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                   />
                 </FormControl>
                 <FormMessage className="text-[11px]" />
@@ -676,13 +676,13 @@ export default function OrderForm({
             name="remarks"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-xs font-semibold text-gray-700">
+                <FormLabel className="text-xs font-semibold text-stone-700">
                   Remarks / Event Notes (Optional)
                 </FormLabel>
                 <FormControl>
                   <Input
                     placeholder="e.g., Deliver to blue gate, request spicy vinegar, 50th Birthday"
-                    className="h-9 text-xs"
+                    className="h-10 text-xs border-stone-300"
                     {...field}
                   />
                 </FormControl>
@@ -695,17 +695,17 @@ export default function OrderForm({
         {/* ========================================================= */}
         {/* Right Column: What & Money Settlement                     */}
         {/* ========================================================= */}
-        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] bg-slate-50/50 flex flex-col justify-between space-y-4">
+        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] bg-[#FAF6F4] flex flex-col justify-between space-y-4">
           {/* Top: Unified Order Cart */}
-          <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-xs space-y-3">
+          <div className="border border-stone-200/90 rounded-xl p-4 bg-white shadow-xs space-y-3">
             {/* Category Selector Header */}
-            <div className="flex items-center justify-between border-b pb-3 gap-2 flex-wrap">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3 gap-2 flex-wrap">
               <div>
-                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
-                  <ShoppingCart className="w-4 h-4 text-orange-600" />
+                <h3 className="text-sm font-bold text-stone-900 flex items-center gap-1.5">
+                  <ShoppingCart className="w-4 h-4 text-[#C81E1E]" />
                   Unified Order Cart
                 </h3>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-stone-500">
                   {(watchedItems?.length ?? 0)} line item
                   {(watchedItems?.length ?? 0) === 1 ? "" : "s"} selected
                 </p>
@@ -714,7 +714,7 @@ export default function OrderForm({
               {/* Selector to add Whole Lechon, Belly, or Extras */}
               <div className="flex items-center gap-2">
                 <select
-                  className="h-8 text-xs font-semibold rounded-md border border-orange-200 bg-orange-50/80 text-orange-950 px-2 py-0 focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer shadow-2xs"
+                  className="h-9 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 text-stone-900 px-2.5 py-0 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer shadow-2xs"
                   defaultValue=""
                   disabled={isCategoriesLoading || categories.length === 0}
                   onChange={(e) => {
@@ -757,9 +757,9 @@ export default function OrderForm({
             {/* Added Cart Line Items */}
             <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
               {(watchedItems?.length ?? 0) === 0 ? (
-                <div className="text-center py-8 border border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500 space-y-1">
-                  <p className="font-semibold text-xs text-slate-700">Cart is empty</p>
-                  <p className="text-[11px] text-slate-400">
+                <div className="text-center py-8 border border-dashed border-stone-200 rounded-lg bg-stone-50/70 text-stone-500 space-y-1">
+                  <p className="font-semibold text-xs text-stone-700">Cart is empty</p>
+                  <p className="text-[11px] text-stone-400">
                     Select a roast or add-on from the dropdown above to begin.
                   </p>
                 </div>
@@ -777,17 +777,17 @@ export default function OrderForm({
                   return (
                     <div
                       key={fieldItem.id}
-                      className="flex items-center justify-between gap-2 p-2.5 rounded-md border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors text-xs"
+                      className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-stone-200/80 bg-stone-50/70 hover:bg-stone-50 transition-colors text-xs"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-semibold text-gray-900 truncate">
+                          <span className="font-semibold text-stone-900 truncate">
                             {category?.name || `Item #${currentItem.itemCategoryId}`}
                           </span>
                           {isRoast && category ? (
                             <Badge
                               variant="outline"
-                              className="text-[10px] h-4 px-1.5 bg-orange-50 text-orange-700 border-orange-200"
+                              className="text-[10px] h-4 px-1.5 bg-amber-50 text-amber-800 border-amber-200"
                             >
                               {category.minimumWeightKg.toFixed(1)}–
                               {category.maximumWeightKg.toFixed(1)} kg
@@ -795,13 +795,13 @@ export default function OrderForm({
                           ) : (
                             <Badge
                               variant="outline"
-                              className="text-[10px] h-4 px-1.5 bg-slate-100 text-slate-600 border-slate-200"
+                              className="text-[10px] h-4 px-1.5 bg-stone-100 text-stone-600 border-stone-200"
                             >
                               Add-on
                             </Badge>
                           )}
                         </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                        <div className="text-[11px] text-stone-500 mt-0.5 font-mono">
                           ₱{unitPrice.toLocaleString()} each
                         </div>
                       </div>
@@ -812,7 +812,7 @@ export default function OrderForm({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-6 w-6 text-slate-600 bg-white"
+                          className="h-7 w-7 text-stone-600 bg-white border-stone-300"
                           disabled={currentQty <= 1}
                           onClick={() => updateQuantity(index, currentQty - 1)}
                         >
@@ -829,13 +829,13 @@ export default function OrderForm({
                               isNaN(val) ? 1 : Math.max(1, val),
                             );
                           }}
-                          className="w-10 h-6 text-center text-xs font-semibold p-0 bg-white"
+                          className="w-10 h-7 text-center text-xs font-semibold p-0 bg-white border-stone-300"
                         />
                         <Button
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-6 w-6 text-slate-600 bg-white"
+                          className="h-7 w-7 text-stone-600 bg-white border-stone-300"
                           onClick={() => updateQuantity(index, currentQty + 1)}
                         >
                           <Plus className="w-3 h-3" />
@@ -843,7 +843,7 @@ export default function OrderForm({
                       </div>
 
                       {/* Computed Line Total */}
-                      <div className="w-20 text-right font-bold text-gray-900">
+                      <div className="w-20 text-right font-bold text-stone-900 font-mono">
                         ₱{lineTotal.toLocaleString()}
                       </div>
 
@@ -852,7 +852,7 @@ export default function OrderForm({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                        className="h-7 w-7 text-stone-400 hover:text-rose-600 hover:bg-rose-50"
                         onClick={() => remove(index)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -864,38 +864,38 @@ export default function OrderForm({
             </div>
 
             {/* Cart Subtotal Footer */}
-            <div className="pt-2 border-t flex items-center justify-between text-xs">
-              <span className="font-semibold text-gray-600">
+            <div className="pt-2 border-t border-stone-200 flex items-center justify-between text-xs">
+              <span className="font-semibold text-stone-600">
                 Cart Subtotal (Items):
               </span>
-              <span className="font-bold text-gray-900 text-sm">
+              <span className="font-bold text-stone-900 text-sm font-mono">
                 ₱{cartSubtotal.toLocaleString()}
               </span>
             </div>
           </div>
 
           {/* Bottom: Settlement Ledger & Handover Callout */}
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3 shadow-2xs">
-            <div className="flex items-center justify-between text-xs font-semibold text-gray-700 pb-2 border-b border-slate-200">
+          <div className="bg-white border border-stone-200/90 rounded-xl p-4 space-y-3.5 shadow-xs">
+            <div className="flex items-center justify-between text-xs font-semibold text-stone-800 pb-2 border-b border-stone-200">
               <span className="flex items-center gap-1.5">
-                <ReceiptText className="w-3.5 h-3.5 text-slate-500" />
+                <ReceiptText className="w-3.5 h-3.5 text-stone-500" />
                 Settlement Ledger
               </span>
-              <span className="text-[11px] text-muted-foreground font-normal">
+              <span className="text-[11px] text-stone-500 font-normal">
                 Real-time calculations
               </span>
             </div>
 
-            <div className="space-y-2 text-xs">
+            <div className="space-y-2.5 text-xs">
               {/* Cart Subtotal */}
-              <div className="flex items-center justify-between text-slate-600">
+              <div className="flex items-center justify-between text-stone-600">
                 <span>Cart Subtotal</span>
-                <span className="font-semibold text-slate-900">
+                <span className="font-semibold text-stone-900 font-mono">
                   ₱{cartSubtotal.toLocaleString()}
                 </span>
               </div>
               {roastSubtotal > 0 && cartSubtotal > roastSubtotal && (
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground pl-2 border-l-2 border-orange-300">
+                <div className="flex items-center justify-between text-[11px] text-stone-500 pl-2 border-l-2 border-amber-400">
                   <span>Lechon: ₱{roastSubtotal.toLocaleString()}</span>
                   <span>Extras: ₱{(cartSubtotal - roastSubtotal).toLocaleString()}</span>
                 </div>
@@ -903,20 +903,20 @@ export default function OrderForm({
 
               {/* Delivery Fee */}
               <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-600 flex items-center gap-1">
+                <span className="text-stone-600 flex items-center gap-1">
                   Delivery Fee
                   {watchedFulfillment === 0 && (
-                    <span className="text-[10px] text-muted-foreground italic">
+                    <span className="text-[10px] text-stone-400 italic">
                       (Store Pickup: ₱0)
                     </span>
                   )}
                   {watchedFulfillment === 2 && (
-                    <span className="text-[10px] text-muted-foreground italic">
+                    <span className="text-[10px] text-stone-400 italic">
                       (Lalamove Courier: ₱0)
                     </span>
                   )}
                 </span>
-                <div className="w-28">
+                <div className="w-32">
                   <Input
                     type="number"
                     min={0}
@@ -931,15 +931,15 @@ export default function OrderForm({
                         shouldDirty: true,
                       });
                     }}
-                    className="h-7 text-right text-xs bg-white disabled:bg-slate-100"
+                    className="h-9 text-right text-xs font-mono bg-white border-stone-300 disabled:bg-stone-100"
                   />
                 </div>
               </div>
 
               {/* Discount */}
               <div className="flex items-center justify-between gap-4">
-                <span className="text-slate-600">Discount (₱)</span>
-                <div className="w-28">
+                <span className="text-stone-600">Discount (₱)</span>
+                <div className="w-32">
                   <Input
                     type="number"
                     min={0}
@@ -951,24 +951,24 @@ export default function OrderForm({
                         shouldDirty: true,
                       });
                     }}
-                    className="h-7 text-right text-xs bg-white text-red-600 font-medium"
+                    className="h-9 text-right text-xs font-mono bg-white border-stone-300 text-rose-600 font-medium"
                   />
                 </div>
               </div>
 
               {/* Grand Total */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200 font-bold">
-                <span className="text-slate-900 text-sm">Grand Total</span>
-                <span className="text-base text-emerald-700">
+              <div className="flex items-center justify-between pt-2 border-t border-stone-200 font-bold">
+                <span className="text-stone-900 text-sm">Grand Total</span>
+                <span className="text-base text-emerald-700 font-mono">
                   ₱{grandTotal.toLocaleString()}
                 </span>
               </div>
             </div>
 
             {/* Payment & VIP Section */}
-            <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+            <div className="pt-2 border-t border-stone-200 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
               <div>
-                <label className="text-[11px] font-semibold text-gray-700 block mb-1">
+                <label className="text-xs font-semibold text-stone-700 block mb-1.5">
                   Downpayment Received (₱)
                 </label>
                 <Input
@@ -982,7 +982,7 @@ export default function OrderForm({
                       shouldDirty: true,
                     });
                   }}
-                  className="h-8 text-xs bg-white font-medium"
+                  className="h-10 text-xs font-mono bg-white border-stone-300 font-medium"
                   placeholder="0"
                 />
               </div>
@@ -991,14 +991,11 @@ export default function OrderForm({
                 control={form.control}
                 name="isTrustedCustomer"
                 render={({ field }) => (
-                  <div className="flex items-center justify-between p-2 rounded-md border border-amber-200 bg-amber-50/60 h-14">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                  <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/70 h-10">
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1 truncate">
                         👑 VIP Trusted
                       </span>
-                      <p className="text-[10px] text-amber-700 leading-tight">
-                        Bypass downpayment
-                      </p>
                     </div>
                     <Switch
                       checked={field.value}
@@ -1010,7 +1007,7 @@ export default function OrderForm({
             </div>
 
             {/* Prominent "Balance Due at Handover" Callout */}
-            <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg flex items-center justify-between gap-3 shadow-2xs">
+            <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between gap-3 shadow-2xs">
               <div className="space-y-1">
                 <span className="text-xs font-semibold text-emerald-950 block">
                   {balanceDue < 0
@@ -1023,13 +1020,13 @@ export default function OrderForm({
                       PAID IN FULL
                     </Badge>
                   ) : effectiveDownpayment === 0 && watchedIsTrusted ? (
-                    <Badge className="bg-amber-500 text-white hover:bg-amber-600 text-[10px] px-2 py-0">
+                    <Badge className="bg-amber-500 text-stone-950 hover:bg-amber-600 font-bold text-[10px] px-2 py-0">
                       VIP: PAY ON DELIVERY ALLOWED
                     </Badge>
                   ) : effectiveDownpayment === 0 && !watchedIsTrusted ? (
                     <Badge
                       variant="outline"
-                      className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] px-2 py-0"
+                      className="bg-stone-100 text-stone-600 border-stone-300 text-[10px] px-2 py-0"
                     >
                       PENDING PAYMENT
                     </Badge>
@@ -1038,7 +1035,7 @@ export default function OrderForm({
                       OVERPAID / REFUND DUE
                     </Badge>
                   ) : (
-                    <Badge className="bg-blue-600 text-white hover:bg-blue-700 text-[10px] px-2 py-0">
+                    <Badge className="bg-amber-500 text-stone-950 font-semibold text-[10px] px-2 py-0">
                       PARTIAL DOWNPAYMENT
                     </Badge>
                   )}
@@ -1067,7 +1064,7 @@ export default function OrderForm({
               disabled={
                 createOrderMutation.isPending || (watchedItems?.length ?? 0) === 0
               }
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold h-10 shadow-sm text-xs flex items-center justify-center gap-2 mt-2"
+              className="w-full bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium h-11 shadow-sm transition-colors text-sm flex items-center justify-center gap-2 mt-2"
             >
               {createOrderMutation.isPending ? (
                 <>
@@ -1098,25 +1095,25 @@ export default function OrderForm({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="overflow-x-hidden max-w-md w-full p-6 rounded-xl border-stone-200 bg-white">
           <DialogHeader>
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              <DialogTitle>Order Ingested Successfully!</DialogTitle>
+              <DialogTitle className="text-stone-900">Order Ingested Successfully!</DialogTitle>
             </div>
-            <DialogDescription>
+            <DialogDescription className="text-stone-500">
               Order #{savedOrderForModal?.orderNumber || "NEW"} has been recorded into the live roster.
             </DialogDescription>
           </DialogHeader>
 
           {savedOrderForModal && (
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-2 text-xs">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+            <div className="bg-stone-50 border border-stone-200 rounded-xl p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-stone-200">
                 <div>
-                  <span className="font-bold text-slate-900 text-sm">
+                  <span className="font-bold text-stone-900 text-sm">
                     {savedOrderForModal.customerName}
                   </span>
-                  <div className="text-muted-foreground text-[11px]">
+                  <div className="text-stone-500 text-[11px]">
                     {savedOrderForModal.fulfillment === 0
                       ? "🏪 Walk-in Store Pickup"
                       : savedOrderForModal.fulfillment === 2
@@ -1128,15 +1125,15 @@ export default function OrderForm({
                   <span className="font-mono font-bold text-emerald-700 text-sm">
                     ₱{savedOrderForModal.grandTotal.toLocaleString()}
                   </span>
-                  <div className="text-[11px] font-medium text-slate-600">
+                  <div className="text-[11px] font-medium text-stone-600">
                     Balance: ₱{savedOrderForModal.balanceDue.toLocaleString()}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-1 pt-1 text-[11px]">
-                <div className="font-semibold text-slate-700">Items:</div>
-                <ul className="list-disc list-inside text-slate-600 space-y-0.5">
+                <div className="font-semibold text-stone-700">Items:</div>
+                <ul className="list-disc list-inside text-stone-600 space-y-0.5">
                   {savedOrderForModal.items.map((it, idx) => (
                     <li key={idx}>
                       {it.quantity}x {it.categoryName}
@@ -1147,10 +1144,11 @@ export default function OrderForm({
             </div>
           )}
 
-          <DialogFooter className="flex sm:justify-between gap-2 pt-2">
+          <DialogFooter className="mx-0 mb-0 bg-transparent border-t border-stone-200 pt-3 px-0 pb-0 flex sm:justify-between gap-2">
             <Button
               type="button"
               variant="outline"
+              className="border-stone-300 text-stone-700 h-10"
               onClick={() => {
                 setIsSuccessModalOpen(false);
                 setSavedOrderForModal(null);
@@ -1163,7 +1161,7 @@ export default function OrderForm({
             </Button>
             <Button
               type="button"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1.5"
+              className="bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold h-10 flex items-center gap-1.5"
               onClick={() => {
                 if (savedOrderForModal) {
                   navigator.clipboard.writeText(

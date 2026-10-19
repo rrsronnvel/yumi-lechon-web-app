@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Lock, User, Eye, EyeOff, Loader2, ShieldCheck, Flame } from "lucide-react";
+import { Lock, User, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 
 interface LoginResponse {
   token: string;
@@ -85,36 +85,38 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-amber-500 selection:text-white relative overflow-hidden">
-      {/* Background ambient glow */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 translate-y-1/2 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-gradient-to-br from-[#181312] via-[#241A18] to-[#36221E] flex flex-col items-center justify-center p-4 selection:bg-amber-500 selection:text-white relative overflow-hidden">
+      {/* Warm Terracotta & Golden Ambient Glows */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[28rem] h-[28rem] bg-[#DDA196]/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-md relative z-10 space-y-6">
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl shadow-inner mb-1">
-            <Flame className="w-8 h-8 text-amber-500 animate-pulse" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white uppercase">
-            Yumi's Lechon
+        <div className="text-center">
+          <img
+            src="/yumi-logo.png"
+            alt="Yumi's Lechon Official Logo"
+            className="w-24 h-24 rounded-full mx-auto ring-4 ring-amber-400/50 shadow-xl mb-4 object-cover"
+          />
+          <h1 className="text-2xl font-extrabold tracking-wider text-amber-400 uppercase">
+            Yumi&apos;s Lechon
           </h1>
-          <p className="text-xs tracking-wider uppercase text-slate-400 font-medium">
-            Management & Operations System
+          <p className="text-xs tracking-wider uppercase text-stone-300 font-medium mt-1">
+            Management &amp; Operations System
           </p>
         </div>
 
-        {/* High-Contrast Login Card */}
-        <Card className="border-slate-800 bg-slate-900/90 backdrop-blur-xl shadow-2xl text-slate-100">
+        {/* High-Contrast Warm Espresso Login Card */}
+        <Card className="border-stone-800/90 bg-[#181312]/95 backdrop-blur-xl shadow-2xl text-stone-100 rounded-xl">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-lg font-semibold tracking-tight text-white flex items-center justify-between">
               <span>Shift Sign-In</span>
-              <span className="text-[11px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <span className="text-[11px] font-medium text-amber-400 bg-amber-500/15 border border-amber-400/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
                 12h Shift JWT
               </span>
             </CardTitle>
-            <CardDescription className="text-xs text-slate-400">
+            <CardDescription className="text-xs text-stone-400">
               Enter your staff credentials to access roasting, logistics, and store management.
             </CardDescription>
           </CardHeader>
@@ -134,12 +136,12 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="username"
-                  className="block text-xs font-medium text-slate-300"
+                  className="block text-xs font-medium text-stone-300"
                 >
                   Staff Username
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
                   <Input
                     id="username"
                     name="username"
@@ -153,7 +155,7 @@ export default function LoginPage() {
                     placeholder="e.g. owner or cashier"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="pl-9 bg-slate-950/60 border-slate-700 text-white placeholder:text-slate-500 focus-visible:border-amber-500 focus-visible:ring-amber-500/30 h-10"
+                    className="pl-9 bg-stone-950/80 border-stone-700 text-white placeholder:text-stone-500 focus-visible:border-amber-400 focus-visible:ring-amber-400/30 h-10"
                   />
                 </div>
               </div>
@@ -163,13 +165,13 @@ export default function LoginPage() {
                 <div className="flex items-center justify-between">
                   <label
                     htmlFor="current-password"
-                    className="block text-xs font-medium text-slate-300"
+                    className="block text-xs font-medium text-stone-300"
                   >
                     Shift Password
                   </label>
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
                   <Input
                     id="current-password"
                     name="password"
@@ -181,14 +183,14 @@ export default function LoginPage() {
                     placeholder="••••••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-9 pr-10 bg-slate-950/60 border-slate-700 text-white placeholder:text-slate-500 focus-visible:border-amber-500 focus-visible:ring-amber-500/30 h-10"
+                    className="pl-9 pr-10 bg-stone-950/80 border-stone-700 text-white placeholder:text-stone-500 focus-visible:border-amber-400 focus-visible:ring-amber-400/30 h-10"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     tabIndex={-1}
                     aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-200 focus:outline-none"
                   >
                     {showPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -199,11 +201,11 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Single Submit Button */}
+              {/* Single Submit Button — Yumi's Lechon Crimson */}
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold h-10 shadow-lg shadow-amber-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                className="w-full bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold h-10 shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
               >
                 {isLoading ? (
                   <>
@@ -211,19 +213,19 @@ export default function LoginPage() {
                     <span>Verifying Shift...</span>
                   </>
                 ) : (
-                  <span>Start 12-Hour Shift</span>
+                  <span>Sign In to Shift</span>
                 )}
               </Button>
             </form>
 
             {/* Quick Helper for Test Accounts */}
-            <div className="mt-5 pt-4 border-t border-slate-800 text-[11px] text-slate-400 space-y-1.5">
-              <p className="font-semibold text-slate-300">Default Staff Access:</p>
-              <div className="flex items-center justify-between text-slate-400 bg-slate-950/40 px-2.5 py-1 rounded border border-slate-800/80">
-                <span>👑 Owner: <code className="text-amber-400">owner</code> / <code className="text-slate-300">OwnerPassword123!</code></span>
+            <div className="mt-5 pt-4 border-t border-stone-800 text-[11px] text-stone-400 space-y-1.5">
+              <p className="font-semibold text-stone-300">Default Staff Access:</p>
+              <div className="flex items-center justify-between text-stone-400 bg-stone-950/60 px-2.5 py-1.5 rounded-md border border-stone-800">
+                <span>👑 Owner: <code className="text-amber-400">owner</code> / <code className="text-stone-300">OwnerPassword123!</code></span>
                 <button
                   type="button"
-                  className="text-amber-500 hover:underline ml-2"
+                  className="text-amber-400 hover:underline font-medium ml-2 cursor-pointer"
                   onClick={() => {
                     setUsername("owner");
                     setPassword("OwnerPassword123!");
@@ -232,11 +234,11 @@ export default function LoginPage() {
                   Fill
                 </button>
               </div>
-              <div className="flex items-center justify-between text-slate-400 bg-slate-950/40 px-2.5 py-1 rounded border border-slate-800/80">
-                <span>🧑‍💼 Cashier: <code className="text-blue-400">cashier</code> / <code className="text-slate-300">CashierPassword123!</code></span>
+              <div className="flex items-center justify-between text-stone-400 bg-stone-950/60 px-2.5 py-1.5 rounded-md border border-stone-800">
+                <span>🧑‍💼 Cashier: <code className="text-stone-200">cashier</code> / <code className="text-stone-300">CashierPassword123!</code></span>
                 <button
                   type="button"
-                  className="text-blue-400 hover:underline ml-2"
+                  className="text-amber-400 hover:underline font-medium ml-2 cursor-pointer"
                   onClick={() => {
                     setUsername("cashier");
                     setPassword("CashierPassword123!");
@@ -250,7 +252,7 @@ export default function LoginPage() {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-[11px] text-slate-500">
+        <p className="text-center text-[11px] text-stone-400">
           Cavite Lechon Roasting Operations &bull; Shift Security Protected
         </p>
       </div>

@@ -115,10 +115,10 @@ export default function OrderScreenshotUploader({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative py-2 px-3 border border-dashed rounded-lg text-xs flex items-center justify-between gap-3 transition-colors ${
+      className={`relative py-2.5 px-3.5 border border-dashed rounded-lg text-xs flex items-center justify-between gap-3 transition-colors ${
         isDragging
-          ? "border-orange-500 bg-orange-100/70"
-          : "border-amber-300 hover:border-amber-400 bg-amber-50/60 hover:bg-amber-50/90"
+          ? "border-[#C81E1E] bg-amber-100/70"
+          : "border-amber-300 hover:border-amber-400 bg-amber-50/70 hover:bg-amber-50"
       }`}
     >
       <input
@@ -130,29 +130,29 @@ export default function OrderScreenshotUploader({
       />
 
       {isCompressing ? (
-        <div className="flex items-center gap-2 text-orange-700 font-medium py-0.5">
-          <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
+        <div className="flex items-center gap-2 text-amber-900 font-medium py-0.5">
+          <Loader2 className="w-4 h-4 animate-spin text-[#C81E1E] shrink-0" />
           <span className="flex items-center gap-1.5 text-xs truncate">
-            <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-pulse shrink-0" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
             Optimizing screenshot size...
           </span>
         </div>
       ) : uploadMutation.isPending ? (
-        <div className="flex items-center gap-2 text-orange-700 font-medium py-0.5">
-          <Loader2 className="w-4 h-4 animate-spin text-orange-600 shrink-0" />
+        <div className="flex items-center gap-2 text-amber-900 font-medium py-0.5">
+          <Loader2 className="w-4 h-4 animate-spin text-[#C81E1E] shrink-0" />
           <span className="flex items-center gap-1.5 text-xs truncate">
-            <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-pulse shrink-0" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
             Extracting booking details via Gemini Vision...
           </span>
         </div>
       ) : (
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
             <Camera className="w-3.5 h-3.5" />
           </div>
           <div className="truncate">
-            <span className="font-semibold text-gray-800">📸 Drop or Paste Screenshot (Ctrl+V)</span>
-            <span className="text-[11px] text-muted-foreground ml-2 hidden sm:inline">
+            <span className="font-semibold text-stone-900">📸 Drop or Paste Screenshot (Ctrl+V)</span>
+            <span className="text-[11px] text-stone-500 ml-2 hidden sm:inline">
               Auto-fill slip from Messenger
             </span>
           </div>
@@ -165,9 +165,9 @@ export default function OrderScreenshotUploader({
         size="sm"
         onClick={() => fileInputRef.current?.click()}
         disabled={isCompressing || uploadMutation.isPending}
-        className="text-[11px] h-6 px-2.5 border-amber-300 bg-white text-amber-900 hover:bg-amber-100 shrink-0 font-medium shadow-none"
+        className="text-xs h-7 px-3 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 shrink-0 font-semibold shadow-2xs"
       >
-        <UploadCloud className="w-3 h-3 mr-1 text-amber-700" />
+        <UploadCloud className="w-3.5 h-3.5 mr-1 text-amber-700" />
         Browse
       </Button>
     </div>

@@ -68,13 +68,13 @@ export function LalamoveSettlementTab() {
 
   return (
     <div className="space-y-4">
-      <Card className="border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+      <Card className="bg-white border border-stone-200/90 shadow-sm rounded-xl overflow-hidden">
+        <div className="p-4 bg-stone-50 border-b border-stone-200 flex justify-between items-center">
           <div>
-            <h3 className="font-semibold text-slate-800">
+            <h3 className="font-semibold text-stone-900">
               Lalamove Pre-Release Gate ({lalamoveOrders.length})
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs text-stone-500 mt-0.5">
               Anti-Loss Security Gate: App couriers transport goods but do not collect payments. Release only when 100% paid.
             </p>
           </div>
@@ -83,21 +83,21 @@ export function LalamoveSettlementTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/50 text-xs font-semibold uppercase text-slate-500 tracking-wider">
-                <th className="p-4">Order # & Customer</th>
-                <th className="p-4">Drop-off Destination</th>
-                <th className="p-4">Target Time</th>
-                <th className="p-4 text-right">Balance Due</th>
-                <th className="p-4 text-center">Gate Status</th>
-                <th className="p-4 text-center">Action</th>
+              <tr className="border-b border-stone-200 bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs">
+                <th className="px-3 py-3">Order # & Customer</th>
+                <th className="px-3 py-3">Drop-off Destination</th>
+                <th className="px-3 py-3">Target Time</th>
+                <th className="px-3 py-3 text-right">Balance Due</th>
+                <th className="px-3 py-3 text-center">Gate Status</th>
+                <th className="px-3 py-3 text-center w-[140px]">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="divide-y divide-stone-100 text-sm">
               {lalamoveOrders.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="p-10 text-center text-muted-foreground"
+                    className="p-10 text-center text-stone-500"
                   >
                     🎉 No Lalamove orders pending courier release.
                   </td>
@@ -120,34 +120,42 @@ export function LalamoveSettlementTab() {
                   return (
                     <tr
                       key={order.orderId}
-                      className="hover:bg-slate-50/50 transition-colors"
+                      className="hover:bg-stone-50/70 transition-colors"
                     >
                       {/* Order # & Customer */}
-                      <td className="p-4">
-                        <div className="font-medium text-slate-900">
-                          #{order.orderId} • {order.customerName}
+                      <td className="px-3 py-2.5 min-w-[140px] max-w-[200px]">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-mono text-xs font-semibold text-stone-500">
+                            #{order.orderId}
+                          </span>
+                          <span
+                            className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
+                            title={order.customerName}
+                          >
+                            {order.customerName}
+                          </span>
+                          {order.contactNumber && (
+                            <div className="text-xs font-mono text-stone-500 truncate">
+                              {order.contactNumber}
+                            </div>
+                          )}
                         </div>
-                        {order.contactNumber && (
-                          <div className="text-xs font-mono text-muted-foreground mt-0.5">
-                            {order.contactNumber}
-                          </div>
-                        )}
                       </td>
 
                       {/* Drop-off Destination */}
-                      <td className="p-4 text-slate-700 max-w-xs truncate">
+                      <td className="px-3 py-3 text-stone-700 max-w-[180px] lg:max-w-[220px] truncate" title={order.deliveryAddress || "Customer booked pin"}>
                         {order.deliveryAddress || "Customer booked pin"}
                       </td>
 
                       {/* Target Time */}
-                      <td className="p-4 text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-3 text-stone-700 whitespace-nowrap">
                         {formattedTime}
                       </td>
 
                       {/* Balance Due */}
-                      <td className="p-4 text-right font-mono font-semibold whitespace-nowrap">
+                      <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
                         {order.balanceDue > 0 ? (
-                          <span className="text-red-600">
+                          <span className="text-rose-600">
                             ₱{order.balanceDue.toLocaleString()}
                           </span>
                         ) : (
@@ -156,7 +164,7 @@ export function LalamoveSettlementTab() {
                       </td>
 
                       {/* Gate Status Badge */}
-                      <td className="p-4 text-center whitespace-nowrap">
+                      <td className="px-3 py-3 text-center whitespace-nowrap">
                         {isCleared ? (
                           <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-300 font-semibold text-xs">
                             🟢 PAID IN FULL — CLEAR TO RELEASE
@@ -164,7 +172,7 @@ export function LalamoveSettlementTab() {
                         ) : (
                           <Badge
                             variant="destructive"
-                            className="bg-red-100 text-red-800 hover:bg-red-100 border-red-300 font-semibold text-xs"
+                            className="bg-rose-100 text-rose-800 hover:bg-rose-100 border-rose-300 font-semibold text-xs"
                           >
                             🛑 HOLD RELEASE: UNPAID BALANCE
                           </Badge>
@@ -172,11 +180,11 @@ export function LalamoveSettlementTab() {
                       </td>
 
                       {/* Action Button */}
-                      <td className="p-4 text-center whitespace-nowrap">
+                      <td className="px-3 py-3 text-center whitespace-nowrap w-[140px]">
                         {isCleared ? (
                           <Button
                             size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-xs"
                             onClick={() => handleRelease(order)}
                             disabled={isReleasing}
                           >
@@ -188,7 +196,7 @@ export function LalamoveSettlementTab() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-red-300 text-red-700 hover:bg-red-50 text-xs font-medium"
+                            className="border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-medium"
                             onClick={() => handleOpenPayment(order)}
                           >
                             Verify Payment

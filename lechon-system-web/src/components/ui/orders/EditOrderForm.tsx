@@ -287,7 +287,7 @@ export default function EditOrderForm({
 
   return (
     <Form {...form}>
-      <div className="bg-white p-6 rounded-md border shadow-sm mt-2">
+      <div className="bg-white p-5 sm:p-6 rounded-xl border border-stone-200/90 shadow-sm mt-2">
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
           {/* Customer & Delivery Section */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -296,11 +296,11 @@ export default function EditOrderForm({
               name="customerName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-700">Customer Name</FormLabel>
+                  <FormLabel className="text-xs font-semibold text-stone-700">Customer Name</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
-                      className="bg-slate-50 focus-visible:ring-orange-500"
+                      className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
                 </FormItem>
@@ -312,14 +312,14 @@ export default function EditOrderForm({
               name="contactNumber"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     Contact Number
                   </FormLabel>
                   <FormControl>
                     <Input
                       {...field}
                       placeholder="09XX..."
-                      className="bg-slate-50 focus-visible:ring-orange-500"
+                      className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
                 </FormItem>
@@ -330,13 +330,13 @@ export default function EditOrderForm({
               control={form.control}
               name="targetDeliveryTime"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-700">Target Time</FormLabel>
+                <FormItem className="col-span-1 sm:col-span-2">
+                  <FormLabel className="text-xs font-semibold text-stone-700">Target Time</FormLabel>
                   <FormControl>
                     <Input
                       type="datetime-local"
                       {...field}
-                      className="bg-slate-50 focus-visible:ring-orange-500"
+                      className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
                 </FormItem>
@@ -348,21 +348,21 @@ export default function EditOrderForm({
               name="fulfillment"
               render={({ field }) => (
                 <FormItem className="col-span-1 sm:col-span-2">
-                  <FormLabel className="text-gray-700 font-medium text-xs sm:text-sm">
+                  <FormLabel className="text-stone-700 font-semibold text-xs">
                     Delivery Method
                   </FormLabel>
                   <FormControl>
-                    <div className="grid grid-cols-3 w-full p-1 bg-slate-100 rounded-lg border border-slate-200/80 gap-1">
+                    <div className="grid grid-cols-3 w-full p-1 bg-stone-100 rounded-lg border border-stone-200 gap-1">
                       <button
                         type="button"
                         onClick={() => {
                           field.onChange(1);
                         }}
                         className={cn(
-                          "min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
                           Number(field.value) === 1
-                            ? "bg-white text-orange-700 shadow-xs border border-orange-200/80"
-                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                            ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
                         )}
                       >
                         <span className="text-sm shrink-0">🚗</span>
@@ -383,10 +383,10 @@ export default function EditOrderForm({
                           });
                         }}
                         className={cn(
-                          "min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
                           Number(field.value) === 0
-                            ? "bg-white text-orange-700 shadow-xs border border-orange-200/80"
-                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                            ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
                         )}
                       >
                         <span className="text-sm shrink-0">🏪</span>
@@ -407,10 +407,10 @@ export default function EditOrderForm({
                           });
                         }}
                         className={cn(
-                          "min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
                           Number(field.value) === 2
-                            ? "bg-white text-orange-700 shadow-xs border border-orange-200/80"
-                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                            ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
                         )}
                       >
                         <span className="text-sm shrink-0">📦</span>
@@ -427,7 +427,7 @@ export default function EditOrderForm({
               name="deliveryAddress"
               render={({ field }) => (
                 <FormItem className="col-span-1 sm:col-span-2">
-                  <FormLabel className="text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     Delivery Address
                   </FormLabel>
                   <FormControl>
@@ -440,7 +440,7 @@ export default function EditOrderForm({
                           ? "Drop-off Address for Lalamove Courier"
                           : "Full Address or Delivery Landmark"
                       }
-                      className="bg-slate-50 focus-visible:ring-orange-500"
+                      className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
                 </FormItem>
@@ -452,14 +452,14 @@ export default function EditOrderForm({
               name="remarks"
               render={({ field }) => (
                 <FormItem className="col-span-1 sm:col-span-2">
-                  <FormLabel className="text-gray-700">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
                     Remarks / Instructions
                   </FormLabel>
                   <FormControl>
                     <Input
                       placeholder="e.g., Use the side gate"
                       {...field}
-                      className="bg-slate-50 focus-visible:ring-orange-500"
+                      className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
                 </FormItem>
@@ -468,16 +468,16 @@ export default function EditOrderForm({
           </div>
 
           {/* --- LECHON CART BLOCK --- */}
-          <div className="pt-5 border-t border-slate-100">
+          <div className="pt-5 border-t border-stone-200">
             <div className="flex justify-between items-center mb-3">
-              <FormLabel className="text-base font-semibold text-gray-800">
+              <FormLabel className="text-base font-semibold text-stone-900">
                 Lechon Cart
               </FormLabel>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs border-dashed border-gray-300 text-gray-600 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50 cursor-pointer"
+                className="h-8 text-xs border-dashed border-stone-300 text-stone-700 hover:text-[#C81E1E] hover:border-[#C81E1E]/40 hover:bg-amber-50/50 cursor-pointer"
                 onClick={() => {
                   appendItem({
                     id: 0,
@@ -494,12 +494,12 @@ export default function EditOrderForm({
               {fields.map((field, index) => (
                 <div
                   key={field.id}
-                  className="flex gap-3 items-center bg-slate-50/50 p-3 rounded-md border border-slate-200"
+                  className="flex gap-3 items-center bg-stone-50/70 p-3 rounded-lg border border-stone-200"
                 >
                   <Input
                     type="number"
                     min="1"
-                    className="w-16 bg-white h-9 text-sm text-center font-medium focus-visible:ring-orange-500"
+                    className="w-16 bg-white h-10 text-sm text-center font-medium border-stone-300"
                     {...form.register(`items.${index}.quantity` as const, {
                       valueAsNumber: true,
                       onChange: (e) => {
@@ -524,7 +524,7 @@ export default function EditOrderForm({
                         });
                       },
                     })}
-                    className="w-full h-9 rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
+                    className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     {/* ONLY SHOW LECHONS HERE */}
                     {lechonOptions.map((cat: any) => (
@@ -539,7 +539,7 @@ export default function EditOrderForm({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 text-red-400 hover:text-red-700 hover:bg-red-50 shrink-0 cursor-pointer"
+                      className="h-9 w-9 text-rose-500 hover:text-rose-700 hover:bg-rose-50 shrink-0 cursor-pointer"
                       onClick={() => {
                         removeItem(index);
                       }}
@@ -550,23 +550,23 @@ export default function EditOrderForm({
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-orange-600/80 mt-2 font-medium flex items-center gap-1">
-              <span className="text-orange-500">ℹ</span> Changing the Delivery
+            <p className="text-[11px] text-amber-800 mt-2 font-medium flex items-center gap-1">
+              <span className="text-amber-600">ℹ</span> Changing the Delivery
               Time or Size will recalculate the Kitchen timeline.
             </p>
           </div>
 
           {/* --- DYNAMIC ADD-ONS BLOCK --- */}
-          <div className="pt-5 border-t border-slate-100">
+          <div className="pt-5 border-t border-stone-200">
             <div className="flex justify-between items-center mb-3">
-              <FormLabel className="text-base font-semibold text-gray-800">
+              <FormLabel className="text-base font-semibold text-stone-900">
                 Extra Add-Ons
               </FormLabel>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs border-dashed border-gray-300 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
+                className="h-8 text-xs border-dashed border-stone-300 text-stone-700 hover:text-[#C81E1E] hover:bg-amber-50/50 cursor-pointer"
                 onClick={() => appendAddOn({ quantity: 1, name: "" })}
               >
                 + Add Item
@@ -577,12 +577,12 @@ export default function EditOrderForm({
               {addOnFields.map((field, index) => (
                 <div
                   key={field.id}
-                  className="flex gap-3 items-center bg-slate-50/50 p-3 rounded-md border border-slate-200"
+                  className="flex gap-3 items-center bg-stone-50/70 p-3 rounded-lg border border-stone-200"
                 >
                   <Input
                     type="number"
                     min="1"
-                    className="w-16 bg-white h-9 text-sm text-center font-medium focus-visible:ring-indigo-500"
+                    className="w-16 bg-white h-10 text-sm text-center font-medium border-stone-300"
                     {...form.register(
                       `dynamicAddOns.${index}.quantity` as const,
                       {
@@ -607,9 +607,9 @@ export default function EditOrderForm({
                         });
                       },
                     })}
-                    className="flex-1 h-9 rounded-md border border-input bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="flex-1 h-10 rounded-md border border-stone-300 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   >
-                    <option value="" className="text-gray-400">
+                    <option value="" className="text-stone-400">
                       -- Select Add-On --
                     </option>
                     {/* ONLY SHOW ADD ONS HERE FROM CMS! */}
@@ -623,7 +623,7 @@ export default function EditOrderForm({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 text-red-400 hover:bg-red-50 shrink-0 cursor-pointer"
+                    className="h-9 w-9 text-rose-500 hover:bg-rose-50 shrink-0 cursor-pointer"
                     onClick={() => removeAddOn(index)}
                   >
                     ✕
@@ -631,7 +631,7 @@ export default function EditOrderForm({
                 </div>
               ))}
               {addOnFields.length === 0 && (
-                <p className="text-sm text-gray-400 italic py-2">
+                <p className="text-sm text-stone-400 italic py-2">
                   No extra items requested.
                 </p>
               )}
@@ -639,35 +639,35 @@ export default function EditOrderForm({
           </div>
 
           {/* --- FINANCIAL ADJUSTMENTS BLOCK --- */}
-          <div className="pt-6 border-t border-slate-200 space-y-5">
+          <div className="pt-6 border-t border-stone-200 space-y-5">
             <div className="flex justify-between items-center">
-              <h3 className="text-base font-semibold text-gray-800">
+              <h3 className="text-base font-semibold text-stone-900">
                 Financial Adjustments
               </h3>
-              <span className="text-xs text-slate-400 font-medium">
+              <span className="text-xs text-stone-500 font-medium">
                 Flexible Cart • Locked Cash
               </span>
             </div>
 
             {/* Computed Read-Only Summaries */}
             <div className="space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
                 Computed Cart Summaries
               </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-md text-sm font-mono text-slate-700 flex flex-col justify-between">
-                  <span className="text-xs font-sans text-slate-500 font-medium">
+              <div className="grid grid-cols-2 gap-3.5">
+                <div className="bg-stone-50 border border-stone-200 p-3 rounded-lg text-sm font-mono text-stone-700 flex flex-col justify-between">
+                  <span className="text-xs font-sans text-stone-500 font-medium">
                     Lechon Subtotal
                   </span>
-                  <span className="text-base font-bold text-slate-800 mt-1">
+                  <span className="text-base font-bold text-stone-900 mt-1">
                     ₱{lechonSubtotal.toLocaleString()}
                   </span>
                 </div>
-                <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-md text-sm font-mono text-slate-700 flex flex-col justify-between">
-                  <span className="text-xs font-sans text-slate-500 font-medium">
+                <div className="bg-stone-50 border border-stone-200 p-3 rounded-lg text-sm font-mono text-stone-700 flex flex-col justify-between">
+                  <span className="text-xs font-sans text-stone-500 font-medium">
                     Add-Ons Total
                   </span>
-                  <span className="text-base font-bold text-indigo-700 mt-1">
+                  <span className="text-base font-bold text-amber-800 mt-1">
                     ₱{addOnsTotal.toLocaleString()}
                   </span>
                 </div>
@@ -676,20 +676,20 @@ export default function EditOrderForm({
 
             {/* Editable Adjustments */}
             <div className="space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
                 Editable Adjustments
               </p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="deliveryFee"
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="text-slate-600 font-semibold text-xs flex items-center justify-between h-5">
+                      <FormLabel className="text-stone-700 font-semibold text-xs flex items-center justify-between h-5">
                         <span className="truncate">Delivery Fee (₱)</span>
                         {(Number(fulfillment) === 0 ||
                           Number(fulfillment) === 2) && (
-                          <span className="text-[10px] text-amber-600 font-normal lowercase shrink-0">
+                          <span className="text-[10px] text-amber-700 font-normal lowercase shrink-0">
                             (locked ₱0)
                           </span>
                         )}
@@ -712,7 +712,7 @@ export default function EditOrderForm({
                           onChange={(e) =>
                             field.onChange(parseFloat(e.target.value) || 0)
                           }
-                          className="h-10 disabled:bg-slate-100 disabled:text-slate-400 font-medium"
+                          className="h-10 border-stone-300 disabled:bg-stone-100 disabled:text-stone-400 font-mono font-medium"
                         />
                       </FormControl>
                     </FormItem>
@@ -736,7 +736,7 @@ export default function EditOrderForm({
                           onChange={(e) =>
                             field.onChange(parseFloat(e.target.value) || 0)
                           }
-                          className="border-red-200 focus-visible:ring-red-400 text-red-600 h-10 font-medium"
+                          className="border-rose-200 focus-visible:ring-rose-400 text-rose-600 h-10 font-mono font-medium"
                         />
                       </FormControl>
                     </FormItem>
@@ -746,16 +746,16 @@ export default function EditOrderForm({
             </div>
 
             {/* Live Handover Preview */}
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3 shadow-inner">
-              <div className="flex justify-between items-center text-sm border-b border-slate-200 pb-2">
-                <span className="text-slate-600 font-medium">Grand Total</span>
-                <span className="font-mono font-bold text-slate-900 text-base">
+            <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 space-y-3 shadow-inner">
+              <div className="flex justify-between items-center text-sm border-b border-stone-200 pb-2">
+                <span className="text-stone-600 font-medium">Grand Total</span>
+                <span className="font-mono font-bold text-stone-900 text-base">
                   ₱{dynamicGrandTotal.toLocaleString()}
                 </span>
               </div>
 
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500 font-medium flex items-center gap-1">
+                <span className="text-stone-500 font-medium flex items-center gap-1">
                   🔒 Historical Downpayment
                 </span>
                 <span className="font-mono font-medium text-emerald-700">
@@ -763,12 +763,12 @@ export default function EditOrderForm({
                 </span>
               </div>
 
-              <div className="flex justify-between items-end pt-2 border-t border-slate-200">
+              <div className="flex justify-between items-end pt-2 border-t border-stone-200">
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                  <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">
                     Remaining Balance
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-stone-500">
                     {remainingBalance < 0
                       ? "Customer overpaid — send refund"
                       : "Amount to collect on handover"}
@@ -777,7 +777,7 @@ export default function EditOrderForm({
                 <p
                   className={`text-2xl font-black font-mono tracking-tight ${
                     remainingBalance < 0
-                      ? "text-red-600"
+                      ? "text-rose-600"
                       : "text-emerald-600"
                   }`}
                 >
@@ -790,11 +790,11 @@ export default function EditOrderForm({
           </div>
 
           {/* Form Action Footer */}
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-200 mt-6">
+          <div className="flex items-center gap-3 pt-4 border-t border-stone-200 mt-6">
             <Button
               type="button"
               variant="outline"
-              className="w-1/2 h-11 text-slate-700 hover:bg-slate-100 font-medium"
+              className="w-1/2 h-11 border-stone-300 text-stone-700 hover:bg-stone-100 font-medium"
               onClick={onClose}
               disabled={editMutation.isPending}
             >
@@ -802,7 +802,7 @@ export default function EditOrderForm({
             </Button>
             <Button
               type="submit"
-              className="w-1/2 bg-orange-600 hover:bg-orange-700 text-white font-semibold h-11 shadow-sm transition-all active:scale-[0.99]"
+              className="w-1/2 bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium h-11 shadow-sm transition-colors"
               disabled={editMutation.isPending}
             >
               {editMutation.isPending
