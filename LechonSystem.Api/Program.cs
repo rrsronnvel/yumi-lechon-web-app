@@ -37,7 +37,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:5173") 
+            policy.AllowAnyOrigin()
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
@@ -106,12 +106,11 @@ using (var scope = app.Services.CreateScope())
 // All 'app.Use...' statements stay down here!
 // ==========================================
 
-if (app.Environment.IsDevelopment())
-{
+
     app.MapOpenApi();
     app.UseSwagger();
     app.UseSwaggerUI();
-}
+
 
 // 🟢 Use CORS right before mapping routes
 app.UseCors("AllowReactApp"); 

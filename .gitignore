@@ -8,6 +8,7 @@
 *.sln.docstates
 .vs/
 _ReSharper*/
+**/publish/
 
 # ==========================================
 # 2. Frontend (React / Vite / Node.js)
@@ -28,3 +29,4 @@ pnpm-debug.log*
 .env.local
 .DS_Store
 Thumbs.db
+LechonSystem.Api/appsettings.Production.json
