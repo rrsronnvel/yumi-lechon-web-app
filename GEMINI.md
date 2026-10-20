@@ -270,3 +270,39 @@ npm run lint                         # Run ESLint validation
 * Format responses with concise, GitHub-flavored Markdown.
 * Always cite file links using clickable Markdown file URIs (e.g. `[OrderService.cs](file:///c:/Users/Cholo/Desktop/yumi-lechon-web-app/LechonSystem.Api/Services/OrderService.cs)`).
 * Never make assumptions about real-world domain math without consulting [`docs/MASTER_ALIGNMENT.md`](file:///c:/Users/Cholo/Desktop/yumi-lechon-web-app/docs/MASTER_ALIGNMENT.md).
+
+---
+
+## 📱 Mobile Architecture (`lechon-system-mobile`)
+
+* **Framework:** Expo SDK 58 (React Native 0.88), TypeScript.
+* **Scope:** Companion app for Store Owner and Cashier (Order Directory, Customer Dossier, Quick Payment Logging, Mobile POS with Screenshot Intake, and Owner Drawer Remittance).
+* **State & Networking:** TanStack Query v5 + Axios with `expo-secure-store` JWT persistence (`src/services/apiClient.ts`).
+* **Verification Gate:** `npx tsc --noEmit` inside `lechon-system-mobile/` must pass with 0 errors.
+* **Directory Mapping:**
+  ```
+  lechon-system-mobile/
+  ├── App.tsx                          # Root QueryClientProvider + AuthProvider + AuthGate
+  └── src/
+      ├── context/
+      │   └── AuthContext.tsx          # 12-hour shift JWT hydration, role flags, API switcher
+      ├── services/
+      │   └── apiClient.ts             # Cloud/Local AVD base URL switcher & token interceptors
+      ├── components/
+      │   ├── MainShell.tsx            # 3-tab mobile shell (Orders, New POS, Drawer) + top HUD
+      │   └── OrderDossierModal.tsx    # 3-second customer dossier, tel: dialer, payment & cancel modals
+      ├── screens/
+      │   ├── LoginScreen.tsx          # Shift login with API switcher pill & 1-tap demo presets
+      │   ├── OrdersScreen.tsx         # Debounced Master Order Directory & status filter chips
+      │   ├── PosScreen.tsx            # AI Screenshot & Text POS Terminal with tri-modal bouncer
+      │   └── DrawerScreen.tsx         # 2-Hop Cash Custody & Tri-Modal Settlement Hub
+      ├── hooks/
+      │   ├── useOrders.ts             # Directory search, dossier fetch, manual pay & cancel mutations
+      │   ├── usePos.ts                # Catalog, inventory balances, screenshot parser & order creation
+      │   └── useManifest.ts           # Rider/Pickup/Lalamove settlements & 2-Hop QR custody mutations
+      └── utils/
+          ├── messengerTemplates.ts    # Taglish Messenger confirmation receipt generator
+          └── messengerTextParser.ts   # Client-side heuristic parser for pasted Messenger text
+  ```
+
+

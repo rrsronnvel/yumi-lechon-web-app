@@ -293,6 +293,23 @@
   
   
 
+#### Mobile Companion App (`lechon-system-mobile` — Expo SDK 58 / React Native 0.88 / TypeScript):
+
+- lechon-system-mobile/App.tsx: Root application entry point wrapping `SafeAreaProvider`, `QueryClientProvider`, `AuthProvider`, and `AuthGate`.
+- lechon-system-mobile/src/services/apiClient.ts: Axios client with persistent `expo-secure-store` JWT Bearer interceptor, 401 unauthorized listener, and live toggle between Cloud API (`https://ronnvel-001-site1.ktempurl.com/api`) and Local Android Emulator API (`http://10.0.2.2:5199/api`).
+- lechon-system-mobile/src/context/AuthContext.tsx: 12-hour shift session provider managing user identity, `isOwner` flag, and API environment state.
+- lechon-system-mobile/src/components/MainShell.tsx: Authenticated 3-tab mobile shell (`📋 Orders`, `➕ New POS`, `👑 Drawer`) with compact top shift HUD.
+- lechon-system-mobile/src/components/OrderDossierModal.tsx: Slide-up customer dossier modal with 1-tap `tel:` calling for customer and rider, Taglish Messenger receipt copier, quick manual payment modal, and mandatory-reason cancellation modal.
+- lechon-system-mobile/src/screens/LoginScreen.tsx: Mobile shift login screen with API environment switcher pill and 1-tap Owner/Cashier demo credential buttons.
+- lechon-system-mobile/src/screens/OrdersScreen.tsx: Reactive Master Order Directory with 300ms debounced search, 6 server-side filter tabs, and pull-to-refresh.
+- lechon-system-mobile/src/screens/PosScreen.tsx: Single-column touch POS terminal featuring AI Screenshot (`expo-image-picker` -> `POST /orders/parse-screenshot`) and Clipboard Text (`expo-clipboard`) intake bridge, tri-modal fulfillment bouncer, live stock badges, unified roast + add-on cart, sticky handover balance footer, and post-submit Messenger receipt confirmation modal.
+- lechon-system-mobile/src/screens/DrawerScreen.tsx: 2-Hop Cash Custody & Tri-Modal Settlement Center supporting Hop 2 Owner Envelope Verification ("The Speed Bump"), Hop 1 Rider Settlement (2s QR polling + Safeguard 1 discrepancy rejection + Manual Override + Direct Store GCash), Walk-in Pickup Counter Collection, Safeguard 3 Custody Reversion ("Undo"), and Lalamove Pre-Release Gate.
+- lechon-system-mobile/src/hooks/useOrders.ts: Hooks and mutations for mobile order directory, customer dossier, audit logs, manual payment logging, and order cancellation.
+- lechon-system-mobile/src/hooks/usePos.ts: Hooks and mutations for catalog categories, inventory balances, multipart screenshot parsing, and POS order creation.
+- lechon-system-mobile/src/hooks/useManifest.ts: Hooks and mutations for Rider, Pickup, and Lalamove settlements and 2-hop QR custody handshakes.
+- lechon-system-mobile/src/utils/messengerTemplates.ts: Mobile Taglish Messenger confirmation receipt builder.
+- lechon-system-mobile/src/utils/messengerTextParser.ts: Client-side heuristic parser converting pasted Messenger order text into `ParsedOrderDraftDto`.
+
 ### 2. API Contract Map
 
 #### Orders & Ledger Domain (OrdersController.cs)

@@ -1,0 +1,175 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import apiClient from '../services/apiClient';
+
+export interface OrderDirectoryDto {
+  id: number;
+  customerName: string;
+  contactNumber: string;
+  deliveryAddress: string;
+  fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
+  routingStatus: string; // "Unassigned", "Assigned", "Delivered"
+  targetDeliveryTime: string;
+  grandTotal: number;
+  downpayment: number;
+  balanceDue: number;
+  isTrustedCustomer: boolean;
+  isCancelled: boolean;
+  cancellationReason?: string | null;
+  createdBy: string;
+  updatedAt?: string | null;
+  hasRecentEdits: boolean;
+}
+
+export interface OrderDetailCategoryDto {
+  id: number;
+  name: string;
+  basePrice: number;
+  minimumWeightKg: number;
+  maximumWeightKg: number;
+}
+
+export interface OrderDetailItemDto {
+  id: number;
+  orderId: number;
+  itemCategoryId: number;
+  quantity: number;
+  price: number;
+  totalPrice: number;
+  itemCategory?: OrderDetailCategoryDto | null;
+}
+
+export interface OrderDetailsDto {
+  id: number;
+  customerName: string;
+  contactNumber: string;
+  source: string;
+  deliveryAddress: string;
+  remarks?: string | null;
+  price: number;
+  addOns?: string | null;
+  deliveryFee: number;
+  downpayment: number;
+  discount: number;
+  grandTotal: number;
+  balanceDue: number;
+  isTrustedCustomer: boolean;
+  targetDeliveryTime: string;
+  isDeliveryDetailsConfirmed: boolean;
+  isCancelled: boolean;
+  cancellationReason?: string | null;
+  isPriceWaived: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string | null;
+  fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
+  routingStatus: string; // "Unassigned", "Assigned", "Delivered"
+  deliveryTripId?: number | null;
+  assignedRiderName?: string | null;
+  assignedRiderPhone?: string | null;
+  orderItems: OrderDetailItemDto[];
+}
+
+export interface OrderAuditLogDto {
+  id: number;
+  orderId: number;
+  actionType: string;
+  changes: string;
+  changeDescription?: string;
+  changedBy: string;
+  timestamp: string;
+}
+
+export interface RecordManualPaymentPayload {
+  orderId: number;
+  amount: number;
+  paymentMethod: 'GCash' | 'Cash' | 'BankTransfer' | string;
+  referenceNumber?: string;
+}
+
+export interface CancelOrderPayload {
+  id: number;
+  reason: string;
+}
+
+export const useOrdersDirectory = (
+  searchTerm: string = '',
+  filterTab: string = 'upcoming'
+) => {
+  return useQuery<OrderDirectoryDto[]>({
+    queryKey: ['orders', 'directory', { searchTerm, filterTab }],
+    queryFn: async () => {
+      const response = await apiClient.get<OrderDirectoryDto[]>('/orders/directory', {
+        params: {
+          searchTerm: searchTerm.trim() || undefined,
+          filterTab: filterTab || undefined,
+        },
+      });
+      return response.data;
+    },
+    staleTime: 1000 * 30,
+  });
+};
+
+export const useOrderDetails = (orderId: number | null) => {
+  return useQuery<OrderDetailsDto>({
+    queryKey: ['orders', 'details', orderId],
+    queryFn: async () => {
+      const response = await apiClient.get<OrderDetailsDto>(`/orders/${orderId}`);
+      return response.data;
+    },
+    enabled: orderId !== null,
+  });
+};
+
+export const useOrderAuditLogs = (orderId: number | null) => {
+  return useQuery<OrderAuditLogDto[]>({
+    queryKey: ['orders', 'audit-logs', orderId],
+    queryFn: async () => {
+      const response = await apiClient.get<OrderAuditLogDto[]>(
+        `/orders/${orderId}/audit-logs`
+      );
+      return response.data;
+    },
+    enabled: orderId !== null,
+  });
+};
+
+export const useRecordManualPaymentMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: RecordManualPaymentPayload) => {
+      const response = await apiClient.post('/internal/payments/manual', {
+        orderId: payload.orderId,
+        amount: payload.amount,
+        paymentMethod: payload.paymentMethod,
+        referenceNumber: payload.referenceNumber?.trim() || undefined,
+        referenceId: payload.referenceNumber?.trim() || '',
+      });
+      return response.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'directory'] });
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'details'] });
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] });
+    },
+  });
+};
+
+export const useCancelOrderMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, reason }: CancelOrderPayload) => {
+      const response = await apiClient.patch(`/orders/${id}/cancel`, {
+        reason: reason.trim(),
+      });
+      return response.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'directory'] });
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'details'] });
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] });
+    },
+  });
+};
