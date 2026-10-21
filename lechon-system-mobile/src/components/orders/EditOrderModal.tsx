@@ -572,15 +572,15 @@ export default function EditOrderModal({
               <Text style={styles.fieldLabel}>Event Type (Optional)</Text>
               <View style={styles.pillsWrapRow}>
                 {EVENT_TYPE_PILLS.map((pill) => {
-                  const active = eventType === pill;
+                  const active = eventType === pill.id;
                   return (
                     <Pressable
-                      key={pill}
+                      key={pill.id}
                       style={[
                         styles.metaSelectChip,
                         active && styles.metaSelectChipActive,
                       ]}
-                      onPress={() => setEventType(active ? '' : pill)}
+                      onPress={() => setEventType(active ? '' : pill.id)}
                     >
                       <Text
                         style={[
@@ -588,7 +588,7 @@ export default function EditOrderModal({
                           active && styles.metaSelectChipTextActive,
                         ]}
                       >
-                        {pill}
+                        {pill.label}
                       </Text>
                     </Pressable>
                   );
@@ -678,9 +678,9 @@ export default function EditOrderModal({
             </View>
 
             {/* Target Date & Time */}
-            <View style={styles.twoColRow}>
+            <View style={[styles.twoColRow, { alignItems: 'flex-end', gap: 12 }]}>
               <View style={styles.colHalf}>
-                <Text style={styles.fieldLabel}>Date (YYYY-MM-DD)</Text>
+                <Text style={styles.fieldLabel} numberOfLines={1}>Date (YYYY-MM-DD)</Text>
                 <TextInput
                   style={styles.textInput}
                   value={targetDate}
@@ -870,9 +870,9 @@ export default function EditOrderModal({
               💰 Financials (Locked Cash Rule)
             </Text>
 
-            <View style={styles.twoColRow}>
+            <View style={[styles.twoColRow, { alignItems: 'flex-end', gap: 12 }]}>
               <View style={styles.colHalf}>
-                <Text style={styles.fieldLabel}>
+                <Text style={styles.fieldLabel} numberOfLines={1}>
                   Delivery Fee (₱) {fulfillment !== 1 ? '(Locked)' : ''}
                 </Text>
                 <TextInput
@@ -888,8 +888,8 @@ export default function EditOrderModal({
               </View>
 
               <View style={styles.colHalf}>
-                <Text style={styles.fieldLabel}>
-                  Est. Distance (KM) • ₱{baseFare}+₱{ratePerKm}/km
+                <Text style={styles.fieldLabel} numberOfLines={1}>
+                  Est. Distance (KM)
                 </Text>
                 <TextInput
                   style={[
@@ -906,20 +906,28 @@ export default function EditOrderModal({
               </View>
             </View>
 
-            <View style={styles.twoColRow}>
+            {fulfillment === 1 && (
+              <Text style={{ fontSize: 11, color: '#78716C', marginTop: 4, marginBottom: 4, marginLeft: 2 }}>
+                Rate: ₱{baseFare} base + ₱{ratePerKm}/km
+              </Text>
+            )}
+
+            <View style={[styles.twoColRow, { alignItems: 'flex-end', gap: 12, marginTop: 4 }]}>
               <View style={styles.colHalf}>
-                <Text style={styles.fieldLabel}>Courtesy Discount (₱)</Text>
+                <Text style={styles.fieldLabel} numberOfLines={1}>Courtesy Discount (₱)</Text>
                 <TextInput
                   style={styles.textInput}
                   keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor="#A8A29E"
                   value={discount}
                   onChangeText={setDiscount}
                 />
               </View>
 
               <View style={styles.colHalf}>
-                <Text style={styles.fieldLabel}>
-                  🔒 Logged Downpayment (Read-Only)
+                <Text style={styles.fieldLabel} numberOfLines={1}>
+                  🔒 Downpayment (Locked)
                 </Text>
                 <TextInput
                   style={[styles.textInput, styles.lockedInput]}

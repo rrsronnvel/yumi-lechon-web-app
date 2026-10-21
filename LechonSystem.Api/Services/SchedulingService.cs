@@ -79,7 +79,8 @@ namespace LechonSystem.Api.Services
                     eventType = s.OrderItem!.Order!.EventType,
                     landmark = s.OrderItem!.Order!.Landmark,
                     size = s.OrderItem!.ItemCategory!.Name,
-                    weight = s.OrderItem!.ItemCategory != null ? $"{s.OrderItem.ItemCategory.MinimumWeightKg}-{s.OrderItem.ItemCategory.MaximumWeightKg} kg" : "-",
+                    minWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MinimumWeightKg : 0,
+                    maxWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MaximumWeightKg : 0,
 
                     // TIMINGS
                     targetDeliveryTime = s.TargetDeliveryTime.ToString("o"),
@@ -113,7 +114,41 @@ namespace LechonSystem.Api.Services
                 })
                 .ToListAsync();
 
-            return items;
+            return items.Select(s => new
+            {
+                s.id,
+                s.orderItemId,
+                s.orderId,
+                s.orderReference,
+                s.customerName,
+                s.facebookName,
+                s.source,
+                s.eventType,
+                s.landmark,
+                s.size,
+                weight = (s.minWeight > 0 || s.maxWeight > 0)
+                    ? (s.minWeight == s.maxWeight
+                        ? $"{s.minWeight:0.##}"
+                        : $"{s.minWeight:0.##}-{s.maxWeight:0.##}")
+                    : "-",
+                s.targetDeliveryTime,
+                s.riderDepartureTime,
+                s.tahiStartTime,
+                s.salangStartTime,
+                s.packagingStartTime,
+                s.location,
+                s.remarks,
+                s.addOns,
+                s.price,
+                s.deliveryFee,
+                s.downpayment,
+                s.grandTotal,
+                s.fulfillment,
+                s.quantity,
+                s.riderName,
+                s.status,
+                s.isManualOverride
+            });
         }
 
         public async Task<OrderItemSchedule> OverrideScheduleItemAsync(int orderItemId, OverrideScheduleRequest request)

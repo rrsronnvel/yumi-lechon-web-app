@@ -535,7 +535,38 @@ To align the software platform with the official Yumi's Lechon brand identity (`
 
 To accelerate telephone and social media order intake, the POS Form supports automated field hydration via multimodal computer vision parsing of Facebook Messenger chat screenshots.
 
-#### 12.1 Operational Parsing Rules
+#### 12.1 Operational Parsing Rules (High-Precision Vision Parser)
+
+- **Human-in-the-Loop Isolation:** Automated screenshot parsing is strictly an assistive form-filling tool. The parser NEVER directly mutates database records or commits inventory holds. All extracted data is loaded into the active POS form draft for manual verification and confirmation by the cashier prior to submission.
+- **Header vs. Body Identity Separation:**
+  - `FacebookName` (Header Extraction): Extracts the Messenger profile name shown in the top navigation bar/header (e.g., `"Macel Obina Mendoza"`).
+  - `CustomerName` (Body Extraction): Extracts the recipient name labeled inside the booking slip body (e.g., `"Name : Macel Mendoza"` -> `"Macel Mendoza"`).
+- **Dedicated Metadata Isolation & Strict Kitchen Sanitation:**
+  - Primary phone (`CP # 1`) maps to `ContactNumber`.
+  - `Landmark` (Dedicated Landmark): Any text labeled `"Landmark :"` or drop-off guide (e.g., `"Paseo de carmona"`) is extracted directly into `Landmark` and NEVER placed inside `Remarks`.
+  - `EventType` (Dedicated Event Type): Any text labeled `"Type of Event :"` or `"Event :"` (e.g., `"Anniversary"`, `"Birthday"`, `"Fiesta"`, `"Wedding"`, `"Corporate"`) is extracted directly into `EventType` and NEVER placed inside `Remarks`.
+  - `Remarks` (Strict Kitchen Sanitation): Strictly reserved for kitchen preparation, roasting, or packaging instructions (e.g., `"walang dinuguan"`, `"print shoutout banner"`, `"extra crispy skin"`, `"liver sauce only"`) plus any secondary phone number (`CP # 2`). If no kitchen-specific prep request or secondary phone number exists, `Remarks` MUST be an empty string `""`.
+- **Fulfillment, Delivery Fee & Downpayment Extraction:**
+  - If fulfillment is Store Pickup (`0`) or Lalamove (`2`), `DeliveryFee` is forced to `₱0` and locked.
+  - If fulfillment is Delivery (`1`), explicitly stated delivery charges (e.g., `"Deliver Charge : 0"` -> `0`, `"Delivery Charge : 565"` -> `565`) populate `DeliveryFee`.
+  - Downpayments marked as `"paid"` or `"fully paid"` populate `Downpayment`.
+
+#### 12.2 Customer Profile Intelligence Engine (Preferences & Complaint Radar)
+
+To prevent repeat service issues and surface recurring customer preferences during order intake, the platform maintains a reactive `CustomerProfile` intelligence registry:
+
+1. **Automated Order Upsert & Lazy Historical Seeding:**
+   - Indexed uniquely on normalized `ContactNumber` (`CustomerProfiles` table).
+   - Every order created via `OrderService.CreateOrderAsync` automatically creates or updates the matching `CustomerProfile`, incrementing `TotalOrdersCount`, updating `FullName`, `FacebookName`, `DefaultAddress`, and `DefaultLandmark`, and preserving `IsVip`.
+   - When looking up a phone number or Facebook name that predates `CustomerProfiles`, `CustomerService.LookupCustomerAsync` lazily aggregates historical non-cancelled orders from `Orders` so repeat customers are recognized immediately.
+2. **Reactive POS Intake Radar (`GET /api/customers/lookup`):**
+   - As the cashier types or scans a `ContactNumber` ($\ge 7$ digits) or `FacebookName` ($\ge 3$ chars) in either the Web or Mobile POS terminal (debounced 300ms), the UI queries `GET /api/customers/lookup`.
+   - When a matching profile is found, the POS surfaces:
+     - **Repeat Customer Pill:** `⭐ Repeat Customer • X past orders` (and `👑 Known VIP` if applicable).
+     - **Complaint Alert Banner:** `⚠️ Previous Issue Logged: {ComplaintHistory}` in high-contrast rose/amber when `ComplaintHistory` is non-empty.
+     - **Customer Preference Banner:** `💡 Customer Preference: {Preferences}` in blue when `Preferences` is non-empty.
+3. **In-Dossier Feedback & Notes Management (`PUT /api/customers/{id}/notes` & `PUT /api/customers/by-phone/{phone}/notes`):**
+   - Both the Web Customer Dossier Sheet (`OrdersPage.tsx`) and Mobile Customer Dossier Modal (`OrderDossierModal.tsx`) render a dedicated **Customer Intelligence & Feedback** card displaying Lifetime Orders Count, Known Preferences, and Logged Complaints, with an `[✏️ Update Customer Notes]` editor for Cashiers and Owners.
 
 - Human-in-the-Loop Isolation: Automated screenshot parsing is strictly an assistive form-filling tool. The parser NEVER directly mutates database records or commits inventory holds. All extracted data is loaded into the active React Hook Form draft for manual verification and confirmation by the cashier prior to submission.
 - Sizing Tier Resolution:

@@ -45,6 +45,15 @@ namespace LechonSystem.Api.Services
                 ? request.TargetDeliveryTime
                 : (request.RiderDepartureTime ?? request.TargetDeliveryTime);
 
+            var rawContactNumber = !string.IsNullOrWhiteSpace(request.ContactNumber)
+                ? request.ContactNumber
+                : request.CustomerPhone;
+            var normalizedPhone = CustomerService.NormalizePhoneNumber(rawContactNumber);
+
+            var resolvedDeliveryAddress = !string.IsNullOrWhiteSpace(request.DeliveryAddress)
+                ? request.DeliveryAddress
+                : request.Address;
+
             var order = new Order
             {
                 // -- Core Details --
@@ -57,8 +66,8 @@ namespace LechonSystem.Api.Services
                 IsDeliveryDetailsConfirmed = false,
 
                 // -- 🚀 NEW MAPPINGS HERE --
-                ContactNumber = request.CustomerPhone,
-                DeliveryAddress = request.Address,
+                ContactNumber = !string.IsNullOrWhiteSpace(normalizedPhone) ? normalizedPhone : rawContactNumber,
+                DeliveryAddress = resolvedDeliveryAddress,
                 Landmark = request.Landmark,
                 Source = request.Source,
                 EventType = request.EventType,
@@ -74,6 +83,48 @@ namespace LechonSystem.Api.Services
                 GrandTotal = request.GrandTotal,
                 CreatedBy = CurrentUser
             };
+
+            if (!string.IsNullOrWhiteSpace(normalizedPhone))
+            {
+                var profile = await _context.CustomerProfiles
+                    .FirstOrDefaultAsync(c => c.ContactNumber == normalizedPhone || c.ContactNumber == rawContactNumber);
+
+                if (profile != null)
+                {
+                    profile.TotalOrdersCount += 1;
+                    profile.FullName = request.CustomerName;
+                    profile.FacebookName = !string.IsNullOrWhiteSpace(request.FacebookName)
+                        ? request.FacebookName.Trim()
+                        : profile.FacebookName;
+                    profile.DefaultAddress = !string.IsNullOrWhiteSpace(resolvedDeliveryAddress)
+                        ? resolvedDeliveryAddress.Trim()
+                        : profile.DefaultAddress;
+                    profile.DefaultLandmark = !string.IsNullOrWhiteSpace(request.Landmark)
+                        ? request.Landmark.Trim()
+                        : profile.DefaultLandmark;
+                    profile.IsVip = request.IsTrustedCustomer || profile.IsVip;
+                    profile.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    var priorOrdersCount = await _context.Orders
+                        .CountAsync(o => !o.IsCancelled && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawContactNumber));
+
+                    var newProfile = new CustomerProfile
+                    {
+                        ContactNumber = normalizedPhone,
+                        FullName = request.CustomerName,
+                        FacebookName = string.IsNullOrWhiteSpace(request.FacebookName) ? null : request.FacebookName.Trim(),
+                        DefaultAddress = string.IsNullOrWhiteSpace(resolvedDeliveryAddress) ? null : resolvedDeliveryAddress.Trim(),
+                        DefaultLandmark = string.IsNullOrWhiteSpace(request.Landmark) ? null : request.Landmark.Trim(),
+                        IsVip = request.IsTrustedCustomer,
+                        TotalOrdersCount = priorOrdersCount + 1,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    _context.CustomerProfiles.Add(newProfile);
+                }
+            }
 
             var categoryIds = request.Items.Select(i => i.ItemCategoryId).Distinct().ToList();
             var categories = await _context.ItemCategories
@@ -611,6 +662,33 @@ namespace LechonSystem.Api.Services
                     .AsNoTracking()
                     .FirstOrDefaultAsync(r => r.FullName == trip.RiderName);
                 dto.AssignedRiderPhone = rider?.PhoneNumber;
+            }
+
+            var normalizedOrderPhone = CustomerService.NormalizePhoneNumber(order.ContactNumber);
+            if (!string.IsNullOrWhiteSpace(normalizedOrderPhone))
+            {
+                var customerProfile = await _context.CustomerProfiles
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.ContactNumber == normalizedOrderPhone || c.ContactNumber == order.ContactNumber);
+
+                if (customerProfile != null)
+                {
+                    dto.CustomerProfileId = customerProfile.Id;
+                    dto.CustomerTotalOrdersCount = Math.Max(1, customerProfile.TotalOrdersCount);
+                    dto.CustomerPreferences = customerProfile.Preferences;
+                    dto.CustomerComplaintHistory = customerProfile.ComplaintHistory;
+                }
+                else
+                {
+                    var count = await _context.Orders
+                        .AsNoTracking()
+                        .CountAsync(o => !o.IsCancelled && (o.ContactNumber == normalizedOrderPhone || o.ContactNumber == order.ContactNumber));
+                    dto.CustomerTotalOrdersCount = Math.Max(1, count);
+                }
+            }
+            else
+            {
+                dto.CustomerTotalOrdersCount = 1;
             }
 
             return dto;

@@ -77,6 +77,10 @@ export interface OrderDetailsDto {
   deliveryTripId?: number | null;
   assignedRiderName?: string | null;
   assignedRiderPhone?: string | null;
+  customerProfileId?: number | null;
+  customerTotalOrdersCount?: number;
+  customerPreferences?: string | null;
+  customerComplaintHistory?: string | null;
   orderItems: OrderDetailItemDto[];
 }
 

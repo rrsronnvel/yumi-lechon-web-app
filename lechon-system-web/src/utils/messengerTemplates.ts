@@ -32,11 +32,13 @@ export const SOURCE_PILLS = [
 ] as const;
 
 export const EVENT_TYPE_PILLS = [
-  "Birthday",
-  "Fiesta",
-  "Wedding",
-  "Corporate",
-  "Other",
+  { id: "Birthday", label: "🎂 Birthday" },
+  { id: "Anniversary", label: "🎉 Anniversary" },
+  { id: "Binyag", label: "👶 Binyag" },
+  { id: "Wedding", label: "💍 Wedding" },
+  { id: "Fiesta", label: "🎆 Fiesta" },
+  { id: "Corporate", label: "🏢 Corporate" },
+  { id: "Other", label: "✨ Other" },
 ] as const;
 
 export const RIDER_DEPARTURE_NUDGE_PILLS = [

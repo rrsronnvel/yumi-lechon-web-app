@@ -30,6 +30,7 @@ builder.Services.AddScoped<INotificationSender, SmsNotificationService>();
 builder.Services.AddScoped<ICmsService, CmsService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IAiIntakeParserService, AiIntakeParserService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
 
 // 🟢 MOVE CORS CONFIGURATION HERE (Before builder.Build)
 builder.Services.AddCors(options =>

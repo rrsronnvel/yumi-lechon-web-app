@@ -19,7 +19,7 @@ interface LoginResponse {
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, apiEnv, apiBaseUrl, switchApiEnv } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -122,6 +122,47 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent>
+            {/* Target Backend Environment Switcher Pill */}
+            <div className="bg-[#120E0D] border border-stone-800 rounded-xl p-3 mb-4 space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-bold tracking-wider text-stone-400 uppercase">
+                <span>Target Backend Environment</span>
+                <span className="font-mono text-amber-400/90 text-[10px] truncate max-w-[200px]" title={apiBaseUrl}>
+                  {apiBaseUrl}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => switchApiEnv("cloud")}
+                  aria-pressed={apiEnv === "cloud"}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    apiEnv === "cloud"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 shadow-xs"
+                      : "bg-stone-900/60 text-stone-400 hover:text-stone-200 border border-stone-800 hover:border-stone-700"
+                  }`}
+                >
+                  <span>☁️ Live Cloud</span>
+                  {apiEnv === "cloud" && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchApiEnv("local")}
+                  aria-pressed={apiEnv === "local"}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    apiEnv === "local"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 shadow-xs"
+                      : "bg-stone-900/60 text-stone-400 hover:text-stone-200 border border-stone-800 hover:border-stone-700"
+                  }`}
+                >
+                  <span>💻 Local (5199)</span>
+                  {apiEnv === "local" && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  )}
+                </button>
+              </div>
+            </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               {errorMessage && (
                 <div

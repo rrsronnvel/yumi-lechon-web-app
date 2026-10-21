@@ -431,11 +431,11 @@ export default function EditOrderForm({
               control={form.control}
               name="source"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="col-span-1 sm:col-span-2">
                   <FormLabel className="text-xs font-semibold text-stone-700">
                     Booking Source
                   </FormLabel>
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                     {SOURCE_PILLS.map((pill) => {
                       const isSelected = watchedSource === pill;
                       return (
@@ -445,11 +445,12 @@ export default function EditOrderForm({
                           onClick={() => {
                             field.onChange(isSelected ? "" : pill);
                           }}
-                          className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                          className={cn(
+                            "px-2.5 py-1.5 rounded-md text-xs font-semibold border transition-colors cursor-pointer text-center flex items-center justify-center",
                             isSelected
                               ? "bg-[#C81E1E] text-white border-[#C81E1E]"
                               : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
-                          }`}
+                          )}
                         >
                           {pill}
                         </button>
@@ -468,23 +469,24 @@ export default function EditOrderForm({
                   <FormLabel className="text-xs font-semibold text-stone-700">
                     Event Type (Optional)
                   </FormLabel>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1.5 pt-1">
                     {EVENT_TYPE_PILLS.map((pill) => {
-                      const isSelected = watchedEventType === pill;
+                      const isSelected = watchedEventType === pill.id;
                       return (
                         <button
-                          key={pill}
+                          key={pill.id}
                           type="button"
                           onClick={() => {
-                            field.onChange(isSelected ? "" : pill);
+                            field.onChange(isSelected ? "" : pill.id);
                           }}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors cursor-pointer",
                             isSelected
                               ? "bg-amber-600 text-white border-amber-600"
                               : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
-                          }`}
+                          )}
                         >
-                          🎉 {pill}
+                          {pill.label}
                         </button>
                       );
                     })}
@@ -502,21 +504,21 @@ export default function EditOrderForm({
                     Delivery Method
                   </FormLabel>
                   <FormControl>
-                    <div className="grid grid-cols-3 w-full p-1 bg-stone-100 rounded-lg border border-stone-200 gap-1">
+                    <div className="grid grid-cols-3 w-full p-1 bg-stone-100 rounded-lg border border-stone-200 gap-1 overflow-hidden">
                       <button
                         type="button"
                         onClick={() => {
                           field.onChange(1);
                         }}
                         className={cn(
-                          "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          "min-w-0 flex items-center justify-center gap-1 sm:gap-1.5 h-10 px-1 sm:px-2 text-xs font-semibold rounded-md transition-all cursor-pointer overflow-hidden",
                           Number(field.value) === 1
                             ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
                             : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60",
                         )}
                       >
                         <span className="text-sm shrink-0">🚗</span>
-                        <span className="truncate">Delivery</span>
+                        <span className="truncate">Freelance Delivery</span>
                       </button>
 
                       <button
@@ -533,7 +535,7 @@ export default function EditOrderForm({
                           });
                         }}
                         className={cn(
-                          "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          "min-w-0 flex items-center justify-center gap-1 sm:gap-1.5 h-10 px-1 sm:px-2 text-xs font-semibold rounded-md transition-all cursor-pointer overflow-hidden",
                           Number(field.value) === 0
                             ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
                             : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60",
@@ -557,7 +559,7 @@ export default function EditOrderForm({
                           });
                         }}
                         className={cn(
-                          "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                          "min-w-0 flex items-center justify-center gap-1 sm:gap-1.5 h-10 px-1 sm:px-2 text-xs font-semibold rounded-md transition-all cursor-pointer overflow-hidden",
                           Number(field.value) === 2
                             ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
                             : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60",

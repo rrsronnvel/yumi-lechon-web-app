@@ -30,6 +30,7 @@ public class LechonDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<SettlementQrSession> SettlementQrSessions => Set<SettlementQrSession>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<CustomerProfile> CustomerProfiles => Set<CustomerProfile>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -137,5 +138,9 @@ public class LechonDbContext : DbContext
         modelBuilder.Entity<SettlementQrSession>()
                 .HasIndex(s => s.Token)
                 .IsUnique();
+
+        modelBuilder.Entity<CustomerProfile>()
+            .HasIndex(c => c.ContactNumber)
+            .IsUnique();
     }
 }

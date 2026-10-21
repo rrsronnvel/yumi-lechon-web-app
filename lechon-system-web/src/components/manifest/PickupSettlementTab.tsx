@@ -84,7 +84,7 @@ export function PickupSettlementTab() {
             <thead>
               <tr className="border-b border-stone-200 bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs">
                 <th className="px-3 py-3">Customer</th>
-                <th className="px-3 py-3">Contact Number</th>
+
                 <th className="px-3 py-3">Pickup Time</th>
                 <th className="px-3 py-3">Address / Landmark</th>
                 <th className="px-3 py-3">Custody Status</th>
@@ -100,7 +100,7 @@ export function PickupSettlementTab() {
               {pickups.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={8}
                     className="p-10 text-center text-stone-500"
                   >
                     🎉 No store pickup balances pending settlement.
@@ -128,11 +128,17 @@ export function PickupSettlementTab() {
                       }`}
                     >
                       {/* Customer Column */}
-                      <td className="px-3 py-2.5 min-w-[140px] max-w-[200px]">
+                      <td className="px-3 py-2.5 min-w-[150px] max-w-[220px]">
                         <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono text-xs font-semibold text-stone-500">
                               #{pickup.orderId}
+                            </span>
+                            <span
+                              className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
+                              title={pickup.customerName}
+                            >
+                              {pickup.customerName}
                             </span>
                             {pickup.isTrustedCustomer && (
                               <Badge
@@ -143,28 +149,32 @@ export function PickupSettlementTab() {
                               </Badge>
                             )}
                           </div>
-                          <span
-                            className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
-                            title={pickup.customerName}
-                          >
-                            {pickup.customerName}
+                          <span className="text-xs text-stone-500 font-mono">
+                            {pickup.contactNumber || "—"}
                           </span>
                         </div>
                       </td>
 
-                      {/* Contact Number */}
-                      <td className="px-3 py-3 font-mono text-stone-600 whitespace-nowrap">
-                        {pickup.contactNumber || "—"}
-                      </td>
-
                       {/* Pickup Time */}
-                      <td className="px-3 py-3 text-stone-700 whitespace-nowrap">
+                      <td className="px-3 py-3 text-stone-700 whitespace-nowrap text-xs">
                         {formattedPickupTime}
                       </td>
 
                       {/* Address / Landmark */}
-                      <td className="px-3 py-3 text-stone-500 max-w-[180px] lg:max-w-[220px] truncate" title={pickup.address || pickup.remarks || "Store Counter"}>
-                        {pickup.address || pickup.remarks || "Store Counter"}
+                      <td className="px-3 py-3 max-w-[220px] break-words text-xs">
+                        <div className="text-stone-700 font-medium">
+                          {pickup.address || "Store Counter"}
+                        </div>
+                        {pickup.landmark && (
+                          <div className="text-stone-400 text-[11px] italic mt-0.5">
+                            📍 {pickup.landmark}
+                          </div>
+                        )}
+                        {!pickup.address && pickup.remarks && (
+                          <div className="text-stone-400 text-[11px] italic mt-0.5">
+                            {pickup.remarks}
+                          </div>
+                        )}
                       </td>
 
                       {/* Custody Status Badge */}

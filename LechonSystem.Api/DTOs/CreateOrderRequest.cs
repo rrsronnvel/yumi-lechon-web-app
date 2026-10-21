@@ -9,6 +9,7 @@ namespace LechonSystem.Api.DTOs
         public string CustomerName { get; set; } = string.Empty;
         public string? FacebookName { get; set; }
         public string CustomerPhone { get; set; } = string.Empty;
+        public string? ContactNumber { get; set; }
         public string Source { get; set; } = string.Empty;
         public string? EventType { get; set; }
         public DateTime TargetDeliveryTime { get; set; }
@@ -16,6 +17,7 @@ namespace LechonSystem.Api.DTOs
         
         // -- 🚀 NEW POS FIELDS ADDED HERE --
         public string Address { get; set; } = string.Empty;
+        public string? DeliveryAddress { get; set; }
         public string? Landmark { get; set; }
         public string? Remarks { get; set; }
         public decimal Price { get; set; }

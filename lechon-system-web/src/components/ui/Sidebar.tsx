@@ -12,7 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 
 export default function Sidebar() {
   const location = useLocation();
-  const { user, isOwner, logout } = useAuth();
+  const { user, isOwner, logout, apiEnv, apiBaseUrl, switchApiEnv } = useAuth();
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -77,6 +77,44 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Target API Environment Switcher */}
+      <div className="px-3.5 py-2.5 border-t border-stone-800/80 bg-stone-950/40">
+        <div className="flex items-center justify-between mb-1.5 text-[10px] font-bold text-stone-400 tracking-wider uppercase">
+          <span>Target API</span>
+          <span className="text-[9px] font-mono text-amber-400/80 truncate max-w-[110px]" title={apiBaseUrl}>
+            {apiEnv === "cloud" ? "Cloud" : "localhost:5199"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => switchApiEnv("cloud")}
+            aria-pressed={apiEnv === "cloud"}
+            className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+              apiEnv === "cloud"
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 shadow-2xs"
+                : "bg-stone-900/60 text-stone-400 hover:text-stone-200 border border-stone-800 hover:border-stone-700"
+            }`}
+          >
+            <span>☁️ Live Cloud</span>
+            {apiEnv === "cloud" && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => switchApiEnv("local")}
+            aria-pressed={apiEnv === "local"}
+            className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+              apiEnv === "local"
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 shadow-2xs"
+                : "bg-stone-900/60 text-stone-400 hover:text-stone-200 border border-stone-800 hover:border-stone-700"
+            }`}
+          >
+            <span>💻 Local (5199)</span>
+            {apiEnv === "local" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+          </button>
+        </div>
+      </div>
 
       {/* Bottom User HUD Card */}
       {user && (

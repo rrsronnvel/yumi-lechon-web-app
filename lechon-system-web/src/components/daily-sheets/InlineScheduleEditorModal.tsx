@@ -180,7 +180,7 @@ export function InlineScheduleEditorModal({
                 <Package className="w-3.5 h-3.5" /> Size & Weight
               </span>
               <p className="font-semibold text-slate-900 text-sm">
-                {item.size || "-"} {item.weight ? `(${item.weight})` : ""}
+                {item.size || "-"} {item.weight ? `(${item.weight.replace(/\s*kg\b/gi, "").replace(/\.00\b/g, "").replace(/\.0\b/g, "").trim()})` : ""}
               </p>
             </div>
           </div>

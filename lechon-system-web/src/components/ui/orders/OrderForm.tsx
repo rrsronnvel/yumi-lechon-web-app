@@ -8,6 +8,7 @@ import {
   useDeliveryPricing,
   ItemCategory,
 } from "@/hooks/useCms";
+import { useCustomerLookup } from "@/hooks/useCustomers";
 import apiClient from "@/services/apiClient";
 import {
   OrderFormData,
@@ -161,6 +162,13 @@ export default function OrderForm({
   const watchedIsTrusted = form.watch("isTrustedCustomer");
   const watchedSource = form.watch("source");
   const watchedEventType = form.watch("eventType");
+  const watchedCustomerPhone = form.watch("customerPhone");
+  const watchedFacebookName = form.watch("facebookName");
+
+  const { data: customerProfile } = useCustomerLookup(
+    watchedCustomerPhone || "",
+    watchedFacebookName || "",
+  );
 
   // Reset form to clean empty state when modal opens
   useEffect(() => {
@@ -293,6 +301,7 @@ export default function OrderForm({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders", "directory"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["customers"] }),
         queryClient.invalidateQueries({ queryKey: ["schedules"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] }),
@@ -425,36 +434,28 @@ export default function OrderForm({
 
   // Hydrate form from ParsedOrderDraftDto (used by both Screenshot Uploader & Paste Chat Text)
   const applyDraftToForm = (draft: ParsedOrderDraftDto, sourceLabel: string) => {
-    if (draft.customerName) {
-      form.setValue("customerName", draft.customerName, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
+    form.setValue("customerName", draft.customerName || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
     if (draft.contactNumber) {
       form.setValue("customerPhone", draft.contactNumber, {
         shouldValidate: true,
         shouldDirty: true,
       });
     }
-    if (draft.facebookName) {
-      form.setValue("facebookName", draft.facebookName, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
-    if (draft.landmark) {
-      form.setValue("landmark", draft.landmark, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
-    if (draft.eventType) {
-      form.setValue("eventType", draft.eventType, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
+    form.setValue("facebookName", draft.facebookName || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    form.setValue("landmark", draft.landmark || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    form.setValue("eventType", draft.eventType || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
 
     if (draft.targetDeliveryTime) {
       const d = new Date(draft.targetDeliveryTime);
@@ -482,23 +483,19 @@ export default function OrderForm({
       });
     }
 
-    if (draft.remarks !== undefined && draft.remarks !== null) {
-      form.setValue("remarks", draft.remarks || "", {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
+    form.setValue("remarks", draft.remarks || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
 
-    if (draft.deliveryFee !== undefined && draft.deliveryFee !== null) {
-      const parsedFee =
-        fulfillmentVal === 0 || fulfillmentVal === 2
-          ? 0
-          : Number(draft.deliveryFee) || 0;
-      form.setValue("deliveryFee", parsedFee, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
+    const parsedFee =
+      fulfillmentVal === 0 || fulfillmentVal === 2
+        ? 0
+        : Number(draft.deliveryFee ?? 0) || 0;
+    form.setValue("deliveryFee", parsedFee, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
 
     if (draft.downpayment !== undefined && draft.downpayment !== null) {
       const parsedDownpayment = Number(draft.downpayment) || 0;
@@ -592,6 +589,51 @@ export default function OrderForm({
           </div>
 
           {/* 2. Customer Identity Fields */}
+          {customerProfile && (
+            <div className="space-y-2 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <Badge
+                  variant="outline"
+                  className="bg-amber-50 text-amber-900 border-amber-300 font-semibold text-xs py-1 px-2.5 shadow-2xs"
+                >
+                  ⭐ Repeat Customer • {customerProfile.totalOrdersCount} past{" "}
+                  {customerProfile.totalOrdersCount === 1 ? "order" : "orders"}
+                </Badge>
+                {customerProfile.isVip && (
+                  <Badge
+                    variant="outline"
+                    className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
+                  >
+                    👑 Known VIP
+                  </Badge>
+                )}
+              </div>
+
+              {customerProfile.complaintHistory &&
+                customerProfile.complaintHistory.trim().length > 0 && (
+                  <div
+                    role="alert"
+                    className="bg-rose-50 border border-rose-300 text-rose-900 rounded-lg p-3 text-xs font-semibold shadow-2xs flex items-start gap-2"
+                  >
+                    <span className="shrink-0">⚠️</span>
+                    <span>
+                      Previous Issue Logged: {customerProfile.complaintHistory}
+                    </span>
+                  </div>
+                )}
+
+              {customerProfile.preferences &&
+                customerProfile.preferences.trim().length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 text-blue-900 rounded-lg p-2.5 text-xs font-medium shadow-2xs flex items-start gap-2">
+                    <span className="shrink-0">💡</span>
+                    <span>
+                      Customer Preference: {customerProfile.preferences}
+                    </span>
+                  </div>
+                )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <FormField
               control={form.control}
@@ -701,19 +743,19 @@ export default function OrderForm({
                 </FormLabel>
                 <div className="flex flex-wrap gap-1.5">
                   {EVENT_TYPE_PILLS.map((pill) => {
-                    const isSelected = watchedEventType === pill;
+                    const isSelected = watchedEventType === pill.id;
                     return (
                       <button
-                        key={pill}
+                        key={pill.id}
                         type="button"
-                        onClick={() => field.onChange(isSelected ? "" : pill)}
+                        onClick={() => field.onChange(isSelected ? "" : pill.id)}
                         className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
                           isSelected
                             ? "bg-amber-600 text-white border-amber-600"
                             : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
                         }`}
                       >
-                        🎉 {pill}
+                        {pill.label}
                       </button>
                     );
                   })}

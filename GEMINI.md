@@ -42,6 +42,7 @@ yumi-lechon-web-app/
 │   ├── Controllers/                 # Thin HTTP layer & route handlers
 │   │   ├── AnalyticsController.cs   # Revenue trends, top-selling sizes, peak sales metrics
 │   │   ├── CmsController.cs         # Menu categories, price matrix, cooking clocks
+│   │   ├── CustomersController.cs   # Customer intelligence lookup & preferences/complaint notes
 │   │   ├── DashboardController.cs   # Zero-Inbox KPI metrics, rosters & remittance alerts
 │   │   ├── InventoryController.cs   # Stock balance scoreboard, ledger logs, manual adjustments
 │   │   ├── LogisticsController.cs   # Dispatch planner, live delivery status, rider assignments
@@ -52,8 +53,10 @@ yumi-lechon-web-app/
 │   │   └── SchedulesController.cs   # Slot capacity & daily roasting schedule endpoints
 │   │
 │   ├── Services/                    # Core business logic, workflows & calculations
+│   │   ├── AiIntakeParserService.cs # High-precision Gemini Vision booking parser
 │   │   ├── AnalyticsService.cs      # Sales aggregation & time-series analysis
 │   │   ├── CmsService.cs            # Dynamic price history & cooking profile management
+│   │   ├── CustomerService.cs       # Customer profile lookup, lazy seeding & notes upsert
 │   │   ├── DashboardService.cs      # Aggregates 4-day/1-day reminders & tomorrow's rosters
 │   │   ├── InventoryService.cs      # Bank-statement ledger, safety stock & reservations
 │   │   ├── LogisticsService.cs      # Driver assignment, delivery dispatch & manifests
@@ -63,6 +66,7 @@ yumi-lechon-web-app/
 │   │   ├── RoastingService.cs       # Pit/spit state management
 │   │   ├── SchedulingService.cs     # Dynamic backward-scheduling engine (Tahi -> Salang)
 │   │   ├── SmsNotificationService.cs# Dispatches SMS alerts for customer status changes
+│   │   ├── ICustomerService.cs      # Interface for Customer Intelligence operations
 │   │   ├── ILogisticsService.cs     # Interface for Logistics operations
 │   │   └── IProcurementService.cs   # Interface for Procurement operations
 │   │
@@ -71,6 +75,7 @@ yumi-lechon-web-app/
 │   │
 │   ├── Models/                      # Domain entities & database models
 │   │   ├── BaseEntity.cs            # Id and CreatedAt baseline
+│   │   ├── CustomerProfile.cs       # Customer intelligence (preferences, complaint radar, VIP, order count)
 │   │   ├── Order.cs                 # Master order entity (customer, totals, statuses)
 │   │   ├── OrderItem.cs             # Line items with locked Price snapshots
 │   │   ├── OrderItemSchedule.cs     # Calculated Tahi, Salang, Packaging, and Delivery timestamps
@@ -91,6 +96,8 @@ yumi-lechon-web-app/
 │   │
 │   └── DTOs/                        # High-speed data contracts & flat projections
 │       ├── CreateOrderRequest.cs    # POS intake payload
+│       ├── CustomerProfileDto.cs    # Customer intelligence & notes update contracts
+│       ├── ParsedOrderDraftDto.cs   # Vision/text parser structured draft contract
 │       ├── UpdateOrderDto.cs        # Order modification payload
 │       ├── OrderDirectoryDto.cs     # Fast flat projection for directory searches
 │       ├── DeliveryPricingDto.cs    # CMS delivery base fare & rate per km
@@ -129,6 +136,7 @@ yumi-lechon-web-app/
     │   │   └── RiderViewTab.tsx     # Rider manifest sorted chronologically (shows cash splits)
     │   │
     │   ├── hooks/                   # Custom TanStack Query hooks & mutators
+    │   │   ├── useCustomers.ts      # Debounced customer intelligence lookup & notes mutator
     │   │   ├── useDashboard.ts      # Fetches Zero-Inbox KPIs & rosters
     │   │   ├── useOrdersDirectory.ts# Debounced order directory search & filter tabs
     │   │   ├── useOrderDetails.ts   # Deep-fetches individual customer dossier

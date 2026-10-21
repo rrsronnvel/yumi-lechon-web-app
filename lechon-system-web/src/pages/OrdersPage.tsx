@@ -37,6 +37,7 @@ import OrderForm from "@/components/ui/orders/OrderForm";
 import { useOrderDetails } from "@/hooks/useOrderDetails";
 import { useLogPayment } from "@/hooks/useLogPayment";
 import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
+import { useUpdateCustomerNotesMutation } from "@/hooks/useCustomers";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
@@ -81,7 +82,11 @@ export default function OrdersPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
+  const [isNotesEditorOpen, setIsNotesEditorOpen] = useState(false);
+  const [draftPreferences, setDraftPreferences] = useState("");
+  const [draftComplaints, setDraftComplaints] = useState("");
   const paymentMutation = useLogPayment();
+  const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
 
   const { data, isLoading: isDetailsLoading } = useOrderDetails(
     selectedOrder?.id || null
@@ -165,6 +170,7 @@ export default function OrdersPage() {
   const handleRowClick = (order: OrderDirectoryDto) => {
     setSelectedOrder(order);
     setIsEditing(false);
+    setIsNotesEditorOpen(false);
     setIsSheetOpen(true);
   };
 
@@ -560,100 +566,99 @@ export default function OrdersPage() {
 
       {/* The Slide-Out Safety Drawer */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent className="w-full sm:max-w-[600px] overflow-y-auto bg-[#FAF6F4] p-6">
-          <SheetHeader className="mb-6 p-0">
-            <div className="flex flex-col gap-3">
-              <div className="flex justify-between items-start gap-2">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <SheetTitle className="text-2xl font-bold font-mono text-stone-900">
-                      #{orderDetails?.orderReference || selectedOrder?.orderReference || orderDetails?.id || selectedOrder?.id}
-                    </SheetTitle>
-                    {/* Semantic Status Pill */}
-                    {orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
-                      <Badge
-                        variant="outline"
-                        className="bg-rose-50 text-rose-700 border-rose-300 font-semibold text-xs"
-                      >
-                        🛑 Cancelled
-                      </Badge>
-                    ) : (orderDetails?.routingStatus || selectedOrder?.routingStatus) ===
-                      "Delivered" ? (
-                      <Badge
-                        variant="outline"
-                        className="bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold text-xs"
-                      >
-                        🟢 Delivered
-                      </Badge>
-                    ) : (orderDetails?.routingStatus || selectedOrder?.routingStatus) ===
-                      "Assigned" ? (
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-50 text-blue-700 border-blue-300 font-semibold text-xs"
-                      >
-                        🛵 Assigned
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="bg-stone-100 text-stone-700 border-stone-300 font-semibold text-xs"
-                      >
-                        ⚪ Unassigned
-                      </Badge>
-                    )}
-
-                    {/* VIP Badge */}
-                    {(orderDetails?.isTrustedCustomer ||
-                      selectedOrder?.isTrustedCustomer) && (
-                      <Badge
-                        variant="outline"
-                        className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
-                      >
-                        👑 VIP
-                      </Badge>
-                    )}
-                  </div>
-                  <SheetDescription className="mt-1 text-stone-500">
-                    {isEditing
-                      ? "Modifying the Delivery Time or Item Size will recalculate the kitchen schedule."
-                      : "Read-only view. Click 'Edit Details' to unlock modifications."}
-                  </SheetDescription>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {orderDetails && !isEditing && (
-                    <Button
+        <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto overflow-x-hidden bg-[#FAF6F4] p-4 sm:p-6">
+          <SheetHeader className="mb-4 p-0">
+            <div className="flex flex-col gap-3 pb-3 border-b border-stone-200">
+              <div className="space-y-1 min-w-0 pr-8">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <SheetTitle className="text-2xl font-bold font-mono text-stone-900">
+                    #{orderDetails?.orderReference || selectedOrder?.orderReference || orderDetails?.id || selectedOrder?.id}
+                  </SheetTitle>
+                  {/* Semantic Status Pill */}
+                  {orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
+                    <Badge
                       variant="outline"
-                      size="sm"
-                      className="text-xs h-9 gap-1.5 border-stone-300 bg-white text-stone-700 hover:bg-stone-100 shadow-2xs"
-                      onClick={handleShareDetails}
+                      className="bg-rose-50 text-rose-700 border-rose-300 font-semibold text-xs"
                     >
-                      📋 Share Details
-                    </Button>
+                      🛑 Cancelled
+                    </Badge>
+                  ) : (orderDetails?.routingStatus || selectedOrder?.routingStatus) ===
+                    "Delivered" ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold text-xs"
+                    >
+                      🟢 Delivered
+                    </Badge>
+                  ) : (orderDetails?.routingStatus || selectedOrder?.routingStatus) ===
+                    "Assigned" ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-50 text-blue-700 border-blue-300 font-semibold text-xs"
+                    >
+                      🛵 Assigned
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="bg-stone-100 text-stone-700 border-stone-300 font-semibold text-xs"
+                    >
+                      ⚪ Unassigned
+                    </Badge>
                   )}
-                  {selectedOrder && (
-                    <>
-                      <Button
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white h-9"
-                        size="sm"
-                        onClick={() => setIsPaymentOpen(true)}
-                      >
-                        💳 Log Payment
-                      </Button>
-                      <Button
-                        variant={isEditing ? "outline" : "default"}
-                        size="sm"
-                        className={cn(
-                          "h-9",
-                          !isEditing && "bg-[#C81E1E] hover:bg-[#A81818] text-white"
-                        )}
-                        onClick={() => setIsEditing(!isEditing)}
-                      >
-                        {isEditing ? "Cancel Edit" : "Edit Details"}
-                      </Button>
-                    </>
+
+                  {/* VIP Badge */}
+                  {(orderDetails?.isTrustedCustomer ||
+                    selectedOrder?.isTrustedCustomer) && (
+                    <Badge
+                      variant="outline"
+                      className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
+                    >
+                      👑 VIP
+                    </Badge>
                   )}
                 </div>
+                <SheetDescription className="mt-1 text-xs text-stone-500">
+                  {isEditing
+                    ? "Modifying the Delivery Time or Item Size will recalculate the kitchen schedule."
+                    : "Read-only view. Click 'Edit Details' to unlock modifications."}
+                </SheetDescription>
+              </div>
+
+              {/* Action Buttons: Responsive row that wraps naturally without side scrolling */}
+              <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                {orderDetails && !isEditing && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-9 gap-1.5 border-stone-300 bg-white text-stone-700 hover:bg-stone-100 shadow-2xs"
+                    onClick={handleShareDetails}
+                  >
+                    📋 Share Details
+                  </Button>
+                )}
+                {selectedOrder && (
+                  <>
+                    <Button
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs"
+                      size="sm"
+                      onClick={() => setIsPaymentOpen(true)}
+                    >
+                      💳 Log Payment
+                    </Button>
+                    <Button
+                      variant={isEditing ? "outline" : "default"}
+                      size="sm"
+                      className={cn(
+                        "h-9 text-xs",
+                        !isEditing && "bg-[#C81E1E] hover:bg-[#A81818] text-white"
+                      )}
+                      onClick={() => setIsEditing(!isEditing)}
+                    >
+                      {isEditing ? "Cancel Edit" : "Edit Details"}
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </SheetHeader>
@@ -898,6 +903,173 @@ export default function OrdersPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* Card 1B: Customer Intelligence & Feedback (Preferences & Complaint Radar) */}
+                  <div className="bg-white p-5 rounded-xl border border-stone-200/90 shadow-xs space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-stone-200 pb-2.5 gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-base text-stone-900">
+                          🧠 Customer Intelligence & Feedback
+                        </h3>
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-50 text-amber-900 border-amber-300 font-semibold text-xs"
+                        >
+                          ⭐ {orderDetails.customerTotalOrdersCount || 1}{" "}
+                          {(orderDetails.customerTotalOrdersCount || 1) === 1
+                            ? "Order"
+                            : "Orders"}
+                        </Badge>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs border-stone-300 text-stone-700 hover:bg-stone-100"
+                        onClick={() => {
+                          setDraftPreferences(
+                            orderDetails.customerPreferences || ""
+                          );
+                          setDraftComplaints(
+                            orderDetails.customerComplaintHistory || ""
+                          );
+                          setIsNotesEditorOpen((prev) => !prev);
+                        }}
+                      >
+                        {isNotesEditorOpen
+                          ? "Close Editor"
+                          : "✏️ Update Customer Notes"}
+                      </Button>
+                    </div>
+
+                    {!isNotesEditorOpen ? (
+                      <div className="space-y-2.5 text-sm">
+                        <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200/80">
+                          <p className="text-xs font-bold uppercase tracking-wider text-blue-900 mb-1">
+                            Known Preferences
+                          </p>
+                          <p className="text-sm text-blue-950 font-medium">
+                            💡{" "}
+                            {orderDetails.customerPreferences ||
+                              "None recorded"}
+                          </p>
+                        </div>
+
+                        <div
+                          className={cn(
+                            "p-3 rounded-lg border",
+                            orderDetails.customerComplaintHistory
+                              ? "bg-rose-50 border-rose-300"
+                              : "bg-stone-50 border-stone-200"
+                          )}
+                        >
+                          <p
+                            className={cn(
+                              "text-xs font-bold uppercase tracking-wider mb-1",
+                              orderDetails.customerComplaintHistory
+                                ? "text-rose-800"
+                                : "text-stone-500"
+                            )}
+                          >
+                            Logged Complaints / Issues
+                          </p>
+                          <p
+                            className={cn(
+                              "text-sm font-medium",
+                              orderDetails.customerComplaintHistory
+                                ? "text-rose-900 font-semibold"
+                                : "text-stone-600"
+                            )}
+                          >
+                            ⚠️{" "}
+                            {orderDetails.customerComplaintHistory ||
+                              "No issues logged"}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 bg-stone-50 p-3.5 rounded-lg border border-stone-200">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-blue-900 block">
+                            💡 Customer Preferences (e.g. Extra crispy skin, Walang dinuguan, Liver sauce only)
+                          </label>
+                          <Textarea
+                            rows={2}
+                            placeholder="Record recurring customer preferences..."
+                            value={draftPreferences}
+                            onChange={(e) =>
+                              setDraftPreferences(e.target.value)
+                            }
+                            className="bg-white text-xs border-stone-300 resize-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-rose-800 block">
+                            ⚠️ Logged Complaints / Past Issues (Surfaces high-priority alert on next POS booking)
+                          </label>
+                          <Textarea
+                            rows={2}
+                            placeholder="Record past delivery delays, sauce issues, or special handling warnings..."
+                            value={draftComplaints}
+                            onChange={(e) =>
+                              setDraftComplaints(e.target.value)
+                            }
+                            className="bg-white text-xs border-stone-300 resize-none"
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => setIsNotesEditorOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={updateCustomerNotesMutation.isPending}
+                            className="h-8 text-xs bg-[#C81E1E] hover:bg-[#A81818] text-white"
+                            onClick={() => {
+                              updateCustomerNotesMutation.mutate(
+                                {
+                                  id: orderDetails.customerProfileId,
+                                  phone: orderDetails.contactNumber,
+                                  customerName: orderDetails.customerName,
+                                  facebookName: orderDetails.facebookName,
+                                  preferences: draftPreferences.trim(),
+                                  complaintHistory: draftComplaints.trim(),
+                                  isVip: Boolean(orderDetails.isTrustedCustomer),
+                                },
+                                {
+                                  onSuccess: () => {
+                                    toast.success(
+                                      "Customer intelligence notes updated!"
+                                    );
+                                    setIsNotesEditorOpen(false);
+                                  },
+                                  onError: (err: any) => {
+                                    toast.error(
+                                      err?.response?.data?.message ||
+                                        "Failed to update customer notes."
+                                    );
+                                  },
+                                }
+                              );
+                            }}
+                          >
+                            {updateCustomerNotesMutation.isPending
+                              ? "Saving..."
+                              : "Save Notes"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Card 2: Order Manifest & Add-ons */}

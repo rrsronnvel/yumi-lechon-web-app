@@ -85,6 +85,107 @@ export interface ScreenshotAssetInput {
   mimeType?: string | null;
 }
 
+export interface CustomerProfileDto {
+  id: number;
+  contactNumber: string;
+  fullName: string;
+  facebookName?: string | null;
+  defaultAddress?: string | null;
+  defaultLandmark?: string | null;
+  preferences?: string | null;
+  complaintHistory?: string | null;
+  isVip: boolean;
+  totalOrdersCount: number;
+  updatedAt: string;
+}
+
+export interface UpdateCustomerNotesPayload {
+  id?: number | null;
+  phone?: string;
+  customerName?: string;
+  facebookName?: string | null;
+  preferences?: string | null;
+  complaintHistory?: string | null;
+  isVip?: boolean;
+}
+
+export const useCustomerLookupQuery = (phone: string, fbName?: string) => {
+  const cleanPhone = (phone || '').trim();
+  const cleanFb = (fbName || '').trim();
+  const digitCount = cleanPhone.replace(/\D/g, '').length;
+  const enabled = digitCount >= 7 || cleanFb.length >= 3;
+
+  return useQuery<CustomerProfileDto | null>({
+    queryKey: ['customers', 'lookup', cleanPhone, cleanFb],
+    queryFn: async () => {
+      const response = await apiClient.get<CustomerProfileDto | null>(
+        '/customers/lookup',
+        {
+          params: {
+            phone: digitCount >= 7 ? cleanPhone : undefined,
+            fbName: cleanFb.length >= 3 ? cleanFb : undefined,
+          },
+        }
+      );
+      if (response.status === 204 || !response.data) {
+        return null;
+      }
+      return response.data;
+    },
+    enabled,
+    staleTime: 1000 * 30,
+  });
+};
+
+export const useUpdateCustomerNotesMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      payload: UpdateCustomerNotesPayload
+    ): Promise<CustomerProfileDto> => {
+      const body = {
+        customerName: payload.customerName,
+        facebookName: payload.facebookName,
+        preferences: payload.preferences ?? '',
+        complaintHistory: payload.complaintHistory ?? '',
+        isVip: payload.isVip,
+      };
+
+      if (payload.id && payload.id > 0) {
+        const response = await apiClient.put<CustomerProfileDto>(
+          `/customers/${payload.id}/notes`,
+          body
+        );
+        return response.data;
+      }
+
+      if (payload.phone && payload.phone.trim()) {
+        const encodedPhone = encodeURIComponent(payload.phone.trim());
+        const response = await apiClient.put<CustomerProfileDto>(
+          `/customers/by-phone/${encodedPhone}/notes`,
+          body,
+          {
+            params: {
+              customerName: payload.customerName || undefined,
+              fbName: payload.facebookName || undefined,
+            },
+          }
+        );
+        return response.data;
+      }
+
+      throw new Error('Customer Profile ID or Phone Number is required.');
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['customers'] }),
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+      ]);
+    },
+  });
+};
+
 export const useDeliveryPricingQuery = () => {
   return useQuery<DeliveryPricingDto>({
     queryKey: ['cms', 'delivery-pricing'],
@@ -180,6 +281,7 @@ export const useCreateOrderMutation = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['customers'] }),
         queryClient.invalidateQueries({ queryKey: ['manifest'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['schedules'] }),

@@ -204,6 +204,7 @@ namespace LechonSystem.Api.Services
                     Downpayment = o.Downpayment,
                     IsTrustedCustomer = o.IsTrustedCustomer,
                     Address = o.DeliveryAddress,
+                    Landmark = o.Landmark,
                     Remarks = o.Remarks,
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
                     RiderSignedBy = o.RiderSignedBy,

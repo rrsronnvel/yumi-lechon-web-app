@@ -21,6 +21,7 @@ import {
   useCancelOrderMutation,
   OrderDirectoryDto,
 } from '../../hooks/useOrders';
+import { useUpdateCustomerNotesMutation } from '../../hooks/usePos';
 import { generateBookingConfirmation } from '../../utils/messengerTemplates';
 import EditOrderModal from './EditOrderModal';
 
@@ -58,12 +59,18 @@ export default function OrderDossierModal({
 
   const paymentMutation = useRecordManualPaymentMutation();
   const cancelMutation = useCancelOrderMutation();
+  const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
 
   // Clipboard banner state
   const [copiedBannerVisible, setCopiedBannerVisible] = useState(false);
 
   // Edit Order Modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Customer Notes Editor state
+  const [isNotesExpanded, setIsNotesExpanded] = useState(false);
+  const [draftPreferences, setDraftPreferences] = useState('');
+  const [draftComplaints, setDraftComplaints] = useState('');
 
   // Payment logger form state
   const [isPaymentExpanded, setIsPaymentExpanded] = useState(false);
@@ -83,6 +90,9 @@ export default function OrderDossierModal({
   useEffect(() => {
     setCopiedBannerVisible(false);
     setIsEditModalOpen(false);
+    setIsNotesExpanded(false);
+    setDraftPreferences('');
+    setDraftComplaints('');
     setIsPaymentExpanded(false);
     setPaymentAmount('');
     setPaymentMethod('GCash');
@@ -584,6 +594,187 @@ export default function OrderDossierModal({
                   </View>
                 )}
               </View>
+            </View>
+
+            {/* Card 1B: Customer Intelligence & Feedback (Preferences & Complaint Radar) */}
+            <View style={styles.card}>
+              <View style={styles.intelHeaderRow}>
+                <View style={styles.intelTitleGroup}>
+                  <Text style={styles.intelCardTitle}>
+                    🧠 Customer Intelligence
+                  </Text>
+                  <View style={styles.lifetimeOrdersBadge}>
+                    <Text style={styles.lifetimeOrdersBadgeText}>
+                      ⭐ {orderDetails?.customerTotalOrdersCount || 1}{' '}
+                      {(orderDetails?.customerTotalOrdersCount || 1) === 1
+                        ? 'Order'
+                        : 'Orders'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.updateNotesTriggerBtn,
+                    pressed && styles.buttonPressed,
+                  ]}
+                  onPress={() => {
+                    setDraftPreferences(
+                      orderDetails?.customerPreferences || ''
+                    );
+                    setDraftComplaints(
+                      orderDetails?.customerComplaintHistory || ''
+                    );
+                    setIsNotesExpanded((prev) => !prev);
+                  }}
+                >
+                  <Text style={styles.updateNotesTriggerText}>
+                    {isNotesExpanded
+                      ? 'Close'
+                      : '✏️ Update Customer Notes'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {!isNotesExpanded ? (
+                <View style={styles.intelDisplayStack}>
+                  <View style={styles.preferenceDisplayBox}>
+                    <Text style={styles.preferenceDisplayLabel}>
+                      KNOWN PREFERENCES
+                    </Text>
+                    <Text style={styles.preferenceDisplayText}>
+                      💡{' '}
+                      {orderDetails?.customerPreferences || 'None recorded'}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.complaintDisplayBox,
+                      Boolean(orderDetails?.customerComplaintHistory) &&
+                        styles.complaintDisplayBoxActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.complaintDisplayLabel,
+                        Boolean(orderDetails?.customerComplaintHistory) &&
+                          styles.complaintDisplayLabelActive,
+                      ]}
+                    >
+                      LOGGED COMPLAINTS / ISSUES
+                    </Text>
+                    <Text
+                      style={[
+                        styles.complaintDisplayText,
+                        Boolean(orderDetails?.customerComplaintHistory) &&
+                          styles.complaintDisplayTextActive,
+                      ]}
+                    >
+                      ⚠️{' '}
+                      {orderDetails?.customerComplaintHistory ||
+                        'No issues logged'}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.notesEditorBox}>
+                  <View style={styles.paymentFieldGroup}>
+                    <Text style={styles.fieldLabel}>
+                      💡 Customer Preferences (e.g. Extra crispy, Walang dinuguan)
+                    </Text>
+                    <TextInput
+                      style={[styles.formTextInput, styles.cancelTextInput]}
+                      placeholder="Enter recurring customer preferences..."
+                      placeholderTextColor="#A8A29E"
+                      multiline
+                      numberOfLines={2}
+                      value={draftPreferences}
+                      onChangeText={setDraftPreferences}
+                    />
+                  </View>
+
+                  <View style={styles.paymentFieldGroup}>
+                    <Text style={styles.fieldLabel}>
+                      ⚠️ Complaint History / Past Issues
+                    </Text>
+                    <TextInput
+                      style={[styles.formTextInput, styles.cancelTextInput]}
+                      placeholder="Record past delivery delays, sauce issues, or handling alerts..."
+                      placeholderTextColor="#A8A29E"
+                      multiline
+                      numberOfLines={2}
+                      value={draftComplaints}
+                      onChangeText={setDraftComplaints}
+                    />
+                  </View>
+
+                  <View style={styles.notesEditorActions}>
+                    <Pressable
+                      style={styles.notesCancelBtn}
+                      onPress={() => setIsNotesExpanded(false)}
+                    >
+                      <Text style={styles.notesCancelBtnText}>Cancel</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.notesSaveBtn,
+                        updateCustomerNotesMutation.isPending &&
+                          styles.disabledBtn,
+                        pressed && styles.buttonPressed,
+                      ]}
+                      disabled={updateCustomerNotesMutation.isPending}
+                      onPress={async () => {
+                        try {
+                          await updateCustomerNotesMutation.mutateAsync({
+                            id: orderDetails?.customerProfileId,
+                            phone:
+                              orderDetails?.contactNumber ||
+                              fallbackOrder?.contactNumber ||
+                              '',
+                            customerName:
+                              orderDetails?.customerName ||
+                              fallbackOrder?.customerName ||
+                              'Customer',
+                            facebookName:
+                              orderDetails?.facebookName ||
+                              fallbackOrder?.facebookName ||
+                              null,
+                            preferences: draftPreferences.trim(),
+                            complaintHistory: draftComplaints.trim(),
+                            isVip: Boolean(
+                              orderDetails?.isTrustedCustomer ??
+                                fallbackOrder?.isTrustedCustomer
+                            ),
+                          });
+                          await refetchDetails();
+                          setIsNotesExpanded(false);
+                          setPaymentFeedback({
+                            type: 'success',
+                            message:
+                              'Customer intelligence notes saved!',
+                          });
+                        } catch {
+                          setPaymentFeedback({
+                            type: 'error',
+                            message:
+                              'Failed to save customer intelligence notes.',
+                          });
+                        }
+                      }}
+                    >
+                      {updateCustomerNotesMutation.isPending ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={styles.notesSaveBtnText}>
+                          💾 Save Customer Notes
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* Card 2: Order Items & Financial Breakdown Card */}
@@ -1801,5 +1992,143 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.75,
+  },
+  intelHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingBottom: 10,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F4',
+  },
+  intelTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  intelCardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1C1917',
+  },
+  lifetimeOrdersBadge: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  lifetimeOrdersBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  updateNotesTriggerBtn: {
+    backgroundColor: '#F5F5F4',
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  updateNotesTriggerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#292524',
+  },
+  intelDisplayStack: {
+    gap: 10,
+  },
+  preferenceDisplayBox: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    padding: 10,
+  },
+  preferenceDisplayLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1E40AF',
+    marginBottom: 3,
+  },
+  preferenceDisplayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
+  complaintDisplayBox: {
+    backgroundColor: '#FAFAF9',
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    borderRadius: 10,
+    padding: 10,
+  },
+  complaintDisplayBoxActive: {
+    backgroundColor: '#FFF1F2',
+    borderColor: '#FDA4AF',
+  },
+  complaintDisplayLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#78716C',
+    marginBottom: 3,
+  },
+  complaintDisplayLabelActive: {
+    color: '#9F1239',
+  },
+  complaintDisplayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#57534E',
+  },
+  complaintDisplayTextActive: {
+    color: '#881337',
+    fontWeight: '700',
+  },
+  notesEditorBox: {
+    backgroundColor: '#FAFAF9',
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+  },
+  notesEditorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 4,
+  },
+  notesCancelBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  notesCancelBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#57534E',
+  },
+  notesSaveBtn: {
+    backgroundColor: '#C81E1E',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notesSaveBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

@@ -20,6 +20,7 @@ import {
   useParseScreenshotMutation,
   useCreateOrderMutation,
   useDeliveryPricingQuery,
+  useCustomerLookupQuery,
   ItemCategory,
   ParsedOrderDraftDto,
 } from '../hooks/usePos';
@@ -88,6 +89,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [customerName, setCustomerName] = useState('');
   const [facebookName, setFacebookName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [debouncedPhone, setDebouncedPhone] = useState('');
+  const [debouncedFbName, setDebouncedFbName] = useState('');
   const [source, setSource] = useState<string>('Business FB Page');
   const [eventType, setEventType] = useState<string>('');
   const [fulfillment, setFulfillment] = useState<number>(1); // 1 = Delivery, 0 = Pickup, 2 = Lalamove
@@ -121,6 +124,19 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [receiptCopied, setReceiptCopied] = useState(false);
 
   // Auto-compute riderDepartureTime whenever targetDate, targetTime, distanceKm, or fulfillment changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedPhone(contactNumber.trim());
+      setDebouncedFbName(facebookName.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [contactNumber, facebookName]);
+
+  const { data: customerProfile } = useCustomerLookupQuery(
+    debouncedPhone,
+    debouncedFbName
+  );
+
   useEffect(() => {
     const isoTarget = `${targetDate.trim()}T${targetTime.trim()}:00`;
     const parsedTarget = new Date(isoTarget);
@@ -381,21 +397,15 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const applyDraftToForm = (draft: ParsedOrderDraftDto) => {
     setValidationError(null);
 
-    if (draft.customerName) {
-      setCustomerName(draft.customerName);
-    }
-    if (draft.facebookName) {
-      setFacebookName(draft.facebookName);
-    }
+    setCustomerName(draft.customerName || '');
+    setFacebookName(draft.facebookName || '');
     if (draft.contactNumber) {
       setContactNumber(draft.contactNumber);
     }
     if (draft.source) {
       setSource(draft.source);
     }
-    if (draft.eventType) {
-      setEventType(draft.eventType);
-    }
+    setEventType(draft.eventType || '');
 
     const nextFulfillment =
       draft.fulfillment !== undefined && draft.fulfillment !== null
@@ -403,12 +413,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         : 1;
     setFulfillment(nextFulfillment);
 
-    if (draft.deliveryAddress) {
-      setDeliveryAddress(draft.deliveryAddress);
+    if (draft.deliveryAddress !== undefined && draft.deliveryAddress !== null) {
+      setDeliveryAddress(draft.deliveryAddress || '');
     }
-    if (draft.landmark) {
-      setLandmark(draft.landmark);
-    }
+    setLandmark(draft.landmark || '');
 
     if (draft.targetDeliveryTime) {
       const d = new Date(draft.targetDeliveryTime);
@@ -419,9 +427,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       }
     }
 
-    if (draft.remarks) {
-      setRemarks(draft.remarks);
-    }
+    setRemarks(draft.remarks ?? '');
 
     if (nextFulfillment === 0 || nextFulfillment === 2) {
       setDeliveryFee('0');
@@ -838,6 +844,46 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             👤 Customer &amp; Fulfillment Routing
           </Text>
 
+          {customerProfile && (
+            <View style={styles.customerIntelWrap}>
+              <View style={styles.repeatCustomerRow}>
+                <View style={styles.repeatCustomerPill}>
+                  <Text style={styles.repeatCustomerPillText}>
+                    ⭐ Repeat Customer • {customerProfile.totalOrdersCount} past{' '}
+                    {customerProfile.totalOrdersCount === 1 ? 'order' : 'orders'}
+                  </Text>
+                </View>
+                {customerProfile.isVip && (
+                  <View style={styles.knownVipBadge}>
+                    <Text style={styles.knownVipBadgeText}>👑 KNOWN VIP</Text>
+                  </View>
+                )}
+              </View>
+
+              {Boolean(
+                customerProfile.complaintHistory &&
+                  customerProfile.complaintHistory.trim().length > 0
+              ) && (
+                <View style={styles.complaintAlertBanner}>
+                  <Text style={styles.complaintAlertText}>
+                    ⚠️ Previous Issue Logged: {customerProfile.complaintHistory}
+                  </Text>
+                </View>
+              )}
+
+              {Boolean(
+                customerProfile.preferences &&
+                  customerProfile.preferences.trim().length > 0
+              ) && (
+                <View style={styles.preferenceBanner}>
+                  <Text style={styles.preferenceBannerText}>
+                    💡 Customer Preference: {customerProfile.preferences}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Customer Full Name *</Text>
             <TextInput
@@ -906,15 +952,15 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             <Text style={styles.fieldLabel}>Event Type (Optional)</Text>
             <View style={styles.pillsWrapRow}>
               {EVENT_TYPE_PILLS.map((pill) => {
-                const active = eventType === pill;
+                const active = eventType === pill.id;
                 return (
                   <Pressable
-                    key={pill}
+                    key={pill.id}
                     style={[
                       styles.metaSelectChip,
                       active && styles.metaSelectChipActive,
                     ]}
-                    onPress={() => setEventType(active ? '' : pill)}
+                    onPress={() => setEventType(active ? '' : pill.id)}
                   >
                     <Text
                       style={[
@@ -922,7 +968,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                         active && styles.metaSelectChipTextActive,
                       ]}
                     >
-                      {pill}
+                      {pill.label}
                     </Text>
                   </Pressable>
                 );
@@ -1419,7 +1465,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           </Text>
 
           {/* Delivery Fee & Distance Row */}
-          <View style={styles.twoColRow}>
+          <View style={[styles.twoColRow, { alignItems: 'flex-end', gap: 12 }]}>
             <View style={styles.colHalf}>
               <Text style={styles.fieldLabel}>
                 Delivery Fee (₱) {fulfillment !== 1 ? '(Locked)' : ''}
@@ -1438,7 +1484,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
             <View style={styles.colHalf}>
               <Text style={styles.fieldLabel}>
-                Est. Distance (KM) • ₱{baseFare}+₱{ratePerKm}/km
+                Est. Distance (KM)
               </Text>
               <TextInput
                 style={[
@@ -1454,6 +1500,11 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               />
             </View>
           </View>
+          {fulfillment === 1 && (
+            <Text style={{ fontSize: 11, color: '#78716C', marginTop: 4, marginLeft: 2 }}>
+              Rate: ₱{baseFare} base + ₱{ratePerKm}/km
+            </Text>
+          )}
 
           {/* Discount */}
           <View style={styles.fieldGroup}>
@@ -2892,5 +2943,66 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#FBBF24',
+  },
+  customerIntelWrap: {
+    gap: 8,
+  },
+  repeatCustomerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  repeatCustomerPill: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  repeatCustomerPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  knownVipBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  knownVipBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  complaintAlertBanner: {
+    backgroundColor: '#FFE4E6',
+    borderWidth: 1,
+    borderColor: '#FDA4AF',
+    borderRadius: 10,
+    padding: 10,
+  },
+  complaintAlertText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9F1239',
+    lineHeight: 17,
+  },
+  preferenceBanner: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    borderRadius: 10,
+    padding: 10,
+  },
+  preferenceBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E40AF',
+    lineHeight: 17,
   },
 });

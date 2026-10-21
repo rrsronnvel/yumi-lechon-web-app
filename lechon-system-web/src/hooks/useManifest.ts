@@ -39,6 +39,7 @@ export interface PendingPickupSettlement {
   isPaidInFull: boolean;
   isTrustedCustomer: boolean;
   address?: string;
+  landmark?: string | null;
   remarks?: string;
   custodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
   riderSignedBy?: string | null;

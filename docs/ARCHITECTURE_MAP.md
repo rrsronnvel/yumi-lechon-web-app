@@ -12,6 +12,8 @@
     
 - LechonSystem.Api/Controllers/CmsController.cs: Exposes endpoints for mutating global menu pricing, category cooking profiles, creating/soft-deleting item categories, fetching chronological price history logs, and reading/updating CMS Delivery Pricing rates (`GET /api/cms/delivery-pricing`, `PUT /api/cms/delivery-pricing`).
     
+- LechonSystem.Api/Controllers/CustomersController.cs: Exposes endpoints for reactive customer profile lookups by phone or Facebook name (`GET /api/customers/lookup`) and updating/upserting customer preferences and complaint history notes (`PUT /api/customers/{id}/notes`, `PUT /api/customers/by-phone/{phone}/notes`).
+    
 - LechonSystem.Api/Controllers/DashboardController.cs: Exposes read-only queries for operational widgets (pending confirmations <= 4 days, verifications <= 2 days, defrost roster, and peak-season price renegotiation targets).
     
 - LechonSystem.Api/Controllers/InventoryController.cs: Exposes endpoints to retrieve item categories, dual-stock live balances (physical on-hand vs. 14-day forward commitments), direct freezer receiving, and an auditable chronological history of physical stock ledger movements.
@@ -48,6 +50,10 @@
     
 - LechonSystem.Api/Services/CmsService.cs: Manages category lifecycles, mutates base prices, updates roasting profile parameters, manages `SystemSettings` delivery pricing (`GetDeliveryPricingAsync`, `UpdateDeliveryPricingAsync`), and writes immutable PriceHistoryLog audit records.
     
+- LechonSystem.Api/Services/CustomerService.cs: Normalizes customer phone numbers, performs reactive customer intelligence lookups (`LookupCustomerAsync`) with lazy historical order seeding, and manages preferences/complaint history updates (`UpdateCustomerNotesAsync`, `UpsertCustomerNotesByPhoneAsync`).
+    
+- LechonSystem.Api/Services/ICustomerService.cs: Service contract for customer profile lookups and note updates.
+    
 - LechonSystem.Api/Services/DashboardService.cs: Aggregates urgent staff action items across confirmation windows, verification schedules, roasting queues, and pricing renegotiation queues.
     
 - LechonSystem.Api/Services/InventoryService.cs: Manages physical stock ledgers, executes rolling 14-day committed reservation hold calculations (Available = Physical - Locked), and processes atomic freezer stock intake.
@@ -69,6 +75,8 @@
 - LechonSystem.Api/Data/LechonDbContext.cs: Entity Framework Core database context configuring entity schemas, relationships, soft-delete query filters, seed data (Riders, Users, Categories, SystemSettings), and decimal precisions.
     
 - LechonSystem.Api/Models/BaseEntity.cs: Abstract foundation entity providing primary keys and created timestamps.
+    
+- LechonSystem.Api/Models/CustomerProfile.cs: Customer intelligence entity indexed uniquely on `ContactNumber`, storing `FullName`, `FacebookName`, `DefaultAddress`, `DefaultLandmark`, `Preferences`, `ComplaintHistory`, `IsVip`, and `TotalOrdersCount`.
     
 - LechonSystem.Api/Models/FulfillmentType.cs: Dedicated enum specifying Pickup = 0, Delivery = 1, and Lalamove = 2.
     
@@ -103,6 +111,8 @@
 - LechonSystem.Api/DTOs/CreateCategoryRequest.cs: Request contract for creating a new sellable item category.
     
 - LechonSystem.Api/DTOs/CreateOrderRequest.cs: Nested data structure capturing customer details, `FacebookName`, `Source`, `EventType`, `Landmark`, `TargetDeliveryTime`, `RiderDepartureTime`, financial values, trusted flags, and item arrays.
+    
+- LechonSystem.Api/DTOs/CustomerProfileDto.cs: Data contracts (`CustomerProfileDto`, `UpdateCustomerNotesRequest`) for customer intelligence lookups and preference/complaint radar updates.
     
 - LechonSystem.Api/DTOs/InventoryBalanceDto.cs: Read-optimized DTO projecting aggregated physical on-hand stock, 14-day locked commitments, sellable available balances, safety levels, and health status badges per category.
     
@@ -183,6 +193,7 @@
 
 - lechon-system-web/src/hooks/useAnalytics.ts: Hooks fetching sales velocity, delivery performance, and wastage metrics.  
 - lechon-system-web/src/hooks/useCms.ts: Hooks and mutations managing category prices, cooking profiles, category lifecycles, and CMS delivery pricing (`useDeliveryPricing`, `useUpdateDeliveryPricing`).  
+- lechon-system-web/src/hooks/useCustomers.ts: Debounced `useCustomerLookup` query and `useUpdateCustomerNotesMutation` hook for reactive Customer Intelligence & Complaint Radar.  
 - lechon-system-web/src/hooks/useDashboard.ts: Hooks for dashboard operational lists and cancellation mutations.  
 - lechon-system-web/src/hooks/useDebounce.ts: Utility hook to debounce high-frequency state updates (300ms) for directory search inputs.  
 - lechon-system-web/src/hooks/useEditOrder.ts: Mutation hook for PUT /api/orders/{id} safe edits.  
@@ -224,7 +235,13 @@
 - PATCH /api/orders/{id}/confirm-delivery | Payload: None  
 - PATCH /api/orders/{id}/cancel | Payload: { Reason: string } | Returns: 200 OK (Releases inventory, cancels order, logs audit trail with User.Identity.Name)  
 - GET /api/orders/{id}/audit-logs | Payload: None | Returns: OrderAuditLog[]
-- GET /api/orders/{id} | Returns: OrderDetailsDto (Enriched with `OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, assigned rider full name, rider phone, and routing status)  
+- GET /api/orders/{id} | Returns: OrderDetailsDto (Enriched with `OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, `CustomerProfileId`, `CustomerTotalOrdersCount`, `CustomerPreferences`, `CustomerComplaintHistory`, assigned rider full name, rider phone, and routing status)  
+
+#### Customer Intelligence Domain (CustomersController.cs)
+
+- GET /api/customers/lookup?phone={phone}&fbName={fbName} | [Authorize(Roles = "Owner,Cashier")] | Returns: CustomerProfileDto (or null if not found)
+- PUT /api/customers/{id}/notes | [Authorize(Roles = "Owner,Cashier")] | Payload: UpdateCustomerNotesRequest { Preferences?: string, ComplaintHistory?: string, IsVip?: bool } | Returns: CustomerProfileDto
+- PUT /api/customers/by-phone/{phone}/notes | [Authorize(Roles = "Owner,Cashier")] | Payload: UpdateCustomerNotesRequest | Upserts customer notes by phone number and returns CustomerProfileDto  
 
 #### CMS & Menu Pricing Domain (CmsController.cs)
 

@@ -43,6 +43,11 @@ public class OrderDetailsDto
     public string? AssignedRiderName { get; set; }
     public string? AssignedRiderPhone { get; set; }
 
+    public int? CustomerProfileId { get; set; }
+    public int CustomerTotalOrdersCount { get; set; }
+    public string? CustomerPreferences { get; set; }
+    public string? CustomerComplaintHistory { get; set; }
+
     public List<OrderDetailItemDto> OrderItems { get; set; } = new();
 }
 

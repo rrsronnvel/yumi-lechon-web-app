@@ -40,6 +40,15 @@ const formatPHP = (amount: number) => {
   return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(amount);
 };
 
+const formatWeightDisplay = (weight?: string | null): string => {
+  if (!weight) return "-";
+  return weight
+    .replace(/\s*kg\b/gi, "")
+    .replace(/\.00\b/g, "")
+    .replace(/\.0\b/g, "")
+    .trim() || "-";
+};
+
 export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
   const { data: scheduleItems, isLoading, isError } = useRoastingRoster();
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
@@ -128,29 +137,29 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
   return (
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
-      <div className="w-full rounded-md border-2 border-black overflow-hidden bg-white shadow-xs">
-        <table className="w-full table-fixed border-collapse text-left text-xs">
+      <div className="w-full rounded-md border-2 border-black overflow-x-auto print:overflow-visible bg-white shadow-xs">
+        <table className="w-full table-fixed border-collapse text-left text-xs min-w-[1100px] xl:min-w-full">
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
-            <col className="w-[4%]" />    {/* 1. No. */}
-            <col className="w-[8.5%]" />  {/* 2. Size */}
-            <col className="w-[7%]" />    {/* 3. Weight */}
-            <col className="w-[8%]" />    {/* 4. Delivery Time */}
-            <col className="w-[10%]" />   {/* 5. Customer Name */}
-            <col className="w-[14%]" />   {/* 6. Location */}
-            <col className="w-[9%]" />    {/* 7. Rider Name */}
-            <col className="w-[12%]" />   {/* 8. Remarks */}
-            <col className="w-[7%]" />    {/* 9. Price */}
-            <col className="w-[5%]" />    {/* 10. Add-ons */}
-            <col className="w-[7%]" />    {/* 11. Delivery Fee */}
-            <col className="w-[7.5%]" />  {/* 12. Lechon Fee */}
-            <col className="w-[11%]" />   {/* 13. Amount to Collect */}
+            <col className="w-[8%] min-w-[130px]" />  {/* 1. No. */}
+            <col className="w-[7.5%]" />              {/* 2. Size */}
+            <col className="w-[5.5%]" />              {/* 3. Weight */}
+            <col className="w-[6.5%]" />              {/* 4. Delivery Time */}
+            <col className="w-[8.5%]" />              {/* 5. Customer Name */}
+            <col className="w-[15%]" />               {/* 6. Location (Expanded) */}
+            <col className="w-[7.5%]" />              {/* 7. Rider Name */}
+            <col className="w-[15%]" />               {/* 8. Remarks (Expanded) */}
+            <col className="w-[5.5%]" />              {/* 9. Price */}
+            <col className="w-[4%]" />                {/* 10. Add-ons */}
+            <col className="w-[4.5%]" />              {/* 11. Delivery Fee */}
+            <col className="w-[5%]" />                {/* 12. Lechon Fee */}
+            <col className="w-[8%]" />                {/* 13. Amount to Collect */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}
           <thead className="bg-black text-white">
             <tr className="border-b-2 border-black">
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">No.</th>
+              <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[130px] whitespace-nowrap font-mono font-bold">No.</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Delivery</th>
@@ -192,7 +201,7 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                   className="even:bg-slate-50 odd:bg-white text-slate-900 hover:bg-amber-50/40"
                 >
                   {/* 1. No. */}
-                  <td className="px-1 py-2 text-center font-black text-slate-800 border-r border-slate-300 text-[10px] break-all">
+                  <td className="px-2 py-2 text-center text-slate-800 border-r border-slate-300 text-xs min-w-[130px] whitespace-nowrap font-mono font-bold">
                     #{item.orderReference || item.orderId || item.id}
                   </td>
 
@@ -201,9 +210,9 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                     {item.size || "-"}
                   </td>
 
-                  {/* 3. Weight (KG) */}
+                  {/* 3. Weight */}
                   <td className="px-1.5 py-2 text-center font-medium text-slate-700 border-r border-slate-300 whitespace-nowrap text-[11px]">
-                    {item.weight || "-"}
+                    {formatWeightDisplay(item.weight)}
                   </td>
 
                   {/* 4. Delivery Time (High-Visibility Bold Red) */}

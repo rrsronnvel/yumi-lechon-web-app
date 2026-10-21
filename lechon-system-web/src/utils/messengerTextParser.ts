@@ -136,15 +136,17 @@ export function parseMessengerTextToDraft(
 
     // Event / Occasion
     const eventMatch = line.match(
-      /^(?:event|occasion|okasyon)\s*[:\-]\s*(.+)$/i
+      /^(?:type\s*of\s*event|event(?:\s*type)?|occasion|okasyon)\s*[:\-]\s*(.+)$/i
     );
     if (eventMatch && !eventType) {
       const rawEvt = eventMatch[1].trim();
       if (/bday|birthday/i.test(rawEvt)) eventType = "Birthday";
+      else if (/anniversary/i.test(rawEvt)) eventType = "Anniversary";
+      else if (/binyag|baptismal|christening/i.test(rawEvt)) eventType = "Binyag";
       else if (/fiesta/i.test(rawEvt)) eventType = "Fiesta";
       else if (/wedding|kasal/i.test(rawEvt)) eventType = "Wedding";
       else if (/corporate|office|company/i.test(rawEvt)) eventType = "Corporate";
-      else eventType = "Other";
+      else eventType = rawEvt || "Other";
       continue;
     }
 
@@ -168,7 +170,7 @@ export function parseMessengerTextToDraft(
 
     // Delivery Fee
     const dfMatch = line.match(
-      /(?:delivery\s*fee|del\.?\s*fee|df|freight)\s*[:\-]?\s*(?:php|₱|p)?\s*([\d,]+(?:\.\d{1,2})?)/i
+      /(?:delivery\s*fee|deliver(?:y)?\s*charge|del\.?\s*fee|df|freight)\s*[:\-]?\s*(?:php|₱|p)?\s*([\d,]+(?:\.\d{1,2})?)/i
     );
     if (dfMatch && deliveryFee === null && fulfillment === 1) {
       deliveryFee = parsePesoNumber(dfMatch[1]);
@@ -435,7 +437,7 @@ export function parseMessengerTextToDraft(
     fulfillment,
     deliveryAddress: deliveryAddress || null,
     landmark,
-    remarks: remarksList.length > 0 ? remarksList.join(" | ") : null,
+    remarks: remarksList.length > 0 ? remarksList.join(" | ") : "",
     deliveryFee,
     downpayment,
     items,

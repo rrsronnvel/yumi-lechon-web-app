@@ -12,6 +12,7 @@ public class PendingPickupSettlementDto
     public bool IsPaidInFull => BalanceDue <= 0;
     public bool IsTrustedCustomer { get; set; }
     public string? Address { get; set; }
+    public string? Landmark { get; set; }
     public string? Remarks { get; set; }
 
     public string CustodyStatus { get; set; } = "Uncollected";
