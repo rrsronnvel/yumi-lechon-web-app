@@ -2,8 +2,16 @@
 import { useEffect, useMemo } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { useEditOrder } from "@/hooks/useEditOrder";
+import { useDeliveryPricing } from "@/hooks/useCms";
+import {
+  calculateRiderDepartureTime,
+  SOURCE_PILLS,
+  EVENT_TYPE_PILLS,
+  RIDER_DEPARTURE_NUDGE_PILLS,
+} from "@/utils/messengerTemplates";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Form,
   FormControl,
@@ -14,11 +22,20 @@ import {
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
+import { toast } from "sonner";
 
 interface AddOnItem {
   quantity: number;
   name: string;
 }
+
+const formatLocalDateTimeInput = (dateStrOrObj: string | Date | undefined | null): string => {
+  if (!dateStrOrObj) return "";
+  const dt = typeof dateStrOrObj === "string" ? new Date(dateStrOrObj) : dateStrOrObj;
+  if (isNaN(dt.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+};
 
 export default function EditOrderForm({
   order,
@@ -28,6 +45,10 @@ export default function EditOrderForm({
   onClose: () => void;
 }) {
   const editMutation = useEditOrder();
+  const { data: deliveryPricing } = useDeliveryPricing();
+
+  const baseFare = deliveryPricing?.baseFare ?? 100;
+  const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
 
   // 1. Fetch live CMS categories
   const { data: categories = [], isLoading: isCategoriesLoading } = useQuery({
@@ -54,10 +75,16 @@ export default function EditOrderForm({
       ),
     [categories],
   );
+
   const form = useForm<{
     id: number;
     customerName: string;
+    facebookName: string;
+    source: string;
+    eventType: string;
+    landmark: string;
     targetDeliveryTime: string;
+    riderDepartureTime: string;
     contactNumber: string;
     deliveryAddress: string;
     remarks: string;
@@ -73,7 +100,12 @@ export default function EditOrderForm({
     defaultValues: {
       id: 0,
       customerName: "",
+      facebookName: "",
+      source: "Business FB Page",
+      eventType: "",
+      landmark: "",
       targetDeliveryTime: "",
+      riderDepartureTime: "",
       items: [{ id: 0, itemCategoryId: 1, quantity: 1 }],
       contactNumber: "",
       deliveryAddress: "",
@@ -108,12 +140,10 @@ export default function EditOrderForm({
 
   useEffect(() => {
     if (order) {
-      const dt = new Date(order.targetDeliveryTime);
-      const formattedDate = new Date(
-        dt.getTime() - dt.getTimezoneOffset() * 60000,
-      )
-        .toISOString()
-        .slice(0, 16);
+      const formattedDate = formatLocalDateTimeInput(order.targetDeliveryTime);
+      const formattedDeparture = formatLocalDateTimeInput(
+        order.riderDepartureTime || order.targetDeliveryTime,
+      );
 
       // 🚀 THE BULLETPROOF TRANSLATOR
       const rawFulfill = String(order.fulfillment).toLowerCase();
@@ -144,7 +174,12 @@ export default function EditOrderForm({
       form.reset({
         id: order.id,
         customerName: order.customerName || "",
+        facebookName: order.facebookName || "",
+        source: order.source || "Business FB Page",
+        eventType: order.eventType || "",
+        landmark: order.landmark || "",
         targetDeliveryTime: formattedDate,
+        riderDepartureTime: formattedDeparture,
         contactNumber: order.contactNumber || "",
         deliveryAddress: order.deliveryAddress || "",
         remarks: order.remarks || "",
@@ -183,28 +218,66 @@ export default function EditOrderForm({
     name: "dynamicAddOns",
   });
 
-  const [deliveryFee, downpayment, discount, fulfillment] = form.watch([
+  const [
+    deliveryFee,
+    downpayment,
+    discount,
+    fulfillment,
+    targetDeliveryTime,
+    watchedSource,
+    watchedEventType,
+  ] = form.watch([
     "deliveryFee",
     "downpayment",
     "discount",
     "fulfillment",
+    "targetDeliveryTime",
+    "source",
+    "eventType",
   ]);
 
   // 3. THE FEE BOUNCER: If changed to Pickup (0) or Lalamove (2), force fee & distance to 0!
   useEffect(() => {
     const currentFulfillment = Number(fulfillment);
     if (currentFulfillment === 0 || currentFulfillment === 2) {
-      form.setValue("deliveryFee", 0, { shouldValidate: true, shouldDirty: true });
-      form.setValue("distanceKm", 0, { shouldValidate: true, shouldDirty: true });
+      form.setValue("deliveryFee", 0, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      form.setValue("distanceKm", 0, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
     }
-  }, [fulfillment, form]);
+    if (currentFulfillment === 0 && targetDeliveryTime) {
+      form.setValue("riderDepartureTime", targetDeliveryTime, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+  }, [fulfillment, targetDeliveryTime, form]);
+
+  // Quick-offset nudge helper for RiderDepartureTime
+  const handleNudgeDeparture = (offsetMinutes: number) => {
+    if (!targetDeliveryTime) {
+      toast.info("Set Target Delivery Time first before nudging departure.");
+      return;
+    }
+    const targetDate = new Date(targetDeliveryTime);
+    if (isNaN(targetDate.getTime())) return;
+    const nudged = new Date(targetDate.getTime() + offsetMinutes * 60 * 1000);
+    form.setValue("riderDepartureTime", formatLocalDateTimeInput(nudged), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+  };
 
   // 🚀 REACTIVE LECHON SUBTOTAL: Immediately recalculated on add, remove, size or qty change!
   const lechonSubtotal = useMemo(() => {
     if (!watchedItems || watchedItems.length === 0) return 0;
     return watchedItems.reduce((acc: number, item: any) => {
       const cat = categories.find(
-        (c: any) => c.id === Number(item?.itemCategoryId)
+        (c: any) => c.id === Number(item?.itemCategoryId),
       );
       const unitPrice = cat?.basePrice ?? cat?.price ?? 0;
       const qty = Number(item?.quantity) || 0;
@@ -214,19 +287,16 @@ export default function EditOrderForm({
 
   // 🚀 REACTIVE ADD-ONS SUBTOTAL: Pulls live pricing directly from CMS and updates on any selection or quantity edit
   const totalAddOnCost = useMemo(() => {
-    return (watchedAddOns || []).reduce(
-      (total: number, addon: any) => {
-        if (!addon || !addon.name) return total;
-        const addonName = String(addon.name).trim().toLowerCase();
-        const found = liveAddOns.find(
-          (a: any) => a.name.trim().toLowerCase() === addonName
-        );
-        const itemPrice = found?.basePrice || found?.price || 0;
-        const qty = Number(addon.quantity) || 1;
-        return total + itemPrice * qty;
-      },
-      0,
-    );
+    return (watchedAddOns || []).reduce((total: number, addon: any) => {
+      if (!addon || !addon.name) return total;
+      const addonName = String(addon.name).trim().toLowerCase();
+      const found = liveAddOns.find(
+        (a: any) => a.name.trim().toLowerCase() === addonName,
+      );
+      const itemPrice = found?.basePrice || found?.price || 0;
+      const qty = Number(addon.quantity) || 1;
+      return total + itemPrice * qty;
+    }, 0);
   }, [watchedAddOns, liveAddOns]);
 
   const addOnsTotal = totalAddOnCost;
@@ -240,7 +310,7 @@ export default function EditOrderForm({
 
   const dynamicGrandTotal = Math.max(
     0,
-    lechonSubtotal + addOnsTotal + activeDeliveryFee - activeDiscount
+    lechonSubtotal + addOnsTotal + activeDeliveryFee - activeDiscount,
   );
 
   const remainingBalance = dynamicGrandTotal - downpaymentReceived;
@@ -257,8 +327,18 @@ export default function EditOrderForm({
         ? 0
         : Number(data.deliveryFee) || 0;
 
+    const effectiveRiderDeparture =
+      fulfillmentNum === 0
+        ? data.targetDeliveryTime
+        : data.riderDepartureTime || data.targetDeliveryTime;
+
     const payload = {
       ...data,
+      facebookName: data.facebookName?.trim() || null,
+      source: data.source?.trim() || "POS Terminal",
+      eventType: data.eventType?.trim() || null,
+      landmark: data.landmark?.trim() || null,
+      riderDepartureTime: effectiveRiderDeparture,
       price: lechonSubtotal,
       fulfillment: fulfillmentNum,
       deliveryFee: finalDeliveryFee,
@@ -296,7 +376,9 @@ export default function EditOrderForm({
               name="customerName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-stone-700">Customer Name</FormLabel>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Customer Name
+                  </FormLabel>
                   <FormControl>
                     <Input
                       {...field}
@@ -328,17 +410,85 @@ export default function EditOrderForm({
 
             <FormField
               control={form.control}
-              name="targetDeliveryTime"
+              name="facebookName"
               render={({ field }) => (
-                <FormItem className="col-span-1 sm:col-span-2">
-                  <FormLabel className="text-xs font-semibold text-stone-700">Target Time</FormLabel>
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Facebook / Messenger Name
+                  </FormLabel>
                   <FormControl>
                     <Input
-                      type="datetime-local"
                       {...field}
+                      placeholder="FB / Messenger Name (for chat lookup)"
                       className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="source"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Booking Source
+                  </FormLabel>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {SOURCE_PILLS.map((pill) => {
+                      const isSelected = watchedSource === pill;
+                      return (
+                        <button
+                          key={pill}
+                          type="button"
+                          onClick={() => {
+                            field.onChange(isSelected ? "" : pill);
+                          }}
+                          className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-[#C81E1E] text-white border-[#C81E1E]"
+                              : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
+                          }`}
+                        >
+                          {pill}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="eventType"
+              render={({ field }) => (
+                <FormItem className="col-span-1 sm:col-span-2">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Event Type (Optional)
+                  </FormLabel>
+                  <div className="flex flex-wrap gap-1.5">
+                    {EVENT_TYPE_PILLS.map((pill) => {
+                      const isSelected = watchedEventType === pill;
+                      return (
+                        <button
+                          key={pill}
+                          type="button"
+                          onClick={() => {
+                            field.onChange(isSelected ? "" : pill);
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-amber-600 text-white border-amber-600"
+                              : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
+                          }`}
+                        >
+                          🎉 {pill}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </FormItem>
               )}
             />
@@ -362,7 +512,7 @@ export default function EditOrderForm({
                           "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
                           Number(field.value) === 1
                             ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
-                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60",
                         )}
                       >
                         <span className="text-sm shrink-0">🚗</span>
@@ -386,7 +536,7 @@ export default function EditOrderForm({
                           "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
                           Number(field.value) === 0
                             ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
-                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60",
                         )}
                       >
                         <span className="text-sm shrink-0">🏪</span>
@@ -410,7 +560,7 @@ export default function EditOrderForm({
                           "min-w-0 flex items-center justify-center gap-1.5 h-9 px-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
                           Number(field.value) === 2
                             ? "bg-white text-[#C81E1E] shadow-xs border border-stone-200"
-                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60",
                         )}
                       >
                         <span className="text-sm shrink-0">📦</span>
@@ -418,6 +568,150 @@ export default function EditOrderForm({
                       </button>
                     </div>
                   </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="targetDeliveryTime"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Target Delivery / Pickup Time
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="datetime-local"
+                      {...field}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val);
+                        if (val) {
+                          const dt = new Date(val);
+                          if (!isNaN(dt.getTime())) {
+                            const dep = calculateRiderDepartureTime(
+                              dt,
+                              Number(form.getValues("distanceKm")) || 0,
+                              Number(fulfillment),
+                            );
+                            form.setValue(
+                              "riderDepartureTime",
+                              formatLocalDateTimeInput(dep),
+                              { shouldValidate: true, shouldDirty: true },
+                            );
+                          }
+                        }
+                      }}
+                      className="h-10 bg-stone-50 border-stone-300"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="distanceKm"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Distance (KM) — Auto-Calc Fee & Departure
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      disabled={
+                        Number(fulfillment) === 0 || Number(fulfillment) === 2
+                      }
+                      placeholder={
+                        Number(fulfillment) === 0 || Number(fulfillment) === 2
+                          ? "0"
+                          : "e.g., 8"
+                      }
+                      value={field.value === 0 ? "" : field.value ?? ""}
+                      onChange={(e) => {
+                        const km = Math.max(
+                          0,
+                          parseFloat(e.target.value) || 0,
+                        );
+                        field.onChange(km);
+                        if (Number(fulfillment) === 1 && km > 0) {
+                          const fee = Math.round(km * ratePerKm + baseFare);
+                          form.setValue("deliveryFee", fee, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                        }
+                        if (targetDeliveryTime) {
+                          const dt = new Date(targetDeliveryTime);
+                          if (!isNaN(dt.getTime())) {
+                            const dep = calculateRiderDepartureTime(
+                              dt,
+                              km,
+                              Number(fulfillment),
+                            );
+                            form.setValue(
+                              "riderDepartureTime",
+                              formatLocalDateTimeInput(dep),
+                              { shouldValidate: true, shouldDirty: true },
+                            );
+                          }
+                        }
+                      }}
+                      className="h-10 bg-stone-50 border-stone-300 disabled:bg-stone-100"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="riderDepartureTime"
+              render={({ field }) => (
+                <FormItem className="col-span-1 sm:col-span-2 bg-amber-50/50 border border-amber-200/80 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <FormLabel className="text-xs font-bold text-amber-950">
+                      🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)
+                    </FormLabel>
+                    {Number(fulfillment) === 0 && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] py-0 px-1.5 bg-stone-100 text-stone-600 border-stone-300"
+                      >
+                        Locked to Pickup Time
+                      </Badge>
+                    )}
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="datetime-local"
+                      disabled={Number(fulfillment) === 0}
+                      {...field}
+                      className="h-9 text-xs bg-white border-amber-300 font-mono disabled:bg-stone-100"
+                    />
+                  </FormControl>
+                  {Number(fulfillment) !== 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-amber-800 font-semibold mr-1">
+                        Quick Nudge from Delivery:
+                      </span>
+                      {RIDER_DEPARTURE_NUDGE_PILLS.map((pill) => (
+                        <button
+                          key={pill.label}
+                          type="button"
+                          onClick={() =>
+                            handleNudgeDeparture(pill.minutes)
+                          }
+                          className="px-2 py-0.5 rounded bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold transition-colors cursor-pointer"
+                        >
+                          {pill.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </FormItem>
               )}
             />
@@ -435,11 +729,30 @@ export default function EditOrderForm({
                       {...field}
                       placeholder={
                         Number(fulfillment) === 0
-                          ? "Customer Address / Landmark (For records)"
+                          ? "Customer Address (For records)"
                           : Number(fulfillment) === 2
-                          ? "Drop-off Address for Lalamove Courier"
-                          : "Full Address or Delivery Landmark"
+                            ? "Drop-off Address for Lalamove Courier"
+                            : "Full Delivery Address"
                       }
+                      className="h-10 bg-stone-50 border-stone-300"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="landmark"
+              render={({ field }) => (
+                <FormItem className="col-span-1 sm:col-span-2">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Landmark / Drop-off Guide (Optional)
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="e.g., Tapat ng Shell, Dilaw na gate"
                       className="h-10 bg-stone-50 border-stone-300"
                     />
                   </FormControl>
@@ -453,11 +766,11 @@ export default function EditOrderForm({
               render={({ field }) => (
                 <FormItem className="col-span-1 sm:col-span-2">
                   <FormLabel className="text-xs font-semibold text-stone-700">
-                    Remarks / Instructions
+                    Kitchen & Prep Instructions (e.g., Walang dinuguan, Print shoutout)
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="e.g., Use the side gate"
+                      placeholder="Kitchen & Prep Instructions (e.g., Walang dinuguan, Print shoutout)"
                       {...field}
                       className="h-10 bg-stone-50 border-stone-300"
                     />
@@ -507,29 +820,33 @@ export default function EditOrderForm({
                         form.setValue(
                           `items.${index}.quantity`,
                           isNaN(val) || val < 1 ? 1 : val,
-                          { shouldValidate: true, shouldDirty: true }
+                          { shouldValidate: true, shouldDirty: true },
                         );
                       },
                     })}
                   />
 
                   <select
-                    {...form.register(`items.${index}.itemCategoryId` as const, {
-                      valueAsNumber: true,
-                      onChange: (e) => {
-                        const val = parseInt(e.target.value, 10);
-                        form.setValue(`items.${index}.itemCategoryId`, val, {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                        });
+                    {...form.register(
+                      `items.${index}.itemCategoryId` as const,
+                      {
+                        valueAsNumber: true,
+                        onChange: (e) => {
+                          const val = parseInt(e.target.value, 10);
+                          form.setValue(`items.${index}.itemCategoryId`, val, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                        },
                       },
-                    })}
+                    )}
                     className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     {/* ONLY SHOW LECHONS HERE */}
                     {lechonOptions.map((cat: any) => (
                       <option key={cat.id} value={cat.id}>
-                        {cat.name} (₱{(cat.basePrice || cat.price || 0).toLocaleString()})
+                        {cat.name} (₱
+                        {(cat.basePrice || cat.price || 0).toLocaleString()})
                       </option>
                     ))}
                   </select>
@@ -551,8 +868,8 @@ export default function EditOrderForm({
               ))}
             </div>
             <p className="text-[11px] text-amber-800 mt-2 font-medium flex items-center gap-1">
-              <span className="text-amber-600">ℹ</span> Changing the Delivery
-              Time or Size will recalculate the Kitchen timeline.
+              <span className="text-amber-600">ℹ</span> Changing the Departure
+              / Delivery Time or Size will recalculate the Kitchen timeline.
             </p>
           </div>
 
@@ -592,7 +909,7 @@ export default function EditOrderForm({
                           form.setValue(
                             `dynamicAddOns.${index}.quantity`,
                             isNaN(val) || val < 1 ? 1 : val,
-                            { shouldValidate: true, shouldDirty: true }
+                            { shouldValidate: true, shouldDirty: true },
                           );
                         },
                       },
@@ -601,10 +918,14 @@ export default function EditOrderForm({
                   <select
                     {...form.register(`dynamicAddOns.${index}.name` as const, {
                       onChange: (e) => {
-                        form.setValue(`dynamicAddOns.${index}.name`, e.target.value, {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                        });
+                        form.setValue(
+                          `dynamicAddOns.${index}.name`,
+                          e.target.value,
+                          {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          },
+                        );
                       },
                     })}
                     className="flex-1 h-10 rounded-md border border-stone-300 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
@@ -776,9 +1097,7 @@ export default function EditOrderForm({
                 </div>
                 <p
                   className={`text-2xl font-black font-mono tracking-tight ${
-                    remainingBalance < 0
-                      ? "text-rose-600"
-                      : "text-emerald-600"
+                    remainingBalance < 0 ? "text-rose-600" : "text-emerald-600"
                   }`}
                 >
                   {remainingBalance < 0
@@ -798,16 +1117,15 @@ export default function EditOrderForm({
               onClick={onClose}
               disabled={editMutation.isPending}
             >
-              Cancel / Discard
+              Cancel
             </Button>
+
             <Button
               type="submit"
-              className="w-1/2 bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium h-11 shadow-sm transition-colors"
               disabled={editMutation.isPending}
+              className="w-1/2 h-11 bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold shadow-sm"
             >
-              {editMutation.isPending
-                ? "Securely Saving..."
-                : "Save Modifications"}
+              {editMutation.isPending ? "Saving Changes..." : "Save Changes"}
             </Button>
           </div>
         </form>

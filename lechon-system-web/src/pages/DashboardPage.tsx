@@ -442,7 +442,7 @@ export default function DashboardPage() {
                 >
                   <div>
                     <p className="font-semibold text-stone-900">
-                      Order #{task.orderId} - {task.customerName}
+                      Order #{task.orderReference || task.orderId} - {task.customerName}
                     </p>
                     <p className="text-xs text-stone-500">
                       Delivery: {new Date(task.targetDeliveryTime).toLocaleDateString()}
@@ -477,7 +477,7 @@ export default function DashboardPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Update Order Price?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will mathematically increase Order #{task.orderId}&apos;s locked
+                                This will mathematically increase Order #{task.orderReference || task.orderId}&apos;s locked
                                 price to match the live menu price. The customer&apos;s remaining
                                 balance will increase by ₱{task.priceGap.toLocaleString()}.
                               </AlertDialogDescription>
@@ -518,7 +518,7 @@ export default function DashboardPage() {
                               <AlertDialogTitle>Waive Price Hike?</AlertDialogTitle>
                               <AlertDialogDescription>
                                 This will permanently lock in the old, cheaper price for Order
-                                #{task.orderId} and dismiss this warning to keep the customer happy.
+                                #{task.orderReference || task.orderId} and dismiss this warning to keep the customer happy.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -543,7 +543,7 @@ export default function DashboardPage() {
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Cancel Order #{task.orderId}?</AlertDialogTitle>
+                            <AlertDialogTitle>Cancel Order #{task.orderReference || task.orderId}?</AlertDialogTitle>
                             <AlertDialogDescription>
                               This will permanently void the order and instantly release their
                               locked lechon back to the available inventory pool.
@@ -606,7 +606,7 @@ export default function DashboardPage() {
                           }`}
                         >
                           <TableCell className="font-medium font-mono text-stone-800">
-                            #{item.id}
+                            #{item.orderReference || item.id}
                           </TableCell>
                           <TableCell className="font-semibold text-stone-900">
                             {item.customerName}
@@ -636,7 +636,7 @@ export default function DashboardPage() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    This will permanently void Order #{item.id} and instantly release
+                                    This will permanently void Order #{item.orderReference || item.id} and instantly release
                                     their locked lechon back to the available inventory pool.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
@@ -712,7 +712,7 @@ export default function DashboardPage() {
                           }`}
                         >
                           <TableCell className="font-mono font-medium text-stone-700">
-                            #{item.orderId || item.id}
+                            #{item.orderReference || item.orderId || item.id}
                           </TableCell>
                           <TableCell>
                             <div className="font-semibold text-stone-900 flex items-center gap-2">
@@ -788,6 +788,7 @@ export default function DashboardPage() {
                                   targetDeliveryTime: item.targetDeliveryTime,
                                   fulfillment: item.fulfillment ?? 1,
                                   deliveryAddress: item.deliveryAddress,
+                                  landmark: item.landmark || undefined,
                                   items: [
                                     {
                                       categoryName: item.weightCategory,
@@ -843,7 +844,7 @@ export default function DashboardPage() {
             <div className="flex justify-between items-start gap-2">
               <div>
                 <SheetTitle className="text-2xl font-bold text-stone-900">
-                  Action Center: Order #{selectedOrderId}
+                  Action Center: Order #{orderDetails?.orderReference || selectedOrderId}
                 </SheetTitle>
                 <SheetDescription className="text-stone-500">
                   Log GCash deposits or update operational details.

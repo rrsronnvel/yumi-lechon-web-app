@@ -1,17 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore; // <-- Step 3: Added this for FirstOrDefaultAsync
+using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Interfaces;
 using LechonSystem.Api.Models.DTOs;
 
-
 namespace LechonSystem.Api.Services
 {
-    // Step 2: The Kitchen (Class) - The actual logic!
     public class OrderService : IOrderService
     {
         private readonly LechonDbContext _context;
@@ -38,24 +37,37 @@ namespace LechonSystem.Api.Services
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
         {
+            var today = DateTime.UtcNow.Date;
+            var todayCount = await _context.Orders.CountAsync(o => o.CreatedAt >= today && o.CreatedAt < today.AddDays(1));
+            var orderReference = $"{today:MMddyy}-{(todayCount + 1):D3}";
+
+            var effectiveDepartureTime = request.Fulfillment == FulfillmentType.Pickup
+                ? request.TargetDeliveryTime
+                : (request.RiderDepartureTime ?? request.TargetDeliveryTime);
+
             var order = new Order
             {
                 // -- Core Details --
+                OrderReference = orderReference,
                 CustomerName = request.CustomerName,
+                FacebookName = request.FacebookName,
                 TargetDeliveryTime = request.TargetDeliveryTime,
+                RiderDepartureTime = effectiveDepartureTime,
                 Fulfillment = request.Fulfillment,
-                IsDeliveryDetailsConfirmed = false, // Good practice to explicitly set this!
+                IsDeliveryDetailsConfirmed = false,
 
                 // -- 🚀 NEW MAPPINGS HERE --
-                ContactNumber = request.CustomerPhone, // Handled the mismatch!
-                DeliveryAddress = request.Address,     // Handled the mismatch!
+                ContactNumber = request.CustomerPhone,
+                DeliveryAddress = request.Address,
+                Landmark = request.Landmark,
                 Source = request.Source,
+                EventType = request.EventType,
                 Remarks = request.Remarks,
                 IsTrustedCustomer = request.IsTrustedCustomer,
 
                 // -- 💰 FINANCIAL MAPPINGS --
-                Price = request.Price,   // <-- Added this to catch the 4500!
-                AddOns = request.AddOns, // <-- Added this to catch any extras!
+                Price = request.Price,
+                AddOns = request.AddOns,
                 DeliveryFee = request.DeliveryFee,
                 Downpayment = request.Downpayment,
                 Discount = request.Discount,
@@ -93,7 +105,8 @@ namespace LechonSystem.Api.Services
                 var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
                     savedItem.Id,
                     order.TargetDeliveryTime,
-                    savedItem.ItemCategoryId
+                    savedItem.ItemCategoryId,
+                    order.RiderDepartureTime
                 );
 
                 _context.OrderItemSchedules.Add(calculatedSchedule);
@@ -103,7 +116,7 @@ namespace LechonSystem.Api.Services
                     savedItem.ItemCategoryId,
                     order.TargetDeliveryTime,
                     order.IsTrustedCustomer,
-                    order.Downpayment // <-- Pass the downpayment here!
+                    order.Downpayment
                 );
             }
 
@@ -111,7 +124,7 @@ namespace LechonSystem.Api.Services
             {
                 OrderId = order.Id,
                 ActionType = "Order Created",
-                Changes = $"Order created for {order.CustomerName} (Total: ₱{order.GrandTotal:N2})",
+                Changes = $"Order #{order.OrderReference} created for {order.CustomerName} (Total: ₱{order.GrandTotal:N2})",
                 ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             };
@@ -121,7 +134,6 @@ namespace LechonSystem.Api.Services
             return order;
         }
 
-        // Moved from the Interface to the Class
         public async Task<bool> ConfirmPaymentAsync(int orderId)
         {
             var reservation = await _context.InventoryReservations
@@ -134,9 +146,8 @@ namespace LechonSystem.Api.Services
             var order = await _context.Orders.FindAsync(orderId);
             if (order == null) return false;
 
-            // FIX HERE: Change customerPhone to read order.ContactNumber
             string customerPhone = order.ContactNumber;
-            string message = $"Hi {order.CustomerName}, your downpayment for Order #{order.Id} has been verified! Your lechon reservation is now locked in. 🐷";
+            string message = $"Hi {order.CustomerName}, your downpayment for your Yumi's Lechon booking has been verified! Your lechon reservation is now locked in. 🐷";
 
             bool dispatchSuccess = await _notificationSender.SendMessageAsync(customerPhone, message);
 
@@ -154,9 +165,6 @@ namespace LechonSystem.Api.Services
             return true;
         }
 
-
-
-        // Moved from the Interface to the Class
         public async Task<bool> ConfirmDeliveryDetailsAsync(int orderId)
         {
             var order = await _context.Orders.FindAsync(orderId);
@@ -168,7 +176,6 @@ namespace LechonSystem.Api.Services
             await _context.SaveChangesAsync();
             return true;
         }
-
 
         public async Task<bool> CancelOrderAsync(int orderId, string reason = "Cancelled by dispatcher")
         {
@@ -220,6 +227,8 @@ namespace LechonSystem.Api.Services
                 var term = searchTerm.Trim().TrimStart('#');
                 query = query.Where(o => 
                     o.CustomerName.Contains(term) ||
+                    (o.FacebookName != null && o.FacebookName.Contains(term)) ||
+                    o.OrderReference.Contains(term) ||
                     o.ContactNumber.Contains(term) ||
                     o.Id.ToString().Contains(term));
             }
@@ -271,12 +280,18 @@ namespace LechonSystem.Api.Services
                 .Select(o => new OrderDirectoryDto
                 {
                     Id = o.Id,
+                    OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
                     ContactNumber = o.ContactNumber ?? string.Empty,
+                    Source = o.Source ?? string.Empty,
+                    EventType = o.EventType,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
+                    Landmark = o.Landmark,
                     Fulfillment = (int)o.Fulfillment,
                     RoutingStatus = o.RoutingStatus.ToString(),
                     TargetDeliveryTime = o.TargetDeliveryTime,
+                    RiderDepartureTime = o.RiderDepartureTime,
                     GrandTotal = o.GrandTotal,
                     Downpayment = o.Downpayment,
                     BalanceDue = (o.GrandTotal - o.Downpayment) > 0 ? (o.GrandTotal - o.Downpayment) : 0,
@@ -292,10 +307,8 @@ namespace LechonSystem.Api.Services
             return directory;
         }
 
-
         public async Task UpdateOrderAsync(int id, UpdateOrderDto request)
         {
-            // 1. We added .ThenInclude() here! This acts as our dictionary to get the exact Lechon Name.
             var order = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.ItemCategory)
@@ -308,12 +321,28 @@ namespace LechonSystem.Api.Services
 
             var auditChanges = new List<string>();
 
-            // --- NEW: Tracking ALL Master Order Fields ---
+            var effectiveRiderDepartureTime = request.Fulfillment == FulfillmentType.Pickup
+                ? request.TargetDeliveryTime
+                : (request.RiderDepartureTime ?? order.RiderDepartureTime ?? request.TargetDeliveryTime);
+
+            // --- Tracking ALL Master Order Fields ---
             if (order.CustomerName != request.CustomerName)
                 auditChanges.Add($"Customer Name changed from '{order.CustomerName}' to '{request.CustomerName}'");
 
+            if ((order.FacebookName ?? string.Empty) != (request.FacebookName ?? string.Empty))
+                auditChanges.Add($"FB Name changed from '{order.FacebookName}' to '{request.FacebookName}'");
+
             if (order.ContactNumber != request.ContactNumber)
                 auditChanges.Add($"Contact changed from '{order.ContactNumber}' to '{request.ContactNumber}'");
+
+            if (!string.IsNullOrWhiteSpace(request.Source) && order.Source != request.Source)
+                auditChanges.Add($"Source changed from '{order.Source}' to '{request.Source}'");
+
+            if ((order.EventType ?? string.Empty) != (request.EventType ?? string.Empty))
+                auditChanges.Add($"Event Type changed from '{order.EventType}' to '{request.EventType}'");
+
+            if ((order.Landmark ?? string.Empty) != (request.Landmark ?? string.Empty))
+                auditChanges.Add($"Landmark changed from '{order.Landmark}' to '{request.Landmark}'");
 
             if (order.AddOns != request.AddOns)
                 auditChanges.Add($"Add-Ons changed from '{order.AddOns}' to '{request.AddOns}'");
@@ -327,6 +356,12 @@ namespace LechonSystem.Api.Services
             if (order.TargetDeliveryTime != request.TargetDeliveryTime)
                 auditChanges.Add($"Delivery Time changed from {order.TargetDeliveryTime:MMM dd, yyyy h:mm tt} to {request.TargetDeliveryTime:MMM dd, yyyy h:mm tt}");
 
+            if (order.RiderDepartureTime != effectiveRiderDepartureTime)
+                auditChanges.Add($"Rider Departure Time changed from {(order.RiderDepartureTime.HasValue ? order.RiderDepartureTime.Value.ToString("MMM dd, yyyy h:mm tt") : "None")} to {effectiveRiderDepartureTime:MMM dd, yyyy h:mm tt}");
+
+            if (order.Fulfillment != request.Fulfillment)
+                auditChanges.Add($"Fulfillment changed from '{order.Fulfillment}' to '{request.Fulfillment}'");
+
             if (order.DeliveryAddress != request.DeliveryAddress)
                 auditChanges.Add($"Address changed from '{order.DeliveryAddress}' to '{request.DeliveryAddress}'");
 
@@ -336,19 +371,26 @@ namespace LechonSystem.Api.Services
             if (order.Price != request.Price)
                 auditChanges.Add($"Lechon Subtotal changed from ₱{order.Price} to ₱{request.Price}");
 
-
             bool requiresRescheduling = false;
-            if (order.TargetDeliveryTime != request.TargetDeliveryTime)
+            if (order.TargetDeliveryTime != request.TargetDeliveryTime || order.RiderDepartureTime != effectiveRiderDepartureTime)
             {
                 requiresRescheduling = true;
             }
 
             // Overwrite Master Order details
             order.CustomerName = request.CustomerName;
+            order.FacebookName = request.FacebookName;
             order.ContactNumber = request.ContactNumber;
+            if (!string.IsNullOrWhiteSpace(request.Source))
+            {
+                order.Source = request.Source;
+            }
+            order.EventType = request.EventType;
             order.DeliveryAddress = request.DeliveryAddress;
+            order.Landmark = request.Landmark;
             order.Remarks = request.Remarks;
             order.TargetDeliveryTime = request.TargetDeliveryTime;
+            order.RiderDepartureTime = effectiveRiderDepartureTime;
             order.Fulfillment = request.Fulfillment;
             order.Price = request.Price;
             order.AddOns = request.AddOns;
@@ -358,7 +400,7 @@ namespace LechonSystem.Api.Services
             order.GrandTotal = request.GrandTotal;
             order.UpdatedAt = DateTime.UtcNow;
 
-            // --- NEW: Highly Detailed Item Tracking ---
+            // --- Highly Detailed Item Tracking ---
             var incomingItemIds = request.Items.Select(i => i.Id).ToList();
 
             foreach (var requestedItem in request.Items)
@@ -371,7 +413,6 @@ namespace LechonSystem.Api.Services
                     {
                         requiresRescheduling = true;
 
-                        // Fetch the new category from the database
                         var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                         string oldName = existingItem.ItemCategory?.Name ?? "Unknown Size";
                         string newName = newCat?.Name ?? "Unknown Size";
@@ -385,11 +426,9 @@ namespace LechonSystem.Api.Services
                             auditChanges.Add($"{itemName} quantity changed from {existingItem.Quantity} to {requestedItem.Quantity}");
                         }
 
-                        // Apply the updates
                         existingItem.ItemCategoryId = requestedItem.ItemCategoryId;
                         existingItem.Quantity = requestedItem.Quantity;
 
-                        // 🚀 THE FIX: Update the snapshot price!
                         existingItem.Price = newCat?.BasePrice ?? 0;
                         existingItem.TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity;
                     }
@@ -398,7 +437,6 @@ namespace LechonSystem.Api.Services
                 {
                     requiresRescheduling = true;
 
-                    // Look up the name and price of the new item they just added
                     var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                     string newName = newCat?.Name ?? "Item";
 
@@ -408,7 +446,6 @@ namespace LechonSystem.Api.Services
                     {
                         ItemCategoryId = requestedItem.ItemCategoryId,
                         Quantity = requestedItem.Quantity,
-                        // 🚀 THE FIX: Lock the price snapshot for newly added items so it doesn't save as 0!
                         Price = newCat?.BasePrice ?? 0,
                         TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity
                     };
@@ -440,7 +477,7 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
 
-            // Recalculate kitchen timeline
+            // Recalculate kitchen timeline for non-overridden items
             if (requiresRescheduling)
             {
                 foreach (var item in order.OrderItems)
@@ -448,10 +485,19 @@ namespace LechonSystem.Api.Services
                     var oldSchedule = await _context.OrderItemSchedules
                         .FirstOrDefaultAsync(s => s.OrderItemId == item.Id);
 
+                    if (oldSchedule != null && oldSchedule.IsManualOverride)
+                    {
+                        oldSchedule.TargetDeliveryTime = order.TargetDeliveryTime;
+                        continue;
+                    }
+
                     if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
 
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
-                        item.Id, order.TargetDeliveryTime, item.ItemCategoryId);
+                        item.Id,
+                        order.TargetDeliveryTime,
+                        item.ItemCategoryId,
+                        order.RiderDepartureTime);
 
                     _context.OrderItemSchedules.Add(newSchedule);
                 }
@@ -486,8 +532,8 @@ namespace LechonSystem.Api.Services
         {
             var order = await _context.Orders
                 .Include(o => o.OrderItems)
-                    .ThenInclude(i => i.ItemCategory) // Grabs the Lechon Size Name!
-                .AsNoTracking() // Makes the read lightning fast
+                    .ThenInclude(i => i.ItemCategory)
+                .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             return order;
@@ -506,10 +552,14 @@ namespace LechonSystem.Api.Services
             var dto = new OrderDetailsDto
             {
                 Id = order.Id,
+                OrderReference = order.OrderReference,
                 CustomerName = order.CustomerName,
+                FacebookName = order.FacebookName,
                 ContactNumber = order.ContactNumber ?? string.Empty,
                 Source = order.Source ?? string.Empty,
+                EventType = order.EventType,
                 DeliveryAddress = order.DeliveryAddress ?? string.Empty,
+                Landmark = order.Landmark,
                 Remarks = order.Remarks,
                 Price = order.Price,
                 AddOns = order.AddOns,
@@ -520,6 +570,7 @@ namespace LechonSystem.Api.Services
                 BalanceDue = (order.GrandTotal - order.Downpayment) > 0 ? (order.GrandTotal - order.Downpayment) : 0,
                 IsTrustedCustomer = order.IsTrustedCustomer,
                 TargetDeliveryTime = order.TargetDeliveryTime,
+                RiderDepartureTime = order.RiderDepartureTime,
                 IsDeliveryDetailsConfirmed = order.IsDeliveryDetailsConfirmed,
                 IsCancelled = order.IsCancelled,
                 CancellationReason = order.CancellationReason,
@@ -556,7 +607,6 @@ namespace LechonSystem.Api.Services
             if (trip != null)
             {
                 dto.AssignedRiderName = trip.RiderName;
-                // Resolve phone number from Riders table if available
                 var rider = await _context.Riders
                     .AsNoTracking()
                     .FirstOrDefaultAsync(r => r.FullName == trip.RiderName);
@@ -566,8 +616,7 @@ namespace LechonSystem.Api.Services
             return dto;
         }
 
-
-       // Action 1: Customer Agreed
+        // Action 1: Customer Agreed
         public async Task<bool> ApplyNewMenuPricesAsync(int orderId)
         {
             var order = await _context.Orders
@@ -579,33 +628,26 @@ namespace LechonSystem.Api.Services
 
             decimal totalIncrease = 0;
 
-            // Mathematically increase the locked prices to match the live CMS prices
             foreach (var item in order.OrderItems)
             {
-                // Calculate what the exact total SHOULD be today
                 var newLivePrice = item.ItemCategory?.BasePrice ?? 0;
                 var newLiveTotal = newLivePrice * item.Quantity;
 
-                // If the old locked snapshot is cheaper, calculate the difference
                 if (item.TotalPrice < newLiveTotal)
                 {
                     totalIncrease += (newLiveTotal - item.TotalPrice);
 
-                    // Update the item's individual receipt to the new higher price
                     item.TotalPrice = newLiveTotal; 
                     item.Price = newLivePrice;
                 }
             }
 
-            // 🚀 THE FIX: Apply the exact price hike difference to the Master Order!
             if (totalIncrease > 0)
             {
-                order.Price += totalIncrease;      // Updates the Lechon Subtotal
-                order.GrandTotal += totalIncrease; // Updates the Grand Total (which instantly fixes Balance to Collect!)
+                order.Price += totalIncrease;
+                order.GrandTotal += totalIncrease;
             }
 
-            // 🚀 THE DASHBOARD KILL-SWITCH: Explicitly flag this renegotiation as "Resolved" 
-            // This guarantees it drops off the Dashboard table!
             order.IsPriceWaived = true; 
 
             await _context.SaveChangesAsync();
@@ -618,12 +660,9 @@ namespace LechonSystem.Api.Services
             var order = await _context.Orders.FindAsync(orderId);
             if (order == null) return false;
 
-            // Permanently lock the old price and dismiss the alarm
             order.IsPriceWaived = true;
             await _context.SaveChangesAsync();
             return true;
         }
     }
-
-
 }

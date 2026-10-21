@@ -9,10 +9,15 @@ export const orderFormSchema = z
     customerPhone: z
       .string()
       .min(10, { message: "Please enter a valid phone number (min 10 digits)." }),
+    facebookName: z.string().optional().default(""),
+    source: z.string().optional().default("Business FB Page"),
+    eventType: z.string().optional().default(""),
+    landmark: z.string().optional().default(""),
     targetDeliveryTime: z
       .string()
       .min(1, { message: "Target delivery/pickup time is required." }),
-    fulfillment: z.number().default(1), // 0 = Pickup, 1 = Delivery
+    riderDepartureTime: z.string().optional().default(""),
+    fulfillment: z.number().default(1), // 0 = Pickup, 1 = Delivery, 2 = Lalamove
     distanceKm: z.number().min(0).default(0),
 
     // -- FINANCIAL & ROUTING FIELDS --
@@ -72,9 +77,12 @@ export interface ParsedOrderItemDto {
 export interface ParsedOrderDraftDto {
   customerName: string;
   contactNumber: string;
+  facebookName?: string | null;
   targetDeliveryTime?: string | null;
-  fulfillment: number; // 0 = Pickup, 1 = Delivery
+  fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   deliveryAddress?: string | null;
+  landmark?: string | null;
+  eventType?: string | null;
   remarks?: string | null;
   deliveryFee?: number | null;
   downpayment?: number | null;

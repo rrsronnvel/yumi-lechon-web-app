@@ -5,6 +5,11 @@ import { ItemCategory, ParsedOrderDraftDto } from '../utils/messengerTextParser'
 
 export type { ItemCategory, ParsedOrderDraftDto };
 
+export interface DeliveryPricingDto {
+  baseFare: number;
+  ratePerKm: number;
+}
+
 export interface InventoryBalanceDto {
   categoryId: number;
   categoryName: string;
@@ -24,12 +29,16 @@ export interface CreateOrderItemPayload {
 
 export interface CreateOrderPayload {
   customerName: string;
+  facebookName?: string;
   customerPhone: string;
   source: string;
+  eventType?: string;
   targetDeliveryTime: string;
+  riderDepartureTime?: string;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   address: string;
   deliveryAddress?: string;
+  landmark?: string;
   remarks?: string;
   price: number;
   addOns?: string;
@@ -42,11 +51,50 @@ export interface CreateOrderPayload {
   items: CreateOrderItemPayload[];
 }
 
+export interface UpdateOrderItemPayload {
+  id: number;
+  itemCategoryId: number;
+  quantity: number;
+}
+
+export interface UpdateOrderPayload {
+  id: number;
+  customerName: string;
+  facebookName?: string;
+  contactNumber: string;
+  source: string;
+  eventType?: string;
+  deliveryAddress: string;
+  landmark?: string;
+  remarks?: string;
+  targetDeliveryTime: string;
+  riderDepartureTime?: string;
+  fulfillment: number;
+  price: number;
+  addOns?: string;
+  deliveryFee: number;
+  downpayment: number;
+  discount: number;
+  grandTotal: number;
+  items: UpdateOrderItemPayload[];
+}
+
 export interface ScreenshotAssetInput {
   uri: string;
   fileName?: string | null;
   mimeType?: string | null;
 }
+
+export const useDeliveryPricingQuery = () => {
+  return useQuery<DeliveryPricingDto>({
+    queryKey: ['cms', 'delivery-pricing'],
+    queryFn: async () => {
+      const response = await apiClient.get<DeliveryPricingDto>('/cms/delivery-pricing');
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+};
 
 export const useCatalogCategories = () => {
   const query = useQuery<ItemCategory[]>({
@@ -134,6 +182,27 @@ export const useCreateOrderMutation = () => {
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['manifest'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['schedules'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+      ]);
+    },
+  });
+};
+
+export const useUpdateOrderMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: UpdateOrderPayload) => {
+      const response = await apiClient.put(`/orders/${payload.id}`, payload);
+      return response.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['schedules'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory', 'balances'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
       ]);
     },

@@ -22,6 +22,7 @@ import {
   OrderDirectoryDto,
 } from '../../hooks/useOrders';
 import { generateBookingConfirmation } from '../../utils/messengerTemplates';
+import EditOrderModal from './EditOrderModal';
 
 interface OrderDossierModalProps {
   orderId: number | null;
@@ -61,6 +62,9 @@ export default function OrderDossierModal({
   // Clipboard banner state
   const [copiedBannerVisible, setCopiedBannerVisible] = useState(false);
 
+  // Edit Order Modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
   // Payment logger form state
   const [isPaymentExpanded, setIsPaymentExpanded] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -78,6 +82,7 @@ export default function OrderDossierModal({
 
   useEffect(() => {
     setCopiedBannerVisible(false);
+    setIsEditModalOpen(false);
     setIsPaymentExpanded(false);
     setPaymentAmount('');
     setPaymentMethod('GCash');
@@ -90,6 +95,12 @@ export default function OrderDossierModal({
 
   const activeOrder = orderDetails || fallbackOrder;
   const isVisible = orderId !== null;
+
+  const displayOrderRef =
+    orderDetails?.orderReference ||
+    fallbackOrder?.orderReference ||
+    activeOrder?.id ||
+    orderId;
 
   const computedBalanceDue = orderDetails
     ? Number(
@@ -124,12 +135,13 @@ export default function OrderDossierModal({
 
     const target = orderDetails;
     const text = generateBookingConfirmation({
-      orderNumber: target?.id ?? fallbackOrder?.id,
+      orderNumber: displayOrderRef ?? undefined,
       customerName: target?.customerName || fallbackOrder?.customerName || 'Customer',
       targetDeliveryTime:
         target?.targetDeliveryTime || fallbackOrder?.targetDeliveryTime || new Date().toISOString(),
       fulfillment: Number(target?.fulfillment ?? fallbackOrder?.fulfillment ?? 1),
       deliveryAddress: target?.deliveryAddress ?? fallbackOrder?.deliveryAddress ?? '',
+      landmark: target?.landmark ?? fallbackOrder?.landmark ?? null,
       items: (target?.orderItems || []).map((item) => ({
         categoryName: item.itemCategory?.name || 'Lechon Size',
         quantity: item.quantity || 1,
@@ -248,7 +260,7 @@ export default function OrderDossierModal({
     );
   };
 
-  const formatFullSchedule = (dateStr?: string) => {
+  const formatFullSchedule = (dateStr?: string | null) => {
     if (!dateStr) return 'N/A';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
@@ -293,7 +305,7 @@ export default function OrderDossierModal({
         <View style={styles.stickyHeader}>
           <View style={styles.headerLeft}>
             <View style={styles.headerTopRow}>
-              <Text style={styles.orderIdText}>#{activeOrder?.id ?? orderId}</Text>
+              <Text style={styles.orderIdText}>#{displayOrderRef}</Text>
               {(orderDetails?.isTrustedCustomer || fallbackOrder?.isTrustedCustomer) && (
                 <View style={styles.vipBadge}>
                   <Text style={styles.vipBadgeText}>👑 VIP</Text>
@@ -327,7 +339,7 @@ export default function OrderDossierModal({
             }
           >
             <Text style={styles.callCustomerBtnText}>
-              📞 Call Customer ({activeOrder?.contactNumber || 'N/A'})
+              📞 Call ({activeOrder?.contactNumber || 'N/A'})
             </Text>
           </Pressable>
 
@@ -341,6 +353,19 @@ export default function OrderDossierModal({
           >
             <Text style={styles.copyReceiptBtnText}>📋 Copy Receipt</Text>
           </Pressable>
+
+          {!isCancelled && routingStatus !== 'Delivered' && orderDetails && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.quickActionBtn,
+                styles.editOrderBtn,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={() => setIsEditModalOpen(true)}
+            >
+              <Text style={styles.editOrderBtnText}>✏️ Edit Order</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Copied Confirmation Banner */}
@@ -411,11 +436,49 @@ export default function OrderDossierModal({
               <Text style={styles.cardSectionTitle}>🚚 Logistics &amp; Courier Attribution</Text>
 
               <View style={styles.infoGrid}>
+                {(orderDetails?.facebookName || fallbackOrder?.facebookName) && (
+                  <View style={styles.infoBlock}>
+                    <Text style={styles.infoLabel}>FB / Messenger Name</Text>
+                    <Text style={styles.infoValue}>
+                      💬 {orderDetails?.facebookName || fallbackOrder?.facebookName}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.metaBadgeRow}>
+                  {Boolean(orderDetails?.source || fallbackOrder?.source) && (
+                    <View style={styles.metaPill}>
+                      <Text style={styles.metaPillText}>
+                        📌 Source: {orderDetails?.source || fallbackOrder?.source}
+                      </Text>
+                    </View>
+                  )}
+                  {Boolean(orderDetails?.eventType || fallbackOrder?.eventType) && (
+                    <View style={styles.metaPill}>
+                      <Text style={styles.metaPillText}>
+                        🎉 Event: {orderDetails?.eventType || fallbackOrder?.eventType}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
                 <View style={styles.infoBlock}>
                   <Text style={styles.infoLabel}>Target Delivery Date &amp; Time</Text>
                   <Text style={styles.infoValueHighlight}>
                     {formatFullSchedule(
                       orderDetails?.targetDeliveryTime || fallbackOrder?.targetDeliveryTime
+                    )}
+                  </Text>
+                </View>
+
+                <View style={styles.infoBlock}>
+                  <Text style={styles.infoLabel}>🛵 Rider Departure Time (Kitchen Anchor)</Text>
+                  <Text style={styles.infoValue}>
+                    {formatFullSchedule(
+                      orderDetails?.riderDepartureTime ||
+                        fallbackOrder?.riderDepartureTime ||
+                        orderDetails?.targetDeliveryTime ||
+                        fallbackOrder?.targetDeliveryTime
                     )}
                   </Text>
                 </View>
@@ -433,9 +496,18 @@ export default function OrderDossierModal({
                   </Text>
                 </View>
 
+                {Boolean(orderDetails?.landmark || fallbackOrder?.landmark) && (
+                  <View style={styles.infoBlock}>
+                    <Text style={styles.infoLabel}>🧭 Landmark / Rider Guide</Text>
+                    <Text style={styles.infoValueHighlight}>
+                      {orderDetails?.landmark || fallbackOrder?.landmark}
+                    </Text>
+                  </View>
+                )}
+
                 {Boolean(orderDetails?.remarks) && (
                   <View style={styles.remarksBox}>
-                    <Text style={styles.remarksLabel}>📝 CUSTOMER REMARKS</Text>
+                    <Text style={styles.remarksLabel}>📝 KITCHEN &amp; PREP INSTRUCTIONS</Text>
                     <Text style={styles.remarksText}>{orderDetails?.remarks}</Text>
                   </View>
                 )}
@@ -799,7 +871,7 @@ export default function OrderDossierModal({
                   <View style={styles.cancelConfirmBox}>
                     <View style={styles.cancelConfirmHeader}>
                       <Text style={styles.cancelConfirmTitle}>
-                        🚫 Void &amp; Cancel Order #{activeOrder?.id ?? orderId}?
+                        🚫 Void &amp; Cancel Order #{displayOrderRef}?
                       </Text>
                       <Pressable onPress={() => setIsCancelExpanded(false)}>
                         <Text style={styles.cancelKeepText}>Keep Order</Text>
@@ -876,6 +948,20 @@ export default function OrderDossierModal({
             )}
           </ScrollView>
         )}
+
+        {/* Edit Order Modal */}
+        <EditOrderModal
+          visible={isEditModalOpen}
+          order={orderDetails || null}
+          onClose={() => setIsEditModalOpen(false)}
+          onSaved={() => {
+            void refetchDetails();
+            setPaymentFeedback({
+              type: 'success',
+              message: 'Order updated and kitchen schedule synchronized!',
+            });
+          }}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -988,7 +1074,7 @@ const styles = StyleSheet.create({
   },
   quickActionBar: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: '#FFFFFF',
@@ -998,7 +1084,7 @@ const styles = StyleSheet.create({
   quickActionBtn: {
     flex: 1,
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1009,7 +1095,7 @@ const styles = StyleSheet.create({
     borderColor: '#6EE7B7',
   },
   callCustomerBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#065F46',
   },
@@ -1018,9 +1104,18 @@ const styles = StyleSheet.create({
     borderColor: '#FCD34D',
   },
   copyReceiptBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#92400E',
+  },
+  editOrderBtn: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  editOrderBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E40AF',
   },
   copiedBanner: {
     backgroundColor: '#065F46',
@@ -1129,6 +1224,24 @@ const styles = StyleSheet.create({
   },
   infoGrid: {
     gap: 10,
+  },
+  metaBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  metaPill: {
+    backgroundColor: '#F5F5F4',
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  metaPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#44403C',
   },
   infoBlock: {
     marginBottom: 2,

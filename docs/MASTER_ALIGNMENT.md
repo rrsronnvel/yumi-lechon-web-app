@@ -606,3 +606,37 @@ For immediate out-of-the-box system bootstrapping, the database seeds two produc
 - 🧑‍💼 Cashier Account: Username cashier | Password CashierPassword123! | Role Cashier | Full Name Store Cashier
 
 \*\*
+
+
+---
+
+## 14. 🧭 Order Intake Ergonomics, Dynamic Departure Routing & Cross-Platform POS Parity
+
+### 14.1. Daily Sequential Order Reference (`MMDDYY-XXX`) & Receipt Privacy
+* **Internal Format:** Every created order is stamped with an automatic daily reference `MMDDYY-XXX` (e.g., `102126-001` for the first order created on October 21, 2026) based on the daily sequence count.
+* **Internal Searchability:** Dispatchers can search by `OrderReference` or `FacebookName` alongside `CustomerName`, `ContactNumber`, and `Id` in both Web and Mobile directories.
+* **Customer Receipt Privacy Shield:** Customer-facing Messenger templates (`generateBookingConfirmation`, `generateVerificationReminder`, `generateDispatchNotification`) **strictly omit** `OrderReference` and internal database `Id` values so competitors cannot infer daily sales volume.
+
+### 14.2. Enriched Order Metadata (`FacebookName`, `Source`, `EventType`, `Landmark`)
+* **`FacebookName`:** Captures the customer's exact Facebook/Messenger profile name for instant chat lookup when it differs from the recipient's legal/delivery name.
+* **`Source`:** Standardized quick-select pills (`Walk-in`, `Business FB Page`, `Personal FB Account`, `Other`).
+* **`EventType`:** Standardized quick-select pills (`Birthday`, `Fiesta`, `Wedding`, `Corporate`, `Other`).
+* **`Landmark`:** Dedicated physical navigation cue (e.g., `"Tapat ng Shell, Dilaw na gate"`) rendered prominently on Rider Manifests, Order Dossiers, and Messenger templates, keeping `Remarks` strictly focused on **Kitchen & Prep Instructions**.
+
+### 14.3. CMS Delivery Pricing Engine (`SystemSetting`)
+* **Configurable Formula:** Stored in `SystemSettings` (`DeliveryFeeBaseFare` default `₱100.00`, `DeliveryFeeRatePerKm` default `₱15.00`) and managed via the CMS **Delivery Pricing Configuration** card (`GET /api/cms/delivery-pricing`, `PUT /api/cms/delivery-pricing`).
+* **Auto-Calculation with Override:** When `Fulfillment == InHouseDelivery` (`1`) and `DistanceKm > 0`, both Web and Mobile POS forms auto-compute:
+  $$\text{Suggested Delivery Fee} = \text{Round}((\text{DistanceKm} \times \text{RatePerKm}) + \text{BaseFare})$$
+  Dispatchers may still manually override the `DeliveryFee` input. For `Pickup` (`0`) and `CustomerArrangedLalamove` (`2`), `DistanceKm` and `DeliveryFee` lock to `0`.
+
+### 14.4. Distance Departure Ladder & Kitchen Anchor (`RiderDepartureTime`)
+* **6-Tier Distance Departure Ladder:** When `Fulfillment != Pickup`, `RiderDepartureTime` is automatically calculated backward from `TargetDeliveryTime` based on `DistanceKm`:
+  - `0.0 – 2.9 km`: `-15 minutes`
+  - `3.0 – 9.9 km`: `-30 minutes`
+  - `10.0 – 15.0 km`: `-60 minutes` (`1 hr`)
+  - `16.0 – 20.0 km`: `-75 minutes` (`1 hr 15m`)
+  - `20.1 – 35.0 km`: `-90 minutes` (`1.5 hrs`)
+  - `> 35.0 km`: `-120 minutes` (`2 hrs`)
+  - For `Pickup` (`0`), `RiderDepartureTime` is locked equal to `TargetDeliveryTime` (`0 min` offset).
+* **Interactive Nudge Pills:** Dispatchers can adjust `RiderDepartureTime` on the fly using quick-offset pills (`-30m`, `-45m`, `-1h`, `-1h 30m`, `-2h`) or manual datetime input for holiday traffic or custom routing.
+* **Kitchen Backward-Scheduling Anchor:** `SchedulingService` uses `anchorTime = order.RiderDepartureTime ?? order.TargetDeliveryTime` as the zero-hour baseline so every pig finishes packaging right as the rider departs the commissary.

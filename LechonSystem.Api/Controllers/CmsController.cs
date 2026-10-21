@@ -20,6 +20,36 @@ namespace LechonSystem.Api.Controllers
             _cmsService = cmsService;
         }
 
+        // GET: api/cms/delivery-pricing
+        [HttpGet("delivery-pricing")]
+        [Authorize(Roles = "Owner,Cashier")]
+        public async Task<IActionResult> GetDeliveryPricing()
+        {
+            var pricing = await _cmsService.GetDeliveryPricingAsync();
+            return Ok(pricing);
+        }
+
+        // PUT: api/cms/delivery-pricing
+        [HttpPut("delivery-pricing")]
+        [Authorize(Roles = "Owner")]
+        public async Task<IActionResult> UpdateDeliveryPricing([FromBody] DeliveryPricingDto request)
+        {
+            if (request == null || request.BaseFare < 0 || request.RatePerKm < 0)
+            {
+                return BadRequest(new { message = "BaseFare and RatePerKm must be non-negative." });
+            }
+
+            try
+            {
+                var updated = await _cmsService.UpdateDeliveryPricingAsync(request);
+                return Ok(updated);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         // PUT: api/cms/categories/{id}/price
         [HttpPut("categories/{id}/price")]
         [Authorize(Roles = "Owner")]

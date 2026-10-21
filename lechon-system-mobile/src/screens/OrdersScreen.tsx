@@ -181,7 +181,7 @@ export default function OrdersScreen() {
         {/* Top Row: #ID + Edited Pill + Customer Name + VIP Badge | Grand Total */}
         <View style={styles.cardTopRow}>
           <View style={styles.cardTopLeft}>
-            <Text style={styles.monoOrderId}>#{item.id}</Text>
+            <Text style={styles.monoOrderId}>#{item.orderReference || item.id}</Text>
             {item.hasRecentEdits && (
               <View style={styles.editedPill}>
                 <Text style={styles.editedPillText}>✏️ Edited</Text>

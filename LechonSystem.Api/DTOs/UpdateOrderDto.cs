@@ -7,10 +7,15 @@ namespace LechonSystem.Api.Models.DTOs
 
         // 2. Customer & Routing Details
         public string CustomerName { get; set; } = string.Empty;
+        public string? FacebookName { get; set; }
         public string ContactNumber { get; set; } = string.Empty;
+        public string Source { get; set; } = string.Empty;
+        public string? EventType { get; set; }
         public string DeliveryAddress { get; set; } = string.Empty;
+        public string? Landmark { get; set; }
         public string? Remarks { get; set; }
         public DateTime TargetDeliveryTime { get; set; }
+        public DateTime? RiderDepartureTime { get; set; }
         public FulfillmentType Fulfillment { get; set; }
 
         // 3. Financials

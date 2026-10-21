@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 export type ApiEnvironment = 'cloud' | 'local';
 
 export const CLOUD_API_URL = 'https://ronnvel-001-site1.ktempurl.com/api';
-export const LOCAL_API_URL = 'http://10.0.2.2:5199/api';
+export const LOCAL_API_URL = 'http://localhost:5199/api';
 
 export const TOKEN_STORAGE_KEY = 'lechon_auth_token';
 export const USER_STORAGE_KEY = 'lechon_auth_user';
@@ -63,6 +63,10 @@ export const registerUnauthorizedHandler = (handler: (() => void) | null): void 
 
 apiClient.interceptors.request.use((config) => {
   config.baseURL = getApiBaseUrl();
+  // Strip redundant leading /api if present to prevent double-prefixing
+  if (config.url?.startsWith('/api/')) {
+    config.url = config.url.replace(/^\/api/, '');
+  }
   if (activeToken && config.headers) {
     config.headers.Authorization = `Bearer ${activeToken}`;
   }

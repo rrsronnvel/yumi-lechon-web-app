@@ -110,8 +110,8 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                   className="even:bg-slate-50 odd:bg-white text-slate-900 hover:bg-amber-50/40"
                 >
                   {/* 1. No. */}
-                  <td className="px-1.5 py-2 text-center font-black text-slate-800 border-r border-slate-300">
-                    {item.orderId || item.id}
+                  <td className="px-1 py-2 text-center font-black text-slate-800 border-r border-slate-300 text-[10px] break-all">
+                    #{item.orderReference || item.orderId || item.id}
                   </td>
 
                   {/* 2. Tahi (Editable in edit mode, High-Visibility Bold Red) */}
@@ -214,7 +214,12 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                     className="px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words"
                     title={item.location || undefined}
                   >
-                    {item.location || "-"}
+                    <div>{item.location || "-"}</div>
+                    {item.landmark && (
+                      <div className="text-[9.5px] text-amber-800 font-semibold mt-0.5">
+                        🧭 {item.landmark}
+                      </div>
+                    )}
                   </td>
 
                   {/* 12. Add-ons */}

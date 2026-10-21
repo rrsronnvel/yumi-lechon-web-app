@@ -134,6 +134,7 @@ export default function OrdersPage() {
       targetDeliveryTime: orderDetails.targetDeliveryTime,
       fulfillment: Number(orderDetails.fulfillment ?? 1),
       deliveryAddress: orderDetails.deliveryAddress || "",
+      landmark: orderDetails.landmark || undefined,
       items: (orderDetails.orderItems || []).map((item: any) => ({
         categoryName: item.itemCategory?.name || "Lechon Size",
         quantity: item.quantity || 1,
@@ -208,11 +209,18 @@ export default function OrdersPage() {
 
     // fulfillment === 1 (Delivery) or default
     return (
-      <span className="text-sm text-slate-700" title={address}>
-        {truncated || (
-          <span className="italic text-slate-400">No Address Provided</span>
+      <div className="space-y-0.5">
+        <span className="text-sm text-slate-700 block" title={address}>
+          {truncated || (
+            <span className="italic text-slate-400">No Address Provided</span>
+          )}
+        </span>
+        {order.landmark && (
+          <span className="text-[11px] text-amber-800 block truncate max-w-[200px]">
+            🧭 {order.landmark}
+          </span>
         )}
-      </span>
+      </div>
     );
   };
 
@@ -389,7 +397,7 @@ export default function OrdersPage() {
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono font-semibold text-stone-900">
-                          #{order.id}
+                          #{order.orderReference || order.id}
                         </span>
                         {order.hasRecentEdits && (
                           <Badge
@@ -409,7 +417,7 @@ export default function OrdersPage() {
                   {/* Customer Column */}
                   <TableCell>
                     <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-stone-900">
                           {order.customerName}
                         </span>
@@ -421,9 +429,22 @@ export default function OrdersPage() {
                             👑 VIP
                           </Badge>
                         )}
+                        {order.eventType && (
+                          <Badge
+                            variant="outline"
+                            className="bg-stone-50 text-stone-600 border-stone-200 text-[10px] h-4.5 px-1.5"
+                          >
+                            🎉 {order.eventType}
+                          </Badge>
+                        )}
                       </div>
-                      <div className="font-mono text-xs text-stone-500">
-                        {order.contactNumber || "N/A"}
+                      <div className="font-mono text-xs text-stone-500 flex items-center gap-1.5">
+                        <span>{order.contactNumber || "N/A"}</span>
+                        {order.facebookName && (
+                          <span className="text-blue-700 font-sans">
+                            • 💬 {order.facebookName}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -484,7 +505,7 @@ export default function OrdersPage() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
         <Input
-          placeholder="Search by customer name, phone, or #order ID..."
+          placeholder="Search by customer name, FB name, phone, or #OrderRef..."
           value={rawSearch}
           onChange={(e) => setRawSearch(e.target.value)}
           className="bg-white pl-9 h-10 border-stone-300"
@@ -546,7 +567,7 @@ export default function OrdersPage() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <SheetTitle className="text-2xl font-bold font-mono text-stone-900">
-                      #{orderDetails?.id || selectedOrder?.id}
+                      #{orderDetails?.orderReference || selectedOrder?.orderReference || orderDetails?.id || selectedOrder?.id}
                     </SheetTitle>
                     {/* Semantic Status Pill */}
                     {orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
@@ -658,7 +679,7 @@ export default function OrdersPage() {
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="col-span-2">
                         <p className="text-stone-500">Name</p>
-                        <div className="font-medium text-base text-stone-900 flex items-center gap-2">
+                        <div className="font-medium text-base text-stone-900 flex items-center gap-2 flex-wrap">
                           {orderDetails.customerName}
                           {orderDetails.isTrustedCustomer && (
                             <Badge
@@ -666,6 +687,22 @@ export default function OrdersPage() {
                               className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
                             >
                               👑 VIP
+                            </Badge>
+                          )}
+                          {orderDetails.eventType && (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-900 border-amber-200 text-xs"
+                            >
+                              🎉 {orderDetails.eventType}
+                            </Badge>
+                          )}
+                          {orderDetails.source && (
+                            <Badge
+                              variant="outline"
+                              className="bg-stone-50 text-stone-600 border-stone-200 text-xs"
+                            >
+                              📥 {orderDetails.source}
                             </Badge>
                           )}
                         </div>
@@ -677,11 +714,25 @@ export default function OrdersPage() {
                         </p>
                       </div>
                       <div>
+                        <p className="text-stone-500">FB / Messenger Name</p>
+                        <p className="font-medium text-blue-800">
+                          {orderDetails.facebookName || "—"}
+                        </p>
+                      </div>
+                      <div>
                         <p className="text-stone-500">Delivery Target</p>
                         <p className="font-medium text-amber-900">
                           {new Date(
                             orderDetails.targetDeliveryTime
                           ).toLocaleString()}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-stone-500">Rider Departure (Anchor)</p>
+                        <p className="font-medium text-stone-800 font-mono text-xs">
+                          {orderDetails.riderDepartureTime
+                            ? new Date(orderDetails.riderDepartureTime).toLocaleString()
+                            : new Date(orderDetails.targetDeliveryTime).toLocaleString()}
                         </p>
                       </div>
                       <div>
@@ -707,6 +758,11 @@ export default function OrdersPage() {
                               </span>
                             )}
                         </p>
+                        {orderDetails?.landmark && (
+                          <p className="text-xs text-amber-800 font-medium mt-0.5">
+                            🧭 Landmark: {orderDetails.landmark}
+                          </p>
+                        )}
                       </div>
 
                       {/* Dedicated Courier / Handover Status section */}
@@ -834,7 +890,7 @@ export default function OrdersPage() {
                       {orderDetails.remarks && (
                         <div className="col-span-2 bg-amber-50 p-3 rounded-lg border border-amber-200">
                           <p className="text-xs text-amber-800 font-bold uppercase mb-1">
-                            Customer Remarks
+                            Kitchen & Prep Instructions
                           </p>
                           <p className="text-sm text-stone-800">
                             {orderDetails.remarks}
@@ -1094,7 +1150,7 @@ export default function OrdersPage() {
         <AlertDialogContent className="sm:max-w-md rounded-xl border-stone-200 bg-white">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-stone-900">
-              Cancel Order #{orderDetails?.id || selectedOrder?.id}?
+              Cancel Order #{orderDetails?.orderReference || selectedOrder?.orderReference || orderDetails?.id || selectedOrder?.id}?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-stone-600">
               This action will void the booking, immediately release the

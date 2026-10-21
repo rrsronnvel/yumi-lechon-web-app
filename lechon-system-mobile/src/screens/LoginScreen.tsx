@@ -118,7 +118,7 @@ export default function LoginScreen() {
                       apiEnv === 'local' && styles.envPillTextActive,
                     ]}
                   >
-                    💻 Local API (10.0.2.2)
+                    💻 Local API (localhost:5199)
                   </Text>
                 </Pressable>
               </View>
@@ -222,7 +222,7 @@ export default function LoginScreen() {
                   onPress={() => handleQuickFill('owner', 'OwnerPassword123!')}
                 >
                   <Text style={styles.presetBtnOwnerText}>👑 Fill Owner</Text>
-                  <Text style={styles.presetSubText}>owner</Text>
+                  <Text style={styles.presetSubText}>owner • OwnerPassword123!</Text>
                 </Pressable>
 
                 <Pressable
@@ -234,7 +234,7 @@ export default function LoginScreen() {
                   onPress={() => handleQuickFill('cashier', 'CashierPassword123!')}
                 >
                   <Text style={styles.presetBtnCashierText}>🧑‍💼 Fill Cashier</Text>
-                  <Text style={styles.presetSubText}>cashier</Text>
+                  <Text style={styles.presetSubText}>cashier • CashierPassword123!</Text>
                 </Pressable>
               </View>
             </View>

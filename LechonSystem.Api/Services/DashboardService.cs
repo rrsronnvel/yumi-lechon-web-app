@@ -12,6 +12,7 @@ namespace LechonSystem.Api.Services
     public class PendingConfirmationDto
     {
         public int Id { get; set; }
+        public string OrderReference { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public DateTime TargetDeliveryTime { get; set; }
         public string PhoneNumber { get; set; } = string.Empty;
@@ -21,10 +22,13 @@ namespace LechonSystem.Api.Services
     public class DeliveryVerificationDto
     {
         public int Id { get; set; }
+        public string OrderReference { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public string DeliveryAddress { get; set; } = string.Empty;
+        public string? Landmark { get; set; }
         public string PhoneNumber { get; set; } = string.Empty;
         public DateTime TargetDeliveryTime { get; set; }
+        public DateTime? RiderDepartureTime { get; set; }
     }
 
     // 🚀 Added the missing Defrost DTO here!
@@ -32,13 +36,18 @@ namespace LechonSystem.Api.Services
     {
         public int Id { get; set; }
         public int OrderId { get; set; }
+        public string OrderReference { get; set; } = string.Empty;
         public string WeightCategory { get; set; } = string.Empty;
         public int Quantity { get; set; }
         public DateTime TahiStartTime { get; set; }
 
         // NEW FIELDS FOR THE DASHBOARD HUD
         public string CustomerName { get; set; } = string.Empty;
+        public string? FacebookName { get; set; }
+        public string? EventType { get; set; }
+        public string? Landmark { get; set; }
         public DateTime TargetDeliveryTime { get; set; }
+        public DateTime? RiderDepartureTime { get; set; }
         public bool IsTrustedCustomer { get; set; }
         public string DeliveryAddress { get; set; } = string.Empty;
         public int Fulfillment { get; set; }
@@ -90,11 +99,10 @@ namespace LechonSystem.Api.Services
                 .Select(o => new PendingConfirmationDto
                 {
                     Id = o.Id,
+                    OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
                     TargetDeliveryTime = o.TargetDeliveryTime,
                     PhoneNumber = o.ContactNumber ?? string.Empty,
-
-
                     TotalAmount = o.GrandTotal
                 })
                 .ToListAsync();
@@ -110,9 +118,12 @@ namespace LechonSystem.Api.Services
                 .Select(o => new DeliveryVerificationDto
                 {
                     Id = o.Id,
+                    OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
                     TargetDeliveryTime = o.TargetDeliveryTime,
+                    RiderDepartureTime = o.RiderDepartureTime,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
+                    Landmark = o.Landmark,
                     PhoneNumber = o.ContactNumber ?? string.Empty
                 })
                 .ToListAsync();
@@ -133,11 +144,16 @@ namespace LechonSystem.Api.Services
                 {
                     Id = s.OrderItemId,
                     OrderId = s.OrderItem!.OrderId,
+                    OrderReference = s.OrderItem.Order!.OrderReference,
                     WeightCategory = s.OrderItem!.ItemCategory!.Name,
                     Quantity = s.OrderItem.Quantity,
                     TahiStartTime = s.TahiStartTime,
                     CustomerName = s.OrderItem.Order!.CustomerName,
+                    FacebookName = s.OrderItem.Order.FacebookName,
+                    EventType = s.OrderItem.Order.EventType,
+                    Landmark = s.OrderItem.Order.Landmark,
                     TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
+                    RiderDepartureTime = s.OrderItem.Order.RiderDepartureTime,
                     IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
                     Fulfillment = (int)s.OrderItem.Order.Fulfillment,
                     DeliveryAddress = s.OrderItem.Order.DeliveryAddress ?? string.Empty,
@@ -162,12 +178,14 @@ namespace LechonSystem.Api.Services
                 .GroupBy(item => new
                 {
                     item.OrderId,
+                    OrderReference = item.Order!.OrderReference,
                     CustomerName = item.Order!.CustomerName,
                     TargetDeliveryTime = item.Order.TargetDeliveryTime
                 })
                 .Select(g => new RenegotiationTaskDto
                 {
                     OrderId = g.Key.OrderId,
+                    OrderReference = g.Key.OrderReference,
                     CustomerName = g.Key.CustomerName,
                     TargetDeliveryTime = g.Key.TargetDeliveryTime,
                     PriceGap = g.Sum(item => item.ItemCategory!.BasePrice - item.Price)

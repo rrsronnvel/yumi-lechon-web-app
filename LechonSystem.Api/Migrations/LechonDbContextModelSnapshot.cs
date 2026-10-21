@@ -485,6 +485,12 @@ namespace LechonSystem.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("EventType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FacebookName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Fulfillment")
                         .HasColumnType("int");
 
@@ -507,6 +513,13 @@ namespace LechonSystem.Api.Migrations
                     b.Property<bool>("IsTrustedCustomer")
                         .HasColumnType("bit");
 
+                    b.Property<string>("Landmark")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OrderReference")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("OwnerApprovedAt")
                         .HasColumnType("datetime2");
 
@@ -519,6 +532,9 @@ namespace LechonSystem.Api.Migrations
 
                     b.Property<string>("Remarks")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("RiderDepartureTime")
+                        .HasColumnType("datetime2");
 
                     b.Property<decimal?>("RiderRemittedAmount")
                         .HasPrecision(18, 2)
@@ -1151,6 +1167,51 @@ namespace LechonSystem.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("SettlementQrSessions");
+                });
+
+            modelBuilder.Entity("LechonSystem.Api.Models.SystemSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("SettingKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SettingValue")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SystemSettings");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            SettingKey = "DeliveryFeeBaseFare",
+                            SettingValue = "100.00",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            UpdatedBy = "System"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            SettingKey = "DeliveryFeeRatePerKm",
+                            SettingValue = "15.00",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            UpdatedBy = "System"
+                        });
                 });
 
             modelBuilder.Entity("LechonSystem.Api.Models.User", b =>

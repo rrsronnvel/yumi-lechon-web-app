@@ -17,7 +17,11 @@ namespace LechonSystem.Api.Services
             _context = context;
         }
 
-        public async Task<OrderItemSchedule> CalculateScheduleAsync(int orderItemId, DateTime targetDeliveryTime, int itemCategoryId)
+        public async Task<OrderItemSchedule> CalculateScheduleAsync(
+            int orderItemId,
+            DateTime targetDeliveryTime,
+            int itemCategoryId,
+            DateTime? riderDepartureTime = null)
         {
             var profile = await _context.ProductCookingProfiles
                 .FirstOrDefaultAsync(p => p.ItemCategoryId == itemCategoryId);
@@ -26,7 +30,19 @@ namespace LechonSystem.Api.Services
             int salangDuration = profile?.SalangDurationMinutes ?? 180;
             int packagingDuration = profile?.PackagingDurationMinutes ?? 30;
 
-            DateTime packagingStart = targetDeliveryTime.AddMinutes(-packagingDuration);
+            if (!riderDepartureTime.HasValue && orderItemId > 0)
+            {
+                var orderDeparture = await _context.OrderItems
+                    .AsNoTracking()
+                    .Where(oi => oi.Id == orderItemId && oi.Order != null)
+                    .Select(oi => oi.Order!.RiderDepartureTime)
+                    .FirstOrDefaultAsync();
+                riderDepartureTime = orderDeparture;
+            }
+
+            var anchorTime = riderDepartureTime ?? targetDeliveryTime;
+
+            DateTime packagingStart = anchorTime.AddMinutes(-packagingDuration);
             DateTime salangStart = packagingStart.AddMinutes(-salangDuration);
             DateTime tahiStart = salangStart.AddMinutes(-tahiDuration);
 
@@ -56,12 +72,20 @@ namespace LechonSystem.Api.Services
                     id = s.Id,
                     orderItemId = s.OrderItemId,
                     orderId = s.OrderItem!.OrderId,
+                    orderReference = s.OrderItem!.Order!.OrderReference,
                     customerName = s.OrderItem!.Order!.CustomerName,
+                    facebookName = s.OrderItem!.Order!.FacebookName,
+                    source = s.OrderItem!.Order!.Source,
+                    eventType = s.OrderItem!.Order!.EventType,
+                    landmark = s.OrderItem!.Order!.Landmark,
                     size = s.OrderItem!.ItemCategory!.Name,
                     weight = s.OrderItem!.ItemCategory != null ? $"{s.OrderItem.ItemCategory.MinimumWeightKg}-{s.OrderItem.ItemCategory.MaximumWeightKg} kg" : "-",
 
                     // TIMINGS
                     targetDeliveryTime = s.TargetDeliveryTime.ToString("o"),
+                    riderDepartureTime = s.OrderItem!.Order!.RiderDepartureTime.HasValue
+                        ? s.OrderItem.Order.RiderDepartureTime.Value.ToString("o")
+                        : null,
                     tahiStartTime = s.TahiStartTime.ToString("o"),
                     salangStartTime = s.SalangStartTime.ToString("o"),
                     packagingStartTime = s.PackagingStartTime.ToString("o"),

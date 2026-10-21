@@ -1,11 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useMenuCategories,
   useCreateCategory,
   useToggleCategoryStatus,
   useUpdateClocks,
+  useDeliveryPricing,
+  useUpdateDeliveryPricing,
   ItemCategory,
 } from "@/hooks/useCms";
+import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -37,15 +40,45 @@ import {
   Layers,
   UtensilsCrossed,
   ShieldCheck,
+  Truck,
+  Lock,
 } from "lucide-react";
 
 type FilterStatus = "all" | "active" | "hidden";
 
 export default function CmsPage() {
+  const { isOwner } = useAuth();
   const { data: categories = [], isLoading } = useMenuCategories();
+  const { data: deliveryPricing } = useDeliveryPricing();
+  const updateDeliveryPricingMutation = useUpdateDeliveryPricing();
   const toggleStatusMutation = useToggleCategoryStatus();
   const createCategoryMutation = useCreateCategory();
   const updateClocksMutation = useUpdateClocks();
+
+  // Delivery Pricing Form State
+  const [baseFareInput, setBaseFareInput] = useState<string>("100");
+  const [ratePerKmInput, setRatePerKmInput] = useState<string>("15");
+  const [previewDistanceKm, setPreviewDistanceKm] = useState<string>("10");
+
+  useEffect(() => {
+    if (deliveryPricing) {
+      setBaseFareInput(String(deliveryPricing.baseFare ?? 100));
+      setRatePerKmInput(String(deliveryPricing.ratePerKm ?? 15));
+    }
+  }, [deliveryPricing]);
+
+  const parsedBaseFare = Math.max(0, parseFloat(baseFareInput) || 0);
+  const parsedRatePerKm = Math.max(0, parseFloat(ratePerKmInput) || 0);
+  const parsedPreviewKm = Math.max(0, parseFloat(previewDistanceKm) || 0);
+  const sampleComputedFee = Math.round(parsedPreviewKm * parsedRatePerKm + parsedBaseFare);
+
+  const handleSaveDeliveryPricing = () => {
+    if (!isOwner) return;
+    updateDeliveryPricingMutation.mutate({
+      baseFare: parsedBaseFare,
+      ratePerKm: parsedRatePerKm,
+    });
+  };
 
   // Search & Segmented Filter State
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
@@ -187,7 +220,7 @@ export default function CmsPage() {
             Catalog Governance & Menu CMS
           </h1>
           <p className="text-sm text-stone-500 mt-1">
-            Manage catalogue base rates, weight brackets, safety stock buffers, and POS visibility.
+            Manage catalogue base rates, weight brackets, safety stock buffers, delivery rates, and POS visibility.
           </p>
         </div>
 
@@ -199,6 +232,106 @@ export default function CmsPage() {
           Add New Item
         </Button>
       </div>
+
+      {/* Delivery Pricing Configuration Card */}
+      <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">
+        <CardHeader className="pb-3 border-b border-stone-100">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800 shrink-0">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-stone-900">
+                  Delivery Pricing Configuration
+                </CardTitle>
+                <CardDescription className="text-xs text-stone-500">
+                  Dynamic distance formula used by Web & Mobile POS terminals to auto-calculate Freelance Delivery fees.
+                </CardDescription>
+              </div>
+            </div>
+            {!isOwner && (
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-800 border-amber-300 text-xs font-medium self-start sm:self-center flex items-center gap-1"
+              >
+                <Lock className="w-3 h-3" /> Owner Authorization Required to Edit
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <div className="md:col-span-3 space-y-1.5">
+              <label className="text-xs font-semibold text-stone-700 block">
+                Base Fare (₱)
+              </label>
+              <Input
+                type="number"
+                step="5"
+                min="0"
+                disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                value={baseFareInput}
+                onChange={(e) => setBaseFareInput(e.target.value)}
+                className="h-10 font-mono border-stone-300"
+              />
+            </div>
+
+            <div className="md:col-span-3 space-y-1.5">
+              <label className="text-xs font-semibold text-stone-700 block">
+                Rate Per KM (₱)
+              </label>
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                value={ratePerKmInput}
+                onChange={(e) => setRatePerKmInput(e.target.value)}
+                className="h-10 font-mono border-stone-300"
+              />
+            </div>
+
+            <div className="md:col-span-4 bg-stone-50 border border-stone-200 rounded-lg p-2.5 flex items-center justify-between gap-3">
+              <div className="space-y-0.5 min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 block">
+                  Live Formula Preview
+                </span>
+                <span className="text-xs font-mono text-stone-700 block truncate">
+                  Fee = ({parsedPreviewKm} km × ₱{parsedRatePerKm}) + ₱{parsedBaseFare}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={previewDistanceKm}
+                  onChange={(e) => setPreviewDistanceKm(e.target.value)}
+                  className="w-16 h-8 text-xs font-mono text-center bg-white border-stone-300"
+                  title="Sample Distance (KM)"
+                />
+                <Badge className="bg-emerald-700 text-white font-mono text-xs px-2.5 py-1">
+                  ₱{sampleComputedFee.toLocaleString()}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <Button
+                type="button"
+                disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                onClick={handleSaveDeliveryPricing}
+                className="w-full h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50"
+              >
+                {updateDeliveryPricingMutation.isPending
+                  ? "Saving..."
+                  : "Save Delivery Rates"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Main Governance Card */}
       <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">

@@ -3,12 +3,18 @@ import apiClient from "@/services/apiClient";
 
 export interface OrderDirectoryDto {
   id: number;
+  orderReference?: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
+  eventType?: string | null;
   contactNumber: string;
   deliveryAddress: string;
+  landmark?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   routingStatus: string; // "Unassigned", "Assigned", "Delivered"
   targetDeliveryTime: string;
+  riderDepartureTime?: string | null;
   grandTotal: number;
   downpayment: number;
   balanceDue: number;

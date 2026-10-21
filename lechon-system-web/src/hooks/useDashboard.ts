@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import apiClient from '@/services/apiClient'; // Adjust path if your client lives elsewhere
+import apiClient from '@/services/apiClient';
 
 // 1. TypeScript Contracts (Matching your .NET DTO models)
 export interface PendingConfirmationDto {
   id: number;
+  orderReference?: string;
   customerName: string;
+  facebookName?: string | null;
   targetDeliveryTime: string;
   phoneNumber: string;
   totalAmount: number;
@@ -12,8 +14,10 @@ export interface PendingConfirmationDto {
 
 export interface DeliveryVerificationDto {
   id: number;
+  orderReference?: string;
   customerName: string;
   deliveryAddress: string;
+  landmark?: string | null;
   phoneNumber: string;
   targetDeliveryTime: string;
 }
@@ -21,14 +25,16 @@ export interface DeliveryVerificationDto {
 export interface DefrostRosterDto {
   id: number;
   orderId: number;
+  orderReference?: string;
   weightCategory: string;
   quantity: number;
   tahiStartTime: string;
-  // 🚀 NEW FIELDS
   customerName: string;
   targetDeliveryTime: string;
+  riderDepartureTime?: string | null;
   isTrustedCustomer: boolean;
   deliveryAddress: string;
+  landmark?: string | null;
   fulfillment?: number;
   grandTotal?: number;
   downpayment?: number;
@@ -68,15 +74,14 @@ export function useDefrostRoster() {
   });
 }
 
-
 export interface RenegotiationTask {
   orderId: number;
+  orderReference?: string;
   customerName: string;
   targetDeliveryTime: string;
   priceGap: number;
 }
 
-// 2. Build the fetcher hook
 export const useRenegotiationTasks = () => {
   return useQuery<RenegotiationTask[]>({
     queryKey: ['dashboard', 'renegotiations'],

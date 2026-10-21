@@ -3,12 +3,16 @@ namespace LechonSystem.Api.Models;
 public class Order : BaseEntity
 {
     public int Id { get; set; }
+    public string OrderReference { get; set; } = string.Empty; // Format: MMDDYY-XXX
     public string CustomerName { get; set; } = string.Empty;
+    public string? FacebookName { get; set; }
     public string ContactNumber { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
+    public string? EventType { get; set; }
 
     // THE MISSING FIELDS:
     public string DeliveryAddress { get; set; } = string.Empty;
+    public string? Landmark { get; set; }
     public string? Remarks { get; set; }
     // -- MAKE SURE ALL OF THESE ARE HERE --
     public decimal Price { get; set; }
@@ -21,6 +25,7 @@ public class Order : BaseEntity
     public bool IsTrustedCustomer { get; set; } = false;
 
     public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? RiderDepartureTime { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; } = false;
 
     public bool IsCancelled { get; set; } = false;

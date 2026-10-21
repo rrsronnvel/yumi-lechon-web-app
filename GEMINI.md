@@ -86,12 +86,14 @@ yumi-lechon-web-app/
 │   │   ├── PurchaseOrderItem.cs     # Line items for supplier restocking
 │   │   ├── LowStockAlert.cs         # Stock deficit records below threshold
 │   │   ├── NotificationLog.cs       # SMS/push delivery records
+│   │   ├── SystemSetting.cs         # Configurable system settings (e.g., delivery pricing)
 │   │   └── LogisticsEnums.cs / ProductionStatus.cs / ReservationStatus.cs / TransactionType.cs
 │   │
 │   └── DTOs/                        # High-speed data contracts & flat projections
 │       ├── CreateOrderRequest.cs    # POS intake payload
 │       ├── UpdateOrderDto.cs        # Order modification payload
 │       ├── OrderDirectoryDto.cs     # Fast flat projection for directory searches
+│       ├── DeliveryPricingDto.cs    # CMS delivery base fare & rate per km
 │       ├── InventoryBalanceDto.cs   # Stock scoreboard view
 │       ├── InventoryTransactionDto.cs # Ledger transaction record
 │       ├── RenegotiationTaskDto.cs  # Advance bookings affected by price hikes
@@ -212,8 +214,9 @@ Every AI agent and software engineer working on this repository must strictly ad
 
 #### 1. The Dynamic Kitchen Clock (Backward Scheduling)
 * Roasting duration is dictated exclusively by pig size and configured in `ProductCookingProfile`.
-* Kitchen timeline is calculated **backward** from `TargetDeliveryTime`:
-  $$\text{Salang Time} = \text{Target Delivery Time} - (\text{Packaging Duration} + \text{Salang/Roasting Duration})$$
+* Kitchen timeline is calculated **backward** from `AnchorTime = RiderDepartureTime ?? TargetDeliveryTime` (where `RiderDepartureTime` is derived from the 6-tier distance ladder or manual nudge pills, and locked to `TargetDeliveryTime` for Store Pickup):
+  $$\text{Packaging Time} = \text{Anchor Time} - \text{Packaging Duration}$$
+  $$\text{Salang Time} = \text{Packaging Time} - \text{Salang/Roasting Duration}$$
   $$\text{Tahi Time} = \text{Salang Time} - \text{Tahi/Preparation Duration}$$
 * Kitchen Kanban sorts orders strictly by **Earliest `TahiStartTime` (Priority 1, 2, 3...)**.
 * **Add-Ons Exemption:** Sauces, dinuguan, and drinks are lightweight line items and are **strictly excluded** from the freezer ledger and kitchen scheduling calculations.
@@ -290,7 +293,9 @@ npm run lint                         # Run ESLint validation
       │   └── apiClient.ts             # Cloud/Local AVD base URL switcher & token interceptors
       ├── components/
       │   ├── MainShell.tsx            # 3-tab mobile shell (Orders, New POS, Drawer) + top HUD
-      │   └── OrderDossierModal.tsx    # 3-second customer dossier, tel: dialer, payment & cancel modals
+      │   └── orders/
+      │       ├── OrderDossierModal.tsx# 3-second customer dossier, tel: dialer, payment & cancel modals
+      │       └── EditOrderModal.tsx   # Mobile "Flexible Cart, Locked Cash" order editor modal
       ├── screens/
       │   ├── LoginScreen.tsx          # Shift login with API switcher pill & 1-tap demo presets
       │   ├── OrdersScreen.tsx         # Debounced Master Order Directory & status filter chips

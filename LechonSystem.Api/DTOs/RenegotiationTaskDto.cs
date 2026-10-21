@@ -1,6 +1,7 @@
 public class RenegotiationTaskDto
 {
     public int OrderId { get; set; }
+    public string OrderReference { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public DateTime TargetDeliveryTime { get; set; }
     

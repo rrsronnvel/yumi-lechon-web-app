@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -112,7 +113,26 @@ namespace LechonSystem.Api.Services
             {
                 if (item.Order != null)
                 {
-                    await _schedulingService.CalculateScheduleAsync(item.Id, item.Order.TargetDeliveryTime, item.ItemCategoryId);
+                    if (item.OrderItemSchedule != null && item.OrderItemSchedule.IsManualOverride)
+                        continue;
+
+                    var recalc = await _schedulingService.CalculateScheduleAsync(
+                        item.Id,
+                        item.Order.TargetDeliveryTime,
+                        item.ItemCategoryId,
+                        item.Order.RiderDepartureTime);
+
+                    if (item.OrderItemSchedule != null)
+                    {
+                        item.OrderItemSchedule.PackagingStartTime = recalc.PackagingStartTime;
+                        item.OrderItemSchedule.SalangStartTime = recalc.SalangStartTime;
+                        item.OrderItemSchedule.TahiStartTime = recalc.TahiStartTime;
+                        item.OrderItemSchedule.TargetDeliveryTime = recalc.TargetDeliveryTime;
+                    }
+                    else
+                    {
+                        _context.OrderItemSchedules.Add(recalc);
+                    }
                 }
             }
 
@@ -210,6 +230,87 @@ namespace LechonSystem.Api.Services
             category.IsActive = !category.IsActive;
             await _context.SaveChangesAsync();
             return category.IsActive;
+        }
+
+        public async Task<DeliveryPricingDto> GetDeliveryPricingAsync()
+        {
+            var settings = await _context.SystemSettings
+                .AsNoTracking()
+                .Where(s => s.SettingKey == "DeliveryFeeBaseFare" || s.SettingKey == "DeliveryFeeRatePerKm")
+                .ToListAsync();
+
+            decimal baseFare = 100.00m;
+            decimal ratePerKm = 15.00m;
+
+            var baseFareRow = settings.FirstOrDefault(s => s.SettingKey == "DeliveryFeeBaseFare");
+            if (baseFareRow != null && decimal.TryParse(baseFareRow.SettingValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedBase))
+            {
+                baseFare = parsedBase;
+            }
+
+            var rateRow = settings.FirstOrDefault(s => s.SettingKey == "DeliveryFeeRatePerKm");
+            if (rateRow != null && decimal.TryParse(rateRow.SettingValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedRate))
+            {
+                ratePerKm = parsedRate;
+            }
+
+            return new DeliveryPricingDto
+            {
+                BaseFare = baseFare,
+                RatePerKm = ratePerKm
+            };
+        }
+
+        public async Task<DeliveryPricingDto> UpdateDeliveryPricingAsync(DeliveryPricingDto dto)
+        {
+            if (dto.BaseFare < 0)
+            {
+                throw new ArgumentException("Base fare cannot be negative.");
+            }
+
+            if (dto.RatePerKm < 0)
+            {
+                throw new ArgumentException("Rate per KM cannot be negative.");
+            }
+
+            var now = DateTime.UtcNow;
+            var user = CurrentUser;
+
+            var baseFareSetting = await _context.SystemSettings
+                .FirstOrDefaultAsync(s => s.SettingKey == "DeliveryFeeBaseFare");
+            if (baseFareSetting == null)
+            {
+                baseFareSetting = new SystemSetting
+                {
+                    SettingKey = "DeliveryFeeBaseFare"
+                };
+                _context.SystemSettings.Add(baseFareSetting);
+            }
+            baseFareSetting.SettingValue = dto.BaseFare.ToString("0.00", CultureInfo.InvariantCulture);
+            baseFareSetting.UpdatedBy = user;
+            baseFareSetting.UpdatedAt = now;
+
+            var ratePerKmSetting = await _context.SystemSettings
+                .FirstOrDefaultAsync(s => s.SettingKey == "DeliveryFeeRatePerKm");
+            if (ratePerKmSetting == null)
+            {
+                ratePerKmSetting = new SystemSetting
+                {
+                    SettingKey = "DeliveryFeeRatePerKm"
+                };
+                _context.SystemSettings.Add(ratePerKmSetting);
+            }
+            ratePerKmSetting.SettingValue = dto.RatePerKm.ToString("0.00", CultureInfo.InvariantCulture);
+            ratePerKmSetting.UpdatedBy = user;
+            ratePerKmSetting.UpdatedAt = now;
+
+            await _context.SaveChangesAsync();
+
+            return new DeliveryPricingDto
+            {
+                BaseFare = dto.BaseFare,
+                RatePerKm = dto.RatePerKm
+            };
         }
     }
 }

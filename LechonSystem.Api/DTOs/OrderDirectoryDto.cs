@@ -3,12 +3,18 @@ namespace LechonSystem.Api.DTOs;
 public class OrderDirectoryDto
 {
     public int Id { get; set; }
+    public string OrderReference { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
+    public string? FacebookName { get; set; }
     public string ContactNumber { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public string? EventType { get; set; }
     public string DeliveryAddress { get; set; } = string.Empty;
+    public string? Landmark { get; set; }
     public int Fulfillment { get; set; } // 0 = Pickup, 1 = Delivery, 2 = Lalamove
     public string RoutingStatus { get; set; } = string.Empty; // "Unassigned", "Assigned", "Delivered"
     public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? RiderDepartureTime { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal Downpayment { get; set; }
     public decimal BalanceDue { get; set; }

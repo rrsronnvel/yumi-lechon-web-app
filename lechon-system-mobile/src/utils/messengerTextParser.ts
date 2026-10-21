@@ -15,10 +15,14 @@ export interface ParsedOrderItemDto {
 
 export interface ParsedOrderDraftDto {
   customerName: string;
+  facebookName?: string | null;
   contactNumber: string;
+  source?: string | null;
+  eventType?: string | null;
   targetDeliveryTime?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   deliveryAddress?: string | null;
+  landmark?: string | null;
   remarks?: string | null;
   deliveryFee?: number | null;
   downpayment?: number | null;
@@ -45,7 +49,10 @@ export function parseMessengerTextToDraft(
     .filter(Boolean);
 
   let customerName = '';
+  let facebookName: string | null = null;
   let contactNumber = '';
+  let eventType: string | null = null;
+  let landmark: string | null = null;
   const secondaryPhones: string[] = [];
   let fulfillment = 1; // Default Delivery
   let deliveryAddress = '';
@@ -98,6 +105,17 @@ export function parseMessengerTextToDraft(
       }
     }
 
+    // Facebook / Messenger Name
+    if (!facebookName) {
+      const fbMatch = line.match(
+        /^(?:fb|facebook(?:\s*name)?|messenger(?:\s*name)?)\s*[:\-]\s*(.+)$/i
+      );
+      if (fbMatch) {
+        facebookName = fbMatch[1].trim();
+        continue;
+      }
+    }
+
     // Address / Location
     const addrMatch = line.match(
       /^(?:address|location|delivery\s*address|drop[\s-]*off|brgy|venue)\s*[:\-]\s*(.+)$/i
@@ -107,12 +125,35 @@ export function parseMessengerTextToDraft(
       continue;
     }
 
-    // Landmark / Event / Occasion / Notes
+    // Landmark
+    const landmarkMatch = line.match(
+      /^(?:landmark|palatandaan|near)\s*[:\-]\s*(.+)$/i
+    );
+    if (landmarkMatch && !landmark) {
+      landmark = landmarkMatch[1].trim();
+      continue;
+    }
+
+    // Event / Occasion
+    const eventMatch = line.match(
+      /^(?:event|occasion|okasyon)\s*[:\-]\s*(.+)$/i
+    );
+    if (eventMatch && !eventType) {
+      const rawEvt = eventMatch[1].trim();
+      if (/bday|birthday/i.test(rawEvt)) eventType = 'Birthday';
+      else if (/fiesta/i.test(rawEvt)) eventType = 'Fiesta';
+      else if (/wedding|kasal/i.test(rawEvt)) eventType = 'Wedding';
+      else if (/corporate|office|company/i.test(rawEvt)) eventType = 'Corporate';
+      else eventType = 'Other';
+      continue;
+    }
+
+    // Kitchen Remarks / Notes
     const noteMatch = line.match(
-      /^(?:landmark|event|occasion|remarks|notes?|bilin|instructions?)\s*[:\-]\s*(.+)$/i
+      /^(?:remarks|notes?|bilin|instructions?)\s*[:\-]\s*(.+)$/i
     );
     if (noteMatch) {
-      remarksList.push(`${line}`);
+      remarksList.push(noteMatch[1].trim());
       continue;
     }
 
@@ -174,10 +215,9 @@ export function parseMessengerTextToDraft(
       )
     );
     if (addrLine) {
-      deliveryAddress = addrLine.replace(
-        /^(?:address|location|addr)\s*[:\-]\s*/i,
-        ''
-      ).trim();
+      deliveryAddress = addrLine
+        .replace(/^(?:address|location|addr)\s*[:\-]\s*/i, '')
+        .trim();
     }
   }
 
@@ -201,8 +241,9 @@ export function parseMessengerTextToDraft(
   } else if (/\btoday\b|\bngayon\b/i.test(combinedSource)) {
     hasExtractedDateOrTime = true;
   } else {
-    // Match Month Day(, Year) e.g. Oct 25, October 25 2026, 2026-10-25, 10/25/2026
-    const isoDateMatch = combinedSource.match(/\b(202\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+    const isoDateMatch = combinedSource.match(
+      /\b(202\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/
+    );
     const monthNameMatch = combinedSource.match(
       /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:[,\s]+(202\d))?\b/i
     );
@@ -282,9 +323,7 @@ export function parseMessengerTextToDraft(
   };
 
   // Check Lechon Belly kg mentions first (e.g., "Belly 3kg", "3kg belly", "2x Belly 5kg")
-  const bellyCategories = activeCats.filter((c) =>
-    /belly/i.test(c.name)
-  );
+  const bellyCategories = activeCats.filter((c) => /belly/i.test(c.name));
   for (const bellyCat of bellyCategories) {
     const kgNumMatch = bellyCat.name.match(/(\d+)\s*kg/i);
     if (kgNumMatch) {
@@ -305,11 +344,26 @@ export function parseMessengerTextToDraft(
   const wholeCategories = activeCats.filter(
     (c) => !/belly/i.test(c.name) && c.minimumWeightKg > 0
   );
-  const sizeTokens = ['XXL', 'Jumbo', 'Extra Large', 'XL', 'Large', 'Medium', 'Small', 'De Leche'];
+  const sizeTokens = [
+    'XXL',
+    'S. Jumbo',
+    'Jumbo',
+    'Extra Large',
+    'XL',
+    'Large',
+    'Medium',
+    'Small',
+    'XXS',
+    'XS',
+    'L',
+    'M',
+    'S',
+    'De Leche',
+  ];
 
   for (const token of sizeTokens) {
     const targetCat = wholeCategories.find((c) =>
-      new RegExp(`\\b${token}\\b`, 'i').test(c.name)
+      new RegExp(`^${token}$|\\b${token}\\b`, 'i').test(c.name)
     );
     if (targetCat && !matchedItemsMap.has(targetCat.id)) {
       const regex = new RegExp(
@@ -345,21 +399,23 @@ export function parseMessengerTextToDraft(
     }
   }
 
-  // 6. Bundle secondary phones and occasion keywords into remarks
+  // 6. Bundle secondary phones and occasion keywords
   if (secondaryPhones.length > 0) {
     remarksList.unshift(`CP #2: ${secondaryPhones.join(', ')}`);
   }
 
-  const occasionMatch = text.match(
-    /\b(birthday|bday|baptismal|binyag|wedding|kasal|anniversary|fiesta|blessing|christmas|new\s*year)\b/i
-  );
-  if (
-    occasionMatch &&
-    !remarksList.some((r) =>
-      r.toLowerCase().includes(occasionMatch[1].toLowerCase())
-    )
-  ) {
-    remarksList.push(`Occasion: ${occasionMatch[1]}`);
+  if (!eventType) {
+    const occasionMatch = text.match(
+      /\b(birthday|bday|baptismal|binyag|wedding|kasal|anniversary|fiesta|corporate|blessing|christmas|new\s*year)\b/i
+    );
+    if (occasionMatch) {
+      const occ = occasionMatch[1].toLowerCase();
+      if (occ === 'birthday' || occ === 'bday') eventType = 'Birthday';
+      else if (occ === 'fiesta') eventType = 'Fiesta';
+      else if (occ === 'wedding' || occ === 'kasal') eventType = 'Wedding';
+      else if (occ === 'corporate') eventType = 'Corporate';
+      else eventType = 'Other';
+    }
   }
 
   const items: ParsedOrderItemDto[] = Array.from(matchedItemsMap.entries()).map(
@@ -371,10 +427,14 @@ export function parseMessengerTextToDraft(
 
   return {
     customerName,
+    facebookName,
     contactNumber,
+    source: 'Business FB Page',
+    eventType,
     targetDeliveryTime,
     fulfillment,
     deliveryAddress: deliveryAddress || null,
+    landmark,
     remarks: remarksList.length > 0 ? remarksList.join(' | ') : null,
     deliveryFee,
     downpayment,

@@ -29,6 +29,7 @@ public class LechonDbContext : DbContext
     public DbSet<Rider> Riders => Set<Rider>();
     public DbSet<User> Users => Set<User>();
     public DbSet<SettlementQrSession> SettlementQrSessions => Set<SettlementQrSession>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -121,6 +122,12 @@ public class LechonDbContext : DbContext
                 IsActive = true,
                 CreatedAt = seedDate
             }
+        );
+
+        // 5. Seed Default Delivery Pricing System Settings
+        modelBuilder.Entity<SystemSetting>().HasData(
+            new SystemSetting { Id = 1, SettingKey = "DeliveryFeeBaseFare", SettingValue = "100.00", UpdatedBy = "System", UpdatedAt = seedDate },
+            new SystemSetting { Id = 2, SettingKey = "DeliveryFeeRatePerKm", SettingValue = "15.00", UpdatedBy = "System", UpdatedAt = seedDate }
         );
 
         modelBuilder.Entity<PaymentLog>()

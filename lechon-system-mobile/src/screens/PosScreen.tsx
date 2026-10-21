@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -19,12 +19,17 @@ import {
   useInventoryBalances,
   useParseScreenshotMutation,
   useCreateOrderMutation,
+  useDeliveryPricingQuery,
   ItemCategory,
   ParsedOrderDraftDto,
 } from '../hooks/usePos';
 import { parseMessengerTextToDraft } from '../utils/messengerTextParser';
 import {
   generateBookingConfirmation,
+  calculateRiderDepartureTime,
+  SOURCE_PILLS,
+  EVENT_TYPE_PILLS,
+  RIDER_DEPARTURE_NUDGE_PILLS,
   TemplateOrderData,
 } from '../utils/messengerTemplates';
 
@@ -57,11 +62,20 @@ const formatLocalYMD = (d: Date): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
+const formatLocalHM = (d: Date): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
   const { data: balances = [] } = useInventoryBalances();
+  const { data: deliveryPricing } = useDeliveryPricingQuery();
   const parseScreenshotMutation = useParseScreenshotMutation();
   const createOrderMutation = useCreateOrderMutation();
+
+  const baseFare = deliveryPricing?.baseFare ?? 100;
+  const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
 
   // Default date = Tomorrow at 11:30
   const getInitialDateStr = () => {
@@ -72,11 +86,16 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
   // Form State
   const [customerName, setCustomerName] = useState('');
+  const [facebookName, setFacebookName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [source, setSource] = useState<string>('Business FB Page');
+  const [eventType, setEventType] = useState<string>('');
   const [fulfillment, setFulfillment] = useState<number>(1); // 1 = Delivery, 0 = Pickup, 2 = Lalamove
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [landmark, setLandmark] = useState('');
   const [targetDate, setTargetDate] = useState(getInitialDateStr);
   const [targetTime, setTargetTime] = useState('11:30');
+  const [riderDepartureTimeStr, setRiderDepartureTimeStr] = useState('11:15');
   const [remarks, setRemarks] = useState('');
 
   // Active Cart State (separated from background catalog)
@@ -100,6 +119,27 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [createdReceiptOrder, setCreatedReceiptOrder] =
     useState<TemplateOrderData | null>(null);
   const [receiptCopied, setReceiptCopied] = useState(false);
+
+  // Auto-compute riderDepartureTime whenever targetDate, targetTime, distanceKm, or fulfillment changes
+  useEffect(() => {
+    const isoTarget = `${targetDate.trim()}T${targetTime.trim()}:00`;
+    const parsedTarget = new Date(isoTarget);
+    if (!isNaN(parsedTarget.getTime())) {
+      const km = parseFloat(distanceKm) || 0;
+      const computed = calculateRiderDepartureTime(parsedTarget, km, fulfillment);
+      setRiderDepartureTimeStr(formatLocalHM(computed));
+    }
+  }, [targetDate, targetTime, distanceKm, fulfillment]);
+
+  const handleApplyNudgeOffset = (offsetMinutes: number) => {
+    if (fulfillment === 0) return;
+    const isoTarget = `${targetDate.trim()}T${targetTime.trim()}:00`;
+    const parsedTarget = new Date(isoTarget);
+    if (!isNaN(parsedTarget.getTime())) {
+      const nudged = new Date(parsedTarget.getTime() + offsetMinutes * 60 * 1000);
+      setRiderDepartureTimeStr(formatLocalHM(nudged));
+    }
+  };
 
   // Map categoryId -> availableStock & healthStatus
   const stockByCategoryId = useMemo(() => {
@@ -287,12 +327,16 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     }
   };
 
-  // Distance auto-fee calculator (₱50 + ₱15 x KM)
+  // Distance auto-fee calculator using CMS Delivery Pricing
   const handleDistanceChange = (val: string) => {
     setDistanceKm(val);
     if (fulfillment === 1) {
+      if (val.trim() === '') {
+        setDeliveryFee('0');
+        return;
+      }
       const km = Math.max(0, parseFloat(val) || 0);
-      const fee = km > 0 ? Math.round(50 + 15 * km) : 0;
+      const fee = km > 0 ? Math.round(km * ratePerKm + baseFare) : 0;
       setDeliveryFee(String(fee));
     }
   };
@@ -340,8 +384,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     if (draft.customerName) {
       setCustomerName(draft.customerName);
     }
+    if (draft.facebookName) {
+      setFacebookName(draft.facebookName);
+    }
     if (draft.contactNumber) {
       setContactNumber(draft.contactNumber);
+    }
+    if (draft.source) {
+      setSource(draft.source);
+    }
+    if (draft.eventType) {
+      setEventType(draft.eventType);
     }
 
     const nextFulfillment =
@@ -352,6 +405,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
     if (draft.deliveryAddress) {
       setDeliveryAddress(draft.deliveryAddress);
+    }
+    if (draft.landmark) {
+      setLandmark(draft.landmark);
     }
 
     if (draft.targetDeliveryTime) {
@@ -410,9 +466,13 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   // Clear Form Reset
   const handleClearForm = () => {
     setCustomerName('');
+    setFacebookName('');
     setContactNumber('');
+    setSource('Business FB Page');
+    setEventType('');
     setFulfillment(1);
     setDeliveryAddress('');
+    setLandmark('');
     setTargetDate(getInitialDateStr());
     setTargetTime('11:30');
     setRemarks('');
@@ -429,12 +489,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   };
 
   // Screenshot Intake Handlers
-  const handlePickImage = async (source: 'gallery' | 'camera') => {
+  const handlePickImage = async (imgSource: 'gallery' | 'camera') => {
     setSourceChoiceModalVisible(false);
     setValidationError(null);
 
     try {
-      if (source === 'camera') {
+      if (imgSource === 'camera') {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
         if (!perm.granted) {
           Alert.alert(
@@ -455,7 +515,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       }
 
       const result =
-        source === 'camera'
+        imgSource === 'camera'
           ? await ImagePicker.launchCameraAsync({
               mediaTypes: ['images'],
               quality: 0.8,
@@ -526,6 +586,30 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setTargetDate(formatLocalYMD(d));
   };
 
+  // Resolve full ISO RiderDepartureTime from targetDate + riderDepartureTimeStr
+  const resolveRiderDepartureIso = (isoTargetTime: string): string => {
+    if (fulfillment === 0) {
+      return isoTargetTime;
+    }
+    const cleanTime = riderDepartureTimeStr.trim();
+    const candidateIso = `${targetDate.trim()}T${cleanTime}:00`;
+    const parsedCandidate = new Date(candidateIso);
+    const parsedTarget = new Date(isoTargetTime);
+
+    if (!isNaN(parsedCandidate.getTime())) {
+      // If departure time wraps into previous day (e.g. target 00:30, departure 23:00), adjust by -1 day
+      if (
+        !isNaN(parsedTarget.getTime()) &&
+        parsedCandidate.getTime() > parsedTarget.getTime()
+      ) {
+        const prevDay = new Date(parsedCandidate.getTime() - 24 * 60 * 60 * 1000);
+        return `${formatLocalYMD(prevDay)}T${formatLocalHM(prevDay)}:00`;
+      }
+      return candidateIso;
+    }
+    return isoTargetTime;
+  };
+
   // Submit Order Handler
   const handleSubmitOrder = async () => {
     setValidationError(null);
@@ -568,6 +652,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       return;
     }
 
+    const isoDepartureTime = resolveRiderDepartureIso(isoTargetTime);
+
     const formattedItems = cartItems.map((item) => ({
       itemCategoryId: item.itemCategoryId,
       quantity: item.quantity,
@@ -580,12 +666,16 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     try {
       const savedOrder = await createOrderMutation.mutateAsync({
         customerName: trimmedName,
+        facebookName: facebookName.trim() || undefined,
         customerPhone: trimmedPhone,
-        source: 'Mobile POS',
+        source: source || 'Business FB Page',
+        eventType: eventType || undefined,
         targetDeliveryTime: isoTargetTime,
+        riderDepartureTime: isoDepartureTime,
         fulfillment,
         address: resolvedAddress,
         deliveryAddress: resolvedAddress,
+        landmark: landmark.trim() || undefined,
         remarks: remarks.trim(),
         price: roastSubtotal > 0 ? roastSubtotal : cartSubtotal,
         addOns: addOnsSummaryText,
@@ -599,11 +689,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       });
 
       const receiptData: TemplateOrderData = {
-        orderNumber: savedOrder?.id || savedOrder?.Id || 'NEW',
+        orderNumber:
+          savedOrder?.orderReference ||
+          savedOrder?.OrderReference ||
+          savedOrder?.id ||
+          savedOrder?.Id ||
+          'NEW',
         customerName: trimmedName,
         targetDeliveryTime: isoTargetTime,
         fulfillment,
         deliveryAddress: resolvedAddress,
+        landmark: landmark.trim() || undefined,
         items: cartItems.map((item) => ({
           categoryName: item.name,
           quantity: item.quantity,
@@ -674,7 +770,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         {/* 1. Top AI Intake Action Card */}
         <View style={styles.aiCard}>
           <View style={styles.aiCardHeader}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.aiCardTitle}>
                 ⚡ AI Screenshot &amp; Messenger Intake Bridge
               </Text>
@@ -754,6 +850,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           </View>
 
           <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Facebook / Messenger Name</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="FB / Messenger Name (for chat lookup)"
+              placeholderTextColor="#A8A29E"
+              value={facebookName}
+              onChangeText={setFacebookName}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Mobile Contact Number *</Text>
             <TextInput
               style={styles.textInput}
@@ -763,6 +870,64 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               value={contactNumber}
               onChangeText={setContactNumber}
             />
+          </View>
+
+          {/* Source Quick-Select Pills */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Booking Source</Text>
+            <View style={styles.pillsWrapRow}>
+              {SOURCE_PILLS.map((pill) => {
+                const active = source === pill;
+                return (
+                  <Pressable
+                    key={pill}
+                    style={[
+                      styles.metaSelectChip,
+                      active && styles.metaSelectChipActive,
+                    ]}
+                    onPress={() => setSource(pill)}
+                  >
+                    <Text
+                      style={[
+                        styles.metaSelectChipText,
+                        active && styles.metaSelectChipTextActive,
+                      ]}
+                    >
+                      {pill}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* EventType Quick-Select Pills */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Event Type (Optional)</Text>
+            <View style={styles.pillsWrapRow}>
+              {EVENT_TYPE_PILLS.map((pill) => {
+                const active = eventType === pill;
+                return (
+                  <Pressable
+                    key={pill}
+                    style={[
+                      styles.metaSelectChip,
+                      active && styles.metaSelectChipActive,
+                    ]}
+                    onPress={() => setEventType(active ? '' : pill)}
+                  >
+                    <Text
+                      style={[
+                        styles.metaSelectChipText,
+                        active && styles.metaSelectChipTextActive,
+                      ]}
+                    >
+                      {pill}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
 
           {/* Tri-Modal Segmented Fulfillment Toggle */}
@@ -826,23 +991,35 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>
               {fulfillment === 0
-                ? 'Customer Address / Landmark (Optional for Pickup)'
+                ? 'Customer Address (Optional for Pickup)'
                 : fulfillment === 2
                 ? 'Lalamove Drop-off Address *'
-                : 'Full Delivery Address & Landmarks *'}
+                : 'Full Delivery Address *'}
             </Text>
             <TextInput
               style={[styles.textInput, styles.multilineInput]}
               placeholder={
                 fulfillment === 0
-                  ? 'Optional - Store Pickup / Landmark notes'
-                  : 'Full delivery address & landmarks'
+                  ? 'Optional - Store Pickup address notes'
+                  : 'House #, Street, Subdivision, Barangay, City'
               }
               placeholderTextColor="#A8A29E"
               multiline
               numberOfLines={2}
               value={deliveryAddress}
               onChangeText={setDeliveryAddress}
+            />
+          </View>
+
+          {/* Landmark Input */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Landmark / Rider Guide</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g., Tapat ng Shell, Dilaw na gate"
+              placeholderTextColor="#A8A29E"
+              value={landmark}
+              onChangeText={setLandmark}
             />
           </View>
 
@@ -925,14 +1102,48 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             </ScrollView>
           </View>
 
+          {/* Rider Departure Time & Nudge Pills */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.scheduleHeaderRow}>
+              <Text style={styles.fieldLabel}>
+                🛵 Rider Departure Time (Kitchen Anchor){' '}
+                {fulfillment === 0 ? '(Pickup Locked)' : ''}
+              </Text>
+            </View>
+            <TextInput
+              style={[
+                styles.textInput,
+                fulfillment === 0 && styles.lockedInput,
+              ]}
+              editable={fulfillment !== 0}
+              placeholder="11:00"
+              placeholderTextColor="#A8A29E"
+              value={fulfillment === 0 ? targetTime : riderDepartureTimeStr}
+              onChangeText={setRiderDepartureTimeStr}
+            />
+            {fulfillment !== 0 && (
+              <View style={styles.pillsWrapRow}>
+                {RIDER_DEPARTURE_NUDGE_PILLS.map((nudge) => (
+                  <Pressable
+                    key={nudge.label}
+                    style={styles.nudgeChip}
+                    onPress={() => handleApplyNudgeOffset(nudge.minutes)}
+                  >
+                    <Text style={styles.nudgeChipText}>{nudge.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+
           {/* Remarks Input */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>
-              Remarks / Event / Secondary Phone (Optional)
+              Kitchen &amp; Prep Instructions (e.g., Walang dinuguan, Print shoutout)
             </Text>
             <TextInput
               style={[styles.textInput, styles.multilineInput]}
-              placeholder="e.g., CP #2: 0918..., 50th Birthday, extra crispy skin"
+              placeholder="Kitchen & Prep Instructions (e.g., Walang dinuguan, Print shoutout)"
               placeholderTextColor="#A8A29E"
               multiline
               numberOfLines={2}
@@ -1226,7 +1437,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             </View>
 
             <View style={styles.colHalf}>
-              <Text style={styles.fieldLabel}>Est. Distance (KM)</Text>
+              <Text style={styles.fieldLabel}>
+                Est. Distance (KM) • ₱{baseFare}+₱{ratePerKm}/km
+              </Text>
               <TextInput
                 style={[
                   styles.textInput,
@@ -1762,6 +1975,44 @@ const styles = StyleSheet.create({
   multilineInput: {
     minHeight: 58,
     textAlignVertical: 'top',
+  },
+  pillsWrapRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  metaSelectChip: {
+    backgroundColor: '#F5F5F4',
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  metaSelectChipActive: {
+    backgroundColor: '#181312',
+    borderColor: '#181312',
+  },
+  metaSelectChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#44403C',
+  },
+  metaSelectChipTextActive: {
+    color: '#FBBF24',
+  },
+  nudgeChip: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  nudgeChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
   },
   triModalRow: {
     flexDirection: 'row',

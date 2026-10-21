@@ -28,7 +28,7 @@ namespace LechonSystem.Api.Controllers
 
         [HttpPost("parse-screenshot")]
         [Consumes("multipart/form-data")]
-        public async Task<IActionResult> ParseScreenshot([FromForm] IFormFile file)
+        public async Task<IActionResult> ParseScreenshot(IFormFile file)
         {
             if (file == null || file.Length == 0)
                 return BadRequest(new { Message = "No screenshot file was provided." });

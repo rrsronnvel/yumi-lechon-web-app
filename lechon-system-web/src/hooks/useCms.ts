@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/apiClient';
 import { toast } from 'sonner';
@@ -38,6 +39,11 @@ export interface UpdateCategoryDetailsPayload {
     minimumWeightKg: number;
     maximumWeightKg: number;
     minimumSafetyStock: number;
+}
+
+export interface DeliveryPricingDto {
+    baseFare: number;
+    ratePerKm: number;
 }
 
 // 1. Fetch the live menu categories
@@ -189,5 +195,39 @@ export function useUpdateClocks() {
                 queryClient.invalidateQueries({ queryKey: ['schedules'] }),
             ]);
         }
+    });
+}
+
+// 8. Fetch CMS Delivery Pricing Configuration (Base Fare & Rate Per KM)
+export function useDeliveryPricing() {
+    return useQuery<DeliveryPricingDto>({
+        queryKey: ['cms', 'delivery-pricing'],
+        queryFn: async () => {
+            const response = await apiClient.get<DeliveryPricingDto>('/cms/delivery-pricing');
+            return response.data;
+        },
+        staleTime: 1000 * 60 * 5,
+    });
+}
+
+// 9. Update CMS Delivery Pricing Configuration (Owner only)
+export function useUpdateDeliveryPricing() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (payload: DeliveryPricingDto) => {
+            const response = await apiClient.put<DeliveryPricingDto>('/cms/delivery-pricing', payload);
+            return response.data;
+        },
+        onSuccess: async () => {
+            toast.success("Delivery Rates Saved!", {
+                description: "New Base Fare & Rate Per KM are now active across POS terminals.",
+            });
+            await queryClient.invalidateQueries({ queryKey: ['cms', 'delivery-pricing'] });
+        },
+        onError: (error: any) => {
+            const msg = error.response?.data?.message || "Failed to update delivery pricing.";
+            toast.error(msg);
+        },
     });
 }

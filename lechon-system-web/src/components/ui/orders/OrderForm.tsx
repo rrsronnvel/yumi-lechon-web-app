@@ -3,7 +3,11 @@ import { useState, useEffect, useMemo } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMenuCategories, ItemCategory } from "@/hooks/useCms";
+import {
+  useMenuCategories,
+  useDeliveryPricing,
+  ItemCategory,
+} from "@/hooks/useCms";
 import apiClient from "@/services/apiClient";
 import {
   OrderFormData,
@@ -12,8 +16,13 @@ import {
 } from "@/schemas/orderSchema";
 import {
   generateBookingConfirmation,
+  calculateRiderDepartureTime,
+  SOURCE_PILLS,
+  EVENT_TYPE_PILLS,
+  RIDER_DEPARTURE_NUDGE_PILLS,
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
+import { parseMessengerTextToDraft } from "@/utils/messengerTextParser";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +56,7 @@ import {
   Plus,
   Minus,
   Copy,
+  ClipboardPaste,
 } from "lucide-react";
 
 export interface OrderFormProps {
@@ -54,6 +64,12 @@ export interface OrderFormProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
+
+const formatLocalDateTimeInput = (date: Date): string => {
+  if (isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 export default function OrderForm({
   onClose,
@@ -63,11 +79,16 @@ export default function OrderForm({
   const queryClient = useQueryClient();
   const [savedOrderForModal, setSavedOrderForModal] =
     useState<TemplateOrderData | null>(null);
+  const [savedOrderRef, setSavedOrderRef] = useState<string>("");
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
 
-  // 1. Fetch live inventory categories using shared CMS hook
+  // 1. Fetch live inventory categories & CMS delivery pricing
   const { data: categories = [], isLoading: isCategoriesLoading } =
     useMenuCategories();
+  const { data: deliveryPricing } = useDeliveryPricing();
+
+  const baseFare = deliveryPricing?.baseFare ?? 100;
+  const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
 
   // Partition categories into Roast Lechon vs Add-Ons
   const roastCategories = useMemo(
@@ -91,7 +112,12 @@ export default function OrderForm({
     () => ({
       customerName: "",
       customerPhone: "",
+      facebookName: "",
+      source: "Business FB Page",
+      eventType: "",
+      landmark: "",
       targetDeliveryTime: "",
+      riderDepartureTime: "",
       fulfillment: 1, // Default: 🚗 Freelance Delivery
       distanceKm: 0,
       address: "",
@@ -127,10 +153,14 @@ export default function OrderForm({
 
   // Watch key fields for reactive calculations
   const watchedFulfillment = form.watch("fulfillment");
+  const watchedTargetTime = form.watch("targetDeliveryTime");
+  const watchedDistanceKm = form.watch("distanceKm");
   const watchedDeliveryFee = form.watch("deliveryFee");
   const watchedDiscount = form.watch("discount");
   const watchedDownpayment = form.watch("downpayment");
   const watchedIsTrusted = form.watch("isTrustedCustomer");
+  const watchedSource = form.watch("source");
+  const watchedEventType = form.watch("eventType");
 
   // Reset form to clean empty state when modal opens
   useEffect(() => {
@@ -147,12 +177,50 @@ export default function OrderForm({
     }
   }, [watchedFulfillment, form]);
 
-  // 4. Instant Reactive Math Calculations
+  // 4. Auto-Calculate Rider Departure Time from 6-Tier Distance Ladder
+  useEffect(() => {
+    if (!watchedTargetTime) return;
+    const targetDate = new Date(watchedTargetTime);
+    if (isNaN(targetDate.getTime())) return;
+
+    const computedDeparture = calculateRiderDepartureTime(
+      targetDate,
+      Number(watchedDistanceKm) || 0,
+      Number(watchedFulfillment),
+    );
+    form.setValue(
+      "riderDepartureTime",
+      formatLocalDateTimeInput(computedDeparture),
+      { shouldValidate: true },
+    );
+  }, [watchedTargetTime, watchedDistanceKm, watchedFulfillment, form]);
+
+  // Helper to apply quick-offset nudge pills to RiderDepartureTime
+  const handleNudgeDeparture = (offsetMinutes: number) => {
+    if (!watchedTargetTime) {
+      toast.info("Set Target Delivery Time first before nudging departure.");
+      return;
+    }
+    const targetDate = new Date(watchedTargetTime);
+    if (isNaN(targetDate.getTime())) return;
+
+    const nudgedDate = new Date(
+      targetDate.getTime() + offsetMinutes * 60 * 1000,
+    );
+    form.setValue("riderDepartureTime", formatLocalDateTimeInput(nudgedDate), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+  };
+
+  // 5. Instant Reactive Math Calculations
   const cartSubtotal = useMemo(() => {
     if (!watchedItems || watchedItems.length === 0) return 0;
     return watchedItems.reduce((acc, item) => {
       if (!item || !item.itemCategoryId) return acc;
-      const cat = categories.find((c: any) => c.id === Number(item.itemCategoryId));
+      const cat = categories.find(
+        (c: any) => c.id === Number(item.itemCategoryId),
+      );
       const unitPrice = cat?.basePrice ?? 0;
       const qty = Number(item.quantity) || 0;
       return acc + unitPrice * qty;
@@ -163,7 +231,9 @@ export default function OrderForm({
     if (!watchedItems || watchedItems.length === 0) return 0;
     return watchedItems.reduce((acc, item) => {
       if (!item || !item.itemCategoryId) return acc;
-      const cat = categories.find((c: any) => c.id === Number(item.itemCategoryId));
+      const cat = categories.find(
+        (c: any) => c.id === Number(item.itemCategoryId),
+      );
       if (!cat || cat.minimumWeightKg <= 0) return acc;
       const unitPrice = cat.basePrice ?? 0;
       const qty = Number(item.quantity) || 0;
@@ -213,7 +283,7 @@ export default function OrderForm({
     }
   };
 
-  // 5. Submission Mutation with Aggressive Cache Invalidation
+  // 6. Submission Mutation with Aggressive Cache Invalidation
   const createOrderMutation = useMutation({
     mutationFn: async (payload: any) => {
       const response = await apiClient.post("/orders", payload);
@@ -237,20 +307,26 @@ export default function OrderForm({
         };
       });
 
+      const orderRef =
+        savedOrder?.orderReference ||
+        savedOrder?.OrderReference ||
+        String(savedOrder?.id || savedOrder?.Id || "NEW");
+      setSavedOrderRef(orderRef);
+
       const templateOrder: TemplateOrderData = {
         orderNumber: savedOrder?.id || savedOrder?.Id,
         customerName: variables.customerName,
         targetDeliveryTime: variables.targetDeliveryTime,
         fulfillment: Number(variables.fulfillment),
         deliveryAddress: variables.deliveryAddress || variables.address,
+        landmark: variables.landmark,
         items: templateItems,
         subtotal: variables.price || cartSubtotal,
         deliveryFee: variables.deliveryFee || 0,
         grandTotal: variables.grandTotal || grandTotal,
         downpayment: variables.downpayment || 0,
         balanceDue:
-          (variables.grandTotal || grandTotal) -
-          (variables.downpayment || 0),
+          (variables.grandTotal || grandTotal) - (variables.downpayment || 0),
         remarks: variables.remarks,
       };
 
@@ -299,8 +375,9 @@ export default function OrderForm({
       };
     });
 
+    const fulfillmentNum = Number(data.fulfillment);
     const delivery =
-      data.fulfillment === 0 || data.fulfillment === 2
+      fulfillmentNum === 0 || fulfillmentNum === 2
         ? 0
         : Number(data.deliveryFee) || 0;
     const discount = Number(data.discount) || 0;
@@ -309,22 +386,29 @@ export default function OrderForm({
       computedCartSubtotal + delivery - discount,
     );
 
+    const effectiveRiderDeparture =
+      fulfillmentNum === 0
+        ? data.targetDeliveryTime
+        : data.riderDepartureTime || data.targetDeliveryTime;
+
     const payload = {
       customerName: data.customerName,
       customerPhone: data.customerPhone,
-      source: "POS Terminal",
+      facebookName: data.facebookName?.trim() || null,
+      source: data.source?.trim() || "POS Terminal",
+      eventType: data.eventType?.trim() || null,
+      landmark: data.landmark?.trim() || null,
       targetDeliveryTime: data.targetDeliveryTime,
-      fulfillment: Number(data.fulfillment),
+      riderDepartureTime: effectiveRiderDeparture,
+      fulfillment: fulfillmentNum,
       address:
-        data.address?.trim() ||
-        (data.fulfillment === 0 ? "Store Pickup" : ""),
+        data.address?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : ""),
       deliveryAddress:
-        data.address?.trim() ||
-        (data.fulfillment === 0 ? "Store Pickup" : ""),
+        data.address?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : ""),
       remarks: data.remarks || "",
       price:
-        roastSubtotal > 0
-          ? roastSubtotal
+        computedRoastSubtotal > 0
+          ? computedRoastSubtotal
           : computedCartSubtotal,
       addOns: addOnStrings.join(", "),
       deliveryFee: delivery,
@@ -339,8 +423,8 @@ export default function OrderForm({
     createOrderMutation.mutate(payload);
   }
 
-  // Multimodal Vision Parser Bridge
-  const handleScreenshotParsed = (draft: ParsedOrderDraftDto) => {
+  // Hydrate form from ParsedOrderDraftDto (used by both Screenshot Uploader & Paste Chat Text)
+  const applyDraftToForm = (draft: ParsedOrderDraftDto, sourceLabel: string) => {
     if (draft.customerName) {
       form.setValue("customerName", draft.customerName, {
         shouldValidate: true,
@@ -353,13 +437,29 @@ export default function OrderForm({
         shouldDirty: true,
       });
     }
+    if (draft.facebookName) {
+      form.setValue("facebookName", draft.facebookName, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (draft.landmark) {
+      form.setValue("landmark", draft.landmark, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (draft.eventType) {
+      form.setValue("eventType", draft.eventType, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
 
     if (draft.targetDeliveryTime) {
       const d = new Date(draft.targetDeliveryTime);
       if (!isNaN(d.getTime())) {
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const formatted = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        form.setValue("targetDeliveryTime", formatted, {
+        form.setValue("targetDeliveryTime", formatLocalDateTimeInput(d), {
           shouldValidate: true,
           shouldDirty: true,
         });
@@ -375,34 +475,38 @@ export default function OrderForm({
       shouldDirty: true,
     });
 
-    if (draft.deliveryAddress !== undefined) {
+    if (draft.deliveryAddress !== undefined && draft.deliveryAddress !== null) {
       form.setValue("address", draft.deliveryAddress || "", {
         shouldValidate: true,
         shouldDirty: true,
       });
     }
 
-    if (draft.remarks !== undefined) {
+    if (draft.remarks !== undefined && draft.remarks !== null) {
       form.setValue("remarks", draft.remarks || "", {
         shouldValidate: true,
         shouldDirty: true,
       });
     }
 
-    const parsedFee =
-      fulfillmentVal === 0 || fulfillmentVal === 2
-        ? 0
-        : Number(draft.deliveryFee) || 0;
-    form.setValue("deliveryFee", parsedFee, {
-      shouldValidate: true,
-      shouldDirty: true,
-    });
+    if (draft.deliveryFee !== undefined && draft.deliveryFee !== null) {
+      const parsedFee =
+        fulfillmentVal === 0 || fulfillmentVal === 2
+          ? 0
+          : Number(draft.deliveryFee) || 0;
+      form.setValue("deliveryFee", parsedFee, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
 
-    const parsedDownpayment = Number(draft.downpayment) || 0;
-    form.setValue("downpayment", parsedDownpayment, {
-      shouldValidate: true,
-      shouldDirty: true,
-    });
+    if (draft.downpayment !== undefined && draft.downpayment !== null) {
+      const parsedDownpayment = Number(draft.downpayment) || 0;
+      form.setValue("downpayment", parsedDownpayment, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
 
     if (draft.items && draft.items.length > 0) {
       const mappedItems = draft.items.map((i) => ({
@@ -412,10 +516,14 @@ export default function OrderForm({
       replace(mappedItems);
     }
 
-    toast.success("Order details extracted. Please review before saving.", {
+    toast.success(`${sourceLabel} parsed. Please review before saving.`, {
       description:
         "Parsed fields populated into the intake terminal. Verify data before saving.",
     });
+  };
+
+  const handleScreenshotParsed = (draft: ParsedOrderDraftDto) => {
+    applyDraftToForm(draft, "Order screenshot");
   };
 
   const handleScreenshotError = (errorMsg: string) => {
@@ -423,6 +531,26 @@ export default function OrderForm({
       description:
         errorMsg || "Could not extract booking details from screenshot.",
     });
+  };
+
+  // Clipboard Chat Text Bridge
+  const handlePasteChatText = async () => {
+    try {
+      const clipText = await navigator.clipboard.readText();
+      if (!clipText || !clipText.trim()) {
+        toast.warning("Clipboard is empty", {
+          description: "Copy a customer's Messenger chat message first.",
+        });
+        return;
+      }
+      const draft = parseMessengerTextToDraft(clipText, categories);
+      applyDraftToForm(draft, "Messenger chat text");
+    } catch {
+      toast.error("Clipboard Access Denied", {
+        description:
+          "Please allow clipboard access in your browser to paste chat text.",
+      });
+    }
   };
 
   return (
@@ -444,11 +572,24 @@ export default function OrderForm({
             </p>
           </div>
 
-          {/* 1. Compact Screenshot Uploader */}
-          <OrderScreenshotUploader
-            onParsed={handleScreenshotParsed}
-            onError={handleScreenshotError}
-          />
+          {/* 1. Compact Screenshot Uploader + Paste Chat Text Bridge */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <OrderScreenshotUploader
+                onParsed={handleScreenshotParsed}
+                onError={handleScreenshotError}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePasteChatText}
+              className="h-auto py-2.5 px-3 border-amber-300 bg-amber-50/70 hover:bg-amber-100/80 text-amber-950 text-xs font-semibold shrink-0 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <ClipboardPaste className="w-4 h-4 text-[#C81E1E]" />
+              <span>📋 Paste Chat Text</span>
+            </Button>
+          </div>
 
           {/* 2. Customer Identity Fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -492,6 +633,94 @@ export default function OrderForm({
               )}
             />
           </div>
+
+          {/* 2B. Facebook Name & Order Source Pills */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <FormField
+              control={form.control}
+              name="facebookName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Facebook / Messenger Name
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="FB / Messenger Name (for chat lookup)"
+                      className="h-10 text-xs border-stone-300"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="source"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Booking Source
+                  </FormLabel>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {SOURCE_PILLS.map((pill) => {
+                      const isSelected = watchedSource === pill;
+                      return (
+                        <button
+                          key={pill}
+                          type="button"
+                          onClick={() =>
+                            field.onChange(isSelected ? "" : pill)
+                          }
+                          className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-[#C81E1E] text-white border-[#C81E1E]"
+                              : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
+                          }`}
+                        >
+                          {pill}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {/* 2C. Event Type Quick-Select Pills */}
+          <FormField
+            control={form.control}
+            name="eventType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs font-semibold text-stone-700">
+                  Event Type (Optional)
+                </FormLabel>
+                <div className="flex flex-wrap gap-1.5">
+                  {EVENT_TYPE_PILLS.map((pill) => {
+                    const isSelected = watchedEventType === pill;
+                    return (
+                      <button
+                        key={pill}
+                        type="button"
+                        onClick={() => field.onChange(isSelected ? "" : pill)}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                          isSelected
+                            ? "bg-amber-600 text-white border-amber-600"
+                            : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
+                        }`}
+                      >
+                        🎉 {pill}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FormItem>
+            )}
+          />
 
           {/* 3. Segmented Delivery Method Toggle */}
           <FormField
@@ -549,8 +778,8 @@ export default function OrderForm({
                     {watchedFulfillment === 0
                       ? "Target Pickup Time"
                       : watchedFulfillment === 2
-                      ? "Target Courier Pickup Time"
-                      : "Target Delivery Time"}
+                        ? "Target Courier Pickup Time"
+                        : "Target Delivery Time"}
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -569,25 +798,7 @@ export default function OrderForm({
                         const snappedDate = new Date(
                           Math.round(dateObj.getTime() / ms) * ms,
                         );
-                        const year = snappedDate.getFullYear();
-                        const month = String(snappedDate.getMonth() + 1).padStart(
-                          2,
-                          "0",
-                        );
-                        const day = String(snappedDate.getDate()).padStart(
-                          2,
-                          "0",
-                        );
-                        const hours = String(snappedDate.getHours()).padStart(
-                          2,
-                          "0",
-                        );
-                        const mins = String(
-                          snappedDate.getMinutes(),
-                        ).padStart(2, "0");
-                        field.onChange(
-                          `${year}-${month}-${day}T${hours}:${mins}`,
-                        );
+                        field.onChange(formatLocalDateTimeInput(snappedDate));
                       }}
                     />
                   </FormControl>
@@ -618,9 +829,15 @@ export default function OrderForm({
                       }
                       value={field.value === 0 ? "" : field.value ?? ""}
                       onChange={(e) => {
-                        const km = Math.max(0, parseFloat(e.target.value) || 0);
+                        const km = Math.max(
+                          0,
+                          parseFloat(e.target.value) || 0,
+                        );
                         field.onChange(km);
-                        const calculatedFee = km > 0 ? 50 + 15 * km : 0;
+                        const calculatedFee =
+                          km > 0 && watchedFulfillment === 1
+                            ? Math.round(km * ratePerKm + baseFare)
+                            : 0;
                         form.setValue("deliveryFee", calculatedFee, {
                           shouldValidate: true,
                           shouldDirty: true,
@@ -631,7 +848,7 @@ export default function OrderForm({
                   </FormControl>
                   <p className="text-[10px] text-stone-500 leading-tight">
                     {watchedFulfillment === 1
-                      ? "Formula: ₱50 + (₱15 x KM). Override if needed."
+                      ? `CMS Formula: ₱${baseFare} + (₱${ratePerKm} × KM). Editable below.`
                       : "N/A for Store Pickup & Lalamove."}
                   </p>
                   <FormMessage className="text-[11px]" />
@@ -640,48 +857,121 @@ export default function OrderForm({
             />
           </div>
 
-          {/* Delivery Address */}
+          {/* 5B. Rider Departure Time + Quick-Offset Nudge Pills */}
           <FormField
             control={form.control}
-            name="address"
+            name="riderDepartureTime"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-xs font-semibold text-stone-700">
-                  {watchedFulfillment === 0
-                    ? "Customer Address / Landmark (For records)"
-                    : watchedFulfillment === 2
-                    ? "Drop-off Address (Lalamove Courier)"
-                    : "Delivery Address / Destination"}
-                </FormLabel>
+              <FormItem className="bg-amber-50/50 border border-amber-200/80 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <FormLabel className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                    🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)
+                  </FormLabel>
+                  {watchedFulfillment === 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] py-0 px-1.5 bg-stone-100 text-stone-600 border-stone-300"
+                    >
+                      Locked to Pickup Time
+                    </Badge>
+                  )}
+                </div>
                 <FormControl>
-                  <textarea
-                    rows={2}
-                    placeholder={
-                      watchedFulfillment === 0
-                        ? "Customer Address / Landmark (For records)"
-                        : "House/Unit, Street, Barangay, City / Landmark"
-                    }
-                    {...field}
-                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs shadow-2xs placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                  <Input
+                    type="datetime-local"
+                    disabled={watchedFulfillment === 0}
+                    className="h-9 text-xs bg-white border-amber-300 font-mono disabled:bg-stone-100"
+                    value={field.value || ""}
+                    onChange={(e) => field.onChange(e.target.value)}
                   />
                 </FormControl>
-                <FormMessage className="text-[11px]" />
+                {watchedFulfillment !== 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-amber-800 font-semibold mr-1">
+                      Quick Nudge from Delivery:
+                    </span>
+                    {RIDER_DEPARTURE_NUDGE_PILLS.map((pill) => (
+                      <button
+                        key={pill.label}
+                        type="button"
+                        onClick={() =>
+                          handleNudgeDeparture(pill.minutes)
+                        }
+                        className="px-2 py-0.5 rounded bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold transition-colors cursor-pointer"
+                      >
+                        {pill.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </FormItem>
             )}
           />
 
-          {/* Remarks / Event Notes */}
+          {/* Delivery Address & Landmark */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    {watchedFulfillment === 0
+                      ? "Customer Address (For records)"
+                      : watchedFulfillment === 2
+                        ? "Drop-off Address (Lalamove Courier)"
+                        : "Delivery Address / Destination"}
+                  </FormLabel>
+                  <FormControl>
+                    <textarea
+                      rows={2}
+                      placeholder={
+                        watchedFulfillment === 0
+                          ? "Customer Address (For records)"
+                          : "House/Unit, Street, Barangay, City"
+                      }
+                      {...field}
+                      className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs shadow-2xs placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="landmark"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel className="text-xs font-semibold text-stone-700">
+                    Landmark / Drop-off Guide (Optional)
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g., Tapat ng Shell, Dilaw na gate"
+                      className="h-10 text-xs border-stone-300"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {/* Kitchen & Prep Instructions (Remarks) */}
           <FormField
             control={form.control}
             name="remarks"
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs font-semibold text-stone-700">
-                  Remarks / Event Notes (Optional)
+                  Kitchen & Prep Instructions (e.g., Walang dinuguan, Print shoutout)
                 </FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="e.g., Deliver to blue gate, request spicy vinegar, 50th Birthday"
+                    placeholder="Kitchen & Prep Instructions (e.g., Walang dinuguan, Print shoutout)"
                     className="h-10 text-xs border-stone-300"
                     {...field}
                   />
@@ -758,7 +1048,9 @@ export default function OrderForm({
             <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
               {(watchedItems?.length ?? 0) === 0 ? (
                 <div className="text-center py-8 border border-dashed border-stone-200 rounded-lg bg-stone-50/70 text-stone-500 space-y-1">
-                  <p className="font-semibold text-xs text-stone-700">Cart is empty</p>
+                  <p className="font-semibold text-xs text-stone-700">
+                    Cart is empty
+                  </p>
                   <p className="text-[11px] text-stone-400">
                     Select a roast or add-on from the dropdown above to begin.
                   </p>
@@ -782,7 +1074,8 @@ export default function OrderForm({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-semibold text-stone-900 truncate">
-                            {category?.name || `Item #${currentItem.itemCategoryId}`}
+                            {category?.name ||
+                              `Item #${currentItem.itemCategoryId}`}
                           </span>
                           {isRoast && category ? (
                             <Badge
@@ -897,7 +1190,9 @@ export default function OrderForm({
               {roastSubtotal > 0 && cartSubtotal > roastSubtotal && (
                 <div className="flex items-center justify-between text-[11px] text-stone-500 pl-2 border-l-2 border-amber-400">
                   <span>Lechon: ₱{roastSubtotal.toLocaleString()}</span>
-                  <span>Extras: ₱{(cartSubtotal - roastSubtotal).toLocaleString()}</span>
+                  <span>
+                    Extras: ₱{(cartSubtotal - roastSubtotal).toLocaleString()}
+                  </span>
                 </div>
               )}
 
@@ -925,7 +1220,10 @@ export default function OrderForm({
                     }
                     value={watchedDeliveryFee ?? 0}
                     onChange={(e) => {
-                      const fee = Math.max(0, parseFloat(e.target.value) || 0);
+                      const fee = Math.max(
+                        0,
+                        parseFloat(e.target.value) || 0,
+                      );
                       form.setValue("deliveryFee", fee, {
                         shouldValidate: true,
                         shouldDirty: true,
@@ -945,7 +1243,10 @@ export default function OrderForm({
                     min={0}
                     value={watchedDiscount ?? 0}
                     onChange={(e) => {
-                      const disc = Math.max(0, parseFloat(e.target.value) || 0);
+                      const disc = Math.max(
+                        0,
+                        parseFloat(e.target.value) || 0,
+                      );
                       form.setValue("discount", disc, {
                         shouldValidate: true,
                         shouldDirty: true,
@@ -1062,7 +1363,8 @@ export default function OrderForm({
             <Button
               type="submit"
               disabled={
-                createOrderMutation.isPending || (watchedItems?.length ?? 0) === 0
+                createOrderMutation.isPending ||
+                (watchedItems?.length ?? 0) === 0
               }
               className="w-full bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium h-11 shadow-sm transition-colors text-sm flex items-center justify-center gap-2 mt-2"
             >
@@ -1099,10 +1401,13 @@ export default function OrderForm({
           <DialogHeader>
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              <DialogTitle className="text-stone-900">Order Ingested Successfully!</DialogTitle>
+              <DialogTitle className="text-stone-900">
+                Order Ingested Successfully!
+              </DialogTitle>
             </div>
             <DialogDescription className="text-stone-500">
-              Order #{savedOrderForModal?.orderNumber || "NEW"} has been recorded into the live roster.
+              Order #{savedOrderRef || savedOrderForModal?.orderNumber || "NEW"}{" "}
+              has been recorded into the live roster.
             </DialogDescription>
           </DialogHeader>
 
@@ -1117,8 +1422,8 @@ export default function OrderForm({
                     {savedOrderForModal.fulfillment === 0
                       ? "🏪 Walk-in Store Pickup"
                       : savedOrderForModal.fulfillment === 2
-                      ? "📦 Lalamove Courier (Customer Paid)"
-                      : "🚗 Freelance Delivery"}
+                        ? "📦 Lalamove Courier (Customer Paid)"
+                        : "🚗 Freelance Delivery"}
                   </div>
                 </div>
                 <div className="text-right">
@@ -1165,7 +1470,7 @@ export default function OrderForm({
               onClick={() => {
                 if (savedOrderForModal) {
                   navigator.clipboard.writeText(
-                    generateBookingConfirmation(savedOrderForModal)
+                    generateBookingConfirmation(savedOrderForModal),
                   );
                   toast.success("Copied confirmation for Messenger!");
                 }

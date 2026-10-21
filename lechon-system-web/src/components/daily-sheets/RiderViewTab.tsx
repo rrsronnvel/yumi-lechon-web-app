@@ -44,6 +44,7 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
   const { data: scheduleItems, isLoading, isError } = useRoastingRoster();
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const { data: registeredRiders = [] } = useRidersQuery();
 
   if (isLoading)
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading logistics schedule...</div>;
@@ -64,7 +65,6 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
   };
 
   const isEdit = mode === "edit";
-  const { data: registeredRiders = [] } = useRidersQuery();
 
   const handleCopyDispatch = (item: RoastingScheduleItem) => {
     const matchedRider = registeredRiders.find(
@@ -86,6 +86,7 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
       targetDeliveryTime: item.targetDeliveryTime,
       fulfillment: item.fulfillment ?? 1,
       deliveryAddress: item.location || "",
+      landmark: item.landmark || undefined,
       items: [
         {
           categoryName: item.size || "Lechon",
@@ -191,8 +192,8 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                   className="even:bg-slate-50 odd:bg-white text-slate-900 hover:bg-amber-50/40"
                 >
                   {/* 1. No. */}
-                  <td className="px-1.5 py-2 text-center font-black text-slate-800 border-r border-slate-300">
-                    {item.orderId || item.id}
+                  <td className="px-1 py-2 text-center font-black text-slate-800 border-r border-slate-300 text-[10px] break-all">
+                    #{item.orderReference || item.orderId || item.id}
                   </td>
 
                   {/* 2. Size */}
@@ -207,7 +208,12 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
 
                   {/* 4. Delivery Time (High-Visibility Bold Red) */}
                   <td className="px-1.5 py-2 text-center font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
-                    {formatTime(item.targetDeliveryTime)}
+                    <div>{formatTime(item.targetDeliveryTime)}</div>
+                    {item.riderDepartureTime && item.fulfillment !== 0 && (
+                      <div className="text-[9.5px] text-amber-800 font-bold">
+                        🛵 Dep: {formatTime(item.riderDepartureTime)}
+                      </div>
+                    )}
                   </td>
 
                   {/* 5. Customer Name */}
@@ -220,7 +226,12 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                     className="px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words"
                     title={item.location || undefined}
                   >
-                    {item.location || "-"}
+                    <div>{item.location || "-"}</div>
+                    {item.landmark && (
+                      <div className="text-[9.5px] text-amber-800 font-semibold mt-0.5">
+                        🧭 {item.landmark}
+                      </div>
+                    )}
                   </td>
 
                   {/* 7. Rider Name (Editable in edit mode) */}

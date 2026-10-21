@@ -14,4 +14,6 @@ public interface ICmsService
     Task<List<PriceHistoryLogDto>> GetPriceHistoryAsync(int categoryId);
     Task<bool> UpdateCategoryDetailsAsync(int categoryId, CategoryMetadataDto dto);
     Task<bool> ToggleCategoryStatusAsync(int categoryId);
+    Task<DeliveryPricingDto> GetDeliveryPricingAsync();
+    Task<DeliveryPricingDto> UpdateDeliveryPricingAsync(DeliveryPricingDto dto);
 }
