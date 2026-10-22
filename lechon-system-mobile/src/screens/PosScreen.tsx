@@ -1057,16 +1057,41 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             />
           </View>
 
-          {/* Landmark Input */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Landmark / Rider Guide</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g., Tapat ng Shell, Dilaw na gate"
-              placeholderTextColor="#A8A29E"
-              value={landmark}
-              onChangeText={setLandmark}
-            />
+          {/* Est. Distance (KM) & Landmark Row */}
+          <View style={[styles.twoColRow, { alignItems: 'flex-start', gap: 12 }]}>
+            <View style={styles.colHalf}>
+              <Text style={styles.fieldLabel}>
+                Est. Distance (KM) {fulfillment !== 1 ? '(Locked)' : ''}
+              </Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  fulfillment !== 1 && styles.lockedInput,
+                ]}
+                editable={fulfillment === 1}
+                keyboardType="numeric"
+                placeholder={fulfillment === 1 ? 'e.g., 5' : '0'}
+                placeholderTextColor="#A8A29E"
+                value={fulfillment === 1 ? distanceKm : '0'}
+                onChangeText={handleDistanceChange}
+              />
+              {fulfillment === 1 && (
+                <Text style={{ fontSize: 11, color: '#78716C', marginTop: 2, marginLeft: 2 }}>
+                  Rate: ₱{baseFare} base + ₱{ratePerKm}/km
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.colHalf}>
+              <Text style={styles.fieldLabel}>Landmark / Rider Guide</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g., Tapat ng Shell, Dilaw na gate"
+                placeholderTextColor="#A8A29E"
+                value={landmark}
+                onChangeText={setLandmark}
+              />
+            </View>
           </View>
 
           {/* Schedule Input */}
@@ -1464,47 +1489,27 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             💰 Financial Adjustments &amp; Deposit
           </Text>
 
-          {/* Delivery Fee & Distance Row */}
-          <View style={[styles.twoColRow, { alignItems: 'flex-end', gap: 12 }]}>
-            <View style={styles.colHalf}>
-              <Text style={styles.fieldLabel}>
-                Delivery Fee (₱) {fulfillment !== 1 ? '(Locked)' : ''}
-              </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  fulfillment !== 1 && styles.lockedInput,
-                ]}
-                editable={fulfillment === 1}
-                keyboardType="numeric"
-                value={fulfillment === 1 ? deliveryFee : '0'}
-                onChangeText={setDeliveryFee}
-              />
-            </View>
-
-            <View style={styles.colHalf}>
-              <Text style={styles.fieldLabel}>
-                Est. Distance (KM)
-              </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  fulfillment !== 1 && styles.lockedInput,
-                ]}
-                editable={fulfillment === 1}
-                keyboardType="numeric"
-                placeholder={fulfillment === 1 ? 'e.g., 5' : '0'}
-                placeholderTextColor="#A8A29E"
-                value={fulfillment === 1 ? distanceKm : '0'}
-                onChangeText={handleDistanceChange}
-              />
-            </View>
-          </View>
-          {fulfillment === 1 && (
-            <Text style={{ fontSize: 11, color: '#78716C', marginTop: 4, marginLeft: 2 }}>
-              Rate: ₱{baseFare} base + ₱{ratePerKm}/km
+          {/* Delivery Fee */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>
+              Delivery Fee (₱) {fulfillment !== 1 ? '(Locked)' : ''}
             </Text>
-          )}
+            <TextInput
+              style={[
+                styles.textInput,
+                fulfillment !== 1 && styles.lockedInput,
+              ]}
+              editable={fulfillment === 1}
+              keyboardType="numeric"
+              value={fulfillment === 1 ? deliveryFee : '0'}
+              onChangeText={setDeliveryFee}
+            />
+            {fulfillment === 1 && (
+              <Text style={{ fontSize: 11, color: '#78716C', marginTop: 2, marginLeft: 2 }}>
+                Rate: ₱{baseFare} base + ₱{ratePerKm}/km
+              </Text>
+            )}
+          </View>
 
           {/* Discount */}
           <View style={styles.fieldGroup}>
@@ -1533,10 +1538,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                 <Pressable
                   style={styles.dpChip}
                   onPress={() =>
-                    setDownpayment(String(Math.round(grandTotal * 0.5)))
+                    setDownpayment(
+                      String(
+                        grandTotal > 0 && grandTotal < 1000 ? grandTotal : 1000
+                      )
+                    )
                   }
                 >
-                  <Text style={styles.dpChipText}>50%</Text>
+                  <Text style={styles.dpChipText}>₱1,000</Text>
                 </Pressable>
                 <Pressable
                   style={styles.dpChip}

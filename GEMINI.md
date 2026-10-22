@@ -97,6 +97,7 @@ yumi-lechon-web-app/
 │   └── DTOs/                        # High-speed data contracts & flat projections
 │       ├── CreateOrderRequest.cs    # POS intake payload
 │       ├── CustomerProfileDto.cs    # Customer intelligence & notes update contracts
+│       ├── DailySheetDtos.cs        # DailySheetItemDto for 14-column Kitchen & Rider manifests
 │       ├── ParsedOrderDraftDto.cs   # Vision/text parser structured draft contract
 │       ├── UpdateOrderDto.cs        # Order modification payload
 │       ├── OrderDirectoryDto.cs     # Fast flat projection for directory searches
@@ -111,29 +112,32 @@ yumi-lechon-web-app/
 └── lechon-system-web/               # ⚛️ React 19 Frontend Client
     ├── src/
     │   ├── pages/                   # Application route views
-    │   │   ├── DashboardPage.tsx    # Zero-Inbox Command Center & Remittance Alerts
+    │   │   ├── DashboardPage.tsx    # Zero-Inbox Command Center, Defrost List Copier & Remittance Alerts
     │   │   ├── OrdersPage.tsx       # Master Order Directory, Balance Due Sub-Pills, POS Modal, Dossier Drawer
     │   │   ├── KitchenPage.tsx      # Real-Time KDS Kanban & Roasting Spit Queue
     │   │   ├── InventoryPage.tsx    # Live Balance Scoreboard & Audit Ledger Tabs
-    │   │   ├── LogisticsPage.tsx    # Live Operations & Tomorrow's Dispatch Planner
+    │   │   ├── LogisticsPage.tsx    # Dedicated Live Operations (Today) command center & Daily Sheets launcher
     │   │   ├── ManifestPage.tsx     # Customer-by-Customer Cash Reconciliation Matrix
     │   │   ├── DailySheetsPage.tsx  # Clean printable / screenshot views for Messenger
     │   │   ├── AnalyticsPage.tsx    # Visual KPI analytics & financial trend charts
     │   │   └── CmsPage.tsx          # Price matrix, categories, and cooking profile settings
     │   │
     │   ├── components/
+    │   │   ├── daily-sheets/        # Daily Dispatch Planner print/screenshot tabs & inline editor
+    │   │   │   ├── KitchenViewTab.tsx           # 14-column Kitchen manifest sorted by Tahi time (hides prices)
+    │   │   │   ├── RiderViewTab.tsx             # 10-column Rider manifest with Anti-Complacency Guard
+    │   │   │   └── InlineScheduleEditorModal.tsx# Interactive schedule, departure & rider override modal
     │   │   └── ui/                  # Reusable UI library (shadcn/ui + custom components)
     │   │       ├── RootLayout.tsx   # Global app container with sidebar navigation
     │   │       ├── Sidebar.tsx      # Navigation sidebar with responsive indicators
     │   │       ├── orders/
-    │   │       │   ├── OrderForm.tsx       # Unified Order Intake Form (POS)
+    │   │       │   ├── OrderForm.tsx       # Unified Order Intake Form (POS) with Downpayment presets
     │   │       │   └── EditOrderForm.tsx   # "Flexible Cart, Locked Cash" modifier modal
     │   │       ├── button.tsx, card.tsx, dialog.tsx, sheet.tsx, table.tsx, badge.tsx, etc.
     │   │
-    │   ├── layouts/                 # Specialized printable views
-    │   │   ├── PrintLayout.tsx      # Print wrapper for browser print/PDF
-    │   │   ├── KitchenViewTab.tsx   # Kitchen manifest sorted by Tahi time (hides prices)
-    │   │   └── RiderViewTab.tsx     # Rider manifest sorted chronologically (shows cash splits)
+    │   ├── utils/
+    │   │   ├── messengerTemplates.ts # Taglish Messenger receipts, defrost list generator & departure math
+    │   │   └── messengerTextParser.ts# Client-side heuristic parser for pasted Messenger text
     │   │
     │   ├── hooks/                   # Custom TanStack Query hooks & mutators
     │   │   ├── useCustomers.ts      # Debounced customer intelligence lookup & notes mutator
@@ -256,7 +260,8 @@ Every AI agent and software engineer working on this repository must strictly ad
 * **4-Day Reminder Window:** Surfaces unpaid orders for staff to follow up via Facebook Messenger.
 * **1-Day Follow-Up Window:** Critical warning to collect payment or trigger cancellation.
 * **Rush Order Bypass:** Same-day or next-day reservations bypass the 4-day/2-day queues directly into active rosters.
-* **Tomorrow's Operations Roster:** Unified table merging delivery verifications with tonight's freezer defrosting schedule (late additions flagged with `[RUSH / LATE DEFROST]`).
+* **Tomorrow's Operations Roster & 1-Click Defrost List Copier:** Unified table merging delivery verifications with tonight's freezer defrosting schedule (late additions flagged with `[RUSH / LATE DEFROST]`), paired with a 1-click `[ 📋 Copy Defrost List ]` button (`generateDefrostRosterMessage`) on both Web Dashboard and Mobile Floor Action views.
+* **Dispatch Planner Rider Anti-Complacency Guard:** `KitchenViewTab.tsx` enforces a 14-column layout with `DEPARTURE / PICKUP` (`riderDepartureTime ?? targetDeliveryTime`) between `WEIGHT` and `CUSTOMER` and `DELIVERY` (`targetDeliveryTime`) between `ADD-ONS` and `RIDER`. `RiderViewTab.tsx` displays **ONLY** `DEPARTURE / PICKUP` and strictly hides `targetDeliveryTime` so riders cannot self-calculate buffer slack.
 * **Unremitted Cash Card:** Highlights riders holding unremitted funds, glowing **RED** if held past the dispatch date until settled on the manifest.
 * **Peak Season Renegotiation Roster:** Automatically populated when base menu prices are updated in CMS, allowing dispatchers to log `[Customer Agreed]`, `[Waive Hike]`, or `[Customer Cancelled]`.
 
@@ -304,18 +309,20 @@ npm run lint                         # Run ESLint validation
       │   ├── MainShell.tsx            # 3-tab mobile shell (Orders, New POS, Drawer) + top HUD
       │   └── orders/
       │       ├── OrderDossierModal.tsx# 3-second customer dossier, tel: dialer, payment & cancel modals
-      │       └── EditOrderModal.tsx   # Mobile "Flexible Cart, Locked Cash" order editor modal
+      │       ├── EditOrderModal.tsx   # Mobile "Flexible Cart, Locked Cash" order editor modal
+      │       └── FloorActionView.tsx  # Mobile Floor Action Hub (Downpayment Radar & Tonight's Defrost Roster)
       ├── screens/
       │   ├── LoginScreen.tsx          # Shift login with API switcher pill & 1-tap demo presets
-      │   ├── OrdersScreen.tsx         # Debounced Master Order Directory & status filter chips
+      │   ├── OrdersScreen.tsx         # Debounced Master Order Directory + Segmented Floor Action Toggle Switcher
       │   ├── PosScreen.tsx            # AI Screenshot & Text POS Terminal with tri-modal bouncer
       │   └── DrawerScreen.tsx         # 2-Hop Cash Custody & Tri-Modal Settlement Hub
       ├── hooks/
       │   ├── useOrders.ts             # Directory search, dossier fetch, manual pay & cancel mutations
+      │   ├── useFloorAction.ts        # Tomorrow's defrost roster & 4-day pending confirmation queries
       │   ├── usePos.ts                # Catalog, inventory balances, screenshot parser & order creation
       │   └── useManifest.ts           # Rider/Pickup/Lalamove settlements & 2-Hop QR custody mutations
       └── utils/
-          ├── messengerTemplates.ts    # Taglish Messenger confirmation receipt generator
+          ├── messengerTemplates.ts    # Taglish Messenger receipts, defrost list generator & downpayment reminders
           └── messengerTextParser.ts   # Client-side heuristic parser for pasted Messenger text
   ```
 

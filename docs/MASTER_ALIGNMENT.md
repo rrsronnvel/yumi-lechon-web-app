@@ -81,6 +81,14 @@ To prevent cashier fatigue and eliminate layout shift during rapid phone or Mess
 - Switching to "Walk-in Store Pickup" immediately locks the Delivery Fee and Distance inputs to ₱0 and dynamically sets the address placeholder to store handover.
 - Switching to "Delivery Routing" restores distance-based fee calculations and mandatory address inputs.
 
+- Downpayment Quick-Select Presets & Top Routing Distance Ergonomics:
+
+- **Downpayment Quick-Select Pills (`[ ₱0 ]` | `[ ₱1,000 ]` | `[ Full Paid ]`):** Both the Web POS (`OrderForm.tsx`) and Mobile POS (`PosScreen.tsx`) provide 3 compact quick-select pills beside the `Downpayment Received (₱)` input:
+  - `[ ₱0 ]`: Sets `downpayment = 0`.
+  - `[ ₱1,000 ]`: Sets `downpayment = grandTotal > 0 && grandTotal < 1000 ? grandTotal : 1000` (standard Yumi's Lechon booking deposit, capped at `grandTotal` for small add-on orders).
+  - `[ Full Paid ]`: Sets `downpayment = grandTotal`.
+- **Top Routing Distance Placement:** In both Web and Mobile POS terminals, `Est. Distance (KM)` is placed directly inside the top **Customer & Fulfillment Routing** section next to `Delivery Address` and above `Target Delivery Time` / `Rider Departure Time`. Entering distance immediately computes both the `RiderDepartureTime` (via the 6-tier distance ladder) and the suggested `DeliveryFee` (`Math.round((distanceKm * ratePerKm) + baseFare)`) before the cashier scrolls down to the cart or financial ledger.
+
 The POS and Logistics engines enforce strict boundary rules across three distinct fulfillment modes while preserving customer location data across all channels:
 
 1. Delivery Routing (Fulfillment = 1):
@@ -115,6 +123,7 @@ The "Zero-Inbox" Dashboard acts as a dynamic Command Center, programmed with a T
 - Pending Downpayments (4-Day Window): If an order is unpaid, it remains invisible until exactly 4 days before delivery. The table includes Action Center Integration, allowing the admin to click an order, open the "Customer Dossier" modal, and log a GCash receipt instantly without leaving the dashboard.
 - Final Follow-Up & Cancellation (1-Day Window): If the order remains unpaid 1 day before delivery, it becomes a critical follow-up.
 - Unified Tomorrow's Operations Roster: A single, merged table combining Delivery Verifications and the Defrosting Roster. It groups customer delivery details alongside the exact pigs needed from the freezer tonight. Late additions to this list trigger a red [RUSH / LATE DEFROST] badge.
+- 1-Click Nightly Defrost List Generator (`[ 📋 Copy Defrost List ]`): Both the Web Dashboard (`DashboardPage.tsx`) and Mobile Floor Action Hub (`FloorActionView.tsx`) mount a 1-click `[ 📋 Copy Defrost List ]` button in the Operations Roster header (`generateDefrostRosterMessage` in `messengerTemplates.ts`). Clicking copies a clean Taglish freezer pull-list formatted for the kitchen Messenger group chat (`Ito po mga ilalabas para bukas, {MonthShort} {Day}`), automatically partitioning items into `Whole Lechon` (`{WeightRange} - {CustomerName}`, e.g. `28-30 - Vivian`) and `Belly` (`{SizeLabel} - {CustomerName}`, e.g. `3kg - Angelo`), expanding multi-quantity rows (`quantity > 1`) into individual carcass lines, and omitting empty group headers.
 - Peak Season Renegotiation List (Dynamic): Only appears when base prices are hiked in the CMS. Displays affected advance bookings, allowing admins to manually mark them as [Customer Agreed], [Waive Hike], or [Customer Cancelled] after communicating with the client.
 
 ### 4. Kitchen Operations (The Backbone)
@@ -151,22 +160,23 @@ While the system provides automated backward-scheduling based on product profile
 
 ### 5. Logistics & Delivery Operations
 
-The business relies on a trusted pool of experienced, outsourced freelance motorcycle riders managed via a Facebook Messenger Group Chat. The Logistics page is split into two operational views:
+The business relies on a trusted pool of experienced, outsourced freelance motorcycle riders managed via a Facebook Messenger Group Chat. 
 
-- Tab A: Live Operations (Today)
+#### 5.1 Web Logistics Command Streamlining
+To eliminate interface fragmentation and workflow duplication, the Web Logistics experience is streamlined into two specialized surfaces:
+- **Live Operations (Today) Command Center (`/logistics`):** Dedicated single-view monitor focused exclusively on today's active dispatches, emergency driver swaps (`[Edit Rider]`), and delivery completions (`[Mark Delivered]`). Eliminates duplicate tomorrow unassigned tables and batch dispatch modals from this view.
+- **13-Column Daily Dispatch Planner (`/daily-sheets`):** Opened via the primary header launcher (`Open Daily Dispatch Planner ➔`), this print-optimized layout combines customer orders, distance-based delivery fees, rider assignments, and cash collection totals for Kitchen and Rider views.
 
-- Real-time monitoring board for orders scheduled for delivery today.
-- Displays assigned rider names, destination addresses, and delivery status.
-- Action Controls: Provides a [Mark Delivered] trigger to close trips upon receiving photo proof in Messenger, a [Report Issue/Failed] action, and an [Edit Rider] button to reassign orders on the fly in case of vehicle breakdowns or rider emergencies.
-
-- Tab B: Dispatch Planner (Tomorrow)
-
-- The planning workspace opened every afternoon/night to view tomorrow's unassigned orders.
-- Admin manually assigns the freelance Rider Name and inputs the Delivery Fee (calculated manually via distance mapping).
-- Screenshot Generator (UI Magic): A dedicated "Generate Daily Sheets" button hides all admin controls and opens a clean, full-screen print view optimized for mobile screenshots:
-
-- Tab 1: Kitchen View: Sorted by Tahi Time / Priority. Hides money data.
-- Tab 2: Rider View: Sorted chronologically by Delivery Time. Hides cooking data. Shows exact cash splits.
+#### 5.2 Operational Views
+- **Live Operations (Today):** Real-time monitoring board for orders scheduled for delivery today. Displays assigned rider names, destination addresses, and delivery status. Action Controls: Provides a `[Mark Delivered]` trigger to close trips upon receiving photo proof in Messenger, and an `[Edit Rider]` button to reassign orders on the fly in case of vehicle breakdowns or rider emergencies.
+- **Daily Dispatch Planner (`/daily-sheets`):**
+  - **Tab 1: Kitchen View (14-Column Production Sheet — `KitchenViewTab.tsx`):** Sorted by Tahi Time / Priority. Hides money data. Enforces the strict 14-column layout:
+    `NO.` | `TAHI` | `SALANG` | `PRIORITY` | `SIZE` | `WEIGHT` | `DEPARTURE / PICKUP` | `CUSTOMER` | `PACKAGING` | `REMARKS` | `LOCATION` | `ADD-ONS` | `DELIVERY` | `RIDER`.
+    - `DEPARTURE / PICKUP` sits between `WEIGHT` and `CUSTOMER`, displaying `riderDepartureTime ?? targetDeliveryTime` so master roasters and choppers see the exact store handover deadline right next to the pig weight and customer name.
+    - `DELIVERY` sits between `ADD-ONS` and `RIDER`, displaying `targetDeliveryTime` (customer venue arrival time) for dispatch context.
+    - In `Edit & Plan Mode`, clicking `TAHI`, `SALANG`, `DEPARTURE / PICKUP`, `PACKAGING`, `REMARKS`, or `RIDER` opens `InlineScheduleEditorModal.tsx`.
+  - **Tab 2: Rider View & Rider Anti-Complacency Column Rule (`RiderViewTab.tsx`):** Sorted chronologically by departure time. Hides cooking data and shows exact cash splits.
+    - **Rider Anti-Complacency Guard:** The time column is labeled `DEPARTURE / PICKUP` and renders **ONLY** `riderDepartureTime ?? targetDeliveryTime` in bold primary monospace text. The customer's venue arrival time (`targetDeliveryTime`) and any secondary arrival subtext are **strictly hidden/removed** from the Rider View so freelance riders cannot self-calculate buffer slack or delay their departure from the store.
 
 #### 5.3 Freelance Rider Directory & Customer Communication Bridge
 
@@ -699,3 +709,33 @@ For immediate out-of-the-box system bootstrapping, the database seeds two produc
   - For `Pickup` (`0`), `RiderDepartureTime` is locked equal to `TargetDeliveryTime` (`0 min` offset).
 * **Interactive Nudge Pills:** Dispatchers can adjust `RiderDepartureTime` on the fly using quick-offset pills (`-30m`, `-45m`, `-1h`, `-1h 30m`, `-2h`) or manual datetime input for holiday traffic or custom routing.
 * **Kitchen Backward-Scheduling Anchor:** `SchedulingService` uses `anchorTime = order.RiderDepartureTime ?? order.TargetDeliveryTime` as the zero-hour baseline so every pig finishes packaging right as the rider departs the commissary.
+
+
+---
+
+## 15. 📱 Mobile Floor Action Hub & Cross-Platform Downpayment Radar
+
+### 15.1. The Mobile Floor Action Hub (`OrdersScreen.tsx` + `FloorActionView.tsx`)
+Preserving the ergonomic 3-tab mobile shell (`[📋 Orders] | [➕ New POS] | [👑 Drawer]`), the `Orders` screen features a dedicated two-segment toggle switcher:
+* **`[📋 Orders Directory]`:** Master order directory with debounced search, 6 filter pills (`Upcoming`, `Today Only`, `Tomorrow`, `Balance Due`, `Recent Edits`, `Past 30d`, `Cancelled`, `All Time`), and 4-way balance custody sub-pills (`All Unpaid`, `Road Cash`, `In Drawer`, `Advance`).
+* **`[⚡ Floor Action ({floorActionCount})]`:** Floor action command center aggregating urgent cashier and kitchen tasks into two high-priority operational sections with pull-to-refresh.
+
+### 15.2. Section A: Action Required — Downpayment Radar
+Surfaces all active, non-cancelled orders scheduled within a 4-day trigger window where `Downpayment == 0` and `IsTrustedCustomer == false`:
+* **Countdown Urgency Tags:**
+  - `[🚨 Due Tomorrow / Today]` (High-contrast red) when `daysUntil <= 1`.
+  - `[⚠️ Due in {daysUntil} days]` (Warm amber) when `daysUntil > 1`.
+* **Telemetry Display:** Displays customer name, Facebook/Messenger profile (`💬 {facebookName}`), target delivery datetime, pig and add-on items summary, and total balance due.
+* **1-Tap Floor Action Buttons:**
+  1. `[ 💬 Copy Reminder ]`: Copies the privacy-shielded Taglish downpayment reminder template (`generateDownpaymentReminder`) directly to clipboard.
+  2. `[ 📞 Call ]`: Launches native phone dialer for customer outreach.
+  3. `[ 💵 Record Deposit ]`: Direct trigger opening `OrderDossierModal` / payment logger so cashiers can immediately record downpayment funds and commit physical freezer inventory (`ReservationStatus = Committed`).
+
+### 15.3. Section B: Tonight's Defrost & Kitchen Prep Roster
+Renders all pig carcasses scheduled for tomorrow's roasting batches sorted strictly by **Earliest `TahiStartTime` (Preparation Priority)**:
+* **Header Summary:** Dynamic count of total carcasses scheduled (e.g., `Tonight's Defrost & Prep Roster (8 Heads)`).
+* **Weight & Quantity Badges:** Displays bracket (e.g., `1x Medium Whole (22.0–24.0 kg)`).
+* **Rush Defrost Detector (`IsRushDefrost`):** High-contrast red badge (`[🚨 RUSH / LATE DEFROST]`) flagged when orders are booked late (after 12:00 PM cutoff on the day prior to roasting), alerting roasters to initiate immediate rapid thawing protocols.
+* **Customer & VIP Telemetry:** Highlights `👑 VIP` status for trusted accounts and indicates fulfillment destination (`🏪 Store Pickup` vs. `📍 Delivery Address`).
+* **Prep / Tahi Monospace Deadline:** Formatted in bold tabular monospace (e.g., `🔪 Prep / Tahi Deadline: 07:30 AM`) so staff inspecting chest freezers can align pig thawing with the kitchen clock.
+* **Direct Dossier Access:** Tapping any roster card opens `OrderDossierModal` for the underlying order.

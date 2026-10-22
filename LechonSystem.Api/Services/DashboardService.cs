@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
+using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Models;
 
 namespace LechonSystem.Api.Services
@@ -12,11 +13,17 @@ namespace LechonSystem.Api.Services
     public class PendingConfirmationDto
     {
         public int Id { get; set; }
+        public int OrderId { get; set; }
         public string OrderReference { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
-        public DateTime TargetDeliveryTime { get; set; }
+        public string? FacebookName { get; set; }
+        public string ContactNumber { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
+        public DateTime TargetDeliveryTime { get; set; }
+        public decimal GrandTotal { get; set; }
         public decimal TotalAmount { get; set; }
+        public decimal BalanceDue { get; set; }
+        public string ItemsSummary { get; set; } = string.Empty;
     }
 
     public class DeliveryVerificationDto
@@ -31,17 +38,20 @@ namespace LechonSystem.Api.Services
         public DateTime? RiderDepartureTime { get; set; }
     }
 
-    // 🚀 Added the missing Defrost DTO here!
     public class DefrostRosterDto
     {
         public int Id { get; set; }
         public int OrderId { get; set; }
         public string OrderReference { get; set; } = string.Empty;
+        public int ItemCategoryId { get; set; }
         public string WeightCategory { get; set; } = string.Empty;
+        public string CategoryName { get; set; } = string.Empty;
+        public string WeightRange { get; set; } = string.Empty;
+        public decimal MinimumWeightKg { get; set; }
+        public decimal MaximumWeightKg { get; set; }
         public int Quantity { get; set; }
         public DateTime TahiStartTime { get; set; }
 
-        // NEW FIELDS FOR THE DASHBOARD HUD
         public string CustomerName { get; set; } = string.Empty;
         public string? FacebookName { get; set; }
         public string? EventType { get; set; }
@@ -49,6 +59,7 @@ namespace LechonSystem.Api.Services
         public DateTime TargetDeliveryTime { get; set; }
         public DateTime? RiderDepartureTime { get; set; }
         public bool IsTrustedCustomer { get; set; }
+        public bool IsRushDefrost { get; set; }
         public string DeliveryAddress { get; set; } = string.Empty;
         public int Fulfillment { get; set; }
         public decimal GrandTotal { get; set; }
@@ -61,8 +72,7 @@ namespace LechonSystem.Api.Services
     {
         Task<List<PendingConfirmationDto>> GetPendingConfirmationsAsync();
         Task<List<DeliveryVerificationDto>> GetDeliveryVerificationsAsync();
-        Task<List<DefrostRosterDto>> GetDefrostingRosterAsync(); // 🚀 Updated to use the DTO!
-
+        Task<List<DefrostRosterDto>> GetDefrostingRosterAsync();
         Task<List<RenegotiationTaskDto>> GetRenegotiationTasksAsync();
     }
 
@@ -78,34 +88,54 @@ namespace LechonSystem.Api.Services
 
         public async Task<List<PendingConfirmationDto>> GetPendingConfirmationsAsync()
         {
-            var fourDaysFromNow = DateTime.UtcNow.AddDays(4);
+            var today = DateTime.UtcNow.Date;
+            var fourDaysFromNow = today.AddDays(4);
 
-            return await _context.Orders
-                // 1. Keep your original inventory validation
-                .Where(o => _context.InventoryReservations
-                    .Any(r => r.OrderId == o.Id && r.ReservationStatus == ReservationStatus.Pending))
-
-                // 2. Combine your date range with the new business logic filters
-                .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow
-                         && o.TargetDeliveryTime <= fourDaysFromNow
+            var orders = await _context.Orders
+                .AsNoTracking()
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .Where(o => !o.IsCancelled
                          && o.Downpayment == 0
-                         && o.IsTrustedCustomer == false
-                         && o.IsCancelled == false)
-
-                // 3. Keep the OrderBy (it's good practice for dashboard lists)
+                         && !o.IsTrustedCustomer
+                         && o.TargetDeliveryTime.Date >= today
+                         && o.TargetDeliveryTime.Date <= fourDaysFromNow)
                 .OrderBy(o => o.TargetDeliveryTime)
+                .ToListAsync();
 
-                // 4. Keep your exact DTO naming and mapping
-                .Select(o => new PendingConfirmationDto
+            return orders.Select(o =>
+            {
+                var itemParts = o.OrderItems.Select(oi =>
+                    $"{oi.Quantity}x {oi.ItemCategory?.Name ?? "Lechon"}"
+                ).ToList();
+
+                if (!string.IsNullOrWhiteSpace(o.AddOns))
+                {
+                    itemParts.Add(o.AddOns.Trim());
+                }
+
+                var summary = itemParts.Count > 0
+                    ? string.Join(", ", itemParts)
+                    : "Lechon Reservation";
+
+                var contact = o.ContactNumber ?? string.Empty;
+
+                return new PendingConfirmationDto
                 {
                     Id = o.Id,
+                    OrderId = o.Id,
                     OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
+                    ContactNumber = contact,
+                    PhoneNumber = contact,
                     TargetDeliveryTime = o.TargetDeliveryTime,
-                    PhoneNumber = o.ContactNumber ?? string.Empty,
-                    TotalAmount = o.GrandTotal
-                })
-                .ToListAsync();
+                    GrandTotal = o.GrandTotal,
+                    TotalAmount = o.GrandTotal,
+                    BalanceDue = o.GrandTotal - o.Downpayment,
+                    ItemsSummary = summary
+                };
+            }).ToList();
         }
 
         public async Task<List<DeliveryVerificationDto>> GetDeliveryVerificationsAsync()
@@ -113,6 +143,7 @@ namespace LechonSystem.Api.Services
             var twoDaysFromNow = DateTime.UtcNow.AddDays(2);
 
             return await _context.Orders
+                .AsNoTracking()
                 .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow && o.TargetDeliveryTime <= twoDaysFromNow)
                 .Where(o => o.IsDeliveryDetailsConfirmed == false)
                 .Select(o => new DeliveryVerificationDto
@@ -129,41 +160,72 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
         }
 
-        // 2. THE QUERY
         public async Task<List<DefrostRosterDto>> GetDefrostingRosterAsync()
         {
             var tomorrow = DateTime.UtcNow.Date.AddDays(1);
 
-            return await _context.OrderItemSchedules
+            var schedules = await _context.OrderItemSchedules
+                .AsNoTracking()
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.ItemCategory)
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
-                .Where(s => s.TahiStartTime.Date == tomorrow)
-                .Select(s => new DefrostRosterDto
+                .Where(s => s.OrderItem != null 
+                         && s.OrderItem.Order != null 
+                         && !s.OrderItem.Order.IsCancelled 
+                         && s.TahiStartTime.Date == tomorrow)
+                .OrderBy(s => s.TahiStartTime)
+                .ToListAsync();
+
+            return schedules.Select(s =>
+            {
+                var order = s.OrderItem!.Order!;
+                var catName = s.OrderItem.ItemCategory?.Name ?? "Lechon";
+                var itemCatId = s.OrderItem.ItemCategoryId;
+                var minWeight = s.OrderItem.ItemCategory?.MinimumWeightKg ?? 0m;
+                var maxWeight = s.OrderItem.ItemCategory?.MaximumWeightKg ?? 0m;
+                var weightRange = (minWeight > 0 || maxWeight > 0)
+                    ? (minWeight == maxWeight
+                        ? $"{minWeight:0.##}"
+                        : $"{minWeight:0.##}-{maxWeight:0.##}")
+                    : string.Empty;
+
+                var rushCutoff = s.TahiStartTime.Date.AddDays(-1).AddHours(12);
+                if (s.TahiStartTime.Hour >= 12)
+                {
+                    rushCutoff = s.TahiStartTime.Date.AddHours(12);
+                }
+                bool isRush = order.CreatedAt >= rushCutoff;
+
+                return new DefrostRosterDto
                 {
                     Id = s.OrderItemId,
-                    OrderId = s.OrderItem!.OrderId,
-                    OrderReference = s.OrderItem.Order!.OrderReference,
-                    WeightCategory = s.OrderItem!.ItemCategory!.Name,
+                    OrderId = order.Id,
+                    OrderReference = order.OrderReference,
+                    ItemCategoryId = itemCatId,
+                    WeightCategory = catName,
+                    CategoryName = catName,
+                    WeightRange = weightRange,
+                    MinimumWeightKg = minWeight,
+                    MaximumWeightKg = maxWeight,
                     Quantity = s.OrderItem.Quantity,
                     TahiStartTime = s.TahiStartTime,
-                    CustomerName = s.OrderItem.Order!.CustomerName,
-                    FacebookName = s.OrderItem.Order.FacebookName,
-                    EventType = s.OrderItem.Order.EventType,
-                    Landmark = s.OrderItem.Order.Landmark,
-                    TargetDeliveryTime = s.OrderItem.Order.TargetDeliveryTime,
-                    RiderDepartureTime = s.OrderItem.Order.RiderDepartureTime,
-                    IsTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
-                    Fulfillment = (int)s.OrderItem.Order.Fulfillment,
-                    DeliveryAddress = s.OrderItem.Order.DeliveryAddress ?? string.Empty,
-                    GrandTotal = s.OrderItem.Order.GrandTotal,
-                    Downpayment = s.OrderItem.Order.Downpayment,
-                    BalanceDue = s.OrderItem.Order.GrandTotal - s.OrderItem.Order.Downpayment
-                })
-                .ToListAsync();
+                    CustomerName = order.CustomerName,
+                    FacebookName = order.FacebookName,
+                    EventType = order.EventType,
+                    Landmark = order.Landmark,
+                    TargetDeliveryTime = order.TargetDeliveryTime,
+                    RiderDepartureTime = order.RiderDepartureTime,
+                    IsTrustedCustomer = order.IsTrustedCustomer,
+                    IsRushDefrost = isRush,
+                    Fulfillment = (int)order.Fulfillment,
+                    DeliveryAddress = order.DeliveryAddress ?? string.Empty,
+                    GrandTotal = order.GrandTotal,
+                    Downpayment = order.Downpayment,
+                    BalanceDue = order.GrandTotal - order.Downpayment
+                };
+            }).ToList();
         }
-
 
         public async Task<List<RenegotiationTaskDto>> GetRenegotiationTasksAsync()
         {

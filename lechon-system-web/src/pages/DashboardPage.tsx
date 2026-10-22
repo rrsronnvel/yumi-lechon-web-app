@@ -58,6 +58,7 @@ import OrderForm from "@/components/ui/orders/OrderForm";
 import { Plus, FileText, Copy, Lock } from "lucide-react";
 import {
   generateVerificationReminder,
+  generateDefrostRosterMessage,
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
 
@@ -665,11 +666,28 @@ export default function DashboardPage() {
         {/* 🚀 UNIFIED OPERATIONS ROSTER */}
         <Card className="bg-white border-t-4 border-t-[#C81E1E] border-stone-200/90 shadow-sm rounded-xl">
           <CardHeader className="pb-3">
-            <CardTitle className="text-stone-900 flex justify-between items-center text-lg">
+            <CardTitle className="text-stone-900 flex flex-wrap justify-between items-center gap-2 text-lg">
               <span>Operations Roster: Defrost & Dispatch</span>
-              {unifiedRoster.length > 0 && (
-                <Badge className="bg-[#C81E1E] text-white">{unifiedRoster.length} Active</Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {unifiedRoster.length > 0 && (
+                  <Badge className="bg-[#C81E1E] text-white">{unifiedRoster.length} Active</Badge>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!unifiedRoster || unifiedRoster.length === 0}
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      generateDefrostRosterMessage(unifiedRoster)
+                    );
+                    toast.success("Defrost list copied for Messenger!");
+                  }}
+                  className="h-8 text-xs font-semibold border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 shadow-2xs cursor-pointer"
+                >
+                  📋 Copy Defrost List
+                </Button>
+              </div>
             </CardTitle>
             <p className="text-xs sm:text-sm text-stone-500">
               Combined view of tonight&apos;s prep requirements and tomorrow&apos;s delivery targets. Click any row to inspect customer dossier.

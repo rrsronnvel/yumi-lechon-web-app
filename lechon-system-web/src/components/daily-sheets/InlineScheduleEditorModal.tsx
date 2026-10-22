@@ -23,7 +23,7 @@ interface InlineScheduleEditorModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const formatToHHMM = (timeString?: string): string => {
+const formatToHHMM = (timeString?: string | null): string => {
   if (!timeString) return "";
   try {
     if (timeString.length <= 8 && timeString.includes(":")) {
@@ -40,7 +40,7 @@ const formatToHHMM = (timeString?: string): string => {
   }
 };
 
-const formatReadableDate = (timeString?: string): string => {
+const formatReadableDate = (timeString?: string | null): string => {
   if (!timeString) return "-";
   try {
     const d = new Date(timeString);
@@ -77,6 +77,7 @@ export function InlineScheduleEditorModal({
   const [tahiTime, setTahiTime] = useState("");
   const [salangTime, setSalangTime] = useState("");
   const [packagingTime, setPackagingTime] = useState("");
+  const [departureTime, setDepartureTime] = useState("");
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -88,6 +89,9 @@ export function InlineScheduleEditorModal({
       setTahiTime(formatToHHMM(item.tahiStartTime));
       setSalangTime(formatToHHMM(item.salangStartTime));
       setPackagingTime(formatToHHMM(item.packagingStartTime));
+      setDepartureTime(
+        formatToHHMM(item.riderDepartureTime ?? item.targetDeliveryTime)
+      );
       const currentRider =
         item.riderName && item.riderName !== "Unassigned" ? item.riderName : "";
       setRiderName(currentRider);
@@ -115,6 +119,10 @@ export function InlineScheduleEditorModal({
         tahiStartTime: buildIsoTime(refDate, tahiTime),
         salangStartTime: buildIsoTime(refDate, salangTime),
         packagingStartTime: buildIsoTime(refDate, packagingTime),
+        riderDepartureTime:
+          item.fulfillment === 0
+            ? undefined
+            : buildIsoTime(refDate, departureTime),
         riderName: riderName.trim() || undefined,
         remarks: remarks.trim() || undefined,
       });
@@ -162,7 +170,7 @@ export function InlineScheduleEditorModal({
             <DialogTitle>Production & Logistics Override</DialogTitle>
           </div>
           <DialogDescription>
-            Manually level production timings or assign a delivery rider for Order #{item.orderId || item.id}.
+            Manually level production timings or assign a delivery rider for Order #{item.orderReference || item.orderId || item.id}.
           </DialogDescription>
         </DialogHeader>
 
@@ -205,7 +213,7 @@ export function InlineScheduleEditorModal({
 
         {/* Form Inputs */}
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="tahiTime" className="text-xs font-semibold text-slate-700">
                 Tahi Time
@@ -242,6 +250,20 @@ export function InlineScheduleEditorModal({
                 value={packagingTime}
                 onChange={(e) => setPackagingTime(e.target.value)}
                 className="font-mono text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="departureTime" className="text-xs font-semibold text-amber-900">
+                Departure / Pickup
+              </Label>
+              <Input
+                id="departureTime"
+                type="time"
+                disabled={item.fulfillment === 0}
+                value={departureTime}
+                onChange={(e) => setDepartureTime(e.target.value)}
+                className="font-mono text-sm border-amber-300 disabled:bg-stone-100"
               />
             </div>
           </div>

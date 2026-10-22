@@ -21,6 +21,7 @@ namespace LechonSystem.Api.Controllers
             _orderService = orderService;
         }
 
+        [HttpGet("pending-confirmations")]
         [HttpGet("tasks/pending-confirmations")]
         public async Task<IActionResult> GetPendingConfirmations()
         {
@@ -35,6 +36,7 @@ namespace LechonSystem.Api.Controllers
             return Ok(tasks);
         }
 
+        [HttpGet("roster")]
         [HttpGet("tasks/defrost-roster")]
         public async Task<IActionResult> GetDefrostingRoster()
         {

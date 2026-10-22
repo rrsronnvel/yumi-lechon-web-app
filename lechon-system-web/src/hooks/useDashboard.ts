@@ -27,6 +27,10 @@ export interface DefrostRosterDto {
   orderId: number;
   orderReference?: string;
   weightCategory: string;
+  categoryName?: string;
+  weightRange?: string;
+  minimumWeightKg?: number;
+  maximumWeightKg?: number;
   quantity: number;
   tahiStartTime: string;
   customerName: string;

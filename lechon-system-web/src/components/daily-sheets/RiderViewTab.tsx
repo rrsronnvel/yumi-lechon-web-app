@@ -67,9 +67,11 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
   if (!scheduleItems || scheduleItems.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No deliveries scheduled for the selected date.</div>;
 
-  // Sort chronologically by Delivery Time for the Riders
+  // Sort chronologically by Departure / Pickup Time for the Riders
   const sortedByDelivery = [...scheduleItems].sort((a, b) => {
-    return new Date(a.targetDeliveryTime).getTime() - new Date(b.targetDeliveryTime).getTime();
+    const timeA = new Date(a.riderDepartureTime ?? a.targetDeliveryTime).getTime();
+    const timeB = new Date(b.riderDepartureTime ?? b.targetDeliveryTime).getTime();
+    return timeA - timeB;
   });
 
   const handleCellClick = (item: RoastingScheduleItem) => {
@@ -149,9 +151,9 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
             <col className="w-[8%] min-w-[120px]" />  {/* 1. No. */}
             <col className="w-[4.5%]" />              {/* 2. Size (Compact: fits "S. Jumbo") */}
             <col className="w-[4.5%]" />              {/* 3. Weight */}
-            <col className="w-[6.5%]" />              {/* 4. Delivery Time */}
+            <col className="w-[7.5%]" />              {/* 4. Departure / Pickup Time */}
             <col className="w-[9%]" />                {/* 5. Customer Name */}
-            <col className="w-[18%]" />               {/* 6. Location (Expanded) */}
+            <col className="w-[17%]" />               {/* 6. Location (Expanded) */}
             <col className="w-[7.5%]" />              {/* 7. Rider Name */}
             <col className="w-[18%]" />               {/* 8. Remarks (Expanded) */}
             <col className="w-[4.5%]" />              {/* 9. Price */}
@@ -167,7 +169,7 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
               <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[120px] whitespace-nowrap font-mono font-bold">No.</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 whitespace-nowrap">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Delivery</th>
+              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Departure / Pickup</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Location</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Rider</th>
@@ -220,14 +222,9 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                     {formatWeightDisplay(item.weight)}
                   </td>
 
-                  {/* 4. Delivery Time (High-Visibility Bold Red) */}
-                  <td className="px-1.5 py-2 text-center font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
-                    <div>{formatTime(item.targetDeliveryTime)}</div>
-                    {item.riderDepartureTime && item.fulfillment !== 0 && (
-                      <div className="text-[9.5px] text-amber-800 font-bold">
-                        🛵 Dep: {formatTime(item.riderDepartureTime)}
-                      </div>
-                    )}
+                  {/* 4. Departure / Pickup Time (Anti-Complacency Guard: ONLY shows RiderDepartureTime ?? TargetDeliveryTime) */}
+                  <td className="px-1.5 py-2 text-center font-mono font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
+                    {formatTime(item.riderDepartureTime ?? item.targetDeliveryTime)}
                   </td>
 
                   {/* 5. Customer Name */}

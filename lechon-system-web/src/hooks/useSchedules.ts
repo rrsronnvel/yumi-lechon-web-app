@@ -12,7 +12,11 @@ export interface RoastingScheduleItem {
   source?: string;
   eventType?: string | null;
   size?: string;
+  categoryName?: string;
   weight?: string;
+  weightRange?: string;
+  minimumWeightKg?: number;
+  maximumWeightKg?: number;
   targetDeliveryTime: string;
   riderDepartureTime?: string | null;
   tahiStartTime: string;
@@ -40,6 +44,7 @@ export interface OverrideSchedulePayload {
   tahiStartTime?: string;
   salangStartTime?: string;
   packagingStartTime?: string;
+  riderDepartureTime?: string;
   riderName?: string;
   remarks?: string;
 }

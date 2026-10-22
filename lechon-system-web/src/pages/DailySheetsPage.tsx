@@ -167,7 +167,7 @@ export default function DailySheetsPage() {
                 Edit Mode
               </span>
               <span>
-                Click on any <strong>Tahi</strong>, <strong>Salang</strong>, <strong>Packaging</strong>, <strong>Remarks</strong>, or <strong>Rider Name</strong> cell to level production or assign riders.
+                Click on any <strong>Tahi</strong>, <strong>Salang</strong>, <strong>Departure / Pickup</strong>, <strong>Packaging</strong>, <strong>Remarks</strong>, or <strong>Rider Name</strong> cell to level production or assign riders.
               </span>
             </div>
           </div>

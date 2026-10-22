@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useOrdersDirectory, OrderDirectoryDto } from '../hooks/useOrders';
 import OrderDossierModal from '../components/orders/OrderDossierModal';
+import { useDefrostRosterQuery, usePendingConfirmationsQuery } from '../hooks/useFloorAction';
+import FloorActionView from '../components/orders/FloorActionView';
 
 type SmartPillKey =
   | 'upcoming'
@@ -50,11 +52,18 @@ const isSameLocalDay = (dateA: Date, dateB: Date): boolean => {
 };
 
 export default function OrdersScreen() {
+  const [activeView, setActiveView] = useState<'directory' | 'floor-action'>('directory');
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [rawSearch, setRawSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activePill, setActivePill] = useState<SmartPillKey>('upcoming');
   const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(null);
+
+  const { data: defrostRoster } = useDefrostRosterQuery();
+  const { data: pendingConfirmations } = usePendingConfirmationsQuery();
+
+  const floorActionCount = (pendingConfirmations?.length ?? 0) + (defrostRoster?.length ?? 0);
 
   // 300ms debounce
   useEffect(() => {
@@ -292,7 +301,10 @@ export default function OrdersScreen() {
     return (
       <Pressable
         style={({ pressed }) => [styles.orderCard, pressed && styles.orderCardPressed]}
-        onPress={() => setSelectedOrder(item)}
+        onPress={() => {
+          setSelectedOrder(item);
+          setSelectedOrderId(item.id);
+        }}
       >
         {/* Top Row: #ID + Edited Pill + Customer Name + VIP Badge | Grand Total */}
         <View style={styles.cardTopRow}>
@@ -361,202 +373,258 @@ export default function OrdersScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Top Debounced Search Bar */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search customer, 0917..., or #ID..."
-            placeholderTextColor="#78716C"
-            value={rawSearch}
-            onChangeText={setRawSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          {rawSearch.length > 0 && (
-            <Pressable
-              style={styles.clearBtn}
-              onPress={() => setRawSearch('')}
-              hitSlop={8}
-            >
-              <Text style={styles.clearBtnText}>✕</Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-
-      {/* Horizontal Scrollable Filter Pills */}
-      <View style={styles.pillsWrapper}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.pillsContent}
+      {/* Top Segmented Switcher */}
+      <View style={styles.topSegmentedBar}>
+        <Pressable
+          style={[
+            styles.segmentButton,
+            activeView === 'directory' && styles.segmentButtonActive,
+          ]}
+          onPress={() => setActiveView('directory')}
         >
-          {FILTER_PILLS.map((pill) => {
-            const isActive = activePill === pill.key;
-            return (
-              <Pressable
-                key={pill.key}
-                style={[styles.filterPill, isActive && styles.filterPillActive]}
-                onPress={() => setActivePill(pill.key)}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    isActive && styles.filterPillTextActive,
-                  ]}
-                >
-                  {pill.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* Secondary Horizontal Scrollable Sub-Pills for Balance Due */}
-      {activePill === 'balance-due' && (
-        <View style={styles.subPillsWrapper}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.subPillsContent}
+          <Text
+            style={[
+              styles.segmentButtonText,
+              activeView === 'directory' && styles.segmentButtonTextActive,
+            ]}
           >
-            <Pressable
-              style={[
-                styles.subFilterPill,
-                balanceSubFilter === 'all' && styles.subFilterPillActive,
-              ]}
-              onPress={() => setBalanceSubFilter('all')}
-            >
-              <Text
-                style={[
-                  styles.subFilterPillText,
-                  balanceSubFilter === 'all' && styles.subFilterPillTextActive,
-                ]}
-              >
-                📋 All Unpaid ({custodyCounts.all})
-              </Text>
-            </Pressable>
+            📋 Orders Directory
+          </Text>
+        </Pressable>
 
-            <Pressable
-              style={[
-                styles.subFilterPill,
-                balanceSubFilter === 'rider' && styles.subFilterPillActive,
-              ]}
-              onPress={() => setBalanceSubFilter('rider')}
-            >
-              <Text
-                style={[
-                  styles.subFilterPillText,
-                  balanceSubFilter === 'rider' && styles.subFilterPillTextActive,
-                ]}
-              >
-                🛵 Road Cash ({custodyCounts.rider})
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.subFilterPill,
-                balanceSubFilter === 'drawer' && styles.subFilterPillActive,
-              ]}
-              onPress={() => setBalanceSubFilter('drawer')}
-            >
-              <Text
-                style={[
-                  styles.subFilterPillText,
-                  balanceSubFilter === 'drawer' && styles.subFilterPillTextActive,
-                ]}
-              >
-                🟡 In Drawer ({custodyCounts.drawer})
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.subFilterPill,
-                balanceSubFilter === 'future' && styles.subFilterPillActive,
-              ]}
-              onPress={() => setBalanceSubFilter('future')}
-            >
-              <Text
-                style={[
-                  styles.subFilterPillText,
-                  balanceSubFilter === 'future' && styles.subFilterPillTextActive,
-                ]}
-              >
-                📅 Advance ({custodyCounts.future})
-              </Text>
-            </Pressable>
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Result Counter Bar */}
-      <View style={styles.counterBar}>
-        <Text style={styles.counterText}>
-          Showing <Text style={styles.counterStrong}>{filteredOrders.length}</Text>{' '}
-          {filteredOrders.length === 1 ? 'order' : 'orders'}
-        </Text>
-        <Pressable onPress={() => refetch()}>
-          <Text style={styles.refreshActionText}>
-            {isRefetching ? 'Syncing...' : '↻ Refresh'}
+        <Pressable
+          style={[
+            styles.segmentButton,
+            activeView === 'floor-action' && styles.segmentButtonActive,
+          ]}
+          onPress={() => setActiveView('floor-action')}
+        >
+          <Text
+            style={[
+              styles.segmentButtonText,
+              activeView === 'floor-action' && styles.segmentButtonTextActive,
+            ]}
+          >
+            ⚡ Floor Action {floorActionCount > 0 ? `(${floorActionCount})` : ''}
           </Text>
         </Pressable>
       </View>
 
-      {/* Directory List */}
-      {isLoading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#C81E1E" />
-          <Text style={styles.loadingHint}>Loading order directory...</Text>
-        </View>
-      ) : isError ? (
-        <View style={styles.centerBox}>
-          <Text style={styles.errorTitle}>⚠️ Could not fetch orders</Text>
-          <Text style={styles.errorSub}>
-            Verify your internet connection or API target environment.
-          </Text>
-          <Pressable style={styles.retryButton} onPress={() => refetch()}>
-            <Text style={styles.retryButtonText}>Retry Now</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredOrders}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderOrderCard}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={() => {
-                void refetch();
-              }}
-              tintColor="#C81E1E"
-              colors={['#C81E1E']}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyEmoji}>📭</Text>
-              <Text style={styles.emptyTitle}>No matching orders found</Text>
-              <Text style={styles.emptySubtitle}>
-                Try adjusting your search keywords or selecting a different filter pill above.
-              </Text>
-            </View>
-          }
+      {activeView === 'floor-action' ? (
+        <FloorActionView
+          onSelectOrderForDeposit={(orderId) => {
+            const match = rawOrders?.find((o) => o.id === orderId) ?? null;
+            setSelectedOrder(match);
+            setSelectedOrderId(orderId);
+          }}
+          onRefresh={async () => {
+            await refetch();
+          }}
+          isRefreshing={isRefetching}
         />
+      ) : (
+        <>
+          {/* Top Debounced Search Bar */}
+          <View style={styles.searchSection}>
+            <View style={styles.searchBox}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search customer, 0917..., or #ID..."
+                placeholderTextColor="#78716C"
+                value={rawSearch}
+                onChangeText={setRawSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {rawSearch.length > 0 && (
+                <Pressable
+                  style={styles.clearBtn}
+                  onPress={() => setRawSearch('')}
+                  hitSlop={8}
+                >
+                  <Text style={styles.clearBtnText}>✕</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          {/* Horizontal Scrollable Filter Pills */}
+          <View style={styles.pillsWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pillsContent}
+            >
+              {FILTER_PILLS.map((pill) => {
+                const isActive = activePill === pill.key;
+                return (
+                  <Pressable
+                    key={pill.key}
+                    style={[styles.filterPill, isActive && styles.filterPillActive]}
+                    onPress={() => setActivePill(pill.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterPillText,
+                        isActive && styles.filterPillTextActive,
+                      ]}
+                    >
+                      {pill.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Secondary Horizontal Scrollable Sub-Pills for Balance Due */}
+          {activePill === 'balance-due' && (
+            <View style={styles.subPillsWrapper}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.subPillsContent}
+              >
+                <Pressable
+                  style={[
+                    styles.subFilterPill,
+                    balanceSubFilter === 'all' && styles.subFilterPillActive,
+                  ]}
+                  onPress={() => setBalanceSubFilter('all')}
+                >
+                  <Text
+                    style={[
+                      styles.subFilterPillText,
+                      balanceSubFilter === 'all' && styles.subFilterPillTextActive,
+                    ]}
+                  >
+                    📋 All Unpaid ({custodyCounts.all})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.subFilterPill,
+                    balanceSubFilter === 'rider' && styles.subFilterPillActive,
+                  ]}
+                  onPress={() => setBalanceSubFilter('rider')}
+                >
+                  <Text
+                    style={[
+                      styles.subFilterPillText,
+                      balanceSubFilter === 'rider' && styles.subFilterPillTextActive,
+                    ]}
+                  >
+                    🛵 Road Cash ({custodyCounts.rider})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.subFilterPill,
+                    balanceSubFilter === 'drawer' && styles.subFilterPillActive,
+                  ]}
+                  onPress={() => setBalanceSubFilter('drawer')}
+                >
+                  <Text
+                    style={[
+                      styles.subFilterPillText,
+                      balanceSubFilter === 'drawer' && styles.subFilterPillTextActive,
+                    ]}
+                  >
+                    🟡 In Drawer ({custodyCounts.drawer})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.subFilterPill,
+                    balanceSubFilter === 'future' && styles.subFilterPillActive,
+                  ]}
+                  onPress={() => setBalanceSubFilter('future')}
+                >
+                  <Text
+                    style={[
+                      styles.subFilterPillText,
+                      balanceSubFilter === 'future' && styles.subFilterPillTextActive,
+                    ]}
+                  >
+                    📅 Advance ({custodyCounts.future})
+                  </Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Result Counter Bar */}
+          <View style={styles.counterBar}>
+            <Text style={styles.counterText}>
+              Showing <Text style={styles.counterStrong}>{filteredOrders.length}</Text>{' '}
+              {filteredOrders.length === 1 ? 'order' : 'orders'}
+            </Text>
+            <Pressable onPress={() => refetch()}>
+              <Text style={styles.refreshActionText}>
+                {isRefetching ? 'Syncing...' : '↻ Refresh'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Directory List */}
+          {isLoading ? (
+            <View style={styles.centerBox}>
+              <ActivityIndicator size="large" color="#C81E1E" />
+              <Text style={styles.loadingHint}>Loading order directory...</Text>
+            </View>
+          ) : isError ? (
+            <View style={styles.centerBox}>
+              <Text style={styles.errorTitle}>⚠️ Could not fetch orders</Text>
+              <Text style={styles.errorSub}>
+                Verify your internet connection or API target environment.
+              </Text>
+              <Pressable style={styles.retryButton} onPress={() => refetch()}>
+                <Text style={styles.retryButtonText}>Retry Now</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredOrders}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={renderOrderCard}
+              contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isRefetching}
+                  onRefresh={() => {
+                    void refetch();
+                  }}
+                  tintColor="#C81E1E"
+                  colors={['#C81E1E']}
+                />
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyEmoji}>📭</Text>
+                  <Text style={styles.emptyTitle}>No matching orders found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Try adjusting your search keywords or selecting a different filter pill above.
+                  </Text>
+                </View>
+              }
+            />
+          )}
+        </>
       )}
 
       {/* Slide-Up Customer Dossier Modal */}
       <OrderDossierModal
-        orderId={selectedOrder?.id ?? null}
+        orderId={selectedOrderId ?? selectedOrder?.id ?? null}
         fallbackOrder={selectedOrder}
-        onClose={() => setSelectedOrder(null)}
+        onClose={() => {
+          setSelectedOrder(null);
+          setSelectedOrderId(null);
+        }}
       />
     </View>
   );
@@ -566,6 +634,45 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF6F4',
+  },
+  topSegmentedBar: {
+    flexDirection: 'row',
+    backgroundColor: '#E7E5E4',
+    padding: 4,
+    marginHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 4,
+    borderRadius: 10,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  segmentButtonActive: {
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  segmentButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#78716C',
+  },
+  segmentButtonTextActive: {
+    color: '#1C1917',
+    fontWeight: '700',
   },
   searchSection: {
     paddingHorizontal: 14,

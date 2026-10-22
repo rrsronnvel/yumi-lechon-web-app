@@ -1311,9 +1311,55 @@ export default function OrderForm({
             {/* Payment & VIP Section */}
             <div className="pt-2 border-t border-stone-200 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
               <div>
-                <label className="text-xs font-semibold text-stone-700 block mb-1.5">
-                  Downpayment Received (₱)
-                </label>
+                <div className="flex items-center justify-between gap-1.5 mb-1.5 flex-wrap">
+                  <label className="text-xs font-semibold text-stone-700">
+                    Downpayment Received (₱)
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        form.setValue("downpayment", 0, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                      className="px-2 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold transition-colors cursor-pointer"
+                    >
+                      ₱0
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        form.setValue(
+                          "downpayment",
+                          grandTotal > 0 && grandTotal < 1000
+                            ? grandTotal
+                            : 1000,
+                          {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          },
+                        )
+                      }
+                      className="px-2 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold transition-colors cursor-pointer"
+                    >
+                      ₱1,000
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        form.setValue("downpayment", grandTotal, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                      className="px-2 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold transition-colors cursor-pointer"
+                    >
+                      Full Paid
+                    </button>
+                  </div>
+                </div>
                 <Input
                   type="number"
                   min={0}

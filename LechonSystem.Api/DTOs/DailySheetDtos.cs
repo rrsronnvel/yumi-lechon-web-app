@@ -1,0 +1,41 @@
+using System;
+
+namespace LechonSystem.Api.DTOs;
+
+public class DailySheetItemDto
+{
+    public int Id { get; set; }
+    public int OrderItemId { get; set; }
+    public int OrderId { get; set; }
+    public string OrderReference { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public string? FacebookName { get; set; }
+    public string Source { get; set; } = string.Empty;
+    public string? EventType { get; set; }
+    public string? Landmark { get; set; }
+    public string Size { get; set; } = string.Empty;
+    public string CategoryName { get; set; } = string.Empty;
+    public string Weight { get; set; } = string.Empty;
+    public string WeightRange { get; set; } = string.Empty;
+    public decimal MinWeight { get; set; }
+    public decimal MaxWeight { get; set; }
+    public decimal MinimumWeightKg { get; set; }
+    public decimal MaximumWeightKg { get; set; }
+    public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? RiderDepartureTime { get; set; }
+    public DateTime TahiStartTime { get; set; }
+    public DateTime SalangStartTime { get; set; }
+    public DateTime PackagingStartTime { get; set; }
+    public string Location { get; set; } = string.Empty;
+    public string Remarks { get; set; } = string.Empty;
+    public string AddOns { get; set; } = "-";
+    public decimal Price { get; set; }
+    public decimal DeliveryFee { get; set; }
+    public decimal Downpayment { get; set; }
+    public decimal GrandTotal { get; set; }
+    public int Fulfillment { get; set; }
+    public int Quantity { get; set; }
+    public string RiderName { get; set; } = "Unassigned";
+    public string Status { get; set; } = string.Empty;
+    public bool IsManualOverride { get; set; }
+}

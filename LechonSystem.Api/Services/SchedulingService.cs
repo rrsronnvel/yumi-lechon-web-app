@@ -60,7 +60,13 @@ namespace LechonSystem.Api.Services
 
         public async Task<object> GetDailyRosterAsync(DateTime targetDate)
         {
+            return await GetDailySheetsAsync(targetDate);
+        }
+
+        public async Task<System.Collections.Generic.List<DailySheetItemDto>> GetDailySheetsAsync(DateTime targetDate)
+        {
             var items = await _context.OrderItemSchedules
+                .AsNoTracking()
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
                         .ThenInclude(o => o!.DeliveryTrip)
@@ -79,21 +85,20 @@ namespace LechonSystem.Api.Services
                     eventType = s.OrderItem!.Order!.EventType,
                     landmark = s.OrderItem!.Order!.Landmark,
                     size = s.OrderItem!.ItemCategory!.Name,
-                    minWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MinimumWeightKg : 0,
-                    maxWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MaximumWeightKg : 0,
+                    categoryName = s.OrderItem!.ItemCategory!.Name,
+                    minWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MinimumWeightKg : 0m,
+                    maxWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MaximumWeightKg : 0m,
 
                     // TIMINGS
-                    targetDeliveryTime = s.TargetDeliveryTime.ToString("o"),
-                    riderDepartureTime = s.OrderItem!.Order!.RiderDepartureTime.HasValue
-                        ? s.OrderItem.Order.RiderDepartureTime.Value.ToString("o")
-                        : null,
-                    tahiStartTime = s.TahiStartTime.ToString("o"),
-                    salangStartTime = s.SalangStartTime.ToString("o"),
-                    packagingStartTime = s.PackagingStartTime.ToString("o"),
+                    targetDeliveryTime = s.TargetDeliveryTime,
+                    riderDepartureTime = s.OrderItem!.Order!.RiderDepartureTime,
+                    tahiStartTime = s.TahiStartTime,
+                    salangStartTime = s.SalangStartTime,
+                    packagingStartTime = s.PackagingStartTime,
 
                     // LOGISTICS & NOTES
-                    location = s.OrderItem!.Order!.DeliveryAddress,
-                    remarks = s.OrderItem!.Order!.Remarks,
+                    location = s.OrderItem!.Order!.DeliveryAddress ?? string.Empty,
+                    remarks = s.OrderItem!.Order!.Remarks ?? string.Empty,
                     addOns = s.OrderItem!.Order!.AddOns ?? "-",
 
                     // Financials & Fulfillment for Rider View
@@ -114,41 +119,52 @@ namespace LechonSystem.Api.Services
                 })
                 .ToListAsync();
 
-            return items.Select(s => new
+            return items.Select(s =>
             {
-                s.id,
-                s.orderItemId,
-                s.orderId,
-                s.orderReference,
-                s.customerName,
-                s.facebookName,
-                s.source,
-                s.eventType,
-                s.landmark,
-                s.size,
-                weight = (s.minWeight > 0 || s.maxWeight > 0)
+                var formattedWeight = (s.minWeight > 0 || s.maxWeight > 0)
                     ? (s.minWeight == s.maxWeight
                         ? $"{s.minWeight:0.##}"
                         : $"{s.minWeight:0.##}-{s.maxWeight:0.##}")
-                    : "-",
-                s.targetDeliveryTime,
-                s.riderDepartureTime,
-                s.tahiStartTime,
-                s.salangStartTime,
-                s.packagingStartTime,
-                s.location,
-                s.remarks,
-                s.addOns,
-                s.price,
-                s.deliveryFee,
-                s.downpayment,
-                s.grandTotal,
-                s.fulfillment,
-                s.quantity,
-                s.riderName,
-                s.status,
-                s.isManualOverride
-            });
+                    : "-";
+
+                return new DailySheetItemDto
+                {
+                    Id = s.id,
+                    OrderItemId = s.orderItemId,
+                    OrderId = s.orderId,
+                    OrderReference = s.orderReference,
+                    CustomerName = s.customerName,
+                    FacebookName = s.facebookName,
+                    Source = s.source,
+                    EventType = s.eventType,
+                    Landmark = s.landmark,
+                    Size = s.size,
+                    CategoryName = s.categoryName,
+                    Weight = formattedWeight,
+                    WeightRange = formattedWeight,
+                    MinWeight = s.minWeight,
+                    MaxWeight = s.maxWeight,
+                    MinimumWeightKg = s.minWeight,
+                    MaximumWeightKg = s.maxWeight,
+                    TargetDeliveryTime = s.targetDeliveryTime,
+                    RiderDepartureTime = s.riderDepartureTime,
+                    TahiStartTime = s.tahiStartTime,
+                    SalangStartTime = s.salangStartTime,
+                    PackagingStartTime = s.packagingStartTime,
+                    Location = s.location,
+                    Remarks = s.remarks,
+                    AddOns = s.addOns,
+                    Price = s.price,
+                    DeliveryFee = s.deliveryFee,
+                    Downpayment = s.downpayment,
+                    GrandTotal = s.grandTotal,
+                    Fulfillment = s.fulfillment,
+                    Quantity = s.quantity,
+                    RiderName = s.riderName,
+                    Status = s.status,
+                    IsManualOverride = s.isManualOverride
+                };
+            }).ToList();
         }
 
         public async Task<OrderItemSchedule> OverrideScheduleItemAsync(int orderItemId, OverrideScheduleRequest request)
@@ -170,6 +186,9 @@ namespace LechonSystem.Api.Services
 
             if (request.PackagingStartTime.HasValue)
                 schedule.PackagingStartTime = request.PackagingStartTime.Value;
+
+            if (request.RiderDepartureTime.HasValue && schedule.OrderItem?.Order != null)
+                schedule.OrderItem.Order.RiderDepartureTime = request.RiderDepartureTime.Value;
 
             schedule.IsManualOverride = true;
 
