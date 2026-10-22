@@ -120,6 +120,7 @@ export default function OrderDossierModal({
     : Number(fallbackOrder?.balanceDue || 0);
 
   const isCancelled = Boolean(orderDetails?.isCancelled ?? fallbackOrder?.isCancelled);
+  const isDraft = Boolean(orderDetails?.isDraft ?? fallbackOrder?.isDraft);
   const routingStatus = (
     orderDetails?.routingStatus ||
     fallbackOrder?.routingStatus ||
@@ -249,6 +250,13 @@ export default function OrderDossierModal({
   };
 
   const renderStatusBadge = () => {
+    if (isDraft) {
+      return (
+        <View style={[styles.statusBadge, styles.statusDraft]}>
+          <Text style={styles.statusDraftText}>📝 Incomplete Draft</Text>
+        </View>
+      );
+    }
     if (isCancelled) {
       return (
         <View style={[styles.statusBadge, styles.statusCancelled]}>
@@ -278,7 +286,7 @@ export default function OrderDossierModal({
   };
 
   const formatFullSchedule = (dateStr?: string | null) => {
-    if (!dateStr) return 'N/A';
+    if (!dateStr) return '📅 Date Pending / Unset';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     return d.toLocaleString('en-US', {
@@ -435,6 +443,18 @@ export default function OrderDossierModal({
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
+            {/* Tentative Inquiry Banner for Draft Orders */}
+            {isDraft && (
+              <View style={styles.draftInquiryBanner}>
+                <Text style={styles.draftInquiryBannerTitle}>
+                  📝 Tentative Inquiry (Unconfirmed Draft)
+                </Text>
+                <Text style={styles.draftInquiryBannerSubtitle}>
+                  This order is an unconfirmed draft. No kitchen schedule has been generated and no freezer inventory is locked.
+                </Text>
+              </View>
+            )}
+
             {/* Cancelled Notice if applicable */}
             {isCancelled && (
               <View style={styles.cancelledAlertBox}>
@@ -1274,6 +1294,35 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#BE123C',
+  },
+  statusDraft: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#DDD6FE',
+  },
+  statusDraftText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6D28D9',
+  },
+  draftInquiryBanner: {
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  draftInquiryBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6D28D9',
+    marginBottom: 4,
+  },
+  draftInquiryBannerSubtitle: {
+    fontSize: 11,
+    color: '#5B21B6',
+    lineHeight: 16,
+    fontWeight: '500',
   },
   customerNameTitle: {
     fontSize: 18,

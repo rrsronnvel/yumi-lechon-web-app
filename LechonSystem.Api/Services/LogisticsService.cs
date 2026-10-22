@@ -27,9 +27,9 @@ namespace LechonSystem.Api.Services
             return await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.OrderItemSchedule)
-                .Where(o => o.RoutingStatus == DeliveryStatus.Unassigned
-                         && !o.IsCancelled
-                         && o.TargetDeliveryTime.Date == DateTime.Today.AddDays(1).Date)
+                .Where(o => !o.IsDraft && o.RoutingStatus == DeliveryStatus.Unassigned
+                         && !o.IsDraft && !o.IsCancelled
+                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value.Date == DateTime.Today.AddDays(1).Date)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ToListAsync();
         }
@@ -134,8 +134,8 @@ namespace LechonSystem.Api.Services
         {
             return await _context.Orders
                 .Include(o => o.DeliveryTrip)
-                .Where(o => !o.IsCancelled
-                         && o.TargetDeliveryTime.Date == DateTime.Today.Date)
+                .Where(o => !o.IsDraft && !o.IsCancelled
+                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value.Date == DateTime.Today.Date)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .Select(o => new
                 {
@@ -160,7 +160,7 @@ namespace LechonSystem.Api.Services
                 .Include(o => o.DeliveryTrip)
                 .Where(o => o.DeliveryTripId != null
                          && o.Fulfillment == FulfillmentType.Delivery
-                         && !o.IsCancelled
+                         && !o.IsDraft && !o.IsCancelled
                          && o.SettlementCustodyStatus != "Settled"
                          && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0)
                 .OrderByDescending(o => o.CreatedAt)
@@ -171,7 +171,7 @@ namespace LechonSystem.Api.Services
                     RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : (o.RiderSignedBy ?? "Unassigned"),
                     CustomerName = o.CustomerName,
                     IsTrustedCustomer = o.IsTrustedCustomer,
-                    DeliveryAddress = o.DeliveryAddress,
+                    DeliveryAddress = o.DeliveryAddress ?? string.Empty,
                     TotalCollected = o.GrandTotal - o.Downpayment,
                     RiderDeliveryFee = o.DeliveryFee,
                     NetRemittance = (o.GrandTotal - o.Downpayment) - o.DeliveryFee,
@@ -190,7 +190,7 @@ namespace LechonSystem.Api.Services
             return await _context.Orders
                 .AsNoTracking()
                 .Where(o => o.Fulfillment == FulfillmentType.Pickup
-                         && !o.IsCancelled
+                         && !o.IsDraft && !o.IsCancelled
                          && o.SettlementCustodyStatus != "Settled"
                          && ((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0)
                 .OrderByDescending(o => o.TargetDeliveryTime)
@@ -221,8 +221,8 @@ namespace LechonSystem.Api.Services
             return await _context.Orders
                 .AsNoTracking()
                 .Where(o => o.Fulfillment == FulfillmentType.Lalamove
-                         && !o.IsCancelled
-                         && o.TargetDeliveryTime >= cutoffDate
+                         && !o.IsDraft && !o.IsCancelled
+                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value >= cutoffDate
                          && o.RoutingStatus != DeliveryStatus.Delivered)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .Select(o => new PendingLalamoveSettlementDto

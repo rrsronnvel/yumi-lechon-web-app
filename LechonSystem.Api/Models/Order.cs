@@ -10,8 +10,10 @@ public class Order : BaseEntity
     public string Source { get; set; } = string.Empty;
     public string? EventType { get; set; }
 
+    public bool IsDraft { get; set; } = false;
+
     // THE MISSING FIELDS:
-    public string DeliveryAddress { get; set; } = string.Empty;
+    public string? DeliveryAddress { get; set; }
     public string? Landmark { get; set; }
     public string? Remarks { get; set; }
     // -- MAKE SURE ALL OF THESE ARE HERE --
@@ -24,7 +26,7 @@ public class Order : BaseEntity
     public decimal GrandTotal { get; set; }
     public bool IsTrustedCustomer { get; set; } = false;
 
-    public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; } = false;
 

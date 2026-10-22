@@ -38,6 +38,8 @@
     
 - LechonSystem.Api/Controllers/RidersController.cs: Thin endpoints for fetching active freelance riders and quick-registering ad-hoc drivers into the registry.
     
+- LechonSystem.Api/Controllers/UsersController.cs: Owner-gated endpoints for staff account management (`GET /api/users`, `POST /api/users`, `PUT /api/users/{id}/password`, `PATCH /api/users/{id}/status`).
+    
 - LechonSystem.Api/Controllers/RoastingController.cs: Processes HTTP PATCH requests to transition sequential cooking states (Raw, Cooking, Cooked, ReadyForDelivery) for specific order items.
     
 - LechonSystem.Api/Controllers/SchedulesController.cs: Exposes the active timeline-driven kitchen roster and daily dispatch sheets for operational tracking.
@@ -60,7 +62,7 @@
     
 - LechonSystem.Api/Services/LogisticsService.cs: Manages freelance driver dispatches, tri-modal settlement queries (Riders, Store Pickups, Lalamove), courier release validation gates, and COD reconciliations.
     
-- LechonSystem.Api/Services/OrderService.cs: Core transaction processor; handles order creation with server-side price snapshotting, daily `OrderReference` sequence generation (`MMDDYY-XXX`), user identity stamping (`CreatedBy`), `RiderDepartureTime` routing safeguards, safe editing, order cancellations, and writing `OrderAuditLog` entries.
+- LechonSystem.Api/Services/OrderService.cs: Core transaction processor; handles order creation with server-side price snapshotting, daily `OrderReference` sequence generation (`MMDDYY-XXX`), user identity stamping (`CreatedBy`), `IsDraft` tentative inquiry flag (bypassing inventory locks and kitchen clock calculations when true), `RiderDepartureTime` routing safeguards, safe editing, draft finalization lifecycle (creating committed/pending inventory holds and backward schedules when transitioning from draft to confirmed), order cancellations, and writing `OrderAuditLog` entries.
     
 - LechonSystem.Api/Services/PaymentService.cs: Manages asynchronous payment reconciliations, verification logs, counter settlements, and automated reservation conversions.
     
@@ -72,6 +74,10 @@
     
 - LechonSystem.Api/Services/SmsNotificationService.cs: Implementation of INotificationSender dispatching transactional SMS alerts for order milestones.
     
+- LechonSystem.Api/Services/IUserService.cs: Interface defining staff and terminal account management operations.
+    
+- LechonSystem.Api/Services/UserService.cs: Core business logic for provisioning counter cashier/owner accounts with BCrypt password hashing, updating shift passwords, and toggling active status with the Owner self-preservation guard.
+    
 - LechonSystem.Api/Data/LechonDbContext.cs: Entity Framework Core database context configuring entity schemas, relationships, soft-delete query filters, seed data (Riders, Users, Categories, SystemSettings), and decimal precisions.
     
 - LechonSystem.Api/Models/BaseEntity.cs: Abstract foundation entity providing primary keys and created timestamps.
@@ -82,7 +88,7 @@
     
 - LechonSystem.Api/Models/ItemCategory.cs: Sellable category entity with weight boundaries, base pricing, and safety stock limits.
     
-- LechonSystem.Api/Models/Order.cs: Master order header capturing `OrderReference` (`MMDDYY-XXX`), customer identity, `FacebookName`, `Source`, `EventType`, `Landmark`, `TargetDeliveryTime`, `RiderDepartureTime`, financial snapshots, `CreatedBy` username, and fulfillment mode.
+- LechonSystem.Api/Models/Order.cs: Master order header capturing `OrderReference` (`MMDDYY-XXX`), customer identity, `FacebookName`, `Source`, `EventType`, `Landmark`, `IsDraft` tentative inquiry flag, nullable `TargetDeliveryTime`, nullable `RiderDepartureTime`, nullable `DeliveryAddress`, financial snapshots, `CreatedBy` username, and fulfillment mode.
     
 - LechonSystem.Api/Models/OrderItem.cs: Line item entity representing roasted carcass size tiers and dynamic add-ons.
     
@@ -110,7 +116,7 @@
     
 - LechonSystem.Api/DTOs/CreateCategoryRequest.cs: Request contract for creating a new sellable item category.
     
-- LechonSystem.Api/DTOs/CreateOrderRequest.cs: Nested data structure capturing customer details, `FacebookName`, `Source`, `EventType`, `Landmark`, `TargetDeliveryTime`, `RiderDepartureTime`, financial values, trusted flags, and item arrays.
+- LechonSystem.Api/DTOs/CreateOrderRequest.cs: Nested data structure capturing `IsDraft` tentative inquiry flag, customer details, `FacebookName`, `Source`, `EventType`, `Landmark`, nullable `TargetDeliveryTime`, nullable `RiderDepartureTime`, nullable `DeliveryAddress`, financial values, trusted flags, and item arrays (empty items permitted for drafts).
     
 - LechonSystem.Api/DTOs/CustomerProfileDto.cs: Data contracts (`CustomerProfileDto`, `UpdateCustomerNotesRequest`) for customer intelligence lookups and preference/complaint radar updates.
     
@@ -120,7 +126,7 @@
     
 - LechonSystem.Api/DTOs/InventoryTransactionDto.cs: Flattened DTO serializing ledger transaction records with enum-to-string mappings and mandatory reason audit strings.
     
-- LechonSystem.Api/DTOs/OrderDirectoryDto.cs: Read-optimized flattened projection of order headers (`OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`), financial figures, and cash custody tracking attributes (`SettlementCustodyStatus`, `RiderName`, `IsRemittedToOwner`) for the Master Order Directory.
+- LechonSystem.Api/DTOs/OrderDirectoryDto.cs: Read-optimized flattened projection of order headers (`OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `IsDraft`, `Remarks`, nullable `TargetDeliveryTime`, nullable `RiderDepartureTime`, nullable `DeliveryAddress`), financial figures, and cash custody tracking attributes (`SettlementCustodyStatus`, `RiderName`, `IsRemittedToOwner`) for the Master Order Directory.
     
 - LechonSystem.Api/DTOs/OverrideScheduleRequest.cs: Request payload for manual adjustments to Tahi, Salang, Packaging, and RiderDepartureTime timestamps, remarks, or rider assignments on the daily sheet.
     
@@ -143,6 +149,8 @@
 - LechonSystem.Api/DTOs/UpdateOrderDto.cs: Strict contract for non-destructive order edits (`CustomerName`, `FacebookName`, `Source`, `EventType`, `Landmark`, `TargetDeliveryTime`, `RiderDepartureTime`, `DeliveryAddress`, `Remarks`, `Items`).
     
 - LechonSystem.Api/DTOs/UpdatePriceRequest.cs: Payload contract for category base price changes and admin signatures.
+    
+- LechonSystem.Api/DTOs/UserDtos.cs: Data contracts (`UserListItemDto`, `CreateUserRequest`, `UpdateUserPasswordRequest`, `UpdateUserStatusRequest`) for staff account provisioning and status governance.
 
 #### Frontend (React SPA / Vite / TypeScript)
 
@@ -160,7 +168,7 @@
 
 - lechon-system-web/src/pages/LoginPage.tsx: Warm Culinary Enterprise shift login screen featuring prominent `/yumi-logo.png` emblem, warm espresso-to-terracotta gradient backdrop, Yumi's Lechon Crimson (`#C81E1E`) sign-in trigger, and 1-click demo credential hydration.  
 - lechon-system-web/src/pages/DashboardPage.tsx: Widescreen operational command center with balanced 3-card KPI grid, `#OrderReference` badges, collapsible zero-inbox alert feeds, `[ 📋 Copy Defrost List ]` 1-click Messenger clipboard generator on the Operations Roster header, and direct POS quick-launch triggers.  
-- lechon-system-web/src/pages/OrdersPage.tsx: Master Order Directory and slide-out Customer Dossier displaying `#OrderReference` (`#MMDDYY-XXX`), `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, live rider contact telemetry, in-dossier cancellation dialog with mandatory reason, and 1-click Messenger sharing. Features secondary granular sub-pill filtering under Balance Due (`balanceSubFilter`: `'all' | 'rider' | 'drawer' | 'future'`), financial table row custody micro-badges (`🟡 In Drawer`, `🛵 Road Cash`, `📅 Advance`, `🏪 Store Pickup`), and in-dossier Manifest settlement deep-links.
+- lechon-system-web/src/pages/OrdersPage.tsx: Master Order Directory and slide-out Customer Dossier displaying `#OrderReference` (`#MMDDYY-XXX`), `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, live rider contact telemetry, in-dossier cancellation dialog with mandatory reason, and 1-click Messenger sharing. Features dedicated 7th tab `[ 📝 Drafts ]` isolating tentative inquiries, table cell fallbacks (`📅 Date Pending`, `📍 Venue TBD / Unset`, `Est. ₱{total}` + DP badge, purple `[ 📝 Incomplete Draft ]` badge), customer dossier tentative inquiry alert banner, secondary granular sub-pill filtering under Balance Due (`balanceSubFilter`: `'all' | 'rider' | 'drawer' | 'future'`), financial table row custody micro-badges (`🟡 In Drawer`, `🛵 Road Cash`, `📅 Advance`, `🏪 Store Pickup`), and in-dossier Manifest settlement deep-links.
 - lechon-system-web/src/pages/DailySheetsPage.tsx: Print-friendly operational sheet hosting `/yumi-logo.png` store branding with `#OrderReference`, `Landmark`, and live rider contact hydration across `KitchenViewTab` and `RiderViewTab`.  
 - lechon-system-web/src/pages/LogisticsPage.tsx: Dedicated single-view Live Operations (Today) command center for monitoring active dispatches, executing emergency rider swaps, and confirming deliveries, with direct primary launcher for the 14-column Daily Dispatch Planner (/daily-sheets).  
 - lechon-system-web/src/pages/ManifestPage.tsx: 3-tab Daily Settlement Center hosting Freelance Riders, Store Pickups, and Lalamove Couriers.  
@@ -173,8 +181,8 @@
 
 - lechon-system-web/src/components/auth/ProtectedRoute.tsx: Route wrapper enforcing authentication status and role-based permissions (Owner vs. Cashier).  
 - lechon-system-web/src/components/ui/Sidebar.tsx: Persistent Deep Roasted Espresso (`#181312`) navigation sidebar mounting `/yumi-logo.png`, Golden Amber active route indicators, role-aware CMS visibility, and active user shift profile/logout HUD with distinct Golden Crown (`Owner`) vs. warm stone (`Cashier`) badges.  
-- lechon-system-web/src/components/ui/orders/OrderForm.tsx: Widescreen POS terminal with AI Screenshot Uploader + `[📋 Paste Chat Text]` clipboard bridge, `FacebookName`, `Source` & `EventType` quick-select pills, `Landmark`, `RiderDepartureTime` auto-calculation (6-tier distance ladder + nudge pills), dynamic CMS delivery fee formula (`(KM * RatePerKm) + BaseFare`), `[ ₱0 ]` / `[ ₱1,000 ]` / `[ Full Paid ]` Downpayment quick-select pills, tri-modal fulfillment controls, and post-submit confirmation modal.  
-- lechon-system-web/src/components/ui/orders/EditOrderForm.tsx: Slide-out sheet form with full *Flexible Cart, Locked Cash* parity across `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime` (with nudge pills), tri-modal segmented switch, fee bouncers, and CMS delivery pricing formula.  
+- lechon-system-web/src/components/ui/orders/OrderForm.tsx: Widescreen POS terminal with top `[ 📝 Tentative Draft Inquiry (No Fixed Date/DP) ]` toggle banner (pausing kitchen clocks & freezer stock holds, permitting blank date/venue/0-items), AI Screenshot Uploader + `[📋 Paste Chat Text]` clipboard bridge, `FacebookName`, `Source` & `EventType` quick-select pills, `Landmark`, `RiderDepartureTime` auto-calculation (6-tier distance ladder + nudge pills), dynamic CMS delivery fee formula (`(KM * RatePerKm) + BaseFare`), `[ ₱0 ]` / `[ ₱1,000 ]` / `[ Full Paid ]` Downpayment quick-select pills, tri-modal fulfillment controls, and post-submit confirmation modal with dynamic `[ 💾 Save Draft Inquiry ]` submit styling.  
+- lechon-system-web/src/components/ui/orders/EditOrderForm.tsx: Slide-out sheet form with full *Flexible Cart, Locked Cash* parity, top `[ 📝 Tentative Draft Inquiry ]` toggle switch, draft finalization transition gate (re-arming strict validation and transforming submit action to `[ 🔒 Finalize & Lock Order ]` when draft is confirmed into active production), `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime` (with nudge pills), tri-modal segmented switch, fee bouncers, and CMS delivery pricing formula.  
 - lechon-system-web/src/components/ui/orders/OrderScreenshotUploader.tsx: Dropzone and clipboard paste area (Ctrl + V) for Messenger intake screenshots.  
 - lechon-system-web/src/components/daily-sheets/KitchenViewTab.tsx: 14-column print/screenshot Kitchen Production Sheet (`NO.` | `TAHI` | `SALANG` | `PRIORITY` | `SIZE` | `WEIGHT` | `DEPARTURE / PICKUP` | `CUSTOMER` | `PACKAGING` | `REMARKS` | `LOCATION` | `ADD-ONS` | `DELIVERY` | `RIDER`) sorted by earliest `TahiStartTime`, with interactive `Edit & Plan Mode` opening `InlineScheduleEditorModal`.
 - lechon-system-web/src/components/daily-sheets/RiderViewTab.tsx: 10-column Rider Dispatch & Cash Manifest enforcing the Rider Anti-Complacency Guard (`DEPARTURE / PICKUP` column displays only `riderDepartureTime ?? targetDeliveryTime` and strictly hides customer venue arrival `targetDeliveryTime`).
@@ -187,10 +195,12 @@
 - lechon-system-web/src/components/cms/ChangePriceModal.tsx: Guarded modal replacing inline price inputs with diff calculations and peak-season warnings.  
 - lechon-system-web/src/components/cms/EditCategoryModal.tsx: Modal dialog for updating category names, weight bounds, and safety stock.  
 - lechon-system-web/src/components/cms/PriceHistorySheet.tsx: Slide-out drawer displaying chronological price change audit history.  
+- lechon-system-web/src/components/cms/CreateUserModal.tsx: Modal dialog for provisioning counter cashier and owner logins with full name, username, initial password, and role selection.  
+- lechon-system-web/src/components/cms/ResetPasswordModal.tsx: Modal dialog allowing business owners to override shift passwords for staff accounts.  
 
 - Validation Schemas (Zod):
 
-- lechon-system-web/src/schemas/orderSchema.ts: Zod schema validating POS order entries (`facebookName`, `source`, `eventType`, `landmark`, `riderDepartureTime`), tri-modal delivery rules, and trusted customer downpayment rules.  
+- lechon-system-web/src/schemas/orderSchema.ts: Zod schema validating POS order entries (`facebookName`, `source`, `eventType`, `landmark`, `riderDepartureTime`), tri-modal delivery rules, and trusted customer downpayment rules, featuring `.superRefine` conditional intake rules enforcing relaxed identifiers for tentative drafts (`isDraft === true`) while strictly re-arming date, venue, phone, and cart requirements for production orders (`isDraft === false`).  
 - lechon-system-web/src/schemas/inventorySchema.ts: Zod schema validating manual inventory adjustments with category selection and mandatory reason inputs (>= 5 chars).  
 
 - Data Hooks (TanStack React Query):
@@ -207,6 +217,7 @@
 - lechon-system-web/src/hooks/useManifest.ts: Hooks and mutations for pending settlements across Riders, Store Pickups, and Lalamove couriers, including useRejectRiderSignatureMutation, useRevertCustodyMutation, and counted-amount enforced useOwnerApproveQrMutation.  
 - lechon-system-web/src/hooks/useOrdersDirectory.ts: Hook managing polling, filtering, and retrieval of the Master Order Directory and audit logs.  
 - lechon-system-web/src/hooks/useRiders.ts: Hook and mutation for fetching active riders and registering new freelance drivers.  
+- lechon-system-web/src/hooks/useUsers.ts: TanStack Query hooks and mutations (`useUsersQuery`, `useCreateUserMutation`, `useUpdateUserPasswordMutation`, `useToggleUserStatusMutation`) for staff account governance.  
 - lechon-system-web/src/hooks/useSchedules.ts: Hook fetching print-optimized daily sheets.
 
 #### Mobile Companion App (`lechon-system-mobile` — Expo SDK 58 / React Native 0.88 / TypeScript):
@@ -215,12 +226,12 @@
 - lechon-system-mobile/src/services/apiClient.ts: Axios client with persistent `expo-secure-store` JWT Bearer interceptor, 401 unauthorized listener, and live toggle between Cloud API (`https://ronnvel-001-site1.ktempurl.com/api`) and Local Android Emulator API (`http://10.0.2.2:5199/api`).
 - lechon-system-mobile/src/context/AuthContext.tsx: 12-hour shift session provider managing user identity, `isOwner` flag, and API environment state.
 - lechon-system-mobile/src/components/MainShell.tsx: Authenticated 3-tab mobile shell (`📋 Orders`, `➕ New POS`, `👑 Drawer`) with compact top shift HUD.
-- lechon-system-mobile/src/components/orders/OrderDossierModal.tsx: Slide-up customer dossier modal displaying `#OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, 1-tap `tel:` calling for customer and rider, Taglish Messenger receipt copier, `[✏️ Edit Order]` modal trigger, quick manual payment modal, mandatory-reason cancellation modal, and active physical cash custody warning alerts.
-- lechon-system-mobile/src/components/orders/EditOrderModal.tsx: Full mobile order modifier modal supporting the *Flexible Cart, Locked Cash* paradigm (`PUT /api/orders/{id}`), including `FacebookName`, `Source` & `EventType` pills, `Landmark`, `RiderDepartureTime` (with nudge pills), active cart + search/pill item picker, and read-only historical downpayment.
+- lechon-system-mobile/src/components/orders/OrderDossierModal.tsx: Slide-up customer dossier modal displaying `#OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, 1-tap `tel:` calling for customer and rider, Taglish Messenger receipt copier, `[✏️ Edit Order]` modal trigger, quick manual payment modal, mandatory-reason cancellation modal, purple tentative draft inquiry alert banner with date/venue fallbacks, and active physical cash custody warning alerts.
+- lechon-system-mobile/src/components/orders/EditOrderModal.tsx: Full mobile order modifier modal supporting the *Flexible Cart, Locked Cash* paradigm (`PUT /api/orders/{id}`), including top `[ 📝 Tentative Draft Inquiry ]` switch card, draft finalization transition gate transforming the submit action to `[ 🔒 Finalize & Lock Order ]` when confirmed, `FacebookName`, `Source` & `EventType` pills, `Landmark`, `RiderDepartureTime` (with nudge pills), active cart + search/pill item picker, and read-only historical downpayment.
 - lechon-system-mobile/src/components/orders/FloorActionView.tsx: Mobile Floor Action Hub displaying Section A (Action Required: Downpayment Radar with countdown badges, 1-tap Messenger reminder copier, phone dialer, and direct deposit logger) and Section B (Tonight's Defrost & Kitchen Prep Roster with `[ 📋 Copy Defrost List ]` 1-tap clipboard generator, rush badges, carcass quantities, and bold monospace Tahi prep deadlines).
 - lechon-system-mobile/src/screens/LoginScreen.tsx: Mobile shift login screen with API environment switcher pill and 1-tap Owner/Cashier demo credential buttons.
-- lechon-system-mobile/src/screens/OrdersScreen.tsx: Master Order Hub featuring a top two-segment toggle switcher (`[📋 Orders Directory]` | `[⚡ Floor Action ({floorActionCount})]`). The Orders Directory view mounts 300ms debounced search, 6 server-side filter tabs, secondary horizontal sub-pill filtering under Balance Due (`balanceSubFilter`: `'all' | 'rider' | 'drawer' | 'future'`), and order card custody micro-pills. The Floor Action view mounts the Downpayment Radar and Tonight's Defrost Roster with pull-to-refresh and direct Order Dossier payment integration.
-- lechon-system-mobile/src/screens/PosScreen.tsx: Single-column touch POS terminal featuring AI Screenshot (`expo-image-picker` -> `POST /orders/parse-screenshot`) and Clipboard Text (`expo-clipboard`) intake bridge, `FacebookName`, `Source` & `EventType` quick-select pills, `Landmark`, top-card `Est. Distance (KM)` routing input positioned beside `Delivery Address` and above `Target Delivery Time` / `RiderDepartureTime` (6-tier distance ladder + nudge pills), CMS delivery fee auto-calculation (`Math.round((distanceKm * ratePerKm) + baseFare)`), `[ ₱0 ]` / `[ ₱1,000 ]` / `[ Full Paid ]` Downpayment quick-select pills, tri-modal fulfillment bouncer, Active Cart + Search/Pill catalog picker, sticky handover balance footer, and post-submit Messenger receipt confirmation modal.
+- lechon-system-mobile/src/screens/OrdersScreen.tsx: Master Order Hub featuring a top two-segment toggle switcher (`[📋 Orders Directory]` | `[⚡ Floor Action ({floorActionCount})]`). The Orders Directory view mounts 300ms debounced search, 7 server-side filter tabs (including dedicated `[ 📝 Drafts ]` tab), secondary horizontal sub-pill filtering under Balance Due (`balanceSubFilter`: `'all' | 'rider' | 'drawer' | 'future'`), order card custody micro-pills, and draft visual fallbacks (`📅 Date Pending`, `📍 Venue TBD / Unset`, `Est. ₱...` + DP badge, and purple `[ 📝 Incomplete Draft ]` badge). The Floor Action view mounts the Downpayment Radar and Tonight's Defrost Roster with pull-to-refresh and direct Order Dossier payment integration.
+- lechon-system-mobile/src/screens/PosScreen.tsx: Single-column touch POS terminal featuring top `[ 📝 Tentative Draft Inquiry (No Fixed Date/DP) ]` switch card with relaxed draft validation and `[ 💾 Save Draft Inquiry ]` submit action, AI Screenshot (`expo-image-picker` -> `POST /orders/parse-screenshot`) and Clipboard Text (`expo-clipboard`) intake bridge, `FacebookName`, `Source` & `EventType` quick-select pills, `Landmark`, top-card `Est. Distance (KM)` routing input positioned beside `Delivery Address` and above `Target Delivery Time` / `RiderDepartureTime` (6-tier distance ladder + nudge pills), CMS delivery fee auto-calculation (`Math.round((distanceKm * ratePerKm) + baseFare)`), `[ ₱0 ]` / `[ ₱1,000 ]` / `[ Full Paid ]` Downpayment quick-select pills, tri-modal fulfillment bouncer, Active Cart + Search/Pill catalog picker, sticky handover balance footer, and post-submit Messenger receipt confirmation modal.
 - lechon-system-mobile/src/screens/DrawerScreen.tsx: 2-Hop Cash Custody & Tri-Modal Settlement Center supporting Hop 2 Owner Envelope Verification ("The Speed Bump"), Hop 1 Rider Settlement (2s QR polling + Safeguard 1 discrepancy rejection + Manual Override + Direct Store GCash), Walk-in Pickup Counter Collection, Safeguard 3 Custody Reversion ("Undo"), and Lalamove Pre-Release Gate.
 - lechon-system-mobile/src/hooks/useOrders.ts: Hooks and mutations for mobile order directory, customer dossier, audit logs, manual payment logging, and order cancellation.
 - lechon-system-mobile/src/hooks/useFloorAction.ts: TanStack Query hooks fetching tomorrow's defrost roster (`useDefrostRosterQuery`, `GET /dashboard/roster`) and 4-day pending downpayment confirmations (`usePendingConfirmationsQuery`, `GET /dashboard/pending-confirmations`).
@@ -310,8 +321,15 @@
 
 #### Authentication & Identity Domain (AuthController.cs)
 
-- POST /api/auth/login | Payload: LoginRequest { Username: string, Password: string } | Returns: AuthResponseDto { Token: string, Username: string, FullName: string, Role: string, ExpiresAt: DateTime }  
+- POST /api/auth/login | Payload: LoginRequest { Username: string, Password: string } | Returns: AuthResponseDto { Token: string, Username: string, FullName: string, Role: string, ExpiresAt: DateTime } (Blocks deactivated accounts with 401 Unauthorized)
 - GET /api/auth/me | Headers: Authorization: Bearer | Returns: UserDto  
+
+#### Staff Account Governance Domain (UsersController.cs)
+
+- GET /api/users | [Authorize(Roles = "Owner")] | Returns: UserListItemDto[] (Ordered by Owner first, then by CreatedAt asc)
+- POST /api/users | [Authorize(Roles = "Owner")] | Payload: CreateUserRequest { Username: string, Password: string, FullName: string, Role: string } | Returns: 201 Created (UserListItemDto)
+- PUT /api/users/{id}/password | [Authorize(Roles = "Owner")] | Payload: UpdateUserPasswordRequest { NewPassword: string } | Returns: { message: string }
+- PATCH /api/users/{id}/status | [Authorize(Roles = "Owner")] | Payload: UpdateUserStatusRequest { IsActive: bool } | Returns: UserListItemDto (Enforces Owner self-preservation guard)  
 
 #### Finance & Analytics Domain (PaymentWebhookController.cs & AnalyticsController.cs)
 
@@ -387,6 +405,13 @@
 - useToggleCategoryStatusMutation -> Success Invalidates: ['inventory', 'categories'], ['inventory', 'balances']  
 - useUpdateCookingProfileMutation -> Success Invalidates: ['inventory', 'categories'], ['roster']  
 - useCreateCategoryMutation -> Success Invalidates: ['inventory', 'categories'], ['inventory', 'balances']  
+
+#### Staff & Terminal Accounts Scope (useUsers.ts):
+
+- useUsersQuery -> Query Key: ['users']
+- useCreateUserMutation -> Success Invalidates: ['users']
+- useUpdateUserPasswordMutation -> Success Invalidates: ['users']
+- useToggleUserStatusMutation -> Success Invalidates: ['users']  
 
 #### Analytics Scope (useAnalytics.ts):
 

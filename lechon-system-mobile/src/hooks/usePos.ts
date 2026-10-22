@@ -28,16 +28,18 @@ export interface CreateOrderItemPayload {
 }
 
 export interface CreateOrderPayload {
+  isDraft?: boolean;
   customerName: string;
   facebookName?: string;
-  customerPhone: string;
+  customerPhone?: string;
+  contactNumber?: string;
   source: string;
   eventType?: string;
-  targetDeliveryTime: string;
-  riderDepartureTime?: string;
+  targetDeliveryTime?: string | null;
+  riderDepartureTime?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
-  address: string;
-  deliveryAddress?: string;
+  address?: string | null;
+  deliveryAddress?: string | null;
   landmark?: string;
   remarks?: string;
   price: number;
@@ -59,16 +61,17 @@ export interface UpdateOrderItemPayload {
 
 export interface UpdateOrderPayload {
   id: number;
+  isDraft?: boolean;
   customerName: string;
   facebookName?: string;
   contactNumber: string;
   source: string;
   eventType?: string;
-  deliveryAddress: string;
+  deliveryAddress?: string | null;
   landmark?: string;
   remarks?: string;
-  targetDeliveryTime: string;
-  riderDepartureTime?: string;
+  targetDeliveryTime?: string | null;
+  riderDepartureTime?: string | null;
   fulfillment: number;
   price: number;
   addOns?: string;

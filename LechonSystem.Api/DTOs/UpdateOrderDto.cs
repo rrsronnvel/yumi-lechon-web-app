@@ -4,6 +4,7 @@ namespace LechonSystem.Api.Models.DTOs
     {
         // 1. The Anchor (Which order are we editing?)
         public int Id { get; set; }
+        public bool IsDraft { get; set; } = false;
 
         // 2. Customer & Routing Details
         public string CustomerName { get; set; } = string.Empty;
@@ -11,10 +12,10 @@ namespace LechonSystem.Api.Models.DTOs
         public string ContactNumber { get; set; } = string.Empty;
         public string Source { get; set; } = string.Empty;
         public string? EventType { get; set; }
-        public string DeliveryAddress { get; set; } = string.Empty;
+        public string? DeliveryAddress { get; set; }
         public string? Landmark { get; set; }
         public string? Remarks { get; set; }
-        public DateTime TargetDeliveryTime { get; set; }
+        public DateTime? TargetDeliveryTime { get; set; }
         public DateTime? RiderDepartureTime { get; set; }
         public FulfillmentType Fulfillment { get; set; }
 

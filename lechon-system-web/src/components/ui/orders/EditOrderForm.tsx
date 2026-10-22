@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Form,
   FormControl,
@@ -78,6 +79,7 @@ export default function EditOrderForm({
 
   const form = useForm<{
     id: number;
+    isDraft: boolean;
     customerName: string;
     facebookName: string;
     source: string;
@@ -99,6 +101,7 @@ export default function EditOrderForm({
   }>({
     defaultValues: {
       id: 0,
+      isDraft: order?.isDraft ?? false,
       customerName: "",
       facebookName: "",
       source: "Business FB Page",
@@ -106,7 +109,7 @@ export default function EditOrderForm({
       landmark: "",
       targetDeliveryTime: "",
       riderDepartureTime: "",
-      items: [{ id: 0, itemCategoryId: 1, quantity: 1 }],
+      items: order?.isDraft ? [] : [{ id: 0, itemCategoryId: 1, quantity: 1 }],
       contactNumber: "",
       deliveryAddress: "",
       remarks: "",
@@ -173,6 +176,7 @@ export default function EditOrderForm({
 
       form.reset({
         id: order.id,
+        isDraft: order.isDraft ?? false,
         customerName: order.customerName || "",
         facebookName: order.facebookName || "",
         source: order.source || "Business FB Page",
@@ -316,12 +320,61 @@ export default function EditOrderForm({
   const remainingBalance = dynamicGrandTotal - downpaymentReceived;
 
   function onSubmit(data: any) {
+    const isDraft = Boolean(form.watch("isDraft"));
+    const fulfillmentNum = Number(data.fulfillment);
+
+    if (!isDraft) {
+      if (!data.customerName || data.customerName.trim().length < 2) {
+        toast.error("Customer Name required", {
+          description: "Please enter a valid customer name (at least 2 characters).",
+        });
+        return;
+      }
+      if (!data.contactNumber || data.contactNumber.trim().length < 10) {
+        toast.error("Contact Number required", {
+          description: "Please enter a valid phone number (at least 10 digits).",
+        });
+        return;
+      }
+      if (!data.targetDeliveryTime || data.targetDeliveryTime.trim() === "") {
+        toast.error("Delivery Date/Time required", {
+          description: "Target delivery/pickup time is required to finalize order.",
+        });
+        return;
+      }
+      if (
+        (fulfillmentNum === 1 || fulfillmentNum === 2) &&
+        (!data.deliveryAddress || data.deliveryAddress.trim() === "")
+      ) {
+        toast.error("Delivery Address required", {
+          description: "Delivery address is required for delivery/courier orders.",
+        });
+        return;
+      }
+      if (!data.items || data.items.length === 0) {
+        toast.error("Cart is empty", {
+          description:
+            "At least one item is required in the cart to lock into production.",
+        });
+        return;
+      }
+    } else {
+      const hasName = data.customerName && data.customerName.trim().length > 0;
+      const hasFb = data.facebookName && data.facebookName.trim().length > 0;
+      if (!hasName && !hasFb) {
+        toast.error("Customer Identifier required", {
+          description:
+            "Customer Name or Facebook Name is required for a draft inquiry.",
+        });
+        return;
+      }
+    }
+
     const combinedAddOns = (data.dynamicAddOns || [])
       .filter((a: any) => a.name && a.name.trim() !== "")
       .map((a: any) => `${a.quantity || 1}x ${a.name}`)
       .join(", ");
 
-    const fulfillmentNum = Number(data.fulfillment);
     const finalDeliveryFee =
       fulfillmentNum === 0 || fulfillmentNum === 2
         ? 0
@@ -329,18 +382,22 @@ export default function EditOrderForm({
 
     const effectiveRiderDeparture =
       fulfillmentNum === 0
-        ? data.targetDeliveryTime
-        : data.riderDepartureTime || data.targetDeliveryTime;
+        ? data.targetDeliveryTime || null
+        : data.riderDepartureTime || data.targetDeliveryTime || null;
 
     const payload = {
       ...data,
+      isDraft,
       facebookName: data.facebookName?.trim() || null,
       source: data.source?.trim() || "POS Terminal",
       eventType: data.eventType?.trim() || null,
       landmark: data.landmark?.trim() || null,
+      targetDeliveryTime: data.targetDeliveryTime ? data.targetDeliveryTime : null,
       riderDepartureTime: effectiveRiderDeparture,
       price: lechonSubtotal,
       fulfillment: fulfillmentNum,
+      deliveryAddress:
+        data.deliveryAddress?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : null),
       deliveryFee: finalDeliveryFee,
       addOns: combinedAddOns,
       grandTotal: dynamicGrandTotal,
@@ -369,6 +426,40 @@ export default function EditOrderForm({
     <Form {...form}>
       <div className="bg-white p-5 sm:p-6 rounded-xl border border-stone-200/90 shadow-sm mt-2">
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+          {/* Draft Inquiry Toggle Banner */}
+          <div className="bg-purple-50/80 border border-purple-200 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📝</span>
+                <div>
+                  <div className="text-xs font-bold text-purple-950">
+                    Tentative Draft Inquiry
+                  </div>
+                  <div className="text-[11px] text-purple-700">
+                    {order?.isDraft
+                      ? "Flip toggle to OFF to finalize and lock this draft inquiry into production."
+                      : "Unconfirmed inquiry without physical inventory reservation or kitchen timers."}
+                  </div>
+                </div>
+              </div>
+              <Switch
+                checked={form.watch("isDraft")}
+                onCheckedChange={(checked) => form.setValue("isDraft", checked)}
+                className="data-[state=checked]:bg-purple-600 cursor-pointer"
+              />
+            </div>
+            {order?.isDraft && !form.watch("isDraft") ? (
+              <div className="mt-2 text-[11px] bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-md p-2.5 font-medium leading-relaxed flex items-center gap-2">
+                <span>🔒</span>
+                <span>Ready to Finalize: Saving will lock freezer inventory, calculate kitchen roasting clocks, and move this inquiry to active production.</span>
+              </div>
+            ) : form.watch("isDraft") ? (
+              <div className="mt-2 text-[11px] bg-purple-100/90 border border-purple-300 text-purple-900 rounded-md p-2.5 font-medium leading-relaxed">
+                Draft Mode Active: Kitchen schedules and freezer stock locks are paused. Date, venue, and pig size can be left blank until confirmed.
+              </div>
+            ) : null}
+          </div>
+
           {/* Customer & Delivery Section */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
@@ -1125,9 +1216,22 @@ export default function EditOrderForm({
             <Button
               type="submit"
               disabled={editMutation.isPending}
-              className="w-1/2 h-11 bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold shadow-sm"
+              className={cn(
+                "w-1/2 h-11 text-white font-semibold shadow-sm cursor-pointer",
+                order?.isDraft && !form.watch("isDraft")
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : form.watch("isDraft")
+                    ? "bg-purple-600 hover:bg-purple-700"
+                    : "bg-[#C81E1E] hover:bg-[#A81818]"
+              )}
             >
-              {editMutation.isPending ? "Saving Changes..." : "Save Changes"}
+              {editMutation.isPending
+                ? "Saving Changes..."
+                : order?.isDraft && !form.watch("isDraft")
+                  ? "🔒 Finalize & Lock Order"
+                  : form.watch("isDraft")
+                    ? "💾 Save Draft Inquiry"
+                    : "Save Changes"}
             </Button>
           </div>
         </form>

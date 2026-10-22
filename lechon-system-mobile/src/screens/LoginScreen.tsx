@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -23,6 +23,24 @@ export default function LoginScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Environment-Aware Quick-Fill Bouncer: Reset credentials when in cloud mode
+  useEffect(() => {
+    if (apiEnv === 'cloud') {
+      setUsername('');
+      setPassword('');
+      setErrorMessage(null);
+    }
+  }, [apiEnv]);
+
+  const handleSwitchEnv = (targetEnv: 'cloud' | 'local') => {
+    if (targetEnv === 'cloud') {
+      setUsername('');
+      setPassword('');
+      setErrorMessage(null);
+    }
+    switchApiEnv(targetEnv);
+  };
+
   const handleSignIn = async () => {
     setErrorMessage(null);
     const trimmedUser = username.trim();
@@ -39,12 +57,17 @@ export default function LoginScreen() {
         response?: { status?: number; data?: { message?: string } | string };
         message?: string;
       };
-      if (axiosErr.response?.status === 401) {
+      if (
+        axiosErr.response?.data &&
+        typeof axiosErr.response.data === 'object' &&
+        'message' in axiosErr.response.data &&
+        axiosErr.response.data.message
+      ) {
+        setErrorMessage(axiosErr.response.data.message);
+      } else if (axiosErr.response?.status === 401) {
         setErrorMessage('Invalid credentials. Please verify your username and password.');
       } else if (typeof axiosErr.response?.data === 'string') {
         setErrorMessage(axiosErr.response.data);
-      } else if (axiosErr.response?.data?.message) {
-        setErrorMessage(axiosErr.response.data.message);
       } else {
         setErrorMessage(
           `Unable to reach API (${getApiBaseUrl()}). Check your network or toggle Cloud/Local mode.`
@@ -93,7 +116,7 @@ export default function LoginScreen() {
                     styles.envPill,
                     apiEnv === 'cloud' && styles.envPillActive,
                   ]}
-                  onPress={() => switchApiEnv('cloud')}
+                  onPress={() => handleSwitchEnv('cloud')}
                 >
                   <Text
                     style={[
@@ -110,7 +133,7 @@ export default function LoginScreen() {
                     styles.envPill,
                     apiEnv === 'local' && styles.envPillActive,
                   ]}
-                  onPress={() => switchApiEnv('local')}
+                  onPress={() => handleSwitchEnv('local')}
                 >
                   <Text
                     style={[
@@ -209,35 +232,37 @@ export default function LoginScreen() {
               )}
             </Pressable>
 
-            {/* 1-Tap Quick-Fill Test Presets */}
-            <View style={styles.presetSection}>
-              <Text style={styles.presetTitle}>1-TAP QUICK-FILL TEST PRESETS</Text>
-              <View style={styles.presetButtonsRow}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.presetBtn,
-                    styles.presetBtnOwner,
-                    pressed && styles.presetBtnPressed,
-                  ]}
-                  onPress={() => handleQuickFill('owner', 'OwnerPassword123!')}
-                >
-                  <Text style={styles.presetBtnOwnerText}>👑 Fill Owner</Text>
-                  <Text style={styles.presetSubText}>owner • OwnerPassword123!</Text>
-                </Pressable>
+            {/* 1-Tap Quick-Fill Test Presets: Strictly unmounted and hidden on Live Cloud */}
+            {apiEnv === 'local' && (
+              <View style={styles.presetSection}>
+                <Text style={styles.presetTitle}>1-TAP QUICK-FILL TEST PRESETS</Text>
+                <View style={styles.presetButtonsRow}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.presetBtn,
+                      styles.presetBtnOwner,
+                      pressed && styles.presetBtnPressed,
+                    ]}
+                    onPress={() => handleQuickFill('owner', 'OwnerPassword123!')}
+                  >
+                    <Text style={styles.presetBtnOwnerText}>👑 Fill Owner</Text>
+                    <Text style={styles.presetSubText}>owner • OwnerPassword123!</Text>
+                  </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.presetBtn,
-                    styles.presetBtnCashier,
-                    pressed && styles.presetBtnPressed,
-                  ]}
-                  onPress={() => handleQuickFill('cashier', 'CashierPassword123!')}
-                >
-                  <Text style={styles.presetBtnCashierText}>🧑‍💼 Fill Cashier</Text>
-                  <Text style={styles.presetSubText}>cashier • CashierPassword123!</Text>
-                </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.presetBtn,
+                      styles.presetBtnCashier,
+                      pressed && styles.presetBtnPressed,
+                    ]}
+                    onPress={() => handleQuickFill('cashier', 'CashierPassword123!')}
+                  >
+                    <Text style={styles.presetBtnCashierText}>🧑‍💼 Fill Cashier</Text>
+                    <Text style={styles.presetSubText}>cashier • CashierPassword123!</Text>
+                  </Pressable>
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           <Text style={styles.footerText}>

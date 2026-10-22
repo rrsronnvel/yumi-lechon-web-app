@@ -7,12 +7,13 @@ public class OrderDetailsDto
 {
     public int Id { get; set; }
     public string OrderReference { get; set; } = string.Empty;
+    public bool IsDraft { get; set; } = false;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
     public string ContactNumber { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string? EventType { get; set; }
-    public string DeliveryAddress { get; set; } = string.Empty;
+    public string? DeliveryAddress { get; set; }
     public string? Landmark { get; set; }
     public string? Remarks { get; set; }
 
@@ -25,7 +26,7 @@ public class OrderDetailsDto
     public decimal BalanceDue { get; set; }
 
     public bool IsTrustedCustomer { get; set; }
-    public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; }
 

@@ -35,6 +35,24 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, navigate, location]);
 
+  // Environment-Aware Quick-Fill Bouncer: Reset credentials when in cloud mode
+  React.useEffect(() => {
+    if (apiEnv === "cloud") {
+      setUsername("");
+      setPassword("");
+      setErrorMessage(null);
+    }
+  }, [apiEnv]);
+
+  const handleSwitchEnv = (targetEnv: "cloud" | "local") => {
+    if (targetEnv === "cloud") {
+      setUsername("");
+      setPassword("");
+      setErrorMessage(null);
+    }
+    switchApiEnv(targetEnv);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -69,16 +87,23 @@ export default function LoginPage() {
     } catch (error: unknown) {
       console.error("Login failed:", error);
       const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
-      if (axiosError.response?.status === 401) {
+      const serverMessage = axiosError.response?.data?.message;
+      if (serverMessage) {
+        setErrorMessage(serverMessage);
+        toast.error("Authentication Failed", {
+          description: serverMessage,
+        });
+      } else if (axiosError.response?.status === 401) {
         setErrorMessage("Invalid credentials. Please verify your username and password.");
+        toast.error("Authentication Failed", {
+          description: "Please check your login credentials and try again.",
+        });
       } else {
-        setErrorMessage(
-          axiosError.response?.data?.message || "Failed to sign in. Please check your connection."
-        );
+        setErrorMessage("Failed to sign in. Please check your connection.");
+        toast.error("Authentication Failed", {
+          description: "Please check your network or target backend environment.",
+        });
       }
-      toast.error("Authentication Failed", {
-        description: "Please check your login credentials and try again.",
-      });
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +158,7 @@ export default function LoginPage() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => switchApiEnv("cloud")}
+                  onClick={() => handleSwitchEnv("cloud")}
                   aria-pressed={apiEnv === "cloud"}
                   className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     apiEnv === "cloud"
@@ -148,7 +173,7 @@ export default function LoginPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => switchApiEnv("local")}
+                  onClick={() => handleSwitchEnv("local")}
                   aria-pressed={apiEnv === "local"}
                   className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     apiEnv === "local"
@@ -259,36 +284,42 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            {/* Quick Helper for Test Accounts */}
-            <div className="mt-5 pt-4 border-t border-stone-800 text-[11px] text-stone-400 space-y-1.5">
-              <p className="font-semibold text-stone-300">Default Staff Access:</p>
-              <div className="flex items-center justify-between text-stone-400 bg-stone-950/60 px-2.5 py-1.5 rounded-md border border-stone-800">
-                <span>👑 Owner: <code className="text-amber-400">owner</code> / <code className="text-stone-300">OwnerPassword123!</code></span>
-                <button
-                  type="button"
-                  className="text-amber-400 hover:underline font-medium ml-2 cursor-pointer"
-                  onClick={() => {
-                    setUsername("owner");
-                    setPassword("OwnerPassword123!");
-                  }}
-                >
-                  Fill
-                </button>
+            {/* 1-TAP QUICK-FILL TEST PRESETS: Strictly unmounted and hidden on Live Cloud */}
+            {apiEnv === "local" && (
+              <div className="mt-5 pt-4 border-t border-stone-800 text-[11px] text-stone-400 space-y-2 animate-in fade-in">
+                <p className="font-semibold text-stone-300 tracking-wide uppercase text-[10px]">
+                  1-Tap Quick-Fill Test Presets (Local Only)
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setUsername("owner");
+                      setPassword("OwnerPassword123!");
+                      setErrorMessage(null);
+                    }}
+                    className="bg-purple-950/20 hover:bg-purple-900/30 text-purple-300 border-purple-800/50 hover:border-purple-700 h-9 text-xs font-semibold cursor-pointer justify-center"
+                  >
+                    👑 Fill Owner
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setUsername("cashier");
+                      setPassword("CashierPassword123!");
+                      setErrorMessage(null);
+                    }}
+                    className="bg-blue-950/20 hover:bg-blue-900/30 text-blue-300 border-blue-800/50 hover:border-blue-700 h-9 text-xs font-semibold cursor-pointer justify-center"
+                  >
+                    🧑‍🍳 Fill Cashier
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center justify-between text-stone-400 bg-stone-950/60 px-2.5 py-1.5 rounded-md border border-stone-800">
-                <span>🧑‍💼 Cashier: <code className="text-stone-200">cashier</code> / <code className="text-stone-300">CashierPassword123!</code></span>
-                <button
-                  type="button"
-                  className="text-amber-400 hover:underline font-medium ml-2 cursor-pointer"
-                  onClick={() => {
-                    setUsername("cashier");
-                    setPassword("CashierPassword123!");
-                  }}
-                >
-                  Fill
-                </button>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 

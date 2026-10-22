@@ -9,4 +9,5 @@ public class User
     public string Role { get; set; } = "Cashier"; // "Owner" | "Cashier"
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

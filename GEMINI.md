@@ -50,7 +50,8 @@ yumi-lechon-web-app/
 │   │   ├── PaymentWebhookController.cs # Payment gateway hooks and external notifications
 │   │   ├── ProcurementController.cs # Supplier orders & pig restocking generation
 │   │   ├── RoastingController.cs    # Roasting pits, spit tracking & temperature stages
-│   │   └── SchedulesController.cs   # Slot capacity & daily roasting schedule endpoints
+│   │   ├── SchedulesController.cs   # Slot capacity & daily roasting schedule endpoints
+│   │   └── UsersController.cs       # Owner-gated staff account management & status toggling
 │   │
 │   ├── Services/                    # Core business logic, workflows & calculations
 │   │   ├── AiIntakeParserService.cs # High-precision Gemini Vision booking parser
@@ -66,9 +67,11 @@ yumi-lechon-web-app/
 │   │   ├── RoastingService.cs       # Pit/spit state management
 │   │   ├── SchedulingService.cs     # Dynamic backward-scheduling engine (Tahi -> Salang)
 │   │   ├── SmsNotificationService.cs# Dispatches SMS alerts for customer status changes
+│   │   ├── UserService.cs           # Provisioning, BCrypt hashing, status toggling & self-preservation guard
 │   │   ├── ICustomerService.cs      # Interface for Customer Intelligence operations
 │   │   ├── ILogisticsService.cs     # Interface for Logistics operations
-│   │   └── IProcurementService.cs   # Interface for Procurement operations
+│   │   ├── IProcurementService.cs   # Interface for Procurement operations
+│   │   └── IUserService.cs          # Interface for Staff Account operations
 │   │
 │   ├── Data/
 │   │   └── LechonDbContext.cs       # EF Core DB context, relationship mappings & seed data
@@ -92,6 +95,7 @@ yumi-lechon-web-app/
 │   │   ├── LowStockAlert.cs         # Stock deficit records below threshold
 │   │   ├── NotificationLog.cs       # SMS/push delivery records
 │   │   ├── SystemSetting.cs         # Configurable system settings (e.g., delivery pricing)
+│   │   ├── User.cs                  # User credentials, roles (Owner/Cashier), active status & timestamps
 │   │   └── LogisticsEnums.cs / ProductionStatus.cs / ReservationStatus.cs / TransactionType.cs
 │   │
 │   └── DTOs/                        # High-speed data contracts & flat projections
@@ -107,7 +111,8 @@ yumi-lechon-web-app/
 │       ├── RenegotiationTaskDto.cs  # Advance bookings affected by price hikes
 │       ├── CreateCategoryRequest.cs # New menu category definition
 │       ├── UpdatePriceRequest.cs    # Menu price modification request
-│       └── UpdateCookingProfileRequest.cs # Cooking duration update request
+│       ├── UpdateCookingProfileRequest.cs # Cooking duration update request
+│       └── UserDtos.cs              # Staff listing, provisioning, password reset & status contracts
 │
 └── lechon-system-web/               # ⚛️ React 19 Frontend Client
     ├── src/
@@ -123,6 +128,7 @@ yumi-lechon-web-app/
     │   │   └── CmsPage.tsx          # Price matrix, categories, and cooking profile settings
     │   │
     │   ├── components/
+    │   │   ├── cms/                 # CMS modals & dialogs (CreateUserModal, ResetPasswordModal, ChangePriceModal)
     │   │   ├── daily-sheets/        # Daily Dispatch Planner print/screenshot tabs & inline editor
     │   │   │   ├── KitchenViewTab.tsx           # 14-column Kitchen manifest sorted by Tahi time (hides prices)
     │   │   │   ├── RiderViewTab.tsx             # 10-column Rider manifest with Anti-Complacency Guard
@@ -154,6 +160,7 @@ yumi-lechon-web-app/
     │   │   ├── useLogPayment.ts     # Records three-way cash settlement
     │   │   ├── useAnalytics.ts      # Business metrics & performance data
     │   │   ├── useCms.ts            # Price hikes, category toggles & cooking profiles
+    │   │   ├── useUsers.ts          # Staff account listing, provisioning, password resets & status toggling
     │   │   └── useDebounce.ts       # Debounce utility for search inputs
     │   │
     │   ├── schemas/                 # Client-side Zod validation contracts
@@ -264,6 +271,22 @@ Every AI agent and software engineer working on this repository must strictly ad
 * **Dispatch Planner Rider Anti-Complacency Guard:** `KitchenViewTab.tsx` enforces a 14-column layout with `DEPARTURE / PICKUP` (`riderDepartureTime ?? targetDeliveryTime`) between `WEIGHT` and `CUSTOMER` and `DELIVERY` (`targetDeliveryTime`) between `ADD-ONS` and `RIDER`. `RiderViewTab.tsx` displays **ONLY** `DEPARTURE / PICKUP` and strictly hides `targetDeliveryTime` so riders cannot self-calculate buffer slack.
 * **Unremitted Cash Card:** Highlights riders holding unremitted funds, glowing **RED** if held past the dispatch date until settled on the manifest.
 * **Peak Season Renegotiation Roster:** Automatically populated when base menu prices are updated in CMS, allowing dispatchers to log `[Customer Agreed]`, `[Waive Hike]`, or `[Customer Cancelled]`.
+
+#### 5. In-POS Tentative Reservation Drafts & Total Cockpit Quarantine
+* **The In-POS Draft Toggle (`IsDraft = true`):** Mounted at the top of Web (`OrderForm.tsx`, `EditOrderForm.tsx`) and Mobile POS (`PosScreen.tsx`, `EditOrderModal.tsx`), allowing cashiers to capture unconfirmed inquiries without dummy dates or fake items.
+* **Conditional Validation Engine:** When `IsDraft = true`, intake requires only one identifier (`CustomerName` or `FacebookName`); delivery date, venue address, and cart item count can be left blank/zero. When `IsDraft = false`, strict validation is re-armed.
+* **Production Cockpit Quarantine:** Drafts create `0` `InventoryReservation` records and `0` `OrderItemSchedule` records. Queries in `DashboardService`, `SchedulingService`, and `LogisticsService` strictly enforce `.Where(o => !o.IsDraft)`.
+* **Isolated 7th Tab Directory Slicing:** Web and Mobile directories isolate drafts in `[ 📝 Drafts ]` (`o.IsDraft && !o.IsCancelled`), showing `📅 Date Pending`, `📍 Venue TBD / Unset`, `Est. ₱...` + DP badge, and purple `[ 📝 Incomplete Draft ]` badge. Customer dossiers display a purple tentative inquiry alert banner.
+* **Finalization Transition:** Turning the draft toggle OFF on an existing draft validates required production fields, generates freezer reservations and backward kitchen roasting timers, logs an audit entry (`"Draft inquiry finalized and locked into production by {CurrentUser}"`), and renders `[ 🔒 Finalize & Lock Order ]`.
+
+#### 6. Owner-Controlled Staff Account Management & Production Environment-Gated Authentication Security
+* **Owner-Gated Staff Account Management:** Provisioning of new cashier or owner logins, shift password resets, and account deactivations are strictly restricted to the `[Owner]` role (`/api/users`).
+* **The Deactivated Login Bouncer:** When a staff member is marked `IsActive = false`, their credentials are rejected immediately at `/api/auth/login` with `401 Unauthorized` and the message `"This account has been deactivated. Please contact the business owner."`.
+* **Owner Self-Preservation Guard:** An owner cannot deactivate their own currently active account via either API or UI (`(You)` row in Web CMS has disabled action with tooltip `"Cannot deactivate your own active Owner account"`).
+* **Production Environment-Gated Authentication Security:**
+  - Persisted in localStorage as `lechon_api_env` (with fallback to `lechon_api_environment`), defaulting to `'local'` on localhost and `'cloud'` in production.
+  - **Live Cloud (`apiEnv === 'cloud'`):** The `1-TAP QUICK-FILL TEST PRESETS` container (`[ 👑 Fill Owner ]` and `[ 🧑‍🍳 Fill Cashier ]`) is **completely hidden and unmounted** from both Web (`LoginPage.tsx`) and Mobile (`LoginScreen.tsx`), and input credentials are automatically reset to `""` to prevent demo password leakage into live cloud databases.
+  - **Local Development (`apiEnv === 'local'`):** Quick-fill presets are rendered for fast local shift testing.
 
 ---
 

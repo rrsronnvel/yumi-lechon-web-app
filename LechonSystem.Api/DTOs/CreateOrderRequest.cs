@@ -6,17 +6,18 @@ namespace LechonSystem.Api.DTOs
 {
     public class CreateOrderRequest
     {
+        public bool IsDraft { get; set; } = false;
         public string CustomerName { get; set; } = string.Empty;
         public string? FacebookName { get; set; }
         public string CustomerPhone { get; set; } = string.Empty;
         public string? ContactNumber { get; set; }
         public string Source { get; set; } = string.Empty;
         public string? EventType { get; set; }
-        public DateTime TargetDeliveryTime { get; set; }
+        public DateTime? TargetDeliveryTime { get; set; }
         public DateTime? RiderDepartureTime { get; set; }
         
         // -- 🚀 NEW POS FIELDS ADDED HERE --
-        public string Address { get; set; } = string.Empty;
+        public string? Address { get; set; }
         public string? DeliveryAddress { get; set; }
         public string? Landmark { get; set; }
         public string? Remarks { get; set; }

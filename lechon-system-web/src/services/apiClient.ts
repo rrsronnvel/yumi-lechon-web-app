@@ -6,15 +6,20 @@ export type ApiEnvironment = 'cloud' | 'local';
 export const CLOUD_API_URL = 'https://ronnvel-001-site1.ktempurl.com/api';
 export const LOCAL_API_URL = 'http://localhost:5199/api';
 
-export const ENV_STORAGE_KEY = 'lechon_api_environment';
+export const ENV_STORAGE_KEY = 'lechon_api_env';
+export const LEGACY_ENV_STORAGE_KEY = 'lechon_api_environment';
 export const TOKEN_STORAGE_KEY = 'lechon_auth_token';
 export const USER_STORAGE_KEY = 'lechon_auth_user';
 
 export const getApiEnvironment = (): ApiEnvironment => {
   if (typeof window === 'undefined') return 'cloud';
-  const saved = localStorage.getItem(ENV_STORAGE_KEY);
+  const saved = localStorage.getItem(ENV_STORAGE_KEY) || localStorage.getItem(LEGACY_ENV_STORAGE_KEY);
   if (saved === 'local' || saved === 'cloud') {
     return saved;
+  }
+  // Default to 'local' on localhost / 127.0.0.1, otherwise 'cloud'
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'local';
   }
   return 'cloud';
 };
@@ -25,6 +30,7 @@ export const getApiBaseUrl = (): string => {
 
 export const setApiEnvironment = (env: ApiEnvironment): void => {
   localStorage.setItem(ENV_STORAGE_KEY, env);
+  localStorage.setItem(LEGACY_ENV_STORAGE_KEY, env);
   localStorage.removeItem(TOKEN_STORAGE_KEY);
   localStorage.removeItem(USER_STORAGE_KEY);
   window.location.reload();

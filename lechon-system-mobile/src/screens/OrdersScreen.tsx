@@ -21,6 +21,7 @@ type SmartPillKey =
   | 'today'
   | 'tomorrow'
   | 'balance-due'
+  | 'drafts'
   | 'recent'
   | 'past-30'
   | 'cancelled'
@@ -37,6 +38,7 @@ const FILTER_PILLS: FilterPillConfig[] = [
   { key: 'today', label: '🔥 Today Only', serverTab: 'upcoming' },
   { key: 'tomorrow', label: '☀️ Tomorrow', serverTab: 'upcoming' },
   { key: 'balance-due', label: '💵 Balance Due', serverTab: 'balance-due' },
+  { key: 'drafts', label: '📝 Drafts', serverTab: 'drafts' },
   { key: 'recent', label: '✏️ Recent Edits', serverTab: 'recent' },
   { key: 'past-30', label: '⏳ Past 30d', serverTab: 'past-30' },
   { key: 'cancelled', label: '🚫 Cancelled', serverTab: 'cancelled' },
@@ -113,7 +115,9 @@ export default function OrdersScreen() {
         (o.routingStatus === 'Assigned' || o.routingStatus === 'OutForDelivery') &&
         o.settlementCustodyStatus !== 'InStaffDrawer' &&
         !o.isRemittedToOwner;
-      const targetMidnight = new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0);
+      const targetMidnight = o.targetDeliveryTime
+        ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
+        : 0;
       const isFuture =
         targetMidnight > todayMidnight &&
         (o.settlementCustodyStatus === 'Uncollected' || !o.settlementCustodyStatus);
@@ -132,6 +136,7 @@ export default function OrdersScreen() {
     if (activePill === 'today') {
       const today = new Date();
       return rawOrders.filter((order) => {
+        if (!order.targetDeliveryTime) return false;
         const target = new Date(order.targetDeliveryTime);
         return !isNaN(target.getTime()) && isSameLocalDay(target, today);
       });
@@ -140,6 +145,7 @@ export default function OrdersScreen() {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       return rawOrders.filter((order) => {
+        if (!order.targetDeliveryTime) return false;
         const target = new Date(order.targetDeliveryTime);
         return !isNaN(target.getTime()) && isSameLocalDay(target, tomorrow);
       });
@@ -167,12 +173,9 @@ export default function OrdersScreen() {
           );
         }
         if (balanceSubFilter === 'future') {
-          const targetMidnight = new Date(o.targetDeliveryTime).setHours(
-            0,
-            0,
-            0,
-            0
-          );
+          const targetMidnight = o.targetDeliveryTime
+            ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
+            : 0;
           return (
             targetMidnight > todayMidnight &&
             (o.settlementCustodyStatus === 'Uncollected' ||
@@ -185,10 +188,13 @@ export default function OrdersScreen() {
     return rawOrders;
   }, [rawOrders, activePill, balanceSubFilter]);
 
-  const formatCardSchedule = (dateStr: string) => {
+  const formatCardSchedule = (dateStr?: string | null) => {
+    if (!dateStr) {
+      return { formatted: '📅 Date Pending', isToday: false, isTomorrow: false, isPending: true };
+    }
     const target = new Date(dateStr);
     if (isNaN(target.getTime())) {
-      return { formatted: 'Invalid Date', isToday: false, isTomorrow: false };
+      return { formatted: '📅 Date Pending', isToday: false, isTomorrow: false, isPending: true };
     }
     const now = new Date();
     const tomorrow = new Date(now);
@@ -208,6 +214,7 @@ export default function OrdersScreen() {
       formatted: `${datePart} • ${timePart}`,
       isToday: isSameLocalDay(target, now),
       isTomorrow: isSameLocalDay(target, tomorrow),
+      isPending: false,
     };
   };
 
@@ -220,13 +227,23 @@ export default function OrdersScreen() {
     if (fulfillment === 0) {
       return '🏪 Store Pickup';
     }
-    if (fulfillment === 2) {
-      return `📦 Lalamove • ${truncated || 'No address'}`;
+    if (!rawAddress) {
+      return '📍 Venue TBD / Unset';
     }
-    return `🚗 ${truncated || 'No address provided'}`;
+    if (fulfillment === 2) {
+      return `📦 Lalamove • ${truncated}`;
+    }
+    return `🚗 ${truncated}`;
   };
 
   const renderRoutingBadge = (order: OrderDirectoryDto) => {
+    if (order.isDraft) {
+      return (
+        <View style={[styles.routingBadge, styles.routingDraft]}>
+          <Text style={styles.routingDraftText}>📝 Incomplete Draft</Text>
+        </View>
+      );
+    }
     if (order.isCancelled) {
       return (
         <View style={[styles.routingBadge, styles.routingCancelled]}>
@@ -257,6 +274,9 @@ export default function OrdersScreen() {
   };
 
   const renderCustodyPill = (order: OrderDirectoryDto) => {
+    if (order.isDraft) {
+      return null;
+    }
     if (order.settlementCustodyStatus === 'InStaffDrawer') {
       return (
         <View style={[styles.custodyPill, styles.custodyPillDrawer]}>
@@ -274,7 +294,9 @@ export default function OrdersScreen() {
         </View>
       );
     }
-    const targetMidnight = new Date(order.targetDeliveryTime).setHours(0, 0, 0, 0);
+    const targetMidnight = order.targetDeliveryTime
+      ? new Date(order.targetDeliveryTime).setHours(0, 0, 0, 0)
+      : 0;
     const todayMidnight = new Date().setHours(0, 0, 0, 0);
     if (targetMidnight > todayMidnight) {
       return (
@@ -297,6 +319,7 @@ export default function OrdersScreen() {
     const schedule = formatCardSchedule(item.targetDeliveryTime);
     const balanceDue = Number(item.balanceDue || 0);
     const isPaid = balanceDue <= 0;
+    const isDraft = Boolean(item.isDraft);
 
     return (
       <Pressable
@@ -326,28 +349,41 @@ export default function OrdersScreen() {
           </View>
 
           <Text style={styles.grandTotalText}>
-            ₱{Number(item.grandTotal || 0).toLocaleString()}
+            {isDraft
+              ? `Est. ₱${Number(item.grandTotal || 0).toLocaleString()}`
+              : `₱${Number(item.grandTotal || 0).toLocaleString()}`}
           </Text>
         </View>
 
         {/* Middle Row: Date & Time + Relative Day Badge | Payment Status */}
         <View style={styles.cardMiddleRow}>
-          <View style={styles.scheduleRow}>
-            <Text style={styles.scheduleText}>{schedule.formatted}</Text>
-            {schedule.isToday && (
-              <View style={styles.todayBadge}>
-                <Text style={styles.todayBadgeText}>Today</Text>
-              </View>
-            )}
-            {schedule.isTomorrow && (
-              <View style={styles.tomorrowBadge}>
-                <Text style={styles.tomorrowBadgeText}>Tomorrow</Text>
-              </View>
-            )}
+          <View>
+            <View style={styles.scheduleRow}>
+              <Text style={styles.scheduleText}>{schedule.formatted}</Text>
+              {schedule.isToday && (
+                <View style={styles.todayBadge}>
+                  <Text style={styles.todayBadgeText}>Today</Text>
+                </View>
+              )}
+              {schedule.isTomorrow && (
+                <View style={styles.tomorrowBadge}>
+                  <Text style={styles.tomorrowBadgeText}>Tomorrow</Text>
+                </View>
+              )}
+            </View>
+            {schedule.isPending && item.remarks ? (
+              <Text style={styles.schedulePendingRemarks} numberOfLines={1}>
+                {item.remarks}
+              </Text>
+            ) : null}
           </View>
 
           <View>
-            {isPaid ? (
+            {isDraft ? (
+              <Text style={styles.draftDpText}>
+                ₱{Number(item.downpayment || 0).toLocaleString()} DP
+              </Text>
+            ) : isPaid ? (
               <Text style={styles.paidFullText}>🟢 Paid in Full</Text>
             ) : (
               <View style={styles.balanceWithPillRow}>
@@ -1030,6 +1066,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#BE123C',
+  },
+  routingDraft: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#DDD6FE',
+  },
+  routingDraftText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6D28D9',
+  },
+  draftDpText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  schedulePendingRemarks: {
+    fontSize: 10,
+    color: '#8B5CF6',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginTop: 2,
   },
   centerBox: {
     flex: 1,

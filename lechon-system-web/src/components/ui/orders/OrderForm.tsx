@@ -111,6 +111,7 @@ export default function OrderForm({
   // 2. Form Defaults & Initialization (Cart starts empty)
   const DEFAULT_ORDER_VALUES: OrderFormData = useMemo(
     () => ({
+      isDraft: false,
       customerName: "",
       customerPhone: "",
       facebookName: "",
@@ -354,7 +355,7 @@ export default function OrderForm({
   });
 
   function onSubmit(data: OrderFormData) {
-    if (!data.items || data.items.length === 0) {
+    if (!data.isDraft && (!data.items || data.items.length === 0)) {
       toast.error("Cart is empty", {
         description: "Please add at least one item to the cart.",
       });
@@ -397,23 +398,24 @@ export default function OrderForm({
 
     const effectiveRiderDeparture =
       fulfillmentNum === 0
-        ? data.targetDeliveryTime
-        : data.riderDepartureTime || data.targetDeliveryTime;
+        ? data.targetDeliveryTime || null
+        : data.riderDepartureTime || data.targetDeliveryTime || null;
 
     const payload = {
+      isDraft: Boolean(data.isDraft),
       customerName: data.customerName,
       customerPhone: data.customerPhone,
       facebookName: data.facebookName?.trim() || null,
       source: data.source?.trim() || "POS Terminal",
       eventType: data.eventType?.trim() || null,
       landmark: data.landmark?.trim() || null,
-      targetDeliveryTime: data.targetDeliveryTime,
+      targetDeliveryTime: data.targetDeliveryTime ? data.targetDeliveryTime : null,
       riderDepartureTime: effectiveRiderDeparture,
       fulfillment: fulfillmentNum,
       address:
-        data.address?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : ""),
+        data.address?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : null),
       deliveryAddress:
-        data.address?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : ""),
+        data.address?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : null),
       remarks: data.remarks || "",
       price:
         computedRoastSubtotal > 0
@@ -567,6 +569,35 @@ export default function OrderForm({
             <p className="text-xs text-stone-500">
               Customer demographics, fulfillment routing & event logistics.
             </p>
+          </div>
+
+          {/* Draft Inquiry Mode Toggle Banner */}
+          <div className="bg-purple-50/80 border border-purple-200 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📝</span>
+                <div>
+                  <div className="text-xs font-bold text-purple-950">
+                    Tentative Draft Inquiry (No Fixed Date/DP)
+                  </div>
+                  <div className="text-[11px] text-purple-700">
+                    Save tentative customer inquiries without booking slots or reserving freezer stock.
+                  </div>
+                </div>
+              </div>
+              <Switch
+                checked={form.watch("isDraft")}
+                onCheckedChange={(checked) =>
+                  form.setValue("isDraft", checked, { shouldValidate: true })
+                }
+                className="data-[state=checked]:bg-purple-600 cursor-pointer"
+              />
+            </div>
+            {form.watch("isDraft") && (
+              <div className="mt-2 text-[11px] bg-purple-100/90 border border-purple-300 text-purple-900 rounded-md p-2.5 font-medium leading-relaxed">
+                Draft Mode Active: Kitchen schedules and freezer stock locks are paused. Date, venue, and pig size can be left blank until confirmed.
+              </div>
+            )}
           </div>
 
           {/* 1. Compact Screenshot Uploader + Paste Chat Text Bridge */}
@@ -1452,14 +1483,25 @@ export default function OrderForm({
               type="submit"
               disabled={
                 createOrderMutation.isPending ||
-                (watchedItems?.length ?? 0) === 0
+                (!form.watch("isDraft") && (watchedItems?.length ?? 0) === 0)
               }
-              className="w-full bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium h-11 shadow-sm transition-colors text-sm flex items-center justify-center gap-2 mt-2"
+              className={`w-full font-medium h-11 shadow-sm transition-colors text-sm flex items-center justify-center gap-2 mt-2 cursor-pointer ${
+                form.watch("isDraft")
+                  ? "bg-purple-600 hover:bg-purple-700 text-white"
+                  : "bg-[#C81E1E] hover:bg-[#A81818] text-white"
+              }`}
             >
               {createOrderMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Validating & Ingesting Order...
+                  {form.watch("isDraft")
+                    ? "Saving Draft Inquiry..."
+                    : "Validating & Ingesting Order..."}
+                </>
+              ) : form.watch("isDraft") ? (
+                <>
+                  <span>💾</span>
+                  Save Draft Inquiry
                 </>
               ) : (
                 <>

@@ -104,7 +104,9 @@ namespace LechonSystem.Api.Services
                 .Include(i => i.OrderItemSchedule)
                 .Where(i => i.ItemCategoryId == profile!.ItemCategoryId
                          && i.Order != null
-                         && i.Order.TargetDeliveryTime > DateTime.UtcNow
+                         && !i.Order.IsDraft
+                         && i.Order.TargetDeliveryTime != null
+                         && i.Order.TargetDeliveryTime.Value > DateTime.UtcNow
                          && !i.Order.IsCancelled)
                 .ToListAsync();
 
@@ -118,7 +120,7 @@ namespace LechonSystem.Api.Services
 
                     var recalc = await _schedulingService.CalculateScheduleAsync(
                         item.Id,
-                        item.Order.TargetDeliveryTime,
+                        item.Order.TargetDeliveryTime!.Value,
                         item.ItemCategoryId,
                         item.Order.RiderDepartureTime);
 

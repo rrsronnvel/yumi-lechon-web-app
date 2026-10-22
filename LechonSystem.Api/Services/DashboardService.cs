@@ -95,11 +95,13 @@ namespace LechonSystem.Api.Services
                 .AsNoTracking()
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.ItemCategory)
-                .Where(o => !o.IsCancelled
+                .Where(o => !o.IsDraft
+                         && !o.IsCancelled
                          && o.Downpayment == 0
                          && !o.IsTrustedCustomer
-                         && o.TargetDeliveryTime.Date >= today
-                         && o.TargetDeliveryTime.Date <= fourDaysFromNow)
+                         && o.TargetDeliveryTime != null
+                         && o.TargetDeliveryTime.Value.Date >= today
+                         && o.TargetDeliveryTime.Value.Date <= fourDaysFromNow)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ToListAsync();
 
@@ -129,7 +131,7 @@ namespace LechonSystem.Api.Services
                     FacebookName = o.FacebookName,
                     ContactNumber = contact,
                     PhoneNumber = contact,
-                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    TargetDeliveryTime = o.TargetDeliveryTime!.Value,
                     GrandTotal = o.GrandTotal,
                     TotalAmount = o.GrandTotal,
                     BalanceDue = o.GrandTotal - o.Downpayment,
@@ -144,14 +146,18 @@ namespace LechonSystem.Api.Services
 
             return await _context.Orders
                 .AsNoTracking()
-                .Where(o => o.TargetDeliveryTime >= DateTime.UtcNow && o.TargetDeliveryTime <= twoDaysFromNow)
-                .Where(o => o.IsDeliveryDetailsConfirmed == false)
+                .Where(o => !o.IsDraft
+                         && !o.IsCancelled
+                         && o.TargetDeliveryTime != null
+                         && o.TargetDeliveryTime.Value >= DateTime.UtcNow
+                         && o.TargetDeliveryTime.Value <= twoDaysFromNow
+                         && o.IsDeliveryDetailsConfirmed == false)
                 .Select(o => new DeliveryVerificationDto
                 {
                     Id = o.Id,
                     OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
-                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    TargetDeliveryTime = o.TargetDeliveryTime!.Value,
                     RiderDepartureTime = o.RiderDepartureTime,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
                     Landmark = o.Landmark,
@@ -172,6 +178,7 @@ namespace LechonSystem.Api.Services
                     .ThenInclude(oi => oi!.Order)
                 .Where(s => s.OrderItem != null 
                          && s.OrderItem.Order != null 
+                         && !s.OrderItem.Order.IsDraft
                          && !s.OrderItem.Order.IsCancelled 
                          && s.TahiStartTime.Date == tomorrow)
                 .OrderBy(s => s.TahiStartTime)
@@ -214,7 +221,7 @@ namespace LechonSystem.Api.Services
                     FacebookName = order.FacebookName,
                     EventType = order.EventType,
                     Landmark = order.Landmark,
-                    TargetDeliveryTime = order.TargetDeliveryTime,
+                    TargetDeliveryTime = order.TargetDeliveryTime ?? DateTime.MinValue,
                     RiderDepartureTime = order.RiderDepartureTime,
                     IsTrustedCustomer = order.IsTrustedCustomer,
                     IsRushDefrost = isRush,
@@ -231,8 +238,10 @@ namespace LechonSystem.Api.Services
         {
             return await _context.OrderItems
                 .Where(item => 
-                    !item.Order!.IsCancelled &&
+                    !item.Order!.IsDraft &&
+                    !item.Order.IsCancelled &&
                     !item.Order.IsPriceWaived &&
+                    item.Order.TargetDeliveryTime != null &&
                     item.Order.TargetDeliveryTime >= DateTime.Today &&
                     item.ItemCategory!.MinimumWeightKg > 0 &&
                     item.Price > 0 &&
@@ -242,7 +251,7 @@ namespace LechonSystem.Api.Services
                     item.OrderId,
                     OrderReference = item.Order!.OrderReference,
                     CustomerName = item.Order!.CustomerName,
-                    TargetDeliveryTime = item.Order.TargetDeliveryTime
+                    TargetDeliveryTime = item.Order.TargetDeliveryTime!.Value
                 })
                 .Select(g => new RenegotiationTaskDto
                 {

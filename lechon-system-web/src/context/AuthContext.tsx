@@ -7,6 +7,7 @@ import {
   TOKEN_STORAGE_KEY,
   USER_STORAGE_KEY,
   ENV_STORAGE_KEY,
+  LEGACY_ENV_STORAGE_KEY,
 } from "@/services/apiClient";
 
 export interface UserProfile {
@@ -83,7 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           setUser(null);
         }
-      } else if (e.key === ENV_STORAGE_KEY) {
+      } else if (e.key === ENV_STORAGE_KEY || e.key === LEGACY_ENV_STORAGE_KEY) {
         if (e.newValue === "local" || e.newValue === "cloud") {
           setApiEnv(e.newValue);
         }

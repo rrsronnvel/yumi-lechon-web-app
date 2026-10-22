@@ -78,6 +78,9 @@ export default function OrdersPage() {
     filterTab
   );
 
+  const { data: draftOrders } = useOrdersDirectory("", "drafts");
+  const draftsCount = draftOrders?.length ?? 0;
+
   // Reset sub-filter when leaving balance-due tab
   useEffect(() => {
     if (filterTab !== "balance-due") {
@@ -107,7 +110,9 @@ export default function OrdersPage() {
         (o.routingStatus === "Assigned" || o.routingStatus === "OutForDelivery") &&
         o.settlementCustodyStatus !== "InStaffDrawer" &&
         !o.isRemittedToOwner;
-      const targetMidnight = new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0);
+      const targetMidnight = o.targetDeliveryTime
+        ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
+        : 0;
       const isFuture =
         targetMidnight > todayMidnight &&
         (o.settlementCustodyStatus === "Uncollected" || !o.settlementCustodyStatus);
@@ -148,12 +153,9 @@ export default function OrdersPage() {
         );
       }
       if (balanceSubFilter === "future") {
-        const targetMidnight = new Date(o.targetDeliveryTime).setHours(
-          0,
-          0,
-          0,
-          0
-        );
+        const targetMidnight = o.targetDeliveryTime
+          ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
+          : 0;
         return (
           targetMidnight > todayMidnight &&
           (o.settlementCustodyStatus === "Uncollected" ||
@@ -278,6 +280,14 @@ export default function OrdersPage() {
       );
     }
 
+    if (!address) {
+      return (
+        <span className="text-xs text-purple-700 font-medium italic flex items-center gap-1">
+          📍 Venue TBD / Unset
+        </span>
+      );
+    }
+
     const truncated =
       address.length > 32 ? `${address.substring(0, 32)}...` : address;
 
@@ -319,10 +329,28 @@ export default function OrdersPage() {
     );
   };
 
-  const renderTargetSchedule = (deliveryTime: string | Date) => {
-    const targetDate = new Date(deliveryTime);
+  const renderTargetSchedule = (order: OrderDirectoryDto) => {
+    if (!order.targetDeliveryTime) {
+      return (
+        <div className="space-y-0.5">
+          <span className="text-xs font-semibold text-purple-700 flex items-center gap-1">
+            📅 Date Pending
+          </span>
+          {order.remarks && (
+            <span
+              className="font-mono text-[10px] text-stone-500 block truncate max-w-[160px]"
+              title={order.remarks}
+            >
+              {order.remarks}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    const targetDate = new Date(order.targetDeliveryTime);
     if (isNaN(targetDate.getTime())) {
-      return <span className="text-sm text-slate-400">Invalid Date</span>;
+      return <span className="text-sm text-purple-700 font-semibold">📅 Date Pending</span>;
     }
 
     const now = new Date();
@@ -390,7 +418,9 @@ export default function OrdersPage() {
         </span>
       );
     }
-    const targetMidnight = new Date(order.targetDeliveryTime).setHours(0, 0, 0, 0);
+    const targetMidnight = order.targetDeliveryTime
+      ? new Date(order.targetDeliveryTime).setHours(0, 0, 0, 0)
+      : 0;
     const todayMidnight = new Date().setHours(0, 0, 0, 0);
     if (targetMidnight > todayMidnight) {
       return (
@@ -410,6 +440,21 @@ export default function OrdersPage() {
   };
 
   const renderFinancialGrid = (order: OrderDirectoryDto) => {
+    if (order.isDraft) {
+      return (
+        <div className="tabular-nums font-mono text-right space-y-0.5">
+          <div className="font-bold text-purple-900 text-sm">
+            Est. ₱{Number(order.grandTotal || 0).toLocaleString()}
+          </div>
+          <div>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-stone-100 text-stone-600 border border-stone-200">
+              ₱{Number(order.downpayment || 0).toLocaleString()} DP
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     const isPaid = Number(order.balanceDue || 0) <= 0;
     return (
       <div className="tabular-nums font-mono text-right space-y-0.5">
@@ -433,6 +478,17 @@ export default function OrdersPage() {
   };
 
   const renderStatus = (order: OrderDirectoryDto) => {
+    if (order.isDraft) {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-purple-100 text-purple-800 border-purple-300 font-medium"
+        >
+          📝 Incomplete Draft
+        </Badge>
+      );
+    }
+
     if (order.isCancelled) {
       return (
         <Badge
@@ -589,7 +645,7 @@ export default function OrdersPage() {
 
                   {/* Target Schedule Column */}
                   <TableCell>
-                    {renderTargetSchedule(order.targetDeliveryTime)}
+                    {renderTargetSchedule(order)}
                   </TableCell>
 
                   {/* Total / Balance Column */}
@@ -662,6 +718,17 @@ export default function OrdersPage() {
             className="data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs"
           >
             📅 Upcoming
+          </TabsTrigger>
+          <TabsTrigger
+            value="drafts"
+            className="data-[state=active]:bg-white data-[state=active]:text-purple-900 data-[state=active]:shadow-xs flex items-center gap-1.5"
+          >
+            <span>📝 Drafts</span>
+            {draftsCount > 0 && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">
+                {draftsCount}
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger
             value="recent"
@@ -816,7 +883,14 @@ export default function OrdersPage() {
                     #{orderDetails?.orderReference || selectedOrder?.orderReference || orderDetails?.id || selectedOrder?.id}
                   </SheetTitle>
                   {/* Semantic Status Pill */}
-                  {orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
+                  {orderDetails?.isDraft || selectedOrder?.isDraft ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-purple-100 text-purple-800 border-purple-300 font-semibold text-xs"
+                    >
+                      📝 Incomplete Draft
+                    </Badge>
+                  ) : orderDetails?.isCancelled || selectedOrder?.isCancelled ? (
                     <Badge
                       variant="outline"
                       className="bg-rose-50 text-rose-700 border-rose-300 font-semibold text-xs"
@@ -917,6 +991,19 @@ export default function OrdersPage() {
                 </div>
               ) : orderDetails ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {/* Draft Inquiry Informational Banner */}
+                  {(orderDetails?.isDraft || selectedOrder?.isDraft) && (
+                    <div className="bg-purple-50 border border-purple-300 text-purple-900 rounded-lg p-3.5 text-xs flex items-start gap-2.5 shadow-xs">
+                      <span className="text-base shrink-0">📝</span>
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-purple-950">Tentative Inquiry</div>
+                        <div className="leading-relaxed text-purple-800">
+                          This order is an unconfirmed draft. No kitchen schedule has been generated and no freezer inventory is locked.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Card 1: Logistics & Contact */}
                   <div className="bg-white p-5 rounded-xl border border-stone-200/90 shadow-xs">
                     <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-3 text-stone-900">
@@ -968,17 +1055,25 @@ export default function OrdersPage() {
                       <div>
                         <p className="text-stone-500">Delivery Target</p>
                         <p className="font-medium text-amber-900">
-                          {new Date(
-                            orderDetails.targetDeliveryTime
-                          ).toLocaleString()}
+                          {orderDetails.targetDeliveryTime
+                            ? new Date(
+                                orderDetails.targetDeliveryTime
+                              ).toLocaleString()
+                            : "📅 Date Pending"}
                         </p>
                       </div>
                       <div>
                         <p className="text-stone-500">Rider Departure (Anchor)</p>
                         <p className="font-medium text-stone-800 font-mono text-xs">
                           {orderDetails.riderDepartureTime
-                            ? new Date(orderDetails.riderDepartureTime).toLocaleString()
-                            : new Date(orderDetails.targetDeliveryTime).toLocaleString()}
+                            ? new Date(
+                                orderDetails.riderDepartureTime
+                              ).toLocaleString()
+                            : orderDetails.targetDeliveryTime
+                              ? new Date(
+                                  orderDetails.targetDeliveryTime
+                                ).toLocaleString()
+                              : "📅 Anchor Pending"}
                         </p>
                       </div>
                       <div>
@@ -999,9 +1094,13 @@ export default function OrdersPage() {
                         <p className="font-medium text-stone-800">
                           {orderDetails?.deliveryAddress ||
                             orderDetails?.location || (
-                              <span className="text-stone-400 italic">
-                                None Provided
-                              </span>
+                              Number(orderDetails?.fulfillment) === 0 ? (
+                                <span className="text-stone-500">Store Pickup</span>
+                              ) : (
+                                <span className="text-purple-700 italic font-medium">
+                                  📍 Venue TBD / Unset
+                                </span>
+                              )
                             )}
                         </p>
                         {orderDetails?.landmark && (

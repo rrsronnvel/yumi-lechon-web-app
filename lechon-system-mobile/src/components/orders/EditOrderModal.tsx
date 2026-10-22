@@ -8,6 +8,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Switch,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -90,6 +91,7 @@ export default function EditOrderModal({
   const [distanceKm, setDistanceKm] = useState('');
   const [deliveryFee, setDeliveryFee] = useState('0');
   const [discount, setDiscount] = useState('0');
+  const [isDraft, setIsDraft] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Hydrate state from order when modal opens
@@ -97,6 +99,7 @@ export default function EditOrderModal({
     if (!visible || !order) return;
 
     setValidationError(null);
+    setIsDraft(order.isDraft ?? false);
     setCustomerName(order.customerName || '');
     setFacebookName(order.facebookName || '');
     setContactNumber(order.contactNumber || '');
@@ -112,26 +115,40 @@ export default function EditOrderModal({
     setItemSearchQuery('');
     setActiveCategoryFilter(null);
 
-    const parsedTarget = new Date(order.targetDeliveryTime);
-    if (!isNaN(parsedTarget.getTime())) {
-      setTargetDate(formatLocalYMD(parsedTarget));
-      setTargetTime(formatLocalHM(parsedTarget));
+    if (order.targetDeliveryTime) {
+      const parsedTarget = new Date(order.targetDeliveryTime);
+      if (!isNaN(parsedTarget.getTime())) {
+        setTargetDate(formatLocalYMD(parsedTarget));
+        setTargetTime(formatLocalHM(parsedTarget));
+      } else {
+        setTargetDate('');
+        setTargetTime('11:30');
+      }
+    } else {
+      setTargetDate('');
+      setTargetTime('11:30');
     }
 
     if (order.riderDepartureTime) {
       const parsedDep = new Date(order.riderDepartureTime);
       if (!isNaN(parsedDep.getTime())) {
         setRiderDepartureTimeStr(formatLocalHM(parsedDep));
-      } else if (!isNaN(parsedTarget.getTime())) {
-        setRiderDepartureTimeStr(formatLocalHM(parsedTarget));
+      } else if (order.targetDeliveryTime) {
+        const parsedTarget = new Date(order.targetDeliveryTime);
+        if (!isNaN(parsedTarget.getTime())) {
+          setRiderDepartureTimeStr(formatLocalHM(parsedTarget));
+        }
       }
-    } else if (!isNaN(parsedTarget.getTime())) {
-      const computedDep = calculateRiderDepartureTime(
-        parsedTarget,
-        0,
-        Number(order.fulfillment ?? 1)
-      );
-      setRiderDepartureTimeStr(formatLocalHM(computedDep));
+    } else if (order.targetDeliveryTime) {
+      const parsedTarget = new Date(order.targetDeliveryTime);
+      if (!isNaN(parsedTarget.getTime())) {
+        const computedDep = calculateRiderDepartureTime(
+          parsedTarget,
+          0,
+          Number(order.fulfillment ?? 1)
+        );
+        setRiderDepartureTimeStr(formatLocalHM(computedDep));
+      }
     }
 
     const mappedItems: EditableCartItem[] = (order.orderItems || []).map((item) => {
@@ -387,50 +404,77 @@ export default function EditOrderModal({
     return isoTargetTime;
   };
 
+  const wasDraft = Boolean(order?.isDraft);
+  const isFinalizing = wasDraft && !isDraft;
+
   const handleSaveChanges = async () => {
     if (!order) return;
     setValidationError(null);
 
     const trimmedName = customerName.trim();
+    const trimmedFbName = facebookName.trim();
     const trimmedPhone = contactNumber.trim();
     const trimmedAddress = deliveryAddress.trim();
 
-    if (trimmedName.length < 2) {
-      setValidationError('Customer Name must be at least 2 characters.');
-      return;
+    if (isDraft) {
+      if (!trimmedName && !trimmedFbName) {
+        setValidationError(
+          'Customer Name or Facebook Name is required for a draft inquiry.'
+        );
+        return;
+      }
+    } else {
+      if (trimmedName.length < 2) {
+        setValidationError('Customer Name must be at least 2 characters.');
+        return;
+      }
+      if (trimmedPhone.length < 10) {
+        setValidationError('Contact Number must be at least 10 digits.');
+        return;
+      }
+      if ((fulfillment === 1 || fulfillment === 2) && !trimmedAddress) {
+        setValidationError('Delivery / drop-off address is required.');
+        return;
+      }
+      if (cartItems.length === 0) {
+        setValidationError('Order must contain at least one item.');
+        return;
+      }
     }
-    if (trimmedPhone.length < 10) {
-      setValidationError('Contact Number must be at least 10 digits.');
-      return;
-    }
-    if ((fulfillment === 1 || fulfillment === 2) && !trimmedAddress) {
-      setValidationError('Delivery / drop-off address is required.');
-      return;
-    }
-    if (cartItems.length === 0) {
-      setValidationError('Order must contain at least one item.');
+
+    let isoTargetTime: string | null = null;
+    let isoDepartureTime: string | null = null;
+
+    if (targetDate.trim() && targetTime.trim()) {
+      const candidateIso = `${targetDate.trim()}T${targetTime.trim()}:00`;
+      const parsedTarget = new Date(candidateIso);
+      if (!isNaN(parsedTarget.getTime())) {
+        isoTargetTime = candidateIso;
+        isoDepartureTime = resolveRiderDepartureIso(candidateIso);
+      } else if (!isDraft) {
+        setValidationError('Invalid Date or Time format.');
+        return;
+      }
+    } else if (!isDraft) {
+      setValidationError(
+        'Target Delivery Date and Time are required to finalize/lock this order.'
+      );
       return;
     }
 
-    const isoTargetTime = `${targetDate.trim()}T${targetTime.trim()}:00`;
-    const parsedTarget = new Date(isoTargetTime);
-    if (isNaN(parsedTarget.getTime())) {
-      setValidationError('Invalid Date or Time format.');
-      return;
-    }
-
-    const isoDepartureTime = resolveRiderDepartureIso(isoTargetTime);
+    const resolvedAddress =
+      trimmedAddress || (fulfillment === 0 ? 'Store Pickup' : '');
 
     try {
       await updateOrderMutation.mutateAsync({
         id: order.id,
-        customerName: trimmedName,
-        facebookName: facebookName.trim() || undefined,
+        isDraft,
+        customerName: trimmedName || trimmedFbName,
+        facebookName: trimmedFbName || undefined,
         contactNumber: trimmedPhone,
         source: source || 'Business FB Page',
         eventType: eventType || undefined,
-        deliveryAddress:
-          trimmedAddress || (fulfillment === 0 ? 'Store Pickup' : ''),
+        deliveryAddress: resolvedAddress || undefined,
         landmark: landmark.trim() || undefined,
         remarks: remarks.trim(),
         targetDeliveryTime: isoTargetTime,
@@ -500,6 +544,35 @@ export default function EditOrderModal({
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Draft Mode Toggle Card */}
+          <View style={[styles.draftCard, isDraft && styles.draftCardActive]}>
+            <View style={styles.draftCardHeader}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={styles.draftCardTitle}>
+                  📝 Tentative Draft Inquiry (No Fixed Date/DP)
+                </Text>
+                <Text style={styles.draftCardSub}>
+                  {isFinalizing
+                    ? 'Turning OFF draft mode will finalize and lock this order into kitchen production'
+                    : 'Pause kitchen clocks & freezer stock locks for tentative inquiries'}
+                </Text>
+              </View>
+              <Switch
+                value={isDraft}
+                onValueChange={setIsDraft}
+                trackColor={{ false: '#D1D5DB', true: '#C4B5FD' }}
+                thumbColor={isDraft ? '#7C3AED' : '#9CA3AF'}
+              />
+            </View>
+            {isDraft && (
+              <View style={styles.draftInfoCallout}>
+                <Text style={styles.draftInfoCalloutText}>
+                  Draft Mode Active: Kitchen schedules and freezer stock locks are paused. Date, venue, and pig size can be left blank until confirmed.
+                </Text>
+              </View>
+            )}
+          </View>
+
           {/* Customer & Routing Section */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>👤 Customer &amp; Routing</Text>
@@ -964,6 +1037,8 @@ export default function EditOrderModal({
           <Pressable
             style={[
               styles.saveBtn,
+              isDraft && styles.saveDraftBtn,
+              isFinalizing && styles.saveFinalizeBtn,
               updateOrderMutation.isPending && styles.disabledBtn,
             ]}
             disabled={updateOrderMutation.isPending}
@@ -972,7 +1047,13 @@ export default function EditOrderModal({
             {updateOrderMutation.isPending ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={styles.saveBtnText}>💾 Save Order Changes</Text>
+              <Text style={styles.saveBtnText}>
+                {isFinalizing
+                  ? '🔒 Finalize & Lock Order'
+                  : isDraft
+                  ? '💾 Save Draft Changes'
+                  : '💾 Save Order Changes'}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -1087,6 +1168,44 @@ const styles = StyleSheet.create({
     padding: 14,
     paddingBottom: 32,
     gap: 14,
+  },
+  draftCard: {
+    backgroundColor: '#F5F3FF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    gap: 10,
+  },
+  draftCardActive: {
+    borderColor: '#8B5CF6',
+    backgroundColor: '#EDE9FE',
+  },
+  draftCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  draftCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  draftCardSub: {
+    fontSize: 11,
+    color: '#7C3AED',
+    marginTop: 2,
+  },
+  draftInfoCallout: {
+    backgroundColor: '#DDD6FE',
+    borderRadius: 8,
+    padding: 10,
+  },
+  draftInfoCalloutText: {
+    fontSize: 11,
+    color: '#5B21B6',
+    fontWeight: '600',
+    lineHeight: 16,
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -1386,6 +1505,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
+  },
+  saveDraftBtn: {
+    backgroundColor: '#7C3AED',
+  },
+  saveFinalizeBtn: {
+    backgroundColor: '#16A34A',
   },
   saveBtnText: {
     color: '#FFFFFF',

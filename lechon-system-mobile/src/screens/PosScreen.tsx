@@ -86,6 +86,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   };
 
   // Form State
+  const [isDraft, setIsDraft] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [facebookName, setFacebookName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
@@ -471,6 +472,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
   // Clear Form Reset
   const handleClearForm = () => {
+    setIsDraft(false);
     setCustomerName('');
     setFacebookName('');
     setContactNumber('');
@@ -621,44 +623,65 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setValidationError(null);
 
     const trimmedName = customerName.trim();
+    const trimmedFbName = facebookName.trim();
     const trimmedPhone = contactNumber.trim();
     const trimmedAddress = deliveryAddress.trim();
 
-    if (trimmedName.length < 2) {
-      setValidationError('Please enter Customer Name (at least 2 characters).');
-      return;
-    }
-    if (trimmedPhone.length < 10) {
-      setValidationError(
-        'Please enter a valid Contact Number (at least 10 digits).'
-      );
-      return;
-    }
-    if ((fulfillment === 1 || fulfillment === 2) && !trimmedAddress) {
-      setValidationError(
-        fulfillment === 2
-          ? 'Drop-off address is required for Lalamove orders.'
-          : 'Delivery address is required for Freelance Delivery orders.'
-      );
-      return;
-    }
-    if (cartItems.length === 0) {
-      setValidationError(
-        'Your cart is empty. Please search or pick at least one Lechon or Add-On.'
-      );
-      return;
+    if (isDraft) {
+      if (!trimmedName && !trimmedFbName) {
+        setValidationError(
+          'Customer Name or Facebook Name is required for a draft inquiry.'
+        );
+        return;
+      }
+    } else {
+      if (trimmedName.length < 2) {
+        setValidationError('Please enter Customer Name (at least 2 characters).');
+        return;
+      }
+      if (trimmedPhone.length < 10) {
+        setValidationError(
+          'Please enter a valid Contact Number (at least 10 digits).'
+        );
+        return;
+      }
+      if ((fulfillment === 1 || fulfillment === 2) && !trimmedAddress) {
+        setValidationError(
+          fulfillment === 2
+            ? 'Drop-off address is required for Lalamove orders.'
+            : 'Delivery address is required for Freelance Delivery orders.'
+        );
+        return;
+      }
+      if (cartItems.length === 0) {
+        setValidationError(
+          'Your cart is empty. Please search or pick at least one Lechon or Add-On.'
+        );
+        return;
+      }
     }
 
-    const isoTargetTime = `${targetDate.trim()}T${targetTime.trim()}:00`;
-    const parsedTarget = new Date(isoTargetTime);
-    if (isNaN(parsedTarget.getTime())) {
+    let isoTargetTime: string | null = null;
+    let isoDepartureTime: string | null = null;
+
+    if (targetDate.trim() && targetTime.trim()) {
+      const candidateIso = `${targetDate.trim()}T${targetTime.trim()}:00`;
+      const parsedTarget = new Date(candidateIso);
+      if (!isNaN(parsedTarget.getTime())) {
+        isoTargetTime = candidateIso;
+        isoDepartureTime = resolveRiderDepartureIso(candidateIso);
+      } else if (!isDraft) {
+        setValidationError(
+          'Invalid Schedule Date/Time. Use YYYY-MM-DD (e.g., 2026-10-25) and HH:mm (e.g., 11:30).'
+        );
+        return;
+      }
+    } else if (!isDraft) {
       setValidationError(
         'Invalid Schedule Date/Time. Use YYYY-MM-DD (e.g., 2026-10-25) and HH:mm (e.g., 11:30).'
       );
       return;
     }
-
-    const isoDepartureTime = resolveRiderDepartureIso(isoTargetTime);
 
     const formattedItems = cartItems.map((item) => ({
       itemCategoryId: item.itemCategoryId,
@@ -671,16 +694,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
     try {
       const savedOrder = await createOrderMutation.mutateAsync({
-        customerName: trimmedName,
-        facebookName: facebookName.trim() || undefined,
+        isDraft,
+        customerName: trimmedName || trimmedFbName,
+        facebookName: trimmedFbName || undefined,
         customerPhone: trimmedPhone,
         source: source || 'Business FB Page',
         eventType: eventType || undefined,
         targetDeliveryTime: isoTargetTime,
         riderDepartureTime: isoDepartureTime,
         fulfillment,
-        address: resolvedAddress,
-        deliveryAddress: resolvedAddress,
+        address: resolvedAddress || undefined,
+        deliveryAddress: resolvedAddress || undefined,
         landmark: landmark.trim() || undefined,
         remarks: remarks.trim(),
         price: roastSubtotal > 0 ? roastSubtotal : cartSubtotal,
@@ -701,8 +725,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           savedOrder?.id ||
           savedOrder?.Id ||
           'NEW',
-        customerName: trimmedName,
-        targetDeliveryTime: isoTargetTime,
+        customerName: trimmedName || trimmedFbName || 'Draft Customer',
+        targetDeliveryTime: isoTargetTime || 'Date Pending',
         fulfillment,
         deliveryAddress: resolvedAddress,
         landmark: landmark.trim() || undefined,
@@ -773,6 +797,33 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Draft Mode Toggle Card */}
+        <View style={[styles.draftCard, isDraft && styles.draftCardActive]}>
+          <View style={styles.draftCardHeader}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={styles.draftCardTitle}>
+                📝 Tentative Draft Inquiry (No Fixed Date/DP)
+              </Text>
+              <Text style={styles.draftCardSub}>
+                Pause kitchen clocks &amp; freezer stock locks for tentative inquiries
+              </Text>
+            </View>
+            <Switch
+              value={isDraft}
+              onValueChange={setIsDraft}
+              trackColor={{ false: '#D1D5DB', true: '#C4B5FD' }}
+              thumbColor={isDraft ? '#7C3AED' : '#9CA3AF'}
+            />
+          </View>
+          {isDraft && (
+            <View style={styles.draftInfoCallout}>
+              <Text style={styles.draftInfoCalloutText}>
+                Draft Mode Active: Kitchen schedules and freezer stock locks are paused. Date, venue, and pig size can be left blank until confirmed.
+              </Text>
+            </View>
+          )}
+        </View>
+
         {/* 1. Top AI Intake Action Card */}
         <View style={styles.aiCard}>
           <View style={styles.aiCardHeader}>
@@ -1617,6 +1668,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         <Pressable
           style={({ pressed }) => [
             styles.submitOrderBtn,
+            isDraft && styles.submitDraftBtn,
             createOrderMutation.isPending && styles.disabledBtn,
             pressed && styles.btnPressed,
           ]}
@@ -1626,10 +1678,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           {createOrderMutation.isPending ? (
             <View style={styles.rowCenter}>
               <ActivityIndicator color="#FFFFFF" size="small" />
-              <Text style={styles.submitOrderBtnText}>Submitting Order...</Text>
+              <Text style={styles.submitOrderBtnText}>
+                {isDraft ? 'Saving Draft...' : 'Submitting Order...'}
+              </Text>
             </View>
           ) : (
-            <Text style={styles.submitOrderBtnText}>✅ Submit Order</Text>
+            <Text style={styles.submitOrderBtnText}>
+              {isDraft ? '💾 Save Draft Inquiry' : '✅ Submit Order'}
+            </Text>
           )}
         </Pressable>
       </View>
@@ -1904,6 +1960,44 @@ const styles = StyleSheet.create({
     padding: 14,
     paddingBottom: 28,
     gap: 14,
+  },
+  draftCard: {
+    backgroundColor: '#F5F3FF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    gap: 10,
+  },
+  draftCardActive: {
+    borderColor: '#8B5CF6',
+    backgroundColor: '#EDE9FE',
+  },
+  draftCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  draftCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  draftCardSub: {
+    fontSize: 11,
+    color: '#7C3AED',
+    marginTop: 2,
+  },
+  draftInfoCallout: {
+    backgroundColor: '#DDD6FE',
+    borderRadius: 8,
+    padding: 10,
+  },
+  draftInfoCalloutText: {
+    fontSize: 11,
+    color: '#5B21B6',
+    fontWeight: '600',
+    lineHeight: 16,
   },
   aiCard: {
     backgroundColor: '#181312',
@@ -2670,6 +2764,9 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  submitDraftBtn: {
+    backgroundColor: '#7C3AED',
   },
   submitOrderBtnText: {
     color: '#FFFFFF',

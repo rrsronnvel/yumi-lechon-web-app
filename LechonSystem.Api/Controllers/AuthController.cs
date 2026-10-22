@@ -1,3 +1,4 @@
+using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -27,13 +28,20 @@ public class AuthController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var response = await _authService.LoginAsync(request);
-        if (response == null)
+        try
         {
-            return Unauthorized(new { message = "Invalid username or password." });
-        }
+            var response = await _authService.LoginAsync(request);
+            if (response == null)
+            {
+                return Unauthorized(new { message = "Invalid username or password." });
+            }
 
-        return Ok(response);
+            return Ok(response);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
     }
 
     [Authorize]

@@ -41,13 +41,21 @@ namespace LechonSystem.Api.Services
             var todayCount = await _context.Orders.CountAsync(o => o.CreatedAt >= today && o.CreatedAt < today.AddDays(1));
             var orderReference = $"{today:MMddyy}-{(todayCount + 1):D3}";
 
-            var effectiveDepartureTime = request.Fulfillment == FulfillmentType.Pickup
-                ? request.TargetDeliveryTime
-                : (request.RiderDepartureTime ?? request.TargetDeliveryTime);
+            DateTime? effectiveDepartureTime = null;
+            if (request.TargetDeliveryTime.HasValue)
+            {
+                effectiveDepartureTime = request.Fulfillment == FulfillmentType.Pickup
+                    ? request.TargetDeliveryTime
+                    : (request.RiderDepartureTime ?? request.TargetDeliveryTime);
+            }
+            else
+            {
+                effectiveDepartureTime = request.RiderDepartureTime;
+            }
 
             var rawContactNumber = !string.IsNullOrWhiteSpace(request.ContactNumber)
                 ? request.ContactNumber
-                : request.CustomerPhone;
+                : (request.CustomerPhone ?? string.Empty);
             var normalizedPhone = CustomerService.NormalizePhoneNumber(rawContactNumber);
 
             var resolvedDeliveryAddress = !string.IsNullOrWhiteSpace(request.DeliveryAddress)
@@ -58,6 +66,7 @@ namespace LechonSystem.Api.Services
             {
                 // -- Core Details --
                 OrderReference = orderReference,
+                IsDraft = request.IsDraft,
                 CustomerName = request.CustomerName,
                 FacebookName = request.FacebookName,
                 TargetDeliveryTime = request.TargetDeliveryTime,
@@ -151,31 +160,36 @@ namespace LechonSystem.Api.Services
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            foreach (var savedItem in order.OrderItems)
+            if (!order.IsDraft && order.TargetDeliveryTime.HasValue)
             {
-                var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
-                    savedItem.Id,
-                    order.TargetDeliveryTime,
-                    savedItem.ItemCategoryId,
-                    order.RiderDepartureTime
-                );
+                foreach (var savedItem in order.OrderItems)
+                {
+                    var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
+                        savedItem.Id,
+                        order.TargetDeliveryTime.Value,
+                        savedItem.ItemCategoryId,
+                        order.RiderDepartureTime
+                    );
 
-                _context.OrderItemSchedules.Add(calculatedSchedule);
+                    _context.OrderItemSchedules.Add(calculatedSchedule);
 
-                await _inventoryService.CreatePendingReservationAsync(
-                    order.Id,
-                    savedItem.ItemCategoryId,
-                    order.TargetDeliveryTime,
-                    order.IsTrustedCustomer,
-                    order.Downpayment
-                );
+                    await _inventoryService.CreatePendingReservationAsync(
+                        order.Id,
+                        savedItem.ItemCategoryId,
+                        order.TargetDeliveryTime.Value,
+                        order.IsTrustedCustomer,
+                        order.Downpayment
+                    );
+                }
             }
 
             var auditLog = new OrderAuditLog
             {
                 OrderId = order.Id,
-                ActionType = "Order Created",
-                Changes = $"Order #{order.OrderReference} created for {order.CustomerName} (Total: ₱{order.GrandTotal:N2})",
+                ActionType = order.IsDraft ? "Draft Created" : "Order Created",
+                Changes = order.IsDraft
+                    ? $"Draft inquiry #{order.OrderReference} created for {order.CustomerName} (Est. Total: ₱{order.GrandTotal:N2})"
+                    : $"Order #{order.OrderReference} created for {order.CustomerName} (Total: ₱{order.GrandTotal:N2})",
                 ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             };
@@ -287,23 +301,29 @@ namespace LechonSystem.Api.Services
             var tab = (filterTab ?? "upcoming").Trim().ToLowerInvariant();
             switch (tab)
             {
+                case "drafts":
+                    query = query.Where(o => o.IsDraft && !o.IsCancelled);
+                    query = query.OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt);
+                    break;
+
                 case "recent":
                     var cutoff = DateTime.UtcNow.AddHours(-48);
                     query = query.Where(o => 
-                        (o.UpdatedAt.HasValue && o.UpdatedAt.Value >= cutoff) ||
-                        _context.OrderAuditLogs.Any(a => a.OrderId == o.Id && a.Timestamp >= cutoff));
+                        !o.IsDraft &&
+                        ((o.UpdatedAt.HasValue && o.UpdatedAt.Value >= cutoff) ||
+                        _context.OrderAuditLogs.Any(a => a.OrderId == o.Id && a.Timestamp >= cutoff)));
                     query = query.OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt);
                     break;
 
                 case "balance-due":
-                    query = query.Where(o => (o.GrandTotal - o.Downpayment) > 0 && !o.IsCancelled);
+                    query = query.Where(o => !o.IsDraft && !o.IsCancelled && (o.GrandTotal - o.Downpayment) > 0);
                     query = query.OrderBy(o => o.TargetDeliveryTime);
                     break;
 
                 case "past-30":
                     var past30Cutoff = DateTime.Today.AddDays(-30);
                     var today = DateTime.Today;
-                    query = query.Where(o => o.TargetDeliveryTime < today && o.TargetDeliveryTime >= past30Cutoff && !o.IsCancelled);
+                    query = query.Where(o => !o.IsDraft && !o.IsCancelled && o.TargetDeliveryTime != null && o.TargetDeliveryTime < today && o.TargetDeliveryTime >= past30Cutoff);
                     query = query.OrderByDescending(o => o.TargetDeliveryTime);
                     break;
 
@@ -314,13 +334,14 @@ namespace LechonSystem.Api.Services
 
                 case "all":
                 case "all-time":
+                    query = query.Where(o => !o.IsDraft);
                     query = query.OrderByDescending(o => o.TargetDeliveryTime);
                     break;
 
                 case "upcoming":
                 default:
                     var upcomingToday = DateTime.Today;
-                    query = query.Where(o => o.TargetDeliveryTime >= upcomingToday && !o.IsCancelled);
+                    query = query.Where(o => !o.IsDraft && !o.IsCancelled && o.TargetDeliveryTime != null && o.TargetDeliveryTime >= upcomingToday);
                     query = query.OrderBy(o => o.TargetDeliveryTime);
                     break;
             }
@@ -332,13 +353,15 @@ namespace LechonSystem.Api.Services
                 {
                     Id = o.Id,
                     OrderReference = o.OrderReference,
+                    IsDraft = o.IsDraft,
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
                     ContactNumber = o.ContactNumber ?? string.Empty,
                     Source = o.Source ?? string.Empty,
                     EventType = o.EventType,
-                    DeliveryAddress = o.DeliveryAddress ?? string.Empty,
+                    DeliveryAddress = o.DeliveryAddress,
                     Landmark = o.Landmark,
+                    Remarks = o.Remarks,
                     Fulfillment = (int)o.Fulfillment,
                     RoutingStatus = o.RoutingStatus.ToString(),
                     TargetDeliveryTime = o.TargetDeliveryTime,
@@ -375,9 +398,38 @@ namespace LechonSystem.Api.Services
 
             var auditChanges = new List<string>();
 
-            var effectiveRiderDepartureTime = request.Fulfillment == FulfillmentType.Pickup
-                ? request.TargetDeliveryTime
-                : (request.RiderDepartureTime ?? order.RiderDepartureTime ?? request.TargetDeliveryTime);
+            bool wasDraft = order.IsDraft;
+            bool isFinalizing = wasDraft && !request.IsDraft;
+            bool staysDraft = wasDraft && request.IsDraft;
+
+            if (isFinalizing)
+            {
+                if (!request.TargetDeliveryTime.HasValue)
+                {
+                    throw new ArgumentException("Target delivery/pickup time is required to finalize order.");
+                }
+                if (!request.Items.Any())
+                {
+                    throw new ArgumentException("At least one order item is required to finalize order.");
+                }
+                if ((request.Fulfillment == FulfillmentType.Delivery || request.Fulfillment == FulfillmentType.Lalamove) && string.IsNullOrWhiteSpace(request.DeliveryAddress))
+                {
+                    throw new ArgumentException("Delivery address is required to finalize delivery/courier order.");
+                }
+
+                order.IsDraft = false;
+                auditChanges.Add($"Draft inquiry finalized and locked into production by {CurrentUser}");
+            }
+            else if (staysDraft)
+            {
+                order.IsDraft = true;
+            }
+
+            var effectiveRiderDepartureTime = request.TargetDeliveryTime.HasValue
+                ? (request.Fulfillment == FulfillmentType.Pickup
+                    ? request.TargetDeliveryTime
+                    : (request.RiderDepartureTime ?? order.RiderDepartureTime ?? request.TargetDeliveryTime))
+                : (request.RiderDepartureTime ?? order.RiderDepartureTime);
 
             // --- Tracking ALL Master Order Fields ---
             if (order.CustomerName != request.CustomerName)
@@ -408,10 +460,18 @@ namespace LechonSystem.Api.Services
                 auditChanges.Add($"Discount changed from ₱{order.Discount} to ₱{request.Discount}");
 
             if (order.TargetDeliveryTime != request.TargetDeliveryTime)
-                auditChanges.Add($"Delivery Time changed from {order.TargetDeliveryTime:MMM dd, yyyy h:mm tt} to {request.TargetDeliveryTime:MMM dd, yyyy h:mm tt}");
+            {
+                var oldTime = order.TargetDeliveryTime.HasValue ? order.TargetDeliveryTime.Value.ToString("MMM dd, yyyy h:mm tt") : "Unset";
+                var newTime = request.TargetDeliveryTime.HasValue ? request.TargetDeliveryTime.Value.ToString("MMM dd, yyyy h:mm tt") : "Unset";
+                auditChanges.Add($"Delivery Time changed from {oldTime} to {newTime}");
+            }
 
             if (order.RiderDepartureTime != effectiveRiderDepartureTime)
-                auditChanges.Add($"Rider Departure Time changed from {(order.RiderDepartureTime.HasValue ? order.RiderDepartureTime.Value.ToString("MMM dd, yyyy h:mm tt") : "None")} to {effectiveRiderDepartureTime:MMM dd, yyyy h:mm tt}");
+            {
+                var oldTime = order.RiderDepartureTime.HasValue ? order.RiderDepartureTime.Value.ToString("MMM dd, yyyy h:mm tt") : "None";
+                var newTime = effectiveRiderDepartureTime.HasValue ? effectiveRiderDepartureTime.Value.ToString("MMM dd, yyyy h:mm tt") : "None";
+                auditChanges.Add($"Rider Departure Time changed from {oldTime} to {newTime}");
+            }
 
             if (order.Fulfillment != request.Fulfillment)
                 auditChanges.Add($"Fulfillment changed from '{order.Fulfillment}' to '{request.Fulfillment}'");
@@ -426,9 +486,12 @@ namespace LechonSystem.Api.Services
                 auditChanges.Add($"Lechon Subtotal changed from ₱{order.Price} to ₱{request.Price}");
 
             bool requiresRescheduling = false;
-            if (order.TargetDeliveryTime != request.TargetDeliveryTime || order.RiderDepartureTime != effectiveRiderDepartureTime)
+            if (!order.IsDraft && !isFinalizing)
             {
-                requiresRescheduling = true;
+                if (order.TargetDeliveryTime != request.TargetDeliveryTime || order.RiderDepartureTime != effectiveRiderDepartureTime)
+                {
+                    requiresRescheduling = true;
+                }
             }
 
             // Overwrite Master Order details
@@ -465,7 +528,7 @@ namespace LechonSystem.Api.Services
                 {
                     if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId || existingItem.Quantity != requestedItem.Quantity)
                     {
-                        requiresRescheduling = true;
+                        if (!order.IsDraft) requiresRescheduling = true;
 
                         var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                         string oldName = existingItem.ItemCategory?.Name ?? "Unknown Size";
@@ -489,7 +552,7 @@ namespace LechonSystem.Api.Services
                 }
                 else if (requestedItem.Id == 0)
                 {
-                    requiresRescheduling = true;
+                    if (!order.IsDraft) requiresRescheduling = true;
 
                     var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                     string newName = newCat?.Name ?? "Item";
@@ -514,7 +577,7 @@ namespace LechonSystem.Api.Services
 
             if (itemsToRemove.Any())
             {
-                requiresRescheduling = true;
+                if (!order.IsDraft) requiresRescheduling = true;
 
                 foreach (var removedItem in itemsToRemove)
                 {
@@ -531,8 +594,29 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
 
-            // Recalculate kitchen timeline for non-overridden items
-            if (requiresRescheduling)
+            // Handle finalization or rescheduling
+            if (isFinalizing && order.TargetDeliveryTime.HasValue)
+            {
+                foreach (var item in order.OrderItems)
+                {
+                    var newSchedule = await _schedulingService.CalculateScheduleAsync(
+                        item.Id,
+                        order.TargetDeliveryTime.Value,
+                        item.ItemCategoryId,
+                        order.RiderDepartureTime);
+
+                    _context.OrderItemSchedules.Add(newSchedule);
+
+                    await _inventoryService.CreatePendingReservationAsync(
+                        order.Id,
+                        item.ItemCategoryId,
+                        order.TargetDeliveryTime.Value,
+                        order.IsTrustedCustomer,
+                        order.Downpayment
+                    );
+                }
+            }
+            else if (!order.IsDraft && requiresRescheduling && order.TargetDeliveryTime.HasValue)
             {
                 foreach (var item in order.OrderItems)
                 {
@@ -541,7 +625,7 @@ namespace LechonSystem.Api.Services
 
                     if (oldSchedule != null && oldSchedule.IsManualOverride)
                     {
-                        oldSchedule.TargetDeliveryTime = order.TargetDeliveryTime;
+                        oldSchedule.TargetDeliveryTime = order.TargetDeliveryTime.Value;
                         continue;
                     }
 
@@ -549,7 +633,7 @@ namespace LechonSystem.Api.Services
 
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
                         item.Id,
-                        order.TargetDeliveryTime,
+                        order.TargetDeliveryTime.Value,
                         item.ItemCategoryId,
                         order.RiderDepartureTime);
 
@@ -560,10 +644,11 @@ namespace LechonSystem.Api.Services
             // Save the highly-detailed Black Box record!
             if (auditChanges.Any())
             {
+                string actionType = isFinalizing ? "Draft Finalized" : (order.IsDraft ? "Draft Edited" : "Order Edited");
                 var auditLog = new OrderAuditLog
                 {
                     OrderId = order.Id,
-                    ActionType = "Order Edited",
+                    ActionType = actionType,
                     Changes = string.Join(" | ", auditChanges),
                     ChangedBy = CurrentUser,
                     Timestamp = DateTime.UtcNow
@@ -607,12 +692,13 @@ namespace LechonSystem.Api.Services
             {
                 Id = order.Id,
                 OrderReference = order.OrderReference,
+                IsDraft = order.IsDraft,
                 CustomerName = order.CustomerName,
                 FacebookName = order.FacebookName,
                 ContactNumber = order.ContactNumber ?? string.Empty,
                 Source = order.Source ?? string.Empty,
                 EventType = order.EventType,
-                DeliveryAddress = order.DeliveryAddress ?? string.Empty,
+                DeliveryAddress = order.DeliveryAddress,
                 Landmark = order.Landmark,
                 Remarks = order.Remarks,
                 Price = order.Price,

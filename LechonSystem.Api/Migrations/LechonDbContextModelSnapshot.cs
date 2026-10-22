@@ -521,7 +521,6 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DeliveryAddress")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("DeliveryFee")
@@ -559,6 +558,9 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsDeliveryDetailsConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDraft")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsPriceWaived")
@@ -617,7 +619,7 @@ namespace LechonSystem.Api.Migrations
                     b.Property<string>("StaffValidatedBy")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<DateTime>("TargetDeliveryTime")
+                    b.Property<DateTime?>("TargetDeliveryTime")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -1294,11 +1296,17 @@ namespace LechonSystem.Api.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Username")
+                        .IsUnique();
 
                     b.ToTable("Users");
 
@@ -1311,6 +1319,7 @@ namespace LechonSystem.Api.Migrations
                             IsActive = true,
                             PasswordHash = "$2a$11$91qvtqitWclA.BB1pUEmsezQaloAyJi23suOIbEIT1JEZmSeqLB6S",
                             Role = "Owner",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Username = "owner"
                         },
                         new
@@ -1321,6 +1330,7 @@ namespace LechonSystem.Api.Migrations
                             IsActive = true,
                             PasswordHash = "$2a$11$pWVefaVk/s0XTuGmg2GCCujzhLECelvzDiuenEDPva86K6zlzWQlW",
                             Role = "Cashier",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Username = "cashier"
                         });
                 });

@@ -125,7 +125,7 @@ public static class QaDataSeeder
 
         var scheduleA = await schedulingService.CalculateScheduleAsync(
             orderAItem.Id,
-            orderA.TargetDeliveryTime,
+            orderA.TargetDeliveryTime!.Value,
             orderAItem.ItemCategoryId,
             orderA.RiderDepartureTime
         );
@@ -134,7 +134,7 @@ public static class QaDataSeeder
         await inventoryService.CreatePendingReservationAsync(
             orderA.Id,
             orderAItem.ItemCategoryId,
-            orderA.TargetDeliveryTime,
+            orderA.TargetDeliveryTime!.Value,
             orderA.IsTrustedCustomer,
             orderA.Downpayment
         );
@@ -203,7 +203,7 @@ public static class QaDataSeeder
 
         var scheduleB = await schedulingService.CalculateScheduleAsync(
             orderBItem.Id,
-            orderB.TargetDeliveryTime,
+            orderB.TargetDeliveryTime!.Value,
             orderBItem.ItemCategoryId,
             orderB.RiderDepartureTime
         );
@@ -217,7 +217,7 @@ public static class QaDataSeeder
         await inventoryService.CreatePendingReservationAsync(
             orderB.Id,
             orderBItem.ItemCategoryId,
-            orderB.TargetDeliveryTime,
+            orderB.TargetDeliveryTime!.Value,
             orderB.IsTrustedCustomer,
             orderB.Downpayment
         );
@@ -286,7 +286,7 @@ public static class QaDataSeeder
 
         var scheduleC = await schedulingService.CalculateScheduleAsync(
             orderCItem.Id,
-            orderC.TargetDeliveryTime,
+            orderC.TargetDeliveryTime!.Value,
             orderCItem.ItemCategoryId,
             orderC.RiderDepartureTime
         );
@@ -295,7 +295,7 @@ public static class QaDataSeeder
         await inventoryService.CreatePendingReservationAsync(
             orderC.Id,
             orderCItem.ItemCategoryId,
-            orderC.TargetDeliveryTime,
+            orderC.TargetDeliveryTime!.Value,
             orderC.IsTrustedCustomer,
             orderC.Downpayment
         );

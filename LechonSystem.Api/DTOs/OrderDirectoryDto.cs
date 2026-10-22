@@ -4,16 +4,18 @@ public class OrderDirectoryDto
 {
     public int Id { get; set; }
     public string OrderReference { get; set; } = string.Empty;
+    public bool IsDraft { get; set; } = false;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
     public string ContactNumber { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string? EventType { get; set; }
-    public string DeliveryAddress { get; set; } = string.Empty;
+    public string? DeliveryAddress { get; set; }
     public string? Landmark { get; set; }
+    public string? Remarks { get; set; }
     public int Fulfillment { get; set; } // 0 = Pickup, 1 = Delivery, 2 = Lalamove
     public string RoutingStatus { get; set; } = string.Empty; // "Unassigned", "Assigned", "Delivered"
-    public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal Downpayment { get; set; }

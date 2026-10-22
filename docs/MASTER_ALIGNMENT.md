@@ -111,6 +111,50 @@ The POS and Logistics engines enforce strict boundary rules across three distinc
 - Distance and Delivery Fee inputs are strictly forced to 0 and locked to ₱0 (preventing erroneous delivery fees from appearing on the store receipt).
 - Excluded from freelance driver batch dispatch and manifest cash remittance workflows.
 
+#### 2.7 In-POS Tentative Reservation Drafts & Production Quarantine Governance
+
+- Real-World Operational Context:
+  Customers frequently inquire via Facebook Messenger or telephone requesting quotes, tentative date holds, or preliminary pricing before confirming their venue, final guest count, or pig size, and before sending a GCash downpayment deposit. Forcing cashiers to input dummy delivery addresses, arbitrary delivery timestamps, or artificial pig sizes to satisfy validation corrupted kitchen rosters, locked up scarce physical pig carcasses in the freezer ledger, and flooded delivery dispatches.
+
+- The In-POS Draft Toggle (`IsDraft = true`):
+  Both Web POS (`OrderForm.tsx`, `EditOrderForm.tsx`) and Mobile POS (`PosScreen.tsx`, `EditOrderModal.tsx`) mount a prominent purple switch banner: `[ 📝 Tentative Draft Inquiry (No Fixed Date/DP) ]`.
+  - When active, a purple informational callout informs staff: *"Draft Mode Active: Kitchen schedules and freezer stock locks are paused. Date, venue, and pig size can be left blank until confirmed."*
+  - The primary intake submit action transforms into `[ 💾 Save Draft Inquiry ]` (`bg-purple-600`).
+
+- Conditional Intake Validation Engine:
+  - **Draft Mode Active (`isDraft === true`):**
+    - Relaxed identity requirement: Requires at least one customer identifier (`CustomerName` or `FacebookName`).
+    - Permits empty `TargetDeliveryTime` (`null`), empty `DeliveryAddress` (`null`), and `0` cart items (`items.length === 0`).
+  - **Production Mode Active (`isDraft === false`):**
+    - Re-arms strict production guardrails: Requires customer name (>= 2 characters), valid contact number (>= 10 digits), target delivery date & time, mandatory delivery address (if Fulfillment is Delivery or Lalamove), and at least 1 cart line item.
+
+- Zero-Impact Production Bouncer & Operational Cockpit Quarantine:
+  - **Zero Freezer Inventory Locks:** `OrderService.CreateOrderAsync` completely skips `_inventoryService.ReserveInventoryForOrderAsync` when `IsDraft == true` (generating `0` `InventoryReservation` records).
+  - **Zero Kitchen Roasting Clocks:** `OrderService.CreateOrderAsync` completely skips `_schedulingService.CalculateAndSaveScheduleAsync` when `IsDraft == true` (generating `0` `OrderItemSchedule` records).
+  - **Total Cockpit Quarantine (`!o.IsDraft`):**
+    1. *Zero-Inbox Command Center (`DashboardService.cs`):* Excluded from `Tomorrow's Lechon Demand`, `GetDefrostingRosterAsync`, `GetDeliveryVerificationsAsync`, `GetPendingConfirmationsAsync`, and `GetRenegotiationTasksAsync`.
+    2. *Kitchen Roasting Manifests (`SchedulingService.cs`):* Excluded from `GetDailySheetsAsync` (14-column Kitchen Sheet and 10-column Rider Sheet).
+    3. *Logistics Operations & Settlement Drops (`LogisticsService.cs`):* Excluded from `GetUnassignedDeliveryOrdersAsync`, `GetTodayDispatchesAsync`, `GetPendingSettlementDropsAsync`, `GetPendingPickupSettlementsAsync`, and `GetPendingLalamoveSettlementsAsync`.
+
+- Master Directory Slicing & Visual Fallbacks:
+  - **Dedicated 7th Tab (`drafts`):** Both Web Directory (`OrdersPage.tsx`) and Mobile Directory (`OrdersScreen.tsx`) isolate drafts into `[ 📝 Drafts ]` filtering `o.IsDraft && !o.IsCancelled` ordered by `UpdatedAt ?? CreatedAt` descending.
+  - **Production Tab Quarantine:** All active operational tabs (`Upcoming`, `Today Only`, `Tomorrow`, `Balance Due`, `Recent Edits`, `Past 30d`, `Cancelled`, `All Time`) strictly quarantine drafts via `!o.IsDraft`.
+  - **Graceful Visual Fallbacks:**
+    - *Schedule:* Displays `📅 Date Pending` (with customer `remarks` rendered in subtle monospace subtext if present).
+    - *Location:* Displays `📍 Venue TBD / Unset` (or `🏪 Store Pickup` if pickup).
+    - *Totals & Deposit:* Displays `Est. ₱{grandTotal}` with a muted `₱{downpayment} DP` badge.
+    - *Routing Status Badge:* Displays distinct purple badge `[ 📝 Incomplete Draft ]`.
+  - **Customer Dossier Modal/Sheet:** Renders an informational purple alert banner: *"📝 Tentative Inquiry: This order is an unconfirmed draft. No kitchen schedule has been generated and no freezer inventory is locked."*
+
+- The Draft Finalization Transition:
+  When an existing draft is updated and the draft toggle is flipped to `OFF` (`wasDraft && !request.IsDraft`):
+  1. The system enforces strict validation (ensuring `TargetDeliveryTime`, valid line items, and delivery address are present).
+  2. Sets `order.IsDraft = false`.
+  3. Triggers `_inventoryService` to create physical inventory reservations (`Committed` if `DownpaymentReceived > 0 || IsTrustedCustomer`, else `PendingPayment`).
+  4. Triggers `_schedulingService` to compute backward kitchen roasting schedules (`TahiStartTime`, `SalangStartTime`, `PackagingStartTime`, `RiderDepartureTime`).
+  5. Inserts an immutable audit log entry: `"Draft inquiry finalized and locked into production by {CurrentUser}"`.
+  6. The submit button displays `[ 🔒 Finalize & Lock Order ]`.
+
 ### 3. Dashboard Triggers & Exception Handling
 
 The "Zero-Inbox" Dashboard acts as a dynamic Command Center, programmed with a Time-Sensitive Trigger Engine to prevent screen clutter.
@@ -673,6 +717,39 @@ For immediate out-of-the-box system bootstrapping, the database seeds two produc
 
 - 👑 Owner Account: Username owner | Password OwnerPassword123! | Role Owner | Full Name Business Owner
 - 🧑‍💼 Cashier Account: Username cashier | Password CashierPassword123! | Role Cashier | Full Name Store Cashier
+
+#### 13.4 Owner-Controlled Staff Account Management & Self-Preservation Guard
+
+To eliminate static credentials and protect shift integrity, the business owner retains exclusive authority over staff and terminal accounts:
+
+1. **Account Provisioning:**
+   - Owners can provision new counter staff logins directly via the Web CMS under the **`👥 Staff & Terminal Accounts`** tab.
+   - Required fields: `FullName` (e.g., "Maria Santos"), `Username` (unique, lowercase alphanumeric, minimum 3 characters), `Initial Password` (minimum 6 characters), and `Role` (`Cashier` default, or `Owner`).
+   - Passwords are encrypted server-side using BCrypt hashing before database persistence.
+
+2. **Shift Password Resets:**
+   - Owners can override forgotten or compromised shift passwords through the `ResetPasswordModal` without requiring access to prior passwords.
+   - Updated credentials take effect immediately on subsequent sign-ins.
+
+3. **Instant Terminal Access Revocation (`IsActive` Bouncer):**
+   - Owners can deactivate any staff account with 1-click status toggling (`IsActive = false`).
+   - The login pipeline (`AuthService.LoginAsync`) enforces a deactivated account bouncer: if credentials are valid but `!user.IsActive`, authentication is rejected immediately with `401 Unauthorized` and an explicit error: `"This account has been deactivated. Please contact the business owner."`.
+
+4. **The Owner Self-Preservation Guard:**
+   - To prevent catastrophic lockout, the backend (`UserService.ToggleUserStatusAsync`) and frontend UI strictly forbid an Owner from deactivating their own currently logged-in account (`string.Equals(user.Username, currentUsername, StringComparison.OrdinalIgnoreCase)`).
+   - In the frontend roster, the Owner's row displays an active `(You)` badge and the deactivation trigger is permanently disabled with the tooltip `"Cannot deactivate your own active Owner account"`.
+
+#### 13.5 Production Environment-Gated Authentication Security
+
+To protect live customer data while preserving developer speed during local testing:
+
+1. **Dual Environment Architecture (`'cloud'` vs `'local'`):**
+   - The Web SPA and Mobile App maintain synchronized persistence of the active backend environment (`'cloud'` targeting live production endpoints vs `'local'` targeting `localhost:5199` or Android emulator `10.0.2.2:5199`).
+   - Synced in local storage under `lechon_api_env` (with legacy fallback to `lechon_api_environment`), defaulting to `'local'` on localhost development hosts and `'cloud'` in production builds or when accessing remote domains.
+
+2. **Environment-Aware Quick-Fill Bouncer:**
+   - **On Live Cloud (`apiEnv === 'cloud'`):** The `1-TAP QUICK-FILL TEST PRESETS` container (`[ 👑 Fill Owner ]` and `[ 🧑‍🍳 Fill Cashier ]`) is **strictly hidden and completely unmounted** from the DOM/React Native tree. Switching to `'cloud'` immediately clears username, password, and error banners to prevent accidental exposure or submission of default test credentials against live production databases.
+   - **On Local Dev (`apiEnv === 'local'`):** The quick-fill buttons are rendered to enable rapid 1-tap test credential population for shift testing.
 
 \*\*
 

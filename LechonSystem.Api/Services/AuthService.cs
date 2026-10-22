@@ -30,11 +30,11 @@ public class AuthService : IAuthService
             return null;
         }
 
-        var normalizedUsername = request.Username.Trim().ToLower();
+        var normalizedUsername = request.Username.Trim().ToLowerInvariant();
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.Username.ToLower() == normalizedUsername);
 
-        if (user == null || !user.IsActive)
+        if (user == null)
         {
             return null;
         }
@@ -43,6 +43,11 @@ public class AuthService : IAuthService
         if (!isPasswordValid)
         {
             return null;
+        }
+
+        if (!user.IsActive)
+        {
+            throw new UnauthorizedAccessException("This account has been deactivated. Please contact the business owner.");
         }
 
         var jwtKey = _configuration["Jwt:Key"];
@@ -85,7 +90,7 @@ public class AuthService : IAuthService
 
     public async Task<UserDto?> GetCurrentUserAsync(string username)
     {
-        var normalizedUsername = username.Trim().ToLower();
+        var normalizedUsername = username.Trim().ToLowerInvariant();
         var user = await _context.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Username.ToLower() == normalizedUsername);

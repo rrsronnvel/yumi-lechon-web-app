@@ -27,10 +27,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { PriceHistorySheet } from "@/components/cms/PriceHistorySheet";
 import { ChangePriceModal } from "@/components/cms/ChangePriceModal";
 import { EditCategoryModal } from "@/components/cms/EditCategoryModal";
+import { CreateUserModal } from "@/components/cms/CreateUserModal";
+import { ResetPasswordModal } from "@/components/cms/ResetPasswordModal";
+import {
+  useUsersQuery,
+  useToggleUserStatusMutation,
+  UserListItemDto,
+} from "@/hooks/useUsers";
 import {
   Plus,
   History,
@@ -42,12 +51,25 @@ import {
   ShieldCheck,
   Truck,
   Lock,
+  Users,
+  AlertTriangle,
 } from "lucide-react";
 
 type FilterStatus = "all" | "active" | "hidden";
 
 export default function CmsPage() {
-  const { isOwner } = useAuth();
+  const { isOwner, user: currentUser } = useAuth();
+  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "staff">("catalog");
+  const { data: users = [], isLoading: isLoadingUsers } = useUsersQuery();
+  const toggleUserStatusMutation = useToggleUserStatusMutation();
+  const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
+  const [selectedResetUser, setSelectedResetUser] = useState<UserListItemDto | null>(null);
+  const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
+  const [statusConfirmUser, setStatusConfirmUser] = useState<{
+    user: UserListItemDto;
+    targetActive: boolean;
+  } | null>(null);
+
   const { data: categories = [], isLoading } = useMenuCategories();
   const { data: deliveryPricing } = useDeliveryPricing();
   const updateDeliveryPricingMutation = useUpdateDeliveryPricing();
@@ -217,23 +239,61 @@ export default function CmsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-stone-900">
-            Catalog Governance & Menu CMS
+            System Settings &amp; Governance
           </h1>
           <p className="text-sm text-stone-500 mt-1">
-            Manage catalogue base rates, weight brackets, safety stock buffers, delivery rates, and POS visibility.
+            Manage catalogue base rates, dynamic delivery pricing formulas, and counter staff terminal accounts.
           </p>
         </div>
 
-        <Button
-          onClick={() => setIsCreateDialogOpen(true)}
-          className="h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium shrink-0 shadow-sm transition-colors"
-        >
-          <Plus className="w-4 h-4 mr-1.5" />
-          Add New Item
-        </Button>
+        {activeMainTab === "catalog" && (
+          <Button
+            onClick={() => setIsCreateDialogOpen(true)}
+            className="h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium shrink-0 shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Add New Item
+          </Button>
+        )}
       </div>
 
-      {/* Delivery Pricing Configuration Card */}
+      {/* Top Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveMainTab("catalog")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+            activeMainTab === "catalog"
+              ? "bg-[#181312] text-amber-400 shadow-sm"
+              : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+          }`}
+        >
+          <UtensilsCrossed className="w-4 h-4" />
+          <span>Menu Catalog &amp; Delivery Pricing</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveMainTab("staff")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+            activeMainTab === "staff"
+              ? "bg-[#181312] text-amber-400 shadow-sm"
+              : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>👥 Staff &amp; Terminal Accounts</span>
+          {users.length > 0 && (
+            <span className="ml-1 text-xs bg-amber-500/20 text-amber-400 border border-amber-400/30 px-2 py-0.5 rounded-full font-mono">
+              {users.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeMainTab === "catalog" && (
+        <>
+          {/* Delivery Pricing Configuration Card */}
       <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">
         <CardHeader className="pb-3 border-b border-stone-100">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -573,6 +633,284 @@ export default function CmsPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
+
+      {/* Staff & Terminal Accounts Tab */}
+      {activeMainTab === "staff" && (
+        <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">
+          <CardHeader className="pb-4 border-b border-stone-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800 shrink-0">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold text-stone-900">
+                    Staff &amp; Terminal Accounts
+                  </CardTitle>
+                  <CardDescription className="text-xs text-stone-500 mt-0.5">
+                    Provision counter cashier logins, reset shift passwords, and revoke terminal access.
+                  </CardDescription>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => setIsCreateUserModalOpen(true)}
+                className="h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium shrink-0 shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                Add Staff Account
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoadingUsers ? (
+              <div className="py-12 text-center text-stone-500 text-sm">
+                Loading staff accounts...
+              </div>
+            ) : users.length === 0 ? (
+              <div className="py-12 text-center text-stone-500 text-sm">
+                No staff accounts found.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-stone-50/80">
+                    <TableRow className="border-b border-stone-200">
+                      <TableHead className="font-bold text-stone-700 text-xs uppercase tracking-wider py-3.5">
+                        Name
+                      </TableHead>
+                      <TableHead className="font-bold text-stone-700 text-xs uppercase tracking-wider py-3.5">
+                        Username
+                      </TableHead>
+                      <TableHead className="font-bold text-stone-700 text-xs uppercase tracking-wider py-3.5">
+                        Role
+                      </TableHead>
+                      <TableHead className="font-bold text-stone-700 text-xs uppercase tracking-wider py-3.5">
+                        Status
+                      </TableHead>
+                      <TableHead className="font-bold text-stone-700 text-xs uppercase tracking-wider py-3.5">
+                        Created Date
+                      </TableHead>
+                      <TableHead className="font-bold text-stone-700 text-xs uppercase tracking-wider py-3.5 text-right">
+                        Actions
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u) => {
+                      const isSelf = u.username.toLowerCase() === currentUser?.username.toLowerCase();
+                      const formattedDate = new Date(u.createdAt).toLocaleDateString("en-PH", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      });
+
+                      return (
+                        <TableRow
+                          key={u.id}
+                          className="border-b border-stone-100 hover:bg-stone-50/60 transition-colors"
+                        >
+                          <TableCell className="font-medium text-stone-900 py-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span>{u.fullName}</span>
+                              {isSelf && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100/80 border border-amber-300 px-1.5 py-0.5 rounded">
+                                  You
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-3.5 font-mono text-xs text-stone-600">
+                            @{u.username}
+                          </TableCell>
+                          <TableCell className="py-3.5">
+                            {u.role === "Owner" ? (
+                              <Badge className="bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100 font-semibold text-xs">
+                                👑 Owner
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100 font-semibold text-xs">
+                                🧑‍💼 Cashier
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-3.5">
+                            {u.isActive ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-semibold text-xs">
+                                🟢 Active
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-rose-100 text-rose-800 border-rose-200 hover:bg-rose-100 font-semibold text-xs">
+                                🔴 Deactivated
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-xs text-stone-500">
+                            {formattedDate}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedResetUser(u);
+                                  setIsResetPasswordModalOpen(true);
+                                }}
+                                className="h-8 text-xs font-medium border-stone-300 text-stone-700 hover:bg-stone-100 cursor-pointer"
+                              >
+                                🔑 Reset Password
+                              </Button>
+
+                              {u.isActive ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={isSelf || toggleUserStatusMutation.isPending}
+                                  title={
+                                    isSelf
+                                      ? "Cannot deactivate your own active Owner account"
+                                      : "Revoke terminal sign-in access"
+                                  }
+                                  onClick={() => {
+                                    setStatusConfirmUser({ user: u, targetActive: false });
+                                  }}
+                                  className={`h-8 text-xs font-medium cursor-pointer ${
+                                    isSelf
+                                      ? "opacity-50 cursor-not-allowed bg-stone-100 text-stone-400 border-stone-200"
+                                      : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                                  }`}
+                                >
+                                  Deactivate
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={toggleUserStatusMutation.isPending}
+                                  onClick={() => {
+                                    setStatusConfirmUser({ user: u, targetActive: true });
+                                  }}
+                                  className="h-8 text-xs font-medium border-emerald-300 text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+                                >
+                                  Activate
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Staff Account Status Confirmation Dialog */}
+      {statusConfirmUser && (
+        <Dialog
+          open={Boolean(statusConfirmUser)}
+          onOpenChange={(open) => {
+            if (!open) setStatusConfirmUser(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md bg-white border-stone-200 shadow-xl">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    statusConfirmUser.targetActive
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-rose-100 text-rose-800"
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-bold text-stone-900">
+                    {statusConfirmUser.targetActive
+                      ? "Reactivate Staff Account"
+                      : "Deactivate Staff Account"}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-stone-500">
+                    Confirm staff account status modification.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="py-2 text-sm text-stone-700">
+              {statusConfirmUser.targetActive ? (
+                <p>
+                  Are you sure you want to reactivate{" "}
+                  <strong>{statusConfirmUser.user.fullName}</strong> (
+                  <span className="font-mono text-xs">@{statusConfirmUser.user.username}</span>)?
+                  This user will immediately be permitted to sign into counter terminals.
+                </p>
+              ) : (
+                <p>
+                  Are you sure you want to deactivate{" "}
+                  <strong>{statusConfirmUser.user.fullName}</strong> (
+                  <span className="font-mono text-xs">@{statusConfirmUser.user.username}</span>)?
+                  This staff member will immediately be blocked from logging into the POS, logistics, and store management systems.
+                </p>
+              )}
+            </div>
+
+            <DialogFooter className="pt-2 gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStatusConfirmUser(null)}
+                className="border-stone-300 text-stone-700 hover:bg-stone-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  toggleUserStatusMutation.mutate(
+                    {
+                      id: statusConfirmUser.user.id,
+                      isActive: statusConfirmUser.targetActive,
+                    },
+                    {
+                      onSuccess: () => {
+                        setStatusConfirmUser(null);
+                      },
+                    }
+                  );
+                }}
+                disabled={toggleUserStatusMutation.isPending}
+                className={
+                  statusConfirmUser.targetActive
+                    ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+                    : "bg-rose-700 hover:bg-rose-800 text-white"
+                }
+              >
+                {statusConfirmUser.targetActive ? "Confirm Reactivation" : "Confirm Deactivation"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Staff Account Management Modals */}
+      <CreateUserModal
+        open={isCreateUserModalOpen}
+        onOpenChange={setIsCreateUserModalOpen}
+      />
+
+      <ResetPasswordModal
+        user={selectedResetUser}
+        open={isResetPasswordModalOpen}
+        onOpenChange={setIsResetPasswordModalOpen}
+      />
 
       {/* MODAL 1: Price History Drawer / Sheet */}
       <PriceHistorySheet

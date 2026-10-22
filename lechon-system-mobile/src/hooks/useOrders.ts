@@ -4,16 +4,18 @@ import apiClient from '../services/apiClient';
 export interface OrderDirectoryDto {
   id: number;
   orderReference?: string;
+  isDraft?: boolean;
   customerName: string;
   facebookName?: string | null;
   contactNumber: string;
   source?: string;
   eventType?: string | null;
-  deliveryAddress: string;
+  deliveryAddress?: string | null;
   landmark?: string | null;
+  remarks?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   routingStatus: string; // "Unassigned", "Assigned", "Delivered"
-  targetDeliveryTime: string;
+  targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
   grandTotal: number;
   downpayment: number;
@@ -50,12 +52,13 @@ export interface OrderDetailItemDto {
 export interface OrderDetailsDto {
   id: number;
   orderReference?: string;
+  isDraft?: boolean;
   customerName: string;
   facebookName?: string | null;
   contactNumber: string;
   source: string;
   eventType?: string | null;
-  deliveryAddress: string;
+  deliveryAddress?: string | null;
   landmark?: string | null;
   remarks?: string | null;
   price: number;
@@ -66,7 +69,7 @@ export interface OrderDetailsDto {
   grandTotal: number;
   balanceDue: number;
   isTrustedCustomer: boolean;
-  targetDeliveryTime: string;
+  targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
   isDeliveryDetailsConfirmed: boolean;
   isCancelled: boolean;

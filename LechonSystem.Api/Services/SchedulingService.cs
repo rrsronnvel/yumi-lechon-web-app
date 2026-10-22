@@ -72,7 +72,11 @@ namespace LechonSystem.Api.Services
                         .ThenInclude(o => o!.DeliveryTrip)
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.ItemCategory)
-                .Where(s => s.TargetDeliveryTime.Date == targetDate.Date)
+                .Where(s => s.TargetDeliveryTime.Date == targetDate.Date
+                         && s.OrderItem != null
+                         && s.OrderItem.Order != null
+                         && !s.OrderItem.Order.IsDraft
+                         && !s.OrderItem.Order.IsCancelled)
                 .Select(s => new
                 {
                     id = s.Id,

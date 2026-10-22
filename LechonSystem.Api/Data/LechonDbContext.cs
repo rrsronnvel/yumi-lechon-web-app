@@ -111,7 +111,8 @@ public class LechonDbContext : DbContext
                 FullName = "Business Owner",
                 Role = "Owner",
                 IsActive = true,
-                CreatedAt = seedDate
+                CreatedAt = seedDate,
+                UpdatedAt = seedDate
             },
             new User
             {
@@ -121,7 +122,8 @@ public class LechonDbContext : DbContext
                 FullName = "Store Cashier",
                 Role = "Cashier",
                 IsActive = true,
-                CreatedAt = seedDate
+                CreatedAt = seedDate,
+                UpdatedAt = seedDate
             }
         );
 
@@ -141,6 +143,10 @@ public class LechonDbContext : DbContext
 
         modelBuilder.Entity<CustomerProfile>()
             .HasIndex(c => c.ContactNumber)
+            .IsUnique();
+
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Username)
             .IsUnique();
     }
 }
