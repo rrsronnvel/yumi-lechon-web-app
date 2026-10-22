@@ -72,29 +72,29 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
         <table className="w-full table-fixed border-collapse text-left text-xs min-w-[1100px] xl:min-w-full">
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
-            <col className="w-[8%] min-w-[130px]" />  {/* 1. No. */}
+            <col className="w-[8%] min-w-[120px]" />  {/* 1. No. */}
             <col className="w-[6%]" />                {/* 2. Tahi */}
             <col className="w-[6%]" />                {/* 3. Salang */}
             <col className="w-[5.5%]" />              {/* 4. Priority */}
-            <col className="w-[7%]" />                {/* 5. Size */}
-            <col className="w-[5.5%]" />              {/* 6. Weight */}
+            <col className="w-[4.5%]" />              {/* 5. Size (Compact: fits "S. Jumbo") */}
+            <col className="w-[4.5%]" />              {/* 6. Weight */}
             <col className="w-[6.5%]" />              {/* 7. Delivery Time */}
             <col className="w-[8.5%]" />              {/* 8. Customer Name */}
             <col className="w-[6%]" />                {/* 9. Packaging Time */}
             <col className="w-[17%]" />               {/* 10. Remarks (Expanded) */}
-            <col className="w-[15%]" />               {/* 11. Location (Expanded) */}
-            <col className="w-[4.5%]" />              {/* 12. Add-ons */}
-            <col className="w-[7.5%]" />              {/* 13. Rider Name */}
+            <col className="w-[16.5%]" />             {/* 11. Location (Expanded) */}
+            <col className="w-[4%]" />                {/* 12. Add-ons */}
+            <col className="w-[7%]" />                {/* 13. Rider Name */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}
           <thead className="bg-black text-white">
             <tr className="border-b-2 border-black">
-              <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[130px] whitespace-nowrap font-mono font-bold">No.</th>
+              <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[120px] whitespace-nowrap font-mono font-bold">No.</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Tahi</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Salang</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Priority</th>
-              <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Size</th>
+              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 whitespace-nowrap">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Delivery</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
@@ -170,8 +170,8 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                     )}
                   </td>
 
-                  {/* 5. Size */}
-                  <td className="px-1.5 py-2 font-bold text-slate-800 border-r border-slate-300 leading-tight">
+                  {/* 5. Size (Compact & Centered: fits "S. Jumbo" without wrapping) */}
+                  <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 whitespace-nowrap text-xs">
                     {item.size || "-"}
                   </td>
 

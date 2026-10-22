@@ -53,6 +53,7 @@ export default function OrdersScreen() {
   const [rawSearch, setRawSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activePill, setActivePill] = useState<SmartPillKey>('upcoming');
+  const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(null);
 
   // 300ms debounce
@@ -62,6 +63,13 @@ export default function OrdersScreen() {
     }, 300);
     return () => clearTimeout(timer);
   }, [rawSearch]);
+
+  // Reset balanceSubFilter when activePill is not balance-due
+  useEffect(() => {
+    if (activePill !== 'balance-due') {
+      setBalanceSubFilter('all');
+    }
+  }, [activePill]);
 
   const currentServerTab = useMemo(() => {
     const found = FILTER_PILLS.find((p) => p.key === activePill);
@@ -76,7 +84,40 @@ export default function OrdersScreen() {
     refetch,
   } = useOrdersDirectory(debouncedSearch, currentServerTab);
 
-  // Apply client-side Today Only / Tomorrow filtering when those pills are active
+  // Dynamic custody counts for balance-due sub-pills
+  const custodyCounts = useMemo(() => {
+    if (!rawOrders) return { all: 0, rider: 0, drawer: 0, future: 0 };
+    const unpaid = rawOrders.filter(
+      (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
+    );
+    const todayMidnight = new Date().setHours(0, 0, 0, 0);
+
+    let rider = 0;
+    let drawer = 0;
+    let future = 0;
+
+    unpaid.forEach((o) => {
+      const isDrawer =
+        o.settlementCustodyStatus === 'InStaffDrawer' && !o.isRemittedToOwner;
+      const isRider =
+        Number(o.fulfillment) === 1 &&
+        (o.routingStatus === 'Assigned' || o.routingStatus === 'OutForDelivery') &&
+        o.settlementCustodyStatus !== 'InStaffDrawer' &&
+        !o.isRemittedToOwner;
+      const targetMidnight = new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0);
+      const isFuture =
+        targetMidnight > todayMidnight &&
+        (o.settlementCustodyStatus === 'Uncollected' || !o.settlementCustodyStatus);
+
+      if (isDrawer) drawer++;
+      if (isRider) rider++;
+      if (isFuture) future++;
+    });
+
+    return { all: unpaid.length, rider, drawer, future };
+  }, [rawOrders]);
+
+  // Apply client-side Today Only / Tomorrow and Balance Due Sub-filtering
   const filteredOrders = useMemo(() => {
     if (!rawOrders) return [];
     if (activePill === 'today') {
@@ -94,8 +135,46 @@ export default function OrdersScreen() {
         return !isNaN(target.getTime()) && isSameLocalDay(target, tomorrow);
       });
     }
+    if (activePill === 'balance-due') {
+      const unpaid = rawOrders.filter(
+        (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
+      );
+      if (balanceSubFilter === 'all') return unpaid;
+
+      const todayMidnight = new Date().setHours(0, 0, 0, 0);
+
+      return unpaid.filter((o) => {
+        if (balanceSubFilter === 'rider') {
+          return (
+            Number(o.fulfillment) === 1 &&
+            (o.routingStatus === 'Assigned' || o.routingStatus === 'OutForDelivery') &&
+            o.settlementCustodyStatus !== 'InStaffDrawer' &&
+            !o.isRemittedToOwner
+          );
+        }
+        if (balanceSubFilter === 'drawer') {
+          return (
+            o.settlementCustodyStatus === 'InStaffDrawer' && !o.isRemittedToOwner
+          );
+        }
+        if (balanceSubFilter === 'future') {
+          const targetMidnight = new Date(o.targetDeliveryTime).setHours(
+            0,
+            0,
+            0,
+            0
+          );
+          return (
+            targetMidnight > todayMidnight &&
+            (o.settlementCustodyStatus === 'Uncollected' ||
+              !o.settlementCustodyStatus)
+          );
+        }
+        return true;
+      });
+    }
     return rawOrders;
-  }, [rawOrders, activePill]);
+  }, [rawOrders, activePill, balanceSubFilter]);
 
   const formatCardSchedule = (dateStr: string) => {
     const target = new Date(dateStr);
@@ -168,6 +247,43 @@ export default function OrdersScreen() {
     );
   };
 
+  const renderCustodyPill = (order: OrderDirectoryDto) => {
+    if (order.settlementCustodyStatus === 'InStaffDrawer') {
+      return (
+        <View style={[styles.custodyPill, styles.custodyPillDrawer]}>
+          <Text style={styles.custodyPillDrawerText}>🟡 In Drawer</Text>
+        </View>
+      );
+    }
+    if (
+      Number(order.fulfillment) === 1 &&
+      (order.routingStatus === 'Assigned' || order.routingStatus === 'OutForDelivery')
+    ) {
+      return (
+        <View style={[styles.custodyPill, styles.custodyPillRider]}>
+          <Text style={styles.custodyPillRiderText}>🛵 Road Cash</Text>
+        </View>
+      );
+    }
+    const targetMidnight = new Date(order.targetDeliveryTime).setHours(0, 0, 0, 0);
+    const todayMidnight = new Date().setHours(0, 0, 0, 0);
+    if (targetMidnight > todayMidnight) {
+      return (
+        <View style={[styles.custodyPill, styles.custodyPillFuture]}>
+          <Text style={styles.custodyPillFutureText}>📅 Advance</Text>
+        </View>
+      );
+    }
+    if (Number(order.fulfillment) === 0) {
+      return (
+        <View style={[styles.custodyPill, styles.custodyPillPickup]}>
+          <Text style={styles.custodyPillPickupText}>🏪 Store Pickup</Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
   const renderOrderCard = ({ item }: { item: OrderDirectoryDto }) => {
     const schedule = formatCardSchedule(item.targetDeliveryTime);
     const balanceDue = Number(item.balanceDue || 0);
@@ -222,9 +338,12 @@ export default function OrdersScreen() {
             {isPaid ? (
               <Text style={styles.paidFullText}>🟢 Paid in Full</Text>
             ) : (
-              <Text style={styles.balanceDueText}>
-                🔴 ₱{balanceDue.toLocaleString()} Due
-              </Text>
+              <View style={styles.balanceWithPillRow}>
+                <Text style={styles.balanceDueText}>
+                  🔴 ₱{balanceDue.toLocaleString()} Due
+                </Text>
+                {renderCustodyPill(item)}
+              </View>
             )}
           </View>
         </View>
@@ -296,6 +415,85 @@ export default function OrdersScreen() {
           })}
         </ScrollView>
       </View>
+
+      {/* Secondary Horizontal Scrollable Sub-Pills for Balance Due */}
+      {activePill === 'balance-due' && (
+        <View style={styles.subPillsWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.subPillsContent}
+          >
+            <Pressable
+              style={[
+                styles.subFilterPill,
+                balanceSubFilter === 'all' && styles.subFilterPillActive,
+              ]}
+              onPress={() => setBalanceSubFilter('all')}
+            >
+              <Text
+                style={[
+                  styles.subFilterPillText,
+                  balanceSubFilter === 'all' && styles.subFilterPillTextActive,
+                ]}
+              >
+                📋 All Unpaid ({custodyCounts.all})
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.subFilterPill,
+                balanceSubFilter === 'rider' && styles.subFilterPillActive,
+              ]}
+              onPress={() => setBalanceSubFilter('rider')}
+            >
+              <Text
+                style={[
+                  styles.subFilterPillText,
+                  balanceSubFilter === 'rider' && styles.subFilterPillTextActive,
+                ]}
+              >
+                🛵 Road Cash ({custodyCounts.rider})
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.subFilterPill,
+                balanceSubFilter === 'drawer' && styles.subFilterPillActive,
+              ]}
+              onPress={() => setBalanceSubFilter('drawer')}
+            >
+              <Text
+                style={[
+                  styles.subFilterPillText,
+                  balanceSubFilter === 'drawer' && styles.subFilterPillTextActive,
+                ]}
+              >
+                🟡 In Drawer ({custodyCounts.drawer})
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.subFilterPill,
+                balanceSubFilter === 'future' && styles.subFilterPillActive,
+              ]}
+              onPress={() => setBalanceSubFilter('future')}
+            >
+              <Text
+                style={[
+                  styles.subFilterPillText,
+                  balanceSubFilter === 'future' && styles.subFilterPillTextActive,
+                ]}
+              >
+                📅 Advance ({custodyCounts.future})
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      )}
 
       {/* Result Counter Bar */}
       <View style={styles.counterBar}>
@@ -418,6 +616,38 @@ const styles = StyleSheet.create({
   pillsContent: {
     paddingHorizontal: 14,
     gap: 8,
+  },
+  subPillsWrapper: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E7E5E4',
+    paddingBottom: 8,
+    paddingTop: 2,
+  },
+  subPillsContent: {
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  subFilterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#F5F5F4',
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+  },
+  subFilterPillActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#B45309',
+  },
+  subFilterPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#44403C',
+  },
+  subFilterPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   filterPill: {
     paddingHorizontal: 12,
@@ -587,6 +817,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#DC2626',
+  },
+  balanceWithPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  custodyPill: {
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  custodyPillDrawer: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  custodyPillDrawerText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  custodyPillRider: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  custodyPillRiderText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  custodyPillFuture: {
+    backgroundColor: '#F5F5F4',
+    borderColor: '#E7E5E4',
+  },
+  custodyPillFutureText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  custodyPillPickup: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  custodyPillPickupText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#047857',
   },
   cardBottomRow: {
     flexDirection: 'row',

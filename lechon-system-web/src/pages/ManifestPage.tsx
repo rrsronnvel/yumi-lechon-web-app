@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   usePendingSettlements,
   usePendingPickupsQuery,
   usePendingLalamoveQuery,
   useRevertCustodyMutation,
+  computeCustodyMetrics,
   PendingSettlementDrop,
 } from "@/hooks/useManifest";
 import { useAuth } from "@/context/AuthContext";
@@ -22,6 +23,11 @@ export default function ManifestPage() {
   const { data: pickupDrops = [] } = usePendingPickupsQuery();
   const { data: lalamoveDrops = [] } = usePendingLalamoveQuery();
   const revertCustodyMutation = useRevertCustodyMutation();
+
+  const { inDrawerTotal, inDrawerCount, uncollectedTotal, uncollectedCount } =
+    useMemo(() => {
+      return computeCustodyMetrics(drops, pickupDrops);
+    }, [drops, pickupDrops]);
 
   const handleRevertCustody = (orderId: number) => {
     revertCustodyMutation.mutate(orderId, {
@@ -91,6 +97,51 @@ export default function ManifestPage() {
         <p className="text-sm text-stone-500 mt-1">
           Two-Hop Custody & Tri-Stream Reconciliation Center — Settle returning freelance riders via one-time QR handshakes, track staff drawer custody, and remit to store owner.
         </p>
+      </div>
+
+      {/* Staff Drawer & Floating Custody Overview HUD */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Card 1: In Staff Drawer */}
+        <div className="bg-stone-900/90 border border-amber-500/30 rounded-xl p-5 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <span className="h-3 w-3 rounded-full bg-amber-400 inline-block mr-2 animate-pulse" />
+              <span className="text-sm font-semibold text-amber-200">
+                In Staff Drawer
+              </span>
+            </div>
+            <span className="text-xs text-stone-400 bg-stone-800/80 px-2.5 py-0.5 rounded-full font-mono">
+              {inDrawerCount} items
+            </span>
+          </div>
+          <div className="text-3xl font-extrabold text-amber-400 font-mono tracking-tight my-1">
+            ₱{inDrawerTotal.toLocaleString()}
+          </div>
+          <p className="text-xs text-stone-400">
+            Awaiting Owner Turnover (Hop 2)
+          </p>
+        </div>
+
+        {/* Card 2: Uncollected */}
+        <div className="bg-stone-900/90 border border-stone-800 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <span className="h-3 w-3 rounded-full bg-stone-400 inline-block mr-2" />
+              <span className="text-sm font-semibold text-stone-200">
+                Uncollected
+              </span>
+            </div>
+            <span className="text-xs text-stone-400 bg-stone-800/80 px-2.5 py-0.5 rounded-full font-mono">
+              {uncollectedCount} items
+            </span>
+          </div>
+          <div className="text-3xl font-extrabold text-stone-100 font-mono tracking-tight my-1">
+            ₱{uncollectedTotal.toLocaleString()}
+          </div>
+          <p className="text-xs text-stone-400">
+            Road Riders & Counter Pickups
+          </p>
+        </div>
       </div>
 
       <Tabs defaultValue="riders" className="w-full space-y-6">

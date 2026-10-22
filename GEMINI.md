@@ -112,7 +112,7 @@ yumi-lechon-web-app/
     ├── src/
     │   ├── pages/                   # Application route views
     │   │   ├── DashboardPage.tsx    # Zero-Inbox Command Center & Remittance Alerts
-    │   │   ├── OrdersPage.tsx       # Master Order Directory, POS Modal, Dossier Drawer
+    │   │   ├── OrdersPage.tsx       # Master Order Directory, Balance Due Sub-Pills, POS Modal, Dossier Drawer
     │   │   ├── KitchenPage.tsx      # Real-Time KDS Kanban & Roasting Spit Queue
     │   │   ├── InventoryPage.tsx    # Live Balance Scoreboard & Audit Ledger Tabs
     │   │   ├── LogisticsPage.tsx    # Live Operations & Tomorrow's Dispatch Planner
@@ -250,6 +250,7 @@ Every AI agent and software engineer working on this repository must strictly ad
   1. `Physical Cash`: Rider hands physical notes to the cashier.
   2. `Direct GCash`: Customer sent money directly to store's main QR/phone.
   3. `Rider GCash Remittance`: Rider collected cash and transferred electronically to store GCash.
+* **Granular Cash Custody Sub-Pills (Directory Parity):** Slices active unpaid balances into `Road Cash` (in rider pouches on the street), `In Staff Drawer` (unremitted floor custody), and `Advance` (future AR commitments), providing instant cross-platform audit clarity and deep-link reconciliation.
 
 #### 4. The Zero-Inbox Dashboard Trigger Windows
 * **4-Day Reminder Window:** Surfaces unpaid orders for staff to follow up via Facebook Messenger.

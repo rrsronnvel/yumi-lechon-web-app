@@ -100,6 +100,12 @@ using (var scope = app.Services.CreateScope())
         INNER JOIN Orders o ON oi.OrderId = o.Id
         WHERE oi.Price = 0 AND o.IsCancelled = 0 AND o.TargetDeliveryTime >= CAST(GETDATE() AS DATE);
     ");
+
+    // QA Test Data Seeder
+    if (app.Environment.IsDevelopment())
+    {
+        await QaDataSeeder.SeedQaDataAsync(scope.ServiceProvider);
+    }
 }
 
 // ==========================================
@@ -107,11 +113,9 @@ using (var scope = app.Services.CreateScope())
 // All 'app.Use...' statements stay down here!
 // ==========================================
 
-
-    app.MapOpenApi();
-    app.UseSwagger();
-    app.UseSwaggerUI();
-
+app.MapOpenApi();
+app.UseSwagger();
+app.UseSwaggerUI();
 
 // 🟢 Use CORS right before mapping routes
 app.UseCors("AllowReactApp"); 

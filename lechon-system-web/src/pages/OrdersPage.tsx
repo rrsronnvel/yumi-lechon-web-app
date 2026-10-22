@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
   useOrdersDirectory,
@@ -65,8 +66,10 @@ const PRESET_CANCEL_REASONS = [
 ];
 
 export default function OrdersPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [filterTab, setFilterTab] = useState("upcoming");
+  const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [rawSearch, setRawSearch] = useState("");
   const debouncedSearch = useDebounce(rawSearch, 300);
 
@@ -74,6 +77,92 @@ export default function OrdersPage() {
     debouncedSearch,
     filterTab
   );
+
+  // Reset sub-filter when leaving balance-due tab
+  useEffect(() => {
+    if (filterTab !== "balance-due") {
+      setBalanceSubFilter("all");
+    }
+  }, [filterTab]);
+
+  // Dynamic calculation for Balance Due custody counts
+  const unpaidOrders = useMemo(() => {
+    return (orders || []).filter(
+      (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
+    );
+  }, [orders]);
+
+  const custodyCounts = useMemo(() => {
+    const todayMidnight = new Date().setHours(0, 0, 0, 0);
+
+    let rider = 0;
+    let drawer = 0;
+    let future = 0;
+
+    unpaidOrders.forEach((o) => {
+      const isDrawer =
+        o.settlementCustodyStatus === "InStaffDrawer" && !o.isRemittedToOwner;
+      const isRider =
+        Number(o.fulfillment) === 1 &&
+        (o.routingStatus === "Assigned" || o.routingStatus === "OutForDelivery") &&
+        o.settlementCustodyStatus !== "InStaffDrawer" &&
+        !o.isRemittedToOwner;
+      const targetMidnight = new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0);
+      const isFuture =
+        targetMidnight > todayMidnight &&
+        (o.settlementCustodyStatus === "Uncollected" || !o.settlementCustodyStatus);
+
+      if (isDrawer) drawer++;
+      if (isRider) rider++;
+      if (isFuture) future++;
+    });
+
+    return {
+      all: unpaidOrders.length,
+      rider,
+      drawer,
+      future,
+    };
+  }, [unpaidOrders]);
+
+  const displayedOrders = useMemo(() => {
+    if (!orders) return [];
+    if (filterTab !== "balance-due") return orders;
+
+    if (balanceSubFilter === "all") return unpaidOrders;
+
+    const todayMidnight = new Date().setHours(0, 0, 0, 0);
+
+    return unpaidOrders.filter((o) => {
+      if (balanceSubFilter === "rider") {
+        return (
+          Number(o.fulfillment) === 1 &&
+          (o.routingStatus === "Assigned" || o.routingStatus === "OutForDelivery") &&
+          o.settlementCustodyStatus !== "InStaffDrawer" &&
+          !o.isRemittedToOwner
+        );
+      }
+      if (balanceSubFilter === "drawer") {
+        return (
+          o.settlementCustodyStatus === "InStaffDrawer" && !o.isRemittedToOwner
+        );
+      }
+      if (balanceSubFilter === "future") {
+        const targetMidnight = new Date(o.targetDeliveryTime).setHours(
+          0,
+          0,
+          0,
+          0
+        );
+        return (
+          targetMidnight > todayMidnight &&
+          (o.settlementCustodyStatus === "Uncollected" ||
+            !o.settlementCustodyStatus)
+        );
+      }
+      return true;
+    });
+  }, [orders, filterTab, balanceSubFilter, unpaidOrders]);
 
   const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(
     null
@@ -283,6 +372,43 @@ export default function OrdersPage() {
     );
   };
 
+  const renderCustodyBadge = (order: OrderDirectoryDto) => {
+    if (order.settlementCustodyStatus === "InStaffDrawer") {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-sans">
+          🟡 In Drawer
+        </span>
+      );
+    }
+    if (
+      Number(order.fulfillment) === 1 &&
+      (order.routingStatus === "Assigned" || order.routingStatus === "OutForDelivery")
+    ) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-sans">
+          🛵 Road Cash
+        </span>
+      );
+    }
+    const targetMidnight = new Date(order.targetDeliveryTime).setHours(0, 0, 0, 0);
+    const todayMidnight = new Date().setHours(0, 0, 0, 0);
+    if (targetMidnight > todayMidnight) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-sans">
+          📅 Advance
+        </span>
+      );
+    }
+    if (Number(order.fulfillment) === 0) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-sans">
+          🏪 Store Pickup
+        </span>
+      );
+    }
+    return null;
+  };
+
   const renderFinancialGrid = (order: OrderDirectoryDto) => {
     const isPaid = Number(order.balanceDue || 0) <= 0;
     return (
@@ -294,9 +420,12 @@ export default function OrdersPage() {
           {isPaid ? (
             <span className="text-emerald-700">🟢 Paid in Full</span>
           ) : (
-            <span className="text-red-600">
-              🔴 ₱{Number(order.balanceDue || 0).toLocaleString()} Due
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-red-600">
+                🔴 ₱{Number(order.balanceDue || 0).toLocaleString()} Due
+              </span>
+              {renderCustodyBadge(order)}
+            </div>
           )}
         </div>
       </div>
@@ -354,7 +483,7 @@ export default function OrdersPage() {
         </CardTitle>
         <div className="text-xs font-mono font-medium text-stone-600 bg-white px-2.5 py-1 rounded-md border border-stone-200 shadow-2xs">
           Showing{" "}
-          <strong className="text-stone-900">{orders?.length ?? 0}</strong>{" "}
+          <strong className="text-stone-900">{displayedOrders.length}</strong>{" "}
           orders
         </div>
       </CardHeader>
@@ -380,7 +509,7 @@ export default function OrdersPage() {
                   </div>
                 </TableCell>
               </TableRow>
-            ) : orders?.length === 0 ? (
+            ) : displayedOrders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-12 text-stone-500">
                   <div className="flex flex-col items-center justify-center gap-1">
@@ -392,7 +521,7 @@ export default function OrdersPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              orders?.map((order: OrderDirectoryDto) => (
+              displayedOrders.map((order: OrderDirectoryDto) => (
                 <TableRow
                   key={order.id}
                   className="cursor-pointer hover:bg-amber-50/40 transition-colors border-b border-stone-100"
@@ -519,7 +648,14 @@ export default function OrdersPage() {
       </div>
 
       {/* 6-Tab Switch Slicing */}
-      <Tabs value={filterTab} onValueChange={setFilterTab} className="w-full">
+      <Tabs
+        value={filterTab}
+        onValueChange={(val) => {
+          setFilterTab(val);
+          if (val !== "balance-due") setBalanceSubFilter("all");
+        }}
+        className="w-full"
+      >
         <TabsList className="flex flex-wrap gap-1 h-auto p-1 bg-stone-200/60 border border-stone-200 rounded-lg">
           <TabsTrigger
             value="upcoming"
@@ -558,6 +694,111 @@ export default function OrdersPage() {
             📚 All Time
           </TabsTrigger>
         </TabsList>
+
+        {/* Secondary Sub-Pill Bar for Balance Due */}
+        {filterTab === "balance-due" && (
+          <div
+            className="flex flex-wrap items-center gap-2 pt-3 pb-1"
+            role="group"
+            aria-label="Balance due sub-filters"
+          >
+            <button
+              type="button"
+              aria-pressed={balanceSubFilter === "all"}
+              onClick={() => setBalanceSubFilter("all")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
+                balanceSubFilter === "all"
+                  ? "bg-amber-600 text-white font-medium shadow-sm"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              )}
+            >
+              <span>📋 All Unpaid</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                  balanceSubFilter === "all"
+                    ? "bg-amber-700 text-amber-100"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {custodyCounts.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={balanceSubFilter === "rider"}
+              onClick={() => setBalanceSubFilter("rider")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
+                balanceSubFilter === "rider"
+                  ? "bg-amber-600 text-white font-medium shadow-sm"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              )}
+            >
+              <span>🛵 Road Cash</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                  balanceSubFilter === "rider"
+                    ? "bg-amber-700 text-amber-100"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {custodyCounts.rider}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={balanceSubFilter === "drawer"}
+              onClick={() => setBalanceSubFilter("drawer")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
+                balanceSubFilter === "drawer"
+                  ? "bg-amber-600 text-white font-medium shadow-sm"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              )}
+            >
+              <span>🟡 In Drawer</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                  balanceSubFilter === "drawer"
+                    ? "bg-amber-700 text-amber-100"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {custodyCounts.drawer}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={balanceSubFilter === "future"}
+              onClick={() => setBalanceSubFilter("future")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
+                balanceSubFilter === "future"
+                  ? "bg-amber-600 text-white font-medium shadow-sm"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              )}
+            >
+              <span>📅 Advance</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                  balanceSubFilter === "future"
+                    ? "bg-amber-700 text-amber-100"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {custodyCounts.future}
+              </span>
+            </button>
+          </div>
+        )}
 
         <TabsContent value={filterTab} className="mt-4">
           {renderDataGrid()}
@@ -1189,6 +1430,45 @@ export default function OrdersPage() {
                           ).toLocaleString()}
                         </span>
                       </div>
+
+                      {/* Physical Cash Custody / Manifest Deep-Link Action */}
+                      {(orderDetails.settlementCustodyStatus === "InStaffDrawer" ||
+                        selectedOrder?.settlementCustodyStatus === "InStaffDrawer" ||
+                        orderDetails.routingStatus === "Assigned" ||
+                        selectedOrder?.routingStatus === "Assigned") && (
+                        <div className="mt-3 pt-3 border-t border-stone-200 flex items-center justify-between bg-amber-50/80 p-3 rounded-lg border border-amber-200">
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+                              {(orderDetails.settlementCustodyStatus || selectedOrder?.settlementCustodyStatus) === "InStaffDrawer" ? (
+                                <>
+                                  <span>🟡</span>
+                                  <span>In Staff Drawer</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>🛵</span>
+                                  <span>In Rider Custody</span>
+                                </>
+                              )}
+                            </p>
+                            <p className="text-[11px] text-amber-800">
+                              Physical cash custody is active. Reconcile or settle via Manifest.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs font-medium border-amber-300 text-amber-900 hover:bg-amber-100 bg-white shadow-2xs gap-1 cursor-pointer shrink-0"
+                            onClick={() => {
+                              setIsSheetOpen(false);
+                              navigate("/manifest");
+                            }}
+                          >
+                            View in Manifest ➔
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
 

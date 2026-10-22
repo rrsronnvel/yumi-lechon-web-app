@@ -47,6 +47,7 @@ public class OrderDetailsDto
     public int CustomerTotalOrdersCount { get; set; }
     public string? CustomerPreferences { get; set; }
     public string? CustomerComplaintHistory { get; set; }
+    public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
 
     public List<OrderDetailItemDto> OrderItems { get; set; } = new();
 }

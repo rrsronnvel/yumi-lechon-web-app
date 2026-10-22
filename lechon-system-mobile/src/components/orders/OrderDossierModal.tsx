@@ -125,6 +125,13 @@ export default function OrderDossierModal({
     fallbackOrder?.routingStatus ||
     'Unassigned'
   ).trim();
+  const custodyStatus = (
+    orderDetails?.settlementCustodyStatus ||
+    fallbackOrder?.settlementCustodyStatus ||
+    'Uncollected'
+  ).trim();
+  const isPhysicalCustodyActive =
+    custodyStatus === 'InStaffDrawer' || routingStatus === 'Assigned';
 
   const handleCallNumber = async (phone?: string | null) => {
     const cleanPhone = (phone || '').trim();
@@ -438,6 +445,21 @@ export default function OrderDossierModal({
                     fallbackOrder?.cancellationReason ||
                     'No cancellation reason recorded.'}
                 </Text>
+              </View>
+            )}
+
+            {/* Physical Cash Custody Banner Note */}
+            {isPhysicalCustodyActive && (
+              <View style={styles.physicalCustodyBanner}>
+                <Text style={styles.physicalCustodyBannerIcon}>🟡</Text>
+                <View style={styles.physicalCustodyBannerContent}>
+                  <Text style={styles.physicalCustodyBannerTitle}>
+                    Physical Cash Custody Active
+                  </Text>
+                  <Text style={styles.physicalCustodyBannerSubtitle}>
+                    Physical cash custody is active. Settle via Owner Drawer tab.
+                  </Text>
+                </View>
               </View>
             )}
 
@@ -892,6 +914,14 @@ export default function OrderDossierModal({
                       : `🔴 ₱${computedBalanceDue.toLocaleString()}`}
                   </Text>
                 </View>
+
+                {isPhysicalCustodyActive && (
+                  <View style={styles.financialCustodyNotice}>
+                    <Text style={styles.financialCustodyNoticeText}>
+                      ⚠️ Physical cash custody is active. Settle via Owner Drawer tab.
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* In-Dossier Quick Payment Logger */}
@@ -1396,6 +1426,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#881337',
+  },
+  physicalCustodyBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  physicalCustodyBannerIcon: {
+    fontSize: 20,
+  },
+  physicalCustodyBannerContent: {
+    flex: 1,
+  },
+  physicalCustodyBannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  physicalCustodyBannerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#B45309',
+  },
+  financialCustodyNotice: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  financialCustodyNoticeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#B45309',
   },
   card: {
     backgroundColor: '#FFFFFF',

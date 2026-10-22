@@ -24,6 +24,9 @@ export interface OrderDirectoryDto {
   createdBy: string;
   updatedAt?: string | null;
   hasRecentEdits: boolean;
+  settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
+  riderName?: string | null;
+  isRemittedToOwner?: boolean;
 }
 
 export const useOrdersDirectory = (

@@ -24,4 +24,7 @@ public class OrderDirectoryDto
     public string CreatedBy { get; set; } = "System";
     public DateTime? UpdatedAt { get; set; }
     public bool HasRecentEdits { get; set; }
+    public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
+    public string? RiderName { get; set; }
+    public bool IsRemittedToOwner { get; set; }
 }

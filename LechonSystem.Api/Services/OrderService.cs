@@ -351,7 +351,10 @@ namespace LechonSystem.Api.Services
                     CancellationReason = o.CancellationReason,
                     CreatedBy = o.CreatedBy,
                     UpdatedAt = o.UpdatedAt,
-                    HasRecentEdits = o.UpdatedAt.HasValue && o.UpdatedAt.Value >= recentCutoff
+                    HasRecentEdits = o.UpdatedAt.HasValue && o.UpdatedAt.Value >= recentCutoff,
+                    SettlementCustodyStatus = o.SettlementCustodyStatus ?? "Uncollected",
+                    IsRemittedToOwner = o.SettlementCustodyStatus == "Settled",
+                    RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : o.RiderSignedBy
                 })
                 .ToListAsync();
 
@@ -632,6 +635,7 @@ namespace LechonSystem.Api.Services
                 Fulfillment = (int)order.Fulfillment,
                 RoutingStatus = order.RoutingStatus.ToString(),
                 DeliveryTripId = order.DeliveryTripId,
+                SettlementCustodyStatus = order.SettlementCustodyStatus ?? "Uncollected",
                 OrderItems = order.OrderItems.Select(i => new OrderDetailItemDto
                 {
                     Id = i.Id,

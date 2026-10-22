@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 
@@ -12,6 +13,7 @@ export interface PendingSettlementDrop {
   riderDeliveryFee: number;
   netRemittance: number;
   custodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
+  settlementCustodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
   riderSignedBy?: string | null;
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
@@ -42,6 +44,7 @@ export interface PendingPickupSettlement {
   landmark?: string | null;
   remarks?: string;
   custodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
+  settlementCustodyStatus?: string; // "Uncollected" | "InStaffDrawer" | "Settled"
   riderSignedBy?: string | null;
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
@@ -60,6 +63,8 @@ export interface PendingLalamoveSettlement {
   isClearedForRelease: boolean;
   isReleased: boolean;
   remarks?: string;
+  custodyStatus?: string;
+  settlementCustodyStatus?: string;
 }
 
 // QR Settlement Data Types
@@ -446,4 +451,78 @@ export const useDirectGcashSettlementMutation = () => {
       ]);
     },
   });
+};
+
+// ==========================================
+// 8. Staff Drawer & Floating Custody Overview HUD
+// ==========================================
+
+export interface CustodyOverviewMetrics {
+  inDrawerTotal: number;
+  inDrawerCount: number;
+  uncollectedTotal: number;
+  uncollectedCount: number;
+}
+
+export function computeCustodyMetrics(
+  riderDrops: PendingSettlementDrop[] = [],
+  pickupDrops: PendingPickupSettlement[] = []
+): CustodyOverviewMetrics {
+  let inDrawerTotal = 0;
+  let inDrawerCount = 0;
+  let uncollectedTotal = 0;
+  let uncollectedCount = 0;
+
+  for (const r of riderDrops) {
+    const status = r.settlementCustodyStatus || r.custodyStatus || "Uncollected";
+    const amount = Number(r.netRemittance || 0);
+
+    if (status === "InStaffDrawer") {
+      inDrawerTotal += amount;
+      inDrawerCount += 1;
+    } else if (status === "Uncollected" && amount > 0) {
+      uncollectedTotal += amount;
+      uncollectedCount += 1;
+    }
+  }
+
+  for (const p of pickupDrops) {
+    const status = p.settlementCustodyStatus || p.custodyStatus || "Uncollected";
+    const amount = Number(p.balanceDue || 0);
+
+    if (status === "InStaffDrawer") {
+      inDrawerTotal += amount;
+      inDrawerCount += 1;
+    } else if (status === "Uncollected" && amount > 0) {
+      uncollectedTotal += amount;
+      uncollectedCount += 1;
+    }
+  }
+
+  return {
+    inDrawerTotal,
+    inDrawerCount,
+    uncollectedTotal,
+    uncollectedCount,
+  };
+}
+
+export const useCustodyOverview = (
+  riderDrops?: PendingSettlementDrop[],
+  pickupDrops?: PendingPickupSettlement[]
+) => {
+  const { data: defaultRiders = [], isLoading: isLoadingRiders } = usePendingSettlements();
+  const { data: defaultPickups = [], isLoading: isLoadingPickups } = usePendingPickupsQuery();
+
+  const activeRiders = riderDrops ?? defaultRiders;
+  const activePickups = pickupDrops ?? defaultPickups;
+
+  const metrics = useMemo(() => {
+    return computeCustodyMetrics(activeRiders, activePickups);
+  }, [activeRiders, activePickups]);
+
+  return {
+    ...metrics,
+    isLoading: isLoadingRiders || isLoadingPickups,
+  };
 };

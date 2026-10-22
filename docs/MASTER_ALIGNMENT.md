@@ -314,6 +314,34 @@ To ensure consistency with the POS terminal and eliminate layout squishing in th
 
 - Includes an explicit secondary [Discard / Cancel] button beside [Save Modifications] allowing staff to safely exit without committing accidental form changes.
 
+#### 7.5 Granular Cash Custody Sub-Pill Filtering & Audit Badges for Balance Due Directory
+
+In high-volume catering operations, an aggregate "Balance Due" figure creates operational ambiguity because it conflates two fundamentally different financial realities:
+1. **Accounts Receivable (Advance Bookings):** Unpaid balances for scheduled future bookings (e.g. next weekend) where money has not yet exchanged hands and collection occurs upon fulfillment.
+2. **Physical Floor Cash Custody (Immediate Settlement Liability):** Real physical banknotes collected from customers on today's routes or at the front counter that currently reside either inside freelance riders' pouches on the road (`Road Cash`) or inside staff cash drawers (`In Staff Drawer`), requiring reconciliation and remittance to the business owner via Manifest/Drawer settlement.
+
+To eliminate this ambiguity, the Master Order Directory features granular secondary sub-pill filtering and contextual micro-badges across Web and Mobile:
+
+1. **Sub-Filter State & Predicate Taxonomy:**
+   When the `💵 Balance Due` tab is active, a secondary horizontal sub-pill row dynamically slices all orders with `BalanceDue > 0`:
+   - `📋 All Unpaid ('all')`: The complete set of active bookings with outstanding balances.
+   - `🛵 Road Cash ('rider')`: Delivery orders assigned to active trips or out for delivery (`Fulfillment === 1 && (RoutingStatus === "Assigned" || RoutingStatus === "OutForDelivery") && SettlementCustodyStatus !== "InStaffDrawer" && !IsRemittedToOwner`). Cash is physically in the rider's custody on the street.
+   - `🟡 In Drawer ('drawer')`: Orders whose collected cash has been handed over by riders or counter pickup customers and logged into the store staff drawer (`SettlementCustodyStatus === "InStaffDrawer" && !IsRemittedToOwner`).
+   - `📅 Advance ('future')`: Orders with a target delivery schedule strictly after today midnight (`TargetDeliveryTime > Today (00:00:00)`) with `SettlementCustodyStatus === "Uncollected"`. These represent future AR commitments rather than cash currently floating on the floor.
+
+2. **Visual Micro-Badges on Balance Column:**
+   Directly below or beside the red `🔴 ₱XX,XXX Due` figure on each row or card:
+   - `🟡 In Drawer`: Highlighted in golden amber for cash received at the store drawer.
+   - `🛵 Road Cash`: Highlighted in blue for cash held by freelance riders on the road.
+   - `📅 Advance`: Neutral slate badge indicating scheduled forward bookings.
+   - `🏪 Store Pickup`: Emerald badge indicating counter collection orders ready for payment upon customer arrival.
+
+3. **In-Dossier Manifest Deep-Link & Active Custody Warnings:**
+   When inspecting an individual order in the Customer Dossier (`<Sheet>` on Web or modal on Mobile):
+   - If physical cash custody is active (`SettlementCustodyStatus === "InStaffDrawer"` or `RoutingStatus === "Assigned"`), a prominent amber notice warns dispatchers and cashiers that physical cash custody is active.
+   - On Web, an actionable `[View in Manifest ➔]` shortcut navigates directly to `/manifest` for immediate settlement and reconciliation.
+   - On Mobile, cashiers are explicitly directed to settle via the dedicated `👑 Drawer` tab.
+
 ### 8. Inventory Ledger, Dual-Balance Forecasting & Procurement Engine
 
 The inventory subsystem serves as the immutable "bank statement for pigs," separating physical chest freezer contents from operational forward commitments. All calculations operate on continuous weight brackets (categories) rather than individual ear tags.

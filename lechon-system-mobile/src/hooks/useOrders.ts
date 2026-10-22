@@ -24,6 +24,9 @@ export interface OrderDirectoryDto {
   createdBy: string;
   updatedAt?: string | null;
   hasRecentEdits: boolean;
+  settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
+  riderName?: string | null;
+  isRemittedToOwner?: boolean;
 }
 
 export interface OrderDetailCategoryDto {
@@ -81,6 +84,7 @@ export interface OrderDetailsDto {
   customerTotalOrdersCount?: number;
   customerPreferences?: string | null;
   customerComplaintHistory?: string | null;
+  settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   orderItems: OrderDetailItemDto[];
 }
 
