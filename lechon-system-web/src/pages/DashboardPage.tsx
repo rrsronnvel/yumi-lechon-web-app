@@ -9,6 +9,8 @@ import {
   useDeliveryVerifications,
   useDefrostRoster,
   useRenegotiationTasks,
+  usePendingOwnerConfirmations,
+  useConfirmOwnerOrderMutation,
 } from "@/hooks/useDashboard";
 import { usePendingSettlements, PendingSettlementDrop } from "@/hooks/useManifest";
 import { useOrderDetails } from "@/hooks/useOrderDetails";
@@ -135,6 +137,9 @@ export default function DashboardPage() {
   const { data: defrost, isLoading: defrostLoading } = useDefrostRoster();
   const { data: settlements = [] } = usePendingSettlements();
   const { data: renegotiations } = useRenegotiationTasks();
+  const { data: pendingOwnerConfirmations = [] } =
+    usePendingOwnerConfirmations();
+  const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const { data: inventoryBalances = [] } = useInventoryBalances();
   const { data: menuCategories = [] } = useMenuCategories();
 
@@ -570,6 +575,96 @@ export default function DashboardPage() {
         )}
 
         {/* 🚨 PRIORITY 1: Pending Confirmations (Collapses completely to null when 0) */}
+        {pendingOwnerConfirmations.length > 0 && (
+          <Card className="bg-amber-50/60 border-t-4 border-t-amber-500 border-amber-200 shadow-sm rounded-xl">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-amber-950 flex flex-wrap justify-between items-center gap-2 text-lg">
+                <span>
+                  👑 Awaiting Owner Confirmation ({pendingOwnerConfirmations.length}{" "}
+                  {pendingOwnerConfirmations.length === 1 ? "Order" : "Orders"})
+                </span>
+                {!isOwner && (
+                  <Badge variant="outline" className="border-amber-400 text-amber-900">
+                    Owner action required
+                  </Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {pendingOwnerConfirmations.map((item) => (
+                <div
+                  key={item.orderId}
+                  className="rounded-xl border border-amber-300 bg-white p-4 space-y-2"
+                >
+                  <div className="flex justify-between gap-3">
+                    <div>
+                      <div className="font-bold text-stone-900">
+                        #{item.orderReference} • {item.customerName}
+                      </div>
+                      <div className="text-[11px] text-stone-500">
+                        Encoded by {item.createdBy}
+                        {item.targetDeliveryTime
+                          ? ` • ${new Date(item.targetDeliveryTime).toLocaleString()}`
+                          : " • Date pending"}
+                      </div>
+                    </div>
+                    <span className="font-mono font-bold text-emerald-700">
+                      ₱{item.grandTotal.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="text-xs text-stone-700">{item.itemsSummary}</div>
+                  {item.freebiesSummary && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-semibold ${
+                        item.freebiesSummary === "🚫 No Freebies"
+                          ? "bg-rose-100 text-rose-800 border-rose-300"
+                          : item.freebiesSummary.includes("Raw Innards") ||
+                              item.freebiesSummary.includes(":")
+                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                            : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                      }`}
+                    >
+                      {item.freebiesSummary}
+                    </Badge>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-stone-50 p-2">
+                      Delivery Fee: ₱{item.deliveryFee.toLocaleString()}
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 p-2 text-emerald-900">
+                      DP: ₱{item.downpayment.toLocaleString()} •{" "}
+                      {item.downpaymentMethod === "Cash"
+                        ? "💵"
+                        : item.downpaymentMethod === "GCash"
+                          ? "📱"
+                          : item.downpaymentMethod === "Maya"
+                            ? "💚"
+                            : item.downpaymentMethod === "Bank Transfer"
+                              ? "🏦"
+                              : "—"}{" "}
+                      {item.downpaymentMethod}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    disabled={!isOwner || confirmOwnerMutation.isPending}
+                    onClick={() =>
+                      confirmOwnerMutation.mutate(item.orderId, {
+                        onSuccess: () => toast.success("Order confirmed by Owner."),
+                        onError: () => toast.error("Could not confirm this order."),
+                      })
+                    }
+                    className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+                  >
+                    ✅ Confirm Order
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {pending && pending.length > 0 && (
           <Card className="bg-white border-t-4 border-t-rose-600 border-stone-200/90 shadow-sm rounded-xl">
             <CardHeader className="pb-3">
@@ -931,6 +1026,7 @@ export default function DashboardPage() {
               >
                 <option value="GCash">GCash</option>
                 <option value="Cash">Physical Cash</option>
+                <option value="Maya">Maya</option>
                 <option value="Bank Transfer">Bank Transfer</option>
               </select>
             </div>

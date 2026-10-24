@@ -319,6 +319,26 @@ npm run lint                         # Run ESLint validation
 * **Scope:** Companion app for Store Owner and Cashier (Order Directory, Customer Dossier, Quick Payment Logging, Mobile POS with Screenshot Intake, and Owner Drawer Remittance).
 * **State & Networking:** TanStack Query v5 + Axios with `expo-secure-store` JWT persistence (`src/services/apiClient.ts`).
 * **Verification Gate:** `npx tsc --noEmit` inside `lechon-system-mobile/` must pass with 0 errors.
+
+### Cross-Stack Operational Rule Synchronization
+
+These rules must remain aligned across `LechonSystem.Api`, `lechon-system-web`, and `lechon-system-mobile`:
+
+* **Whole Lechon Freebies:** `minimumWeightKg >= 13` is the only weight trigger. One head receives seven canonical freebies; opt-out applies `₱2,000` per head; Raw Innards fixes Dinuguan at zero with no replacement slot. Keep both `src/utils/freebiesHelper.ts` implementations behaviorally identical and persist `FreebiesSummary` plus `FreebiesConfigJson`.
+* **Owner Confirmation:** Cashier-created active orders reserve and schedule immediately but require Owner review. Only `POST /api/orders/{id}/confirm-owner` completes the gate; pending work comes from `GET /api/dashboard/pending-owner-confirmations`.
+* **Duplicate Radar:** Customer lookup returns `ActiveUpcomingOrders` even without a profile. POS and edit surfaces warn proactively and require a second confirmation for exact same-day matches.
+* **BIR Channels:** Initial and subsequent payment logs use exactly `Cash`, `GCash`, `Maya`, or `Bank Transfer`. Positive unclassified downpayments default to GCash; zero downpayments use `None` on the order header.
+* **Mobile Alerts:** `src/hooks/useNotifications.ts` owns permission/channel setup, daily 9:00 AM deposit reminders, daily 4:00 PM defrost reminders, Owner queue increase alerts, Rush Defrost alerts, and the Floor Action test trigger.
+* **Daily Sheets:** `SchedulingService` projects `FreebiesSummary`; Kitchen and Rider views render the semantic badge above ordinary remarks.
+
+### Verification Commands
+
+```powershell
+dotnet build LechonSystem.Api
+Push-Location lechon-system-web; npm run build; Pop-Location
+Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
+```
+
 * **Directory Mapping:**
   ```
   lechon-system-mobile/

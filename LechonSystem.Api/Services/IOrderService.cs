@@ -11,6 +11,7 @@ public interface IOrderService
     Task<Order> CreateOrderAsync(CreateOrderRequest request);
     Task<bool> ConfirmPaymentAsync(int orderId);
     Task<bool> ConfirmDeliveryDetailsAsync(int orderId);
+    Task<bool> ConfirmOrderByOwnerAsync(int orderId, string ownerUsername);
     Task<bool> CancelOrderAsync(int orderId, string reason = "Cancelled by dispatcher");
     Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
     Task UpdateOrderAsync(int id, UpdateOrderDto request);

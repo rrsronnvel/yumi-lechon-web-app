@@ -47,6 +47,9 @@ export interface CreateOrderPayload {
   deliveryFee: number;
   discount: number;
   downpayment: number;
+  downpaymentMethod: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
   grandTotal: number;
   totalAmount?: number;
   isTrustedCustomer: boolean;
@@ -77,6 +80,9 @@ export interface UpdateOrderPayload {
   addOns?: string;
   deliveryFee: number;
   downpayment: number;
+  downpaymentMethod: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
   discount: number;
   grandTotal: number;
   items: UpdateOrderItemPayload[];
@@ -100,6 +106,17 @@ export interface CustomerProfileDto {
   isVip: boolean;
   totalOrdersCount: number;
   updatedAt: string;
+  activeUpcomingOrders: ActiveCustomerOrderSummaryDto[];
+}
+
+export interface ActiveCustomerOrderSummaryDto {
+  orderId: number;
+  orderReference: string;
+  targetDeliveryTime?: string | null;
+  grandTotal: number;
+  itemsSummary: string;
+  createdBy: string;
+  isDraft: boolean;
 }
 
 export interface UpdateCustomerNotesPayload {

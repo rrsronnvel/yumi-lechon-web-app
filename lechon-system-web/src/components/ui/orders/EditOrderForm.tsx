@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { useEditOrder } from "@/hooks/useEditOrder";
 import { useDeliveryPricing } from "@/hooks/useCms";
@@ -24,6 +24,17 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { toast } from "sonner";
+import { useCustomerLookup } from "@/hooks/useCustomers";
+import FreebiesSelector from "./FreebiesSelector";
+import PaymentChannelPills, {
+  PaymentChannel,
+} from "./PaymentChannelPills";
+import {
+  createDefaultFreebiesConfig,
+  formatFreebiesSummary,
+  FreebiesConfig,
+  parseFreebiesConfig,
+} from "@/utils/freebiesHelper";
 
 interface AddOnItem {
   quantity: number;
@@ -50,6 +61,12 @@ export default function EditOrderForm({
 
   const baseFare = deliveryPricing?.baseFare ?? 100;
   const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
+  const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
+    createDefaultFreebiesConfig(0),
+  );
+  const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
+  const previousWholePigCount = useRef(0);
+  const pendingHydratedWholePigCount = useRef<number | null>(null);
 
   // 1. Fetch live CMS categories
   const { data: categories = [], isLoading: isCategoriesLoading } = useQuery({
@@ -95,6 +112,9 @@ export default function EditOrderForm({
     distanceKm: number;
     fulfillment: number;
     downpayment: number;
+    downpaymentMethod: PaymentChannel | "None";
+    freebiesSummary?: string | null;
+    freebiesConfigJson?: string | null;
     discount: number;
     items: any[];
     dynamicAddOns: AddOnItem[];
@@ -118,6 +138,9 @@ export default function EditOrderForm({
       distanceKm: 0,
       fulfillment: 1, // Default to Delivery
       downpayment: 0,
+      downpaymentMethod: "None",
+      freebiesSummary: null,
+      freebiesConfigJson: null,
       discount: 0,
       dynamicAddOns: [],
     },
@@ -174,6 +197,36 @@ export default function EditOrderForm({
         })
         .filter(Boolean) as AddOnItem[];
 
+      const mappedOrderItems = order.orderItems?.map((i: any) => ({
+        id: i.id,
+        itemCategoryId: i.itemCategoryId,
+        quantity: i.quantity,
+      })) || [
+        { id: 0, itemCategoryId: lechonOptions[0]?.id || 1, quantity: 1 },
+      ];
+
+      const hydratedWholePigCount = mappedOrderItems.reduce(
+        (total: number, item: any) => {
+          const category = categories.find(
+            (candidate: any) => candidate.id === Number(item.itemCategoryId),
+          );
+          return category?.minimumWeightKg >= 13
+            ? total + (Number(item.quantity) || 0)
+            : total;
+        },
+        0,
+      );
+      const hydratedFreebies = parseFreebiesConfig(
+        order.freebiesConfigJson,
+        hydratedWholePigCount,
+      );
+      setFreebiesConfig(hydratedFreebies);
+      setAppliedFreebiesDiscount(
+        hydratedFreebies.optOut ? 2000 * hydratedWholePigCount : 0,
+      );
+      previousWholePigCount.current = hydratedWholePigCount;
+      pendingHydratedWholePigCount.current = hydratedWholePigCount;
+
       form.reset({
         id: order.id,
         isDraft: order.isDraft ?? false,
@@ -198,18 +251,18 @@ export default function EditOrderForm({
             : order.distanceKm || 0,
         discount: order.discount || 0,
         downpayment: order.downpayment || 0,
+        downpaymentMethod:
+          order.downpayment > 0
+            ? order.downpaymentMethod || "GCash"
+            : "None",
+        freebiesSummary: order.freebiesSummary || null,
+        freebiesConfigJson: order.freebiesConfigJson || null,
         fulfillment: resolvedFulfillment,
         dynamicAddOns: parsedAddOns,
-        items: order.orderItems?.map((i: any) => ({
-          id: i.id,
-          itemCategoryId: i.itemCategoryId,
-          quantity: i.quantity,
-        })) || [
-          { id: 0, itemCategoryId: lechonOptions[0]?.id || 1, quantity: 1 },
-        ],
+        items: mappedOrderItems,
       });
     }
-  }, [order, form, lechonOptions]);
+  }, [order, form, lechonOptions, categories]);
 
   // THE SMART BALANCE & BOUNCER STATE (Deeply Reactive via useWatch)
   const watchedItems = useWatch({
@@ -221,6 +274,16 @@ export default function EditOrderForm({
     control: form.control,
     name: "dynamicAddOns",
   });
+  const watchedContactNumber = form.watch("contactNumber");
+  const watchedFacebookName = form.watch("facebookName");
+  const watchedDownpaymentMethod = form.watch("downpaymentMethod");
+  const { data: customerProfile } = useCustomerLookup(
+    watchedContactNumber || "",
+    watchedFacebookName || "",
+  );
+  const duplicateOrders = (customerProfile?.activeUpcomingOrders ?? []).filter(
+    (candidate) => candidate.orderId !== order?.id,
+  );
 
   const [
     deliveryFee,
@@ -304,6 +367,49 @@ export default function EditOrderForm({
   }, [watchedAddOns, liveAddOns]);
 
   const addOnsTotal = totalAddOnCost;
+  const wholePigCount = useMemo(
+    () =>
+      (watchedItems || []).reduce((total: number, item: any) => {
+        const category = categories.find(
+          (candidate: any) => candidate.id === Number(item?.itemCategoryId),
+        );
+        return category?.minimumWeightKg >= 13
+          ? total + (Number(item?.quantity) || 0)
+          : total;
+      }, 0),
+    [watchedItems, categories],
+  );
+
+  useEffect(() => {
+    if (pendingHydratedWholePigCount.current !== null) {
+      if (pendingHydratedWholePigCount.current === wholePigCount) {
+        previousWholePigCount.current = wholePigCount;
+        pendingHydratedWholePigCount.current = null;
+      }
+      return;
+    }
+    if (previousWholePigCount.current === wholePigCount) return;
+    previousWholePigCount.current = wholePigCount;
+    setFreebiesConfig(createDefaultFreebiesConfig(wholePigCount));
+  }, [wholePigCount]);
+
+  const desiredFreebiesDiscount = freebiesConfig.optOut
+    ? 2000 * wholePigCount
+    : 0;
+
+  useEffect(() => {
+    if (desiredFreebiesDiscount === appliedFreebiesDiscount) return;
+    const currentDiscount = Number(form.getValues("discount")) || 0;
+    form.setValue(
+      "discount",
+      Math.max(
+        0,
+        currentDiscount - appliedFreebiesDiscount + desiredFreebiesDiscount,
+      ),
+      { shouldDirty: true },
+    );
+    setAppliedFreebiesDiscount(desiredFreebiesDiscount);
+  }, [desiredFreebiesDiscount, appliedFreebiesDiscount, form]);
   const currentFulfillment = Number(fulfillment);
   const activeDeliveryFee =
     currentFulfillment === 0 || currentFulfillment === 2
@@ -370,6 +476,22 @@ export default function EditOrderForm({
       }
     }
 
+    const targetDate = data.targetDeliveryTime?.slice(0, 10);
+    const sameDayDuplicate = duplicateOrders.find(
+      (candidate) =>
+        Boolean(targetDate) &&
+        Boolean(candidate.targetDeliveryTime) &&
+        candidate.targetDeliveryTime!.slice(0, 10) === targetDate,
+    );
+    if (
+      sameDayDuplicate &&
+      !window.confirm(
+        `Possible duplicate: Order #${sameDayDuplicate.orderReference} is already booked for this customer on the same date. Save another order anyway?`,
+      )
+    ) {
+      return;
+    }
+
     const combinedAddOns = (data.dynamicAddOns || [])
       .filter((a: any) => a.name && a.name.trim() !== "")
       .map((a: any) => `${a.quantity || 1}x ${a.name}`)
@@ -400,6 +522,11 @@ export default function EditOrderForm({
         data.deliveryAddress?.trim() || (fulfillmentNum === 0 ? "Store Pickup" : null),
       deliveryFee: finalDeliveryFee,
       addOns: combinedAddOns,
+      downpaymentMethod:
+        Number(data.downpayment) > 0 ? data.downpaymentMethod : "None",
+      freebiesSummary: formatFreebiesSummary(freebiesConfig, wholePigCount),
+      freebiesConfigJson:
+        wholePigCount > 0 ? JSON.stringify(freebiesConfig) : null,
       grandTotal: dynamicGrandTotal,
     };
 
@@ -426,6 +553,27 @@ export default function EditOrderForm({
     <Form {...form}>
       <div className="bg-white p-5 sm:p-6 rounded-xl border border-stone-200/90 shadow-sm mt-2">
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+          {duplicateOrders.length > 0 && (
+            <div className="rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-xs text-rose-950 shadow-sm">
+              <div className="font-black tracking-wide">
+                🚨 POSSIBLE DUPLICATE ORDER DETECTED!
+              </div>
+              {duplicateOrders.slice(0, 3).map((duplicate) => (
+                <div key={duplicate.orderId} className="mt-1 font-medium">
+                  {customerProfile?.fullName ||
+                    form.getValues("customerName") ||
+                    "Customer"}{" "}
+                  already
+                  has an active booking (#{duplicate.orderReference}) for{" "}
+                  {duplicate.targetDeliveryTime
+                    ? new Date(duplicate.targetDeliveryTime).toLocaleString()
+                    : "date pending"}{" "}
+                  ({duplicate.itemsSummary}) encoded by {duplicate.createdBy}.
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Draft Inquiry Toggle Banner */}
           <div className="bg-purple-50/80 border border-purple-200 rounded-lg p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -964,6 +1112,13 @@ export default function EditOrderForm({
               <span className="text-amber-600">ℹ</span> Changing the Departure
               / Delivery Time or Size will recalculate the Kitchen timeline.
             </p>
+            <div className="mt-3">
+              <FreebiesSelector
+                wholePigCount={wholePigCount}
+                config={freebiesConfig}
+                onChange={setFreebiesConfig}
+              />
+            </div>
           </div>
 
           {/* --- DYNAMIC ADD-ONS BLOCK --- */}
@@ -1175,6 +1330,21 @@ export default function EditOrderForm({
                 <span className="font-mono font-medium text-emerald-700">
                   - ₱{downpaymentReceived.toLocaleString()}
                 </span>
+              </div>
+
+              <div className="rounded-lg border border-stone-200 bg-white p-2">
+                <div className="text-[11px] font-semibold text-stone-600">
+                  BIR Downpayment Channel
+                </div>
+                <PaymentChannelPills
+                  value={watchedDownpaymentMethod}
+                  disabled={downpaymentReceived <= 0}
+                  onChange={(channel) =>
+                    form.setValue("downpaymentMethod", channel, {
+                      shouldDirty: true,
+                    })
+                  }
+                />
               </div>
 
               <div className="flex justify-between items-end pt-2 border-t border-stone-200">

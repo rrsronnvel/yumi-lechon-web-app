@@ -21,6 +21,9 @@ public class OrderDetailsDto
     public string? AddOns { get; set; }
     public decimal DeliveryFee { get; set; }
     public decimal Downpayment { get; set; }
+    public string DownpaymentMethod { get; set; } = "None";
+    public string? FreebiesSummary { get; set; }
+    public string? FreebiesConfigJson { get; set; }
     public decimal Discount { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal BalanceDue { get; set; }
@@ -49,8 +52,29 @@ public class OrderDetailsDto
     public string? CustomerPreferences { get; set; }
     public string? CustomerComplaintHistory { get; set; }
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
+    public bool IsOwnerConfirmed { get; set; }
+    public DateTime? OwnerConfirmedAt { get; set; }
+    public string? OwnerConfirmedBy { get; set; }
 
     public List<OrderDetailItemDto> OrderItems { get; set; } = new();
+    public List<PaymentLogDto> PaymentLogs { get; set; } = new();
+    public List<PaymentChannelTotalDto> PaymentChannelsSummary { get; set; } = new();
+}
+
+public class PaymentLogDto
+{
+    public int Id { get; set; }
+    public decimal Amount { get; set; }
+    public string PaymentMethod { get; set; } = "Cash";
+    public string Status { get; set; } = string.Empty;
+    public string GatewayReferenceId { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class PaymentChannelTotalDto
+{
+    public string PaymentMethod { get; set; } = "Cash";
+    public decimal Amount { get; set; }
 }
 
 public class OrderDetailItemDto

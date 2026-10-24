@@ -37,6 +37,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import OrderScreenshotUploader from "./OrderScreenshotUploader";
+import FreebiesSelector from "./FreebiesSelector";
+import PaymentChannelPills, {
+  PaymentChannel,
+} from "./PaymentChannelPills";
+import {
+  createDefaultFreebiesConfig,
+  formatFreebiesSummary,
+  FreebiesConfig,
+} from "@/utils/freebiesHelper";
 
 import {
   Form,
@@ -82,6 +91,10 @@ export default function OrderForm({
     useState<TemplateOrderData | null>(null);
   const [savedOrderRef, setSavedOrderRef] = useState<string>("");
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
+    createDefaultFreebiesConfig(0),
+  );
+  const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
 
   // 1. Fetch live inventory categories & CMS delivery pricing
   const { data: categories = [], isLoading: isCategoriesLoading } =
@@ -128,6 +141,9 @@ export default function OrderForm({
       addOns: "",
       deliveryFee: 0,
       downpayment: 0,
+      downpaymentMethod: "None",
+      freebiesSummary: null,
+      freebiesConfigJson: null,
       isTrustedCustomer: false,
       discount: 0,
       grandTotal: 0,
@@ -160,6 +176,7 @@ export default function OrderForm({
   const watchedDeliveryFee = form.watch("deliveryFee");
   const watchedDiscount = form.watch("discount");
   const watchedDownpayment = form.watch("downpayment");
+  const watchedDownpaymentMethod = form.watch("downpaymentMethod");
   const watchedIsTrusted = form.watch("isTrustedCustomer");
   const watchedSource = form.watch("source");
   const watchedEventType = form.watch("eventType");
@@ -170,11 +187,14 @@ export default function OrderForm({
     watchedCustomerPhone || "",
     watchedFacebookName || "",
   );
+  const duplicateOrders = customerProfile?.activeUpcomingOrders ?? [];
 
   // Reset form to clean empty state when modal opens
   useEffect(() => {
     if (_open) {
       form.reset(DEFAULT_ORDER_VALUES);
+      setFreebiesConfig(createDefaultFreebiesConfig(0));
+      setAppliedFreebiesDiscount(0);
     }
   }, [_open, form, DEFAULT_ORDER_VALUES]);
 
@@ -249,6 +269,52 @@ export default function OrderForm({
       return acc + unitPrice * qty;
     }, 0);
   }, [watchedItems, categories]);
+
+  const wholePigCount = useMemo(() => {
+    return (watchedItems || []).reduce((total, item) => {
+      const category = categories.find(
+        (candidate: ItemCategory) => candidate.id === Number(item?.itemCategoryId),
+      );
+      return category && category.minimumWeightKg >= 13
+        ? total + (Number(item?.quantity) || 0)
+        : total;
+    }, 0);
+  }, [watchedItems, categories]);
+
+  useEffect(() => {
+    setFreebiesConfig(createDefaultFreebiesConfig(wholePigCount));
+  }, [wholePigCount]);
+
+  const desiredFreebiesDiscount = freebiesConfig.optOut
+    ? 2000 * wholePigCount
+    : 0;
+
+  useEffect(() => {
+    if (desiredFreebiesDiscount === appliedFreebiesDiscount) return;
+    const currentDiscount = Number(form.getValues("discount")) || 0;
+    form.setValue(
+      "discount",
+      Math.max(
+        0,
+        currentDiscount - appliedFreebiesDiscount + desiredFreebiesDiscount,
+      ),
+      { shouldValidate: true, shouldDirty: true },
+    );
+    setAppliedFreebiesDiscount(desiredFreebiesDiscount);
+  }, [
+    desiredFreebiesDiscount,
+    appliedFreebiesDiscount,
+    form,
+  ]);
+
+  useEffect(() => {
+    const amount = Number(watchedDownpayment) || 0;
+    if (amount > 0 && watchedDownpaymentMethod === "None") {
+      form.setValue("downpaymentMethod", "GCash", { shouldDirty: true });
+    } else if (amount === 0 && watchedDownpaymentMethod !== "None") {
+      form.setValue("downpaymentMethod", "None", { shouldDirty: true });
+    }
+  }, [watchedDownpayment, watchedDownpaymentMethod, form]);
 
   const effectiveDeliveryFee =
     watchedFulfillment === 0 || watchedFulfillment === 2
@@ -362,6 +428,22 @@ export default function OrderForm({
       return;
     }
 
+    const targetDate = data.targetDeliveryTime?.slice(0, 10);
+    const sameDayDuplicate = duplicateOrders.find(
+      (order) =>
+        Boolean(targetDate) &&
+        Boolean(order.targetDeliveryTime) &&
+        order.targetDeliveryTime!.slice(0, 10) === targetDate,
+    );
+    if (
+      sameDayDuplicate &&
+      !window.confirm(
+        `Possible duplicate: Order #${sameDayDuplicate.orderReference} is already booked for this customer on the same date. Submit another order anyway?`,
+      )
+    ) {
+      return;
+    }
+
     let computedCartSubtotal = 0;
     let computedRoastSubtotal = 0;
     const addOnStrings: string[] = [];
@@ -425,6 +507,11 @@ export default function OrderForm({
       deliveryFee: delivery,
       discount: discount,
       downpayment: Number(data.downpayment) || 0,
+      downpaymentMethod:
+        Number(data.downpayment) > 0 ? data.downpaymentMethod : "None",
+      freebiesSummary: formatFreebiesSummary(freebiesConfig, wholePigCount),
+      freebiesConfigJson:
+        wholePigCount > 0 ? JSON.stringify(freebiesConfig) : null,
       grandTotal: computedGrandTotal,
       totalAmount: computedGrandTotal,
       isTrustedCustomer: Boolean(data.isTrustedCustomer),
@@ -570,6 +657,27 @@ export default function OrderForm({
               Customer demographics, fulfillment routing & event logistics.
             </p>
           </div>
+
+          {duplicateOrders.length > 0 && (
+            <div
+              role="alert"
+              className="rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-xs text-rose-950 shadow-sm"
+            >
+              <div className="font-black tracking-wide">
+                🚨 POSSIBLE DUPLICATE ORDER DETECTED!
+              </div>
+              {duplicateOrders.slice(0, 3).map((duplicate) => (
+                <div key={duplicate.orderId} className="mt-1 font-medium">
+                  {customerProfile?.fullName || form.getValues("customerName") || "Customer"}{" "}
+                  already has an active booking (#{duplicate.orderReference}) for{" "}
+                  {duplicate.targetDeliveryTime
+                    ? new Date(duplicate.targetDeliveryTime).toLocaleString()
+                    : "date pending"}{" "}
+                  ({duplicate.itemsSummary}) encoded by {duplicate.createdBy}.
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Draft Inquiry Mode Toggle Banner */}
           <div className="bg-purple-50/80 border border-purple-200 rounded-lg p-3 space-y-2">
@@ -1229,6 +1337,12 @@ export default function OrderForm({
               )}
             </div>
 
+            <FreebiesSelector
+              wholePigCount={wholePigCount}
+              config={freebiesConfig}
+              onChange={setFreebiesConfig}
+            />
+
             {/* Cart Subtotal Footer */}
             <div className="pt-2 border-t border-stone-200 flex items-center justify-between text-xs">
               <span className="font-semibold text-stone-600">
@@ -1404,6 +1518,16 @@ export default function OrderForm({
                   }}
                   className="h-10 text-xs font-mono bg-white border-stone-300 font-medium"
                   placeholder="0"
+                />
+                <PaymentChannelPills
+                  value={watchedDownpaymentMethod}
+                  disabled={effectiveDownpayment <= 0}
+                  onChange={(channel: PaymentChannel) =>
+                    form.setValue("downpaymentMethod", channel, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
                 />
               </div>
 

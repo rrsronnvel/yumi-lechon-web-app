@@ -42,6 +42,8 @@ import { useUpdateCustomerNotesMutation } from "@/hooks/useCustomers";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
+import { useAuth } from "@/context/AuthContext";
+import { useConfirmOwnerOrderMutation } from "@/hooks/useDashboard";
 import {
   generateBookingConfirmation,
   TemplateOrderData,
@@ -68,6 +70,8 @@ const PRESET_CANCEL_REASONS = [
 export default function OrdersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isOwner } = useAuth();
+  const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const [filterTab, setFilterTab] = useState("upcoming");
   const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [rawSearch, setRawSearch] = useState("");
@@ -165,6 +169,23 @@ export default function OrdersPage() {
       return true;
     });
   }, [orders, filterTab, balanceSubFilter, unpaidOrders]);
+
+  const paymentChannelTotals = useMemo(() => {
+    const totals: Record<string, number> = {
+      Cash: 0,
+      GCash: 0,
+      Maya: 0,
+      "Bank Transfer": 0,
+    };
+    displayedOrders.forEach((order) => {
+      (order.paymentChannelsSummary || []).forEach((channel) => {
+        if (channel.paymentMethod in totals) {
+          totals[channel.paymentMethod] += Number(channel.amount) || 0;
+        }
+      });
+    });
+    return totals;
+  }, [displayedOrders]);
 
   const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(
     null
@@ -500,6 +521,17 @@ export default function OrdersPage() {
       );
     }
 
+    if (!order.isOwnerConfirmed) {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-amber-100 text-amber-900 border-amber-300 font-semibold"
+        >
+          ⏳ Needs Owner Review
+        </Badge>
+      );
+    }
+
     const status = (order.routingStatus || "").trim();
     if (status === "Assigned") {
       return (
@@ -652,7 +684,28 @@ export default function OrdersPage() {
                   <TableCell>{renderFinancialGrid(order)}</TableCell>
 
                   {/* Status Column */}
-                  <TableCell>{renderStatus(order)}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1.5">
+                      {renderStatus(order)}
+                      {isOwner && !order.isOwnerConfirmed && !order.isDraft && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
+                          disabled={confirmOwnerMutation.isPending}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            confirmOwnerMutation.mutate(order.id, {
+                              onSuccess: () => toast.success("Order confirmed by Owner."),
+                              onError: () => toast.error("Could not confirm this order."),
+                            });
+                          }}
+                        >
+                          ✅ Confirm Order
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -867,6 +920,27 @@ export default function OrdersPage() {
           </div>
         )}
 
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-xs">
+          {[
+            ["Cash", "💵 Cash"],
+            ["GCash", "📱 GCash"],
+            ["Maya", "💚 Maya"],
+            ["Bank Transfer", "🏦 Bank Transfer"],
+          ].map(([key, label]) => (
+            <div
+              key={key}
+              className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2"
+            >
+              <div className="text-[10px] font-semibold text-stone-500 uppercase tracking-wide">
+                {label}
+              </div>
+              <div className="font-mono font-bold text-sm text-stone-900">
+                ₱{paymentChannelTotals[key].toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+
         <TabsContent value={filterTab} className="mt-4">
           {renderDataGrid()}
         </TabsContent>
@@ -942,6 +1016,25 @@ export default function OrdersPage() {
 
               {/* Action Buttons: Responsive row that wraps naturally without side scrolling */}
               <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                {isOwner &&
+                  orderDetails &&
+                  !orderDetails.isOwnerConfirmed &&
+                  !orderDetails.isDraft && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={confirmOwnerMutation.isPending}
+                      className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                      onClick={() =>
+                        confirmOwnerMutation.mutate(orderDetails.id, {
+                          onSuccess: () => toast.success("Order confirmed by Owner."),
+                          onError: () => toast.error("Could not confirm this order."),
+                        })
+                      }
+                    >
+                      ✅ Confirm Order
+                    </Button>
+                  )}
                 {orderDetails && !isEditing && (
                   <Button
                     variant="outline"
@@ -1001,6 +1094,23 @@ export default function OrdersPage() {
                           This order is an unconfirmed draft. No kitchen schedule has been generated and no freezer inventory is locked.
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {!orderDetails.isDraft && !orderDetails.isOwnerConfirmed && (
+                    <div className="bg-amber-100 border border-amber-300 text-amber-950 rounded-lg p-3 text-xs font-semibold flex items-center justify-between gap-3">
+                      <span>⏳ Needs Owner Review</span>
+                      {isOwner && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                          disabled={confirmOwnerMutation.isPending}
+                          onClick={() => confirmOwnerMutation.mutate(orderDetails.id)}
+                        >
+                          ✅ Confirm Order
+                        </Button>
+                      )}
                     </div>
                   )}
 
@@ -1417,6 +1527,21 @@ export default function OrdersPage() {
                     <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-3 text-stone-900">
                       Order Manifest
                     </h3>
+                    {orderDetails.freebiesSummary && (
+                      <Badge
+                        variant="outline"
+                        className={`mb-3 font-semibold ${
+                          orderDetails.freebiesSummary === "🚫 No Freebies"
+                            ? "bg-rose-100 text-rose-800 border-rose-300"
+                            : orderDetails.freebiesSummary.includes("Raw Innards") ||
+                                orderDetails.freebiesSummary.includes(":")
+                              ? "bg-amber-100 text-amber-900 border-amber-300"
+                              : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        }`}
+                      >
+                        {orderDetails.freebiesSummary}
+                      </Badge>
+                    )}
                     <div className="space-y-3">
                       {orderDetails.orderItems?.map(
                         (item: any, index: number) => (
@@ -1515,10 +1640,54 @@ export default function OrdersPage() {
                       </div>
                       <div className="flex justify-between text-emerald-700">
                         <span>Downpayment:</span>
-                        <span className="font-mono">
-                          - ₱{orderDetails.downpayment?.toLocaleString() || 0}
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono">
+                            - ₱{orderDetails.downpayment?.toLocaleString() || 0}
+                          </span>
+                          {Number(orderDetails.downpayment || 0) > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-200 bg-emerald-50 text-emerald-800"
+                            >
+                              {orderDetails.downpaymentMethod === "Cash"
+                                ? "💵"
+                                : orderDetails.downpaymentMethod === "Maya"
+                                  ? "💚"
+                                  : orderDetails.downpaymentMethod === "Bank Transfer"
+                                    ? "🏦"
+                                    : "📱"}{" "}
+                              {orderDetails.downpaymentMethod || "GCash"}
+                            </Badge>
+                          )}
                         </span>
                       </div>
+                      {orderDetails.paymentLogs?.length > 0 && (
+                        <div className="space-y-1 border-t border-stone-100 pt-2 text-xs">
+                          <p className="font-semibold uppercase tracking-wide text-stone-500">
+                            Payment history
+                          </p>
+                          {orderDetails.paymentLogs.map((payment: any) => (
+                            <div
+                              key={payment.id}
+                              className="flex items-center justify-between text-stone-600"
+                            >
+                              <span>
+                                {payment.paymentMethod === "Cash"
+                                  ? "💵"
+                                  : payment.paymentMethod === "Maya"
+                                    ? "💚"
+                                    : payment.paymentMethod === "Bank Transfer"
+                                      ? "🏦"
+                                      : "📱"}{" "}
+                                {payment.paymentMethod}
+                              </span>
+                              <span className="font-mono font-semibold">
+                                ₱{Number(payment.amount || 0).toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex justify-between text-rose-600 font-bold text-lg border-t border-stone-200 pt-2 mt-2">
                         <span>Balance to Collect:</span>
                         <span className="font-mono">
@@ -1664,6 +1833,7 @@ export default function OrdersPage() {
               >
                 <option value="GCash">GCash</option>
                 <option value="Cash">Physical Cash</option>
+                <option value="Maya">Maya</option>
                 <option value="Bank Transfer">Bank Transfer</option>
               </select>
             </div>

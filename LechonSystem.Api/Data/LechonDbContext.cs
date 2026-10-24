@@ -137,6 +137,14 @@ public class LechonDbContext : DbContext
                 .HasIndex(p => p.GatewayReferenceId)
                 .IsUnique();
 
+        modelBuilder.Entity<PaymentLog>()
+            .Property(p => p.PaymentMethod)
+            .HasMaxLength(50);
+
+        modelBuilder.Entity<Order>()
+            .Property(o => o.DownpaymentMethod)
+            .HasMaxLength(50);
+
         modelBuilder.Entity<SettlementQrSession>()
                 .HasIndex(s => s.Token)
                 .IsUnique();

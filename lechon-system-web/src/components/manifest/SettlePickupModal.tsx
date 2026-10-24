@@ -71,7 +71,7 @@ export function SettlePickupModal({
       {
         orderId: order.orderId,
         amount: order.balanceDue,
-        paymentMethod: paymentMethod === "Cash" ? "Cash" : "GCash",
+        paymentMethod,
         referenceNumber: referenceNumber.trim() || undefined,
       },
       {
@@ -79,7 +79,7 @@ export function SettlePickupModal({
           const methodLabel =
             paymentMethod === "Cash"
               ? "Physical Cash (Store Drawer)"
-              : "Store GCash QR";
+              : paymentMethod;
 
           toast.success(`Counter Collection Recorded for Order #${order.orderId}!`, {
             description: `₱${order.balanceDue.toLocaleString()} collected from ${order.customerName} via ${methodLabel} and placed into Staff Drawer custody.`,
@@ -186,6 +186,12 @@ export function SettlePickupModal({
                 </SelectItem>
                 <SelectItem value="GCash">
                   📱 Store GCash QR
+                </SelectItem>
+                <SelectItem value="Maya">
+                  💚 Maya
+                </SelectItem>
+                <SelectItem value="Bank Transfer">
+                  🏦 Bank Transfer
                 </SelectItem>
               </SelectContent>
             </Select>

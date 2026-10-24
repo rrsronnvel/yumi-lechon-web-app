@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Modal,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Switch,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -17,6 +18,7 @@ import {
   useInventoryBalances,
   useDeliveryPricingQuery,
   useUpdateOrderMutation,
+  useCustomerLookupQuery,
   ItemCategory,
 } from '../../hooks/usePos';
 import { OrderDetailsDto } from '../../hooks/useOrders';
@@ -26,6 +28,14 @@ import {
   EVENT_TYPE_PILLS,
   RIDER_DEPARTURE_NUDGE_PILLS,
 } from '../../utils/messengerTemplates';
+import FreebiesSelector from './FreebiesSelector';
+import PaymentChannelPills from './PaymentChannelPills';
+import {
+  FreebiesConfig,
+  createDefaultFreebiesConfig,
+  formatFreebiesSummary,
+  parseFreebiesConfig,
+} from '../../utils/freebiesHelper';
 
 interface EditableCartItem {
   id: number; // Existing OrderItem.id or 0 for newly added
@@ -35,6 +45,7 @@ interface EditableCartItem {
   quantity: number;
   weightRange?: string;
   isRoast: boolean;
+  minimumWeightKg: number;
 }
 
 type CategoryFilterType = 'whole' | 'belly' | 'addon';
@@ -73,6 +84,8 @@ export default function EditOrderModal({
   const [customerName, setCustomerName] = useState('');
   const [facebookName, setFacebookName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [debouncedPhone, setDebouncedPhone] = useState('');
+  const [debouncedFbName, setDebouncedFbName] = useState('');
   const [source, setSource] = useState('Business FB Page');
   const [eventType, setEventType] = useState('');
   const [fulfillment, setFulfillment] = useState<number>(1);
@@ -91,8 +104,30 @@ export default function EditOrderModal({
   const [distanceKm, setDistanceKm] = useState('');
   const [deliveryFee, setDeliveryFee] = useState('0');
   const [discount, setDiscount] = useState('0');
+  const [downpaymentMethod, setDownpaymentMethod] = useState('None');
+  const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
+    createDefaultFreebiesConfig(0)
+  );
+  const freebiesDiscountApplied = useRef(0);
+  const previousWholePigCount = useRef(0);
   const [isDraft, setIsDraft] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedPhone(contactNumber.trim());
+      setDebouncedFbName(facebookName.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [contactNumber, facebookName]);
+
+  const { data: customerProfile } = useCustomerLookupQuery(
+    debouncedPhone,
+    debouncedFbName
+  );
+  const activeDuplicateOrders = (customerProfile?.activeUpcomingOrders ?? []).filter(
+    (existingOrder) => existingOrder.orderId !== order?.id
+  );
 
   // Hydrate state from order when modal opens
   useEffect(() => {
@@ -111,6 +146,11 @@ export default function EditOrderModal({
     setRemarks(order.remarks || '');
     setDeliveryFee(String(Number(order.deliveryFee || 0)));
     setDiscount(String(Number(order.discount || 0)));
+    setDownpaymentMethod(
+      Number(order.downpayment || 0) > 0
+        ? order.downpaymentMethod || 'GCash'
+        : 'None'
+    );
     setDistanceKm('');
     setItemSearchQuery('');
     setActiveCategoryFilter(null);
@@ -172,9 +212,22 @@ export default function EditOrderModal({
         weightRange:
           minW > 0 ? `${minW.toFixed(1)}–${maxW.toFixed(1)} kg` : undefined,
         isRoast: minW > 0,
+        minimumWeightKg: minW,
       };
     });
 
+    const mappedWholePigCount = mappedItems
+      .filter((item) => item.minimumWeightKg >= 13)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    const mappedFreebiesConfig = parseFreebiesConfig(
+      order.freebiesConfigJson,
+      mappedWholePigCount
+    );
+    previousWholePigCount.current = mappedWholePigCount;
+    freebiesDiscountApplied.current = mappedFreebiesConfig.optOut
+      ? 2000 * mappedWholePigCount
+      : 0;
+    setFreebiesConfig(mappedFreebiesConfig);
     setCartItems(mappedItems);
   }, [visible, order, categories]);
 
@@ -276,6 +329,7 @@ export default function EditOrderModal({
               ? `${category.minimumWeightKg.toFixed(1)}–${category.maximumWeightKg.toFixed(1)} kg`
               : undefined,
           isRoast: category.minimumWeightKg > 0,
+          minimumWeightKg: category.minimumWeightKg,
         },
       ];
     });
@@ -369,6 +423,48 @@ export default function EditOrderModal({
       addOnsSummaryText: addOnLabels.join(', '),
     };
   }, [cartItems]);
+
+  const wholeLechonCount = useMemo(
+    () =>
+      cartItems
+        .filter((item) => item.minimumWeightKg >= 13)
+        .reduce((sum, item) => sum + item.quantity, 0),
+    [cartItems]
+  );
+
+  useEffect(() => {
+    if (previousWholePigCount.current === wholeLechonCount) return;
+
+    setDiscount((currentDiscount) =>
+      String(
+        Math.max(
+          0,
+          (parseFloat(currentDiscount) || 0) - freebiesDiscountApplied.current
+        )
+      )
+    );
+    freebiesDiscountApplied.current = 0;
+    previousWholePigCount.current = wholeLechonCount;
+    setFreebiesConfig(createDefaultFreebiesConfig(wholeLechonCount));
+  }, [wholeLechonCount]);
+
+  const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
+    const nextFreebiesDiscount = nextConfig.optOut
+      ? 2000 * wholeLechonCount
+      : 0;
+    setDiscount((currentDiscount) =>
+      String(
+        Math.max(
+          0,
+          (parseFloat(currentDiscount) || 0) -
+            freebiesDiscountApplied.current +
+            nextFreebiesDiscount
+        )
+      )
+    );
+    freebiesDiscountApplied.current = nextFreebiesDiscount;
+    setFreebiesConfig(nextConfig);
+  };
 
   const lockedDownpayment = Number(order?.downpayment || 0);
   const effectiveDeliveryFee =
@@ -465,6 +561,41 @@ export default function EditOrderModal({
     const resolvedAddress =
       trimmedAddress || (fulfillment === 0 ? 'Store Pickup' : '');
 
+    const hasSameDayDuplicate = Boolean(
+      isoTargetTime &&
+        activeDuplicateOrders.some((existingOrder) => {
+          if (!existingOrder.targetDeliveryTime) return false;
+          const existingDate = new Date(existingOrder.targetDeliveryTime);
+          const requestedDate = new Date(isoTargetTime as string);
+          return (
+            !isNaN(existingDate.getTime()) &&
+            !isNaN(requestedDate.getTime()) &&
+            existingDate.getFullYear() === requestedDate.getFullYear() &&
+            existingDate.getMonth() === requestedDate.getMonth() &&
+            existingDate.getDate() === requestedDate.getDate()
+          );
+        })
+    );
+
+    if (!isDraft && hasSameDayDuplicate) {
+      const shouldContinue = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          '🚨 Same-Day Duplicate Warning',
+          'This customer already has another active booking on the selected date. Save these changes anyway?',
+          [
+            { text: 'Go Back', style: 'cancel', onPress: () => resolve(false) },
+            {
+              text: 'Save Anyway',
+              style: 'destructive',
+              onPress: () => resolve(true),
+            },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) }
+        );
+      });
+      if (!shouldContinue) return;
+    }
+
     try {
       await updateOrderMutation.mutateAsync({
         id: order.id,
@@ -484,6 +615,13 @@ export default function EditOrderModal({
         addOns: addOnsSummaryText || undefined,
         deliveryFee: effectiveDeliveryFee,
         downpayment: lockedDownpayment,
+        downpaymentMethod,
+        freebiesSummary: formatFreebiesSummary(
+          freebiesConfig,
+          wholeLechonCount
+        ),
+        freebiesConfigJson:
+          wholeLechonCount > 0 ? JSON.stringify(freebiesConfig) : null,
         discount: effectiveDiscount,
         grandTotal,
         items: cartItems.map((i) => ({
@@ -539,6 +677,27 @@ export default function EditOrderModal({
           </View>
         )}
 
+        {activeDuplicateOrders.length > 0 && (
+          <View style={styles.duplicateWarningBanner}>
+            <Text style={styles.duplicateWarningTitle}>
+              🚨 POSSIBLE DUPLICATE ORDER DETECTED!
+            </Text>
+            {activeDuplicateOrders.slice(0, 2).map((existingOrder) => (
+              <Text key={existingOrder.orderId} style={styles.duplicateWarningText}>
+                {customerName || customerProfile?.fullName || 'This customer'} already
+                has {existingOrder.orderReference} for{' '}
+                {existingOrder.targetDeliveryTime
+                  ? new Date(existingOrder.targetDeliveryTime).toLocaleDateString(
+                      'en-PH',
+                      { month: 'short', day: 'numeric', year: 'numeric' }
+                    )
+                  : 'an upcoming date'}{' '}
+                ({existingOrder.itemsSummary}) encoded by {existingOrder.createdBy}.
+              </Text>
+            ))}
+          </View>
+        )}
+
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -571,6 +730,7 @@ export default function EditOrderModal({
                 </Text>
               </View>
             )}
+
           </View>
 
           {/* Customer & Routing Section */}
@@ -935,6 +1095,11 @@ export default function EditOrderModal({
                 ))}
               </View>
             )}
+            <FreebiesSelector
+              wholePigCount={wholeLechonCount}
+              config={freebiesConfig}
+              onChange={handleFreebiesChange}
+            />
           </View>
 
           {/* Financials Section */}
@@ -1007,6 +1172,12 @@ export default function EditOrderModal({
                   editable={false}
                   value={`₱${lockedDownpayment.toLocaleString()}`}
                 />
+                {lockedDownpayment > 0 && (
+                  <PaymentChannelPills
+                    value={downpaymentMethod}
+                    onChange={setDownpaymentMethod}
+                  />
+                )}
               </View>
             </View>
           </View>
@@ -1116,6 +1287,24 @@ export default function EditOrderModal({
 }
 
 const styles = StyleSheet.create({
+  duplicateWarningBanner: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 2,
+    borderColor: '#E11D48',
+    padding: 11,
+  },
+  duplicateWarningTitle: {
+    color: '#9F1239',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+  duplicateWarningText: {
+    color: '#881337',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#FAF6F4',

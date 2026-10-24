@@ -5,16 +5,36 @@ import { useAuth } from '../context/AuthContext';
 import OrdersScreen from '../screens/OrdersScreen';
 import PosScreen from '../screens/PosScreen';
 import DrawerScreen from '../screens/DrawerScreen';
+import {
+  useDefrostRosterQuery,
+  usePendingOwnerConfirmationsQuery,
+} from '../hooks/useFloorAction';
+import { useNotifications } from '../hooks/useNotifications';
 
 type ActiveTab = 'orders' | 'pos' | 'drawer';
 
 export default function MainShell() {
-  const { user, isOwner, apiEnv, logout } = useAuth();
+  const { user, isOwner, isAuthenticated, apiEnv, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('orders');
+  const { data: ownerConfirmations = [] } = usePendingOwnerConfirmationsQuery();
+  const { data: defrostRoster = [] } = useDefrostRosterQuery();
+  const { alertsActive, sendTestNotification } = useNotifications({
+    isAuthenticated,
+    isOwner,
+    pendingOwnerConfirmations: ownerConfirmations.length,
+    rushDefrostIds: defrostRoster
+      .filter((item) => item.isRushDefrost)
+      .map((item) => `${item.orderId}:${item.itemCategoryId}`),
+  });
 
   const renderTabContent = () => {
     if (activeTab === 'orders') {
-      return <OrdersScreen />;
+      return (
+        <OrdersScreen
+          alertsActive={alertsActive}
+          sendTestNotification={sendTestNotification}
+        />
+      );
     }
 
     if (activeTab === 'pos') {

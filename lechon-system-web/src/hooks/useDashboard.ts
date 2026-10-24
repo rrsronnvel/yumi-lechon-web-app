@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/apiClient';
 
 // 1. TypeScript Contracts (Matching your .NET DTO models)
@@ -45,6 +45,26 @@ export interface DefrostRosterDto {
   balanceDue?: number;
 }
 
+export interface PendingOwnerConfirmationDto {
+  id: number;
+  orderId: number;
+  orderReference: string;
+  customerName: string;
+  targetDeliveryTime?: string | null;
+  itemsSummary: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
+  deliveryFee: number;
+  grandTotal: number;
+  downpayment: number;
+  downpaymentMethod: string;
+  createdBy: string;
+  createdAt: string;
+  isOwnerConfirmed: boolean;
+  ownerConfirmedAt?: string | null;
+  ownerConfirmedBy?: string | null;
+}
+
 // 2. Hook #1: The Downpayment Chase List
 export function usePendingConfirmations() {
   return useQuery<PendingConfirmationDto[]>({
@@ -74,6 +94,34 @@ export function useDefrostRoster() {
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/tasks/defrost-roster');
       return response.data;
+    },
+  });
+}
+
+export function usePendingOwnerConfirmations() {
+  return useQuery<PendingOwnerConfirmationDto[]>({
+    queryKey: ['dashboard', 'pending-owner-confirmations'],
+    queryFn: async () => {
+      const response = await apiClient.get('/dashboard/pending-owner-confirmations');
+      return response.data;
+    },
+  });
+}
+
+export function useConfirmOwnerOrderMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post(`/orders/${orderId}/confirm-owner`);
+      return response.data;
+    },
+    onSuccess: async (_data, orderId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['order', orderId] }),
+      ]);
     },
   });
 }

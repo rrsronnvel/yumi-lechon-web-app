@@ -37,6 +37,11 @@ namespace LechonSystem.Api.Services
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
         {
+            var isOwner = _httpContextAccessor.HttpContext?.User.IsInRole("Owner") ?? false;
+            var isOwnerConfirmed = request.IsDraft || isOwner;
+            var downpaymentMethod = request.Downpayment > 0
+                ? PaymentChannels.Normalize(request.DownpaymentMethod, "GCash")
+                : "None";
             var today = DateTime.UtcNow.Date;
             var todayCount = await _context.Orders.CountAsync(o => o.CreatedAt >= today && o.CreatedAt < today.AddDays(1));
             var orderReference = $"{today:MMddyy}-{(todayCount + 1):D3}";
@@ -88,6 +93,12 @@ namespace LechonSystem.Api.Services
                 AddOns = request.AddOns,
                 DeliveryFee = request.DeliveryFee,
                 Downpayment = request.Downpayment,
+                DownpaymentMethod = downpaymentMethod,
+                FreebiesSummary = request.FreebiesSummary,
+                FreebiesConfigJson = request.FreebiesConfigJson,
+                IsOwnerConfirmed = isOwnerConfirmed,
+                OwnerConfirmedAt = isOwnerConfirmed ? DateTime.UtcNow : null,
+                OwnerConfirmedBy = isOwnerConfirmed ? CurrentUser : null,
                 Discount = request.Discount,
                 GrandTotal = request.GrandTotal,
                 CreatedBy = CurrentUser
@@ -159,6 +170,19 @@ namespace LechonSystem.Api.Services
 
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
+
+            if (order.Downpayment > 0)
+            {
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = $"ORDER_DP_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}",
+                    Provider = PaymentChannels.ToProvider(order.DownpaymentMethod),
+                    PaymentMethod = order.DownpaymentMethod,
+                    Amount = order.Downpayment,
+                    Status = PaymentStatus.Success
+                });
+            }
 
             if (!order.IsDraft && order.TargetDeliveryTime.HasValue)
             {
@@ -237,6 +261,30 @@ namespace LechonSystem.Api.Services
             if (order == null) return false;
 
             order.IsDeliveryDetailsConfirmed = true;
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> ConfirmOrderByOwnerAsync(int orderId, string ownerUsername)
+        {
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null || order.IsCancelled) return false;
+
+            var confirmedBy = string.IsNullOrWhiteSpace(ownerUsername) ? CurrentUser : ownerUsername.Trim();
+            order.IsOwnerConfirmed = true;
+            order.OwnerConfirmedAt = DateTime.UtcNow;
+            order.OwnerConfirmedBy = confirmedBy;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Owner Confirmation",
+                Changes = $"Order verified and confirmed by Owner ({confirmedBy})",
+                ChangedBy = confirmedBy,
+                Timestamp = DateTime.UtcNow
+            });
 
             await _context.SaveChangesAsync();
             return true;
@@ -368,6 +416,9 @@ namespace LechonSystem.Api.Services
                     RiderDepartureTime = o.RiderDepartureTime,
                     GrandTotal = o.GrandTotal,
                     Downpayment = o.Downpayment,
+                    DownpaymentMethod = o.DownpaymentMethod,
+                    FreebiesSummary = o.FreebiesSummary,
+                    FreebiesConfigJson = o.FreebiesConfigJson,
                     BalanceDue = (o.GrandTotal - o.Downpayment) > 0 ? (o.GrandTotal - o.Downpayment) : 0,
                     IsTrustedCustomer = o.IsTrustedCustomer,
                     IsCancelled = o.IsCancelled,
@@ -377,9 +428,42 @@ namespace LechonSystem.Api.Services
                     HasRecentEdits = o.UpdatedAt.HasValue && o.UpdatedAt.Value >= recentCutoff,
                     SettlementCustodyStatus = o.SettlementCustodyStatus ?? "Uncollected",
                     IsRemittedToOwner = o.SettlementCustodyStatus == "Settled",
-                    RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : o.RiderSignedBy
+                    RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : o.RiderSignedBy,
+                    IsOwnerConfirmed = o.IsOwnerConfirmed,
+                    OwnerConfirmedAt = o.OwnerConfirmedAt,
+                    OwnerConfirmedBy = o.OwnerConfirmedBy
                 })
                 .ToListAsync();
+
+            var directoryOrderIds = directory.Select(o => o.Id).ToList();
+            var directoryPayments = await _context.PaymentLogs
+                .AsNoTracking()
+                .Where(p => directoryOrderIds.Contains(p.OrderId) && p.Status == PaymentStatus.Success)
+                .Select(p => new { p.OrderId, p.PaymentMethod, p.Provider, p.Amount })
+                .ToListAsync();
+
+            foreach (var item in directory)
+            {
+                item.PaymentChannelsSummary = directoryPayments
+                    .Where(p => p.OrderId == item.Id)
+                    .GroupBy(p => PaymentChannels.Normalize(p.PaymentMethod, PaymentChannels.FromProvider(p.Provider)))
+                    .Select(g => new PaymentChannelTotalDto
+                    {
+                        PaymentMethod = g.Key,
+                        Amount = g.Sum(p => p.Amount)
+                    })
+                    .OrderBy(p => Array.IndexOf(PaymentChannels.Supported, p.PaymentMethod))
+                    .ToList();
+
+                if (item.PaymentChannelsSummary.Count == 0 && item.Downpayment > 0)
+                {
+                    item.PaymentChannelsSummary.Add(new PaymentChannelTotalDto
+                    {
+                        PaymentMethod = PaymentChannels.Normalize(item.DownpaymentMethod, "GCash"),
+                        Amount = item.Downpayment
+                    });
+                }
+            }
 
             return directory;
         }
@@ -401,6 +485,7 @@ namespace LechonSystem.Api.Services
             bool wasDraft = order.IsDraft;
             bool isFinalizing = wasDraft && !request.IsDraft;
             bool staysDraft = wasDraft && request.IsDraft;
+            var previousDownpayment = order.Downpayment;
 
             if (isFinalizing)
             {
@@ -418,6 +503,10 @@ namespace LechonSystem.Api.Services
                 }
 
                 order.IsDraft = false;
+                var isOwner = _httpContextAccessor.HttpContext?.User.IsInRole("Owner") ?? false;
+                order.IsOwnerConfirmed = isOwner;
+                order.OwnerConfirmedAt = isOwner ? DateTime.UtcNow : null;
+                order.OwnerConfirmedBy = isOwner ? CurrentUser : null;
                 auditChanges.Add($"Draft inquiry finalized and locked into production by {CurrentUser}");
             }
             else if (staysDraft)
@@ -513,6 +602,11 @@ namespace LechonSystem.Api.Services
             order.AddOns = request.AddOns;
             order.DeliveryFee = request.DeliveryFee;
             order.Downpayment = request.Downpayment;
+            order.DownpaymentMethod = request.Downpayment > 0
+                ? PaymentChannels.Normalize(request.DownpaymentMethod, "GCash")
+                : "None";
+            order.FreebiesSummary = request.FreebiesSummary;
+            order.FreebiesConfigJson = request.FreebiesConfigJson;
             order.Discount = request.Discount;
             order.GrandTotal = request.GrandTotal;
             order.UpdatedAt = DateTime.UtcNow;
@@ -593,6 +687,20 @@ namespace LechonSystem.Api.Services
             }
 
             await _context.SaveChangesAsync();
+
+            if (request.Downpayment > previousDownpayment)
+            {
+                var additionalAmount = request.Downpayment - previousDownpayment;
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = $"ORDER_EDIT_DP_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}",
+                    Provider = PaymentChannels.ToProvider(order.DownpaymentMethod),
+                    PaymentMethod = order.DownpaymentMethod,
+                    Amount = additionalAmount,
+                    Status = PaymentStatus.Success
+                });
+            }
 
             // Handle finalization or rescheduling
             if (isFinalizing && order.TargetDeliveryTime.HasValue)
@@ -705,6 +813,9 @@ namespace LechonSystem.Api.Services
                 AddOns = order.AddOns,
                 DeliveryFee = order.DeliveryFee,
                 Downpayment = order.Downpayment,
+                DownpaymentMethod = order.DownpaymentMethod,
+                FreebiesSummary = order.FreebiesSummary,
+                FreebiesConfigJson = order.FreebiesConfigJson,
                 Discount = order.Discount,
                 GrandTotal = order.GrandTotal,
                 BalanceDue = (order.GrandTotal - order.Downpayment) > 0 ? (order.GrandTotal - order.Downpayment) : 0,
@@ -722,6 +833,9 @@ namespace LechonSystem.Api.Services
                 RoutingStatus = order.RoutingStatus.ToString(),
                 DeliveryTripId = order.DeliveryTripId,
                 SettlementCustodyStatus = order.SettlementCustodyStatus ?? "Uncollected",
+                IsOwnerConfirmed = order.IsOwnerConfirmed,
+                OwnerConfirmedAt = order.OwnerConfirmedAt,
+                OwnerConfirmedBy = order.OwnerConfirmedBy,
                 OrderItems = order.OrderItems.Select(i => new OrderDetailItemDto
                 {
                     Id = i.Id,
@@ -740,6 +854,45 @@ namespace LechonSystem.Api.Services
                     }
                 }).ToList()
             };
+
+            dto.PaymentLogs = await _context.PaymentLogs
+                .AsNoTracking()
+                .Where(p => p.OrderId == orderId && p.Status == PaymentStatus.Success)
+                .OrderBy(p => p.CreatedAt)
+                .Select(p => new PaymentLogDto
+                {
+                    Id = p.Id,
+                    Amount = p.Amount,
+                    PaymentMethod = p.PaymentMethod,
+                    Status = p.Status.ToString(),
+                    GatewayReferenceId = p.GatewayReferenceId,
+                    CreatedAt = p.CreatedAt
+                })
+                .ToListAsync();
+
+            foreach (var payment in dto.PaymentLogs)
+            {
+                payment.PaymentMethod = PaymentChannels.Normalize(payment.PaymentMethod);
+            }
+
+            dto.PaymentChannelsSummary = dto.PaymentLogs
+                .GroupBy(p => p.PaymentMethod)
+                .Select(g => new PaymentChannelTotalDto
+                {
+                    PaymentMethod = g.Key,
+                    Amount = g.Sum(p => p.Amount)
+                })
+                .OrderBy(p => Array.IndexOf(PaymentChannels.Supported, p.PaymentMethod))
+                .ToList();
+
+            if (dto.PaymentChannelsSummary.Count == 0 && order.Downpayment > 0)
+            {
+                dto.PaymentChannelsSummary.Add(new PaymentChannelTotalDto
+                {
+                    PaymentMethod = PaymentChannels.Normalize(order.DownpaymentMethod, "GCash"),
+                    Amount = order.Downpayment
+                });
+            }
 
             var trip = order.DeliveryTripId.HasValue
                 ? await _context.DeliveryTrips.AsNoTracking().FirstOrDefaultAsync(t => t.Id == order.DeliveryTripId.Value)

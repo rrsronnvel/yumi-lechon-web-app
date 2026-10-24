@@ -64,25 +64,15 @@ namespace LechonSystem.Api.Controllers
 
                 // Support both string PaymentMethod ("Physical Cash", "Store GCash") and Provider enum
                 var provider = dto.Provider ?? PaymentProvider.Cash;
+                var paymentMethod = PaymentChannels.FromProvider(provider);
                 if (!string.IsNullOrWhiteSpace(dto.PaymentMethod))
                 {
-                    var pm = dto.PaymentMethod.Trim().ToLowerInvariant();
-                    if (pm.Contains("gcash"))
-                    {
-                        provider = PaymentProvider.ManualGCash;
-                    }
-                    else if (pm.Contains("cash"))
-                    {
-                        provider = PaymentProvider.Cash;
-                    }
-                    else if (Enum.TryParse<PaymentProvider>(dto.PaymentMethod, true, out var parsed))
-                    {
-                        provider = parsed;
-                    }
+                    paymentMethod = PaymentChannels.Normalize(dto.PaymentMethod);
+                    provider = PaymentChannels.ToProvider(paymentMethod);
                 }
 
                 // Pass manual inputs straight into the exact same verification brain
-                await _paymentService.ProcessPaymentAsync(dto.OrderId, dto.Amount, refId, provider);
+                await _paymentService.ProcessPaymentAsync(dto.OrderId, dto.Amount, refId, provider, paymentMethod);
                 
                 return Ok(new { message = "Manual payment recorded successfully. Reservation locked!" });
             }

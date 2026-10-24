@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 
+export interface PaymentChannelTotalDto {
+  paymentMethod: string;
+  amount: number;
+}
+
 export interface OrderDirectoryDto {
   id: number;
   orderReference?: string;
@@ -19,6 +24,9 @@ export interface OrderDirectoryDto {
   riderDepartureTime?: string | null;
   grandTotal: number;
   downpayment: number;
+  downpaymentMethod: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
   balanceDue: number;
   isTrustedCustomer: boolean;
   isCancelled: boolean;
@@ -29,6 +37,10 @@ export interface OrderDirectoryDto {
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   riderName?: string | null;
   isRemittedToOwner?: boolean;
+  isOwnerConfirmed: boolean;
+  ownerConfirmedAt?: string | null;
+  ownerConfirmedBy?: string | null;
+  paymentChannelsSummary: PaymentChannelTotalDto[];
 }
 
 export const useOrdersDirectory = (

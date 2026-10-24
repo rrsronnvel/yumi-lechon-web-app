@@ -24,6 +24,11 @@ export const orderFormSchema = z
     discount: z.number().min(0, { message: "Discount cannot be negative." }).default(0),
     grandTotal: z.number().min(0).default(0),
     downpayment: z.number().min(0, { message: "Downpayment cannot be negative." }).default(0),
+    downpaymentMethod: z
+      .enum(["Cash", "GCash", "Maya", "Bank Transfer", "None"])
+      .default("None"),
+    freebiesSummary: z.string().nullable().optional(),
+    freebiesConfigJson: z.string().nullable().optional(),
     isTrustedCustomer: z.boolean().default(false),
 
     items: z

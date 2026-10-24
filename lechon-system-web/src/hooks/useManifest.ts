@@ -22,7 +22,12 @@ export interface PendingSettlementDrop {
   dispatchTime?: string | null;
 }
 
-export type PaymentMethodType = "Cash" | "GCash" | "ManualGCash";
+export type PaymentMethodType =
+  | "Cash"
+  | "GCash"
+  | "ManualGCash"
+  | "Maya"
+  | "Bank Transfer";
 
 export interface SettlePaymentPayload {
   orderId: number;

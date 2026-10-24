@@ -25,11 +25,14 @@ export interface RoastingScheduleItem {
   location?: string;
   landmark?: string | null;
   remarks?: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
   addOns?: string;
   price?: number;
   deliveryFee?: number;
   lechonFee?: number;
   downpayment?: number;
+  downpaymentMethod?: string;
   grandTotal?: number;
   fulfillment?: number;
   quantity?: number;

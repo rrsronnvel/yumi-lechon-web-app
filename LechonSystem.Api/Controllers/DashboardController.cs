@@ -29,6 +29,13 @@ namespace LechonSystem.Api.Controllers
             return Ok(tasks);
         }
 
+        [HttpGet("pending-owner-confirmations")]
+        public async Task<IActionResult> GetPendingOwnerConfirmations()
+        {
+            var tasks = await _dashboardService.GetPendingOwnerConfirmationsAsync();
+            return Ok(tasks);
+        }
+
         [HttpGet("tasks/delivery-verifications")]
         public async Task<IActionResult> GetDeliveryVerifications()
         {

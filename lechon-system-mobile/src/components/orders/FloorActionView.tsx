@@ -15,9 +15,11 @@ import * as Clipboard from 'expo-clipboard';
 import {
   useDefrostRosterQuery,
   usePendingConfirmationsQuery,
-  DefrostRosterItemDto,
+  usePendingOwnerConfirmationsQuery,
   PendingConfirmationItemDto,
 } from '../../hooks/useFloorAction';
+import { useConfirmOwnerOrderMutation } from '../../hooks/useOrders';
+import { useAuth } from '../../context/AuthContext';
 import {
   generateDownpaymentReminder,
   generateDefrostRosterMessage,
@@ -27,6 +29,8 @@ interface FloorActionViewProps {
   onSelectOrderForDeposit: (orderId: number) => void;
   onRefresh?: () => Promise<unknown> | void;
   isRefreshing?: boolean;
+  alertsActive: boolean;
+  sendTestNotification: () => Promise<void>;
 }
 
 const formatSchedule = (dateStr: string | Date): string => {
@@ -77,7 +81,11 @@ export default function FloorActionView({
   onSelectOrderForDeposit,
   onRefresh,
   isRefreshing = false,
+  alertsActive,
+  sendTestNotification,
 }: FloorActionViewProps) {
+  const { isOwner } = useAuth();
+  const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const {
     data: confirmations = [],
     isLoading: isConfirmationsLoading,
@@ -92,14 +100,56 @@ export default function FloorActionView({
     refetch: refetchRoster,
   } = useDefrostRosterQuery();
 
-  const isLoading = isConfirmationsLoading || isRosterLoading;
-  const isError = isConfirmationsError || isRosterError;
+  const {
+    data: ownerConfirmations = [],
+    isLoading: isOwnerConfirmationsLoading,
+    isError: isOwnerConfirmationsError,
+    refetch: refetchOwnerConfirmations,
+  } = usePendingOwnerConfirmationsQuery();
+
+  const isLoading =
+    isConfirmationsLoading || isRosterLoading || isOwnerConfirmationsLoading;
+  const isError =
+    isConfirmationsError || isRosterError || isOwnerConfirmationsError;
 
   const handlePullRefresh = async () => {
     if (onRefresh) {
       await onRefresh();
     }
-    await Promise.all([refetchConfirmations(), refetchRoster()]);
+    await Promise.all([
+      refetchConfirmations(),
+      refetchRoster(),
+      refetchOwnerConfirmations(),
+    ]);
+  };
+
+  const handleTestNotification = () => {
+    sendTestNotification().catch((error: unknown) => {
+      Alert.alert(
+        'Alerts Unavailable',
+        error instanceof Error ? error.message : 'Could not send a test alert.'
+      );
+    });
+  };
+
+  const handleConfirmOwnerOrder = (orderId: number, reference: string) => {
+    Alert.alert(
+      'Confirm Order',
+      `Verify and confirm order ${reference || `#${orderId}`}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Order',
+          onPress: () => {
+            confirmOwnerMutation.mutate(orderId, {
+              onSuccess: () => Alert.alert('Confirmed', 'Owner review is complete.'),
+              onError: () =>
+                Alert.alert('Could Not Confirm', 'Please retry the owner confirmation.'),
+            });
+          },
+        },
+      ]
+    );
   };
 
   const handleCopyReminder = async (item: PendingConfirmationItemDto) => {
@@ -168,6 +218,57 @@ export default function FloorActionView({
         />
       }
     >
+      <View style={styles.notificationBar}>
+        <Text style={styles.notificationStatus}>
+          {alertsActive ? '🔔 Alerts Active' : '🔕 Alerts Permission Needed'}
+        </Text>
+        <Pressable style={styles.testAlertButton} onPress={handleTestNotification}>
+          <Text style={styles.testAlertButtonText}>🔔 Test Alert</Text>
+        </Pressable>
+      </View>
+
+      {ownerConfirmations.length > 0 && (
+        <View style={styles.ownerSection}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.ownerSectionTitle}>
+              👑 Needs Owner Confirmation
+            </Text>
+            <View style={styles.ownerCountBadge}>
+              <Text style={styles.ownerCountText}>{ownerConfirmations.length}</Text>
+            </View>
+          </View>
+          {ownerConfirmations.map((item) => (
+            <View key={item.orderId} style={styles.ownerCard}>
+              <Text style={styles.ownerOrderReference}>{item.orderReference}</Text>
+              <Text style={styles.ownerCustomer}>{item.customerName}</Text>
+              <Text style={styles.ownerMeta} numberOfLines={2}>
+                {item.itemsSummary} • encoded by {item.createdBy}
+              </Text>
+              {item.freebiesSummary ? (
+                <Text style={styles.ownerFreebies}>{item.freebiesSummary}</Text>
+              ) : null}
+              <View style={styles.ownerCardFooter}>
+                <Text style={styles.ownerAmount}>
+                  ₱{item.grandTotal.toLocaleString()} • DP ₱
+                  {item.downpayment.toLocaleString()} {item.downpaymentMethod}
+                </Text>
+                {isOwner && (
+                  <Pressable
+                    style={styles.confirmOwnerButton}
+                    disabled={confirmOwnerMutation.isPending}
+                    onPress={() =>
+                      handleConfirmOwnerOrder(item.orderId, item.orderReference)
+                    }
+                  >
+                    <Text style={styles.confirmOwnerButtonText}>✅ Confirm Order</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* ========================================================= */}
       {/* SECTION A: ACTION REQUIRED - DOWNPAYMENT RADAR            */}
       {/* ========================================================= */}
@@ -413,6 +514,118 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 40,
+  },
+  notificationBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 14,
+  },
+  notificationStatus: {
+    color: '#065F46',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  testAlertButton: {
+    backgroundColor: '#047857',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  testAlertButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ownerSection: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 18,
+  },
+  ownerSectionTitle: {
+    color: '#9A3412',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  ownerCountBadge: {
+    backgroundColor: '#EA580C',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  ownerCountText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ownerCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 10,
+    padding: 11,
+    marginTop: 9,
+  },
+  ownerOrderReference: {
+    color: '#9A3412',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  ownerCustomer: {
+    color: '#1C1917',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  ownerMeta: {
+    color: '#57534E',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  ownerFreebies: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    color: '#92400E',
+    fontSize: 11,
+    fontWeight: '800',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  ownerCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 9,
+  },
+  ownerAmount: {
+    flex: 1,
+    color: '#44403C',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  confirmOwnerButton: {
+    backgroundColor: '#16A34A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  confirmOwnerButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
   },
   centerBox: {
     flex: 1,

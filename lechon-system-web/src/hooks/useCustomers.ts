@@ -14,6 +14,17 @@ export interface CustomerProfileDto {
   isVip: boolean;
   totalOrdersCount: number;
   updatedAt: string;
+  activeUpcomingOrders: ActiveCustomerOrderSummaryDto[];
+}
+
+export interface ActiveCustomerOrderSummaryDto {
+  orderId: number;
+  orderReference: string;
+  targetDeliveryTime?: string | null;
+  grandTotal: number;
+  itemsSummary: string;
+  createdBy: string;
+  isDraft: boolean;
 }
 
 export interface UpdateCustomerNotesVariables {

@@ -816,3 +816,33 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 * **Customer & VIP Telemetry:** Highlights `👑 VIP` status for trusted accounts and indicates fulfillment destination (`🏪 Store Pickup` vs. `📍 Delivery Address`).
 * **Prep / Tahi Monospace Deadline:** Formatted in bold tabular monospace (e.g., `🔪 Prep / Tahi Deadline: 07:30 AM`) so staff inspecting chest freezers can align pig thawing with the kitchen clock.
 * **Direct Dossier Access:** Tapping any roster card opens `OrderDossierModal` for the underlying order.
+
+---
+
+## 16. Whole Lechon Freebies, Owner Verification, Duplicate Safety & Operational Alerts
+
+### 16.1 Whole Lechon 7-Freebies Engine
+* **Eligibility:** Only quantities whose category has `MinimumWeightKg >= 13` count as Whole Lechon heads. Lechon Belly (`0 < MinimumWeightKg < 13`) and add-ons never create freebie quota.
+* **Standard Quota:** Each eligible head starts with one each of `Sarsa`, `1.5L Coke`, `Pancit`, `Palabok`, `Spaghetti`, `Dinuguan`, and `Puto` (`7 × wholePigCount`). Web and Mobile persist `FreebiesConfigJson` and the staff-facing `FreebiesSummary`.
+* **No-Freebies Option:** Opting out zeros every count and adds exactly `₱2,000 × wholePigCount` to `Discount`; returning to Standard removes only the engine-applied discount.
+* **Raw Innards:** Enabling Raw Innards locks `Dinuguan = 0`; the cooked-dish allowance becomes `6 × wholePigCount`, and the omitted Dinuguan cannot be replaced.
+* **Operations Visibility:** Kitchen and Rider Remarks cells show rose (`🚫 No Freebies`), emerald (unchanged standard), or amber (custom swap / Raw Innards) badges above ordinary staff remarks. Dossiers and Owner queues show the same summary.
+
+### 16.2 Owner Order Confirmation Gate
+* Every non-draft order immediately reserves freezer inventory and receives its backward production schedule regardless of encoder role.
+* Owner-created orders and drafts are confirmed at creation. Active Cashier-created orders remain `IsOwnerConfirmed = false` until an Owner invokes `POST /api/orders/{id}/confirm-owner`.
+* Confirmation stamps `OwnerConfirmedAt`, `OwnerConfirmedBy`, and `Order verified and confirmed by Owner ({username})`. Web Dashboard, Web/Mobile directories, Floor Action, and dossiers expose the pending state and Owner-only action.
+
+### 16.3 Proactive Duplicate Order Radar
+* Customer lookup matches normalized phone, Facebook name, or customer name and returns non-cancelled drafts plus bookings from yesterday through 60 days ahead, even without a `CustomerProfile` row.
+* Web and Mobile POS/Edit show a high-visibility warning with reference, schedule, item summary, and encoder. A second same-calendar-day speed bump requires explicit confirmation before create/update.
+
+### 16.4 BIR Four-Channel Payment Mapping
+* Every successful initial downpayment and later settlement writes a canonical `PaymentLog.PaymentMethod`: `Cash`, `GCash`, `Maya`, or `Bank Transfer`.
+* A positive downpayment without a selected channel defaults to `GCash`; a zero downpayment persists `None`. Forms, dossiers, and settlement modals expose all four choices.
+* Directory/detail projections include per-channel summaries. Web Orders aggregates the active slice into a BIR breakdown strip while dossiers retain individual payment rows and channel badges.
+
+### 16.5 Scheduled Mobile Operational Notifications
+* `expo-notifications` configures Android channel `default` at high importance after authenticated permission is granted.
+* Daily local reminders run at **9:00 AM** for the 4-day deposit radar and **4:00 PM** for the nightly defrost pull-list.
+* Owner devices receive an immediate alert when the pending Owner queue increases; authenticated devices receive one when a new Rush Defrost item appears. Floor Action displays alert status and a `[ 🔔 Test Alert ]` action.

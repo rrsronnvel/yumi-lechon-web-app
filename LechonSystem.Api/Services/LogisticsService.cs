@@ -539,9 +539,8 @@ namespace LechonSystem.Api.Services
             {
                 order.Downpayment += collectedAmount;
 
-                PaymentProvider provider = paymentMethod?.Contains("GCash", StringComparison.OrdinalIgnoreCase) == true
-                    ? PaymentProvider.ManualGCash
-                    : PaymentProvider.Cash;
+                var normalizedPaymentMethod = PaymentChannels.Normalize(paymentMethod);
+                var provider = PaymentChannels.ToProvider(normalizedPaymentMethod);
 
                 var refId = !string.IsNullOrWhiteSpace(referenceNumber)
                     ? referenceNumber
@@ -552,6 +551,7 @@ namespace LechonSystem.Api.Services
                     OrderId = order.Id,
                     GatewayReferenceId = refId,
                     Provider = provider,
+                    PaymentMethod = normalizedPaymentMethod,
                     Amount = collectedAmount,
                     Status = PaymentStatus.Success
                 });
@@ -597,9 +597,8 @@ namespace LechonSystem.Api.Services
             {
                 order.Downpayment += session.ExpectedAmount;
 
-                PaymentProvider provider = session.PaymentMethod?.Contains("GCash", StringComparison.OrdinalIgnoreCase) == true
-                    ? PaymentProvider.ManualGCash
-                    : PaymentProvider.Cash;
+                var normalizedPaymentMethod = PaymentChannels.Normalize(session.PaymentMethod);
+                var provider = PaymentChannels.ToProvider(normalizedPaymentMethod);
 
                 var refId = !string.IsNullOrWhiteSpace(session.ReferenceNumber)
                     ? session.ReferenceNumber
@@ -610,6 +609,7 @@ namespace LechonSystem.Api.Services
                     OrderId = order.Id,
                     GatewayReferenceId = refId,
                     Provider = provider,
+                    PaymentMethod = normalizedPaymentMethod,
                     Amount = session.ExpectedAmount,
                     Status = PaymentStatus.Success
                 });
@@ -767,9 +767,8 @@ namespace LechonSystem.Api.Services
             {
                 order.Downpayment += amountToSettle;
 
-                PaymentProvider provider = PaymentProvider.Cash;
-                if (session.PaymentMethod == "ManualGCash") provider = PaymentProvider.ManualGCash;
-                else if (session.PaymentMethod == "GCash") provider = PaymentProvider.GCash;
+                var normalizedPaymentMethod = PaymentChannels.Normalize(session.PaymentMethod);
+                var provider = PaymentChannels.ToProvider(normalizedPaymentMethod);
 
                 var refId = session.ReferenceNumber;
                 if (string.IsNullOrWhiteSpace(refId))
@@ -782,6 +781,7 @@ namespace LechonSystem.Api.Services
                     OrderId = order.Id,
                     GatewayReferenceId = refId,
                     Provider = provider,
+                    PaymentMethod = normalizedPaymentMethod,
                     Amount = amountToSettle,
                     Status = PaymentStatus.Success
                 };
@@ -827,6 +827,7 @@ namespace LechonSystem.Api.Services
                 OrderId = order.Id,
                 GatewayReferenceId = refId,
                 Provider = PaymentProvider.GCash,
+                PaymentMethod = "GCash",
                 Amount = amount,
                 Status = PaymentStatus.Success
             };

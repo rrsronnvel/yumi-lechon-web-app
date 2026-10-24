@@ -77,6 +77,19 @@ namespace LechonSystem.Api.Controllers
             return Ok(new { Message = "Delivery details officially confirmed." });
         }
 
+        [HttpPost("{id}/confirm-owner")]
+        [Authorize(Roles = "Owner")]
+        public async Task<IActionResult> ConfirmOrderByOwner(int id)
+        {
+            var ownerUsername = User.Identity?.Name ?? "Owner";
+            var success = await _orderService.ConfirmOrderByOwnerAsync(id, ownerUsername);
+
+            if (!success)
+                return NotFound($"Order ID {id} was not found or is cancelled.");
+
+            return Ok(new { Message = "Order verified and confirmed by Owner." });
+        }
+
         [HttpPatch("{id}/cancel")]
         public async Task<IActionResult> CancelOrder(int id, [FromBody] CancelOrderRequest? request = null)
         {

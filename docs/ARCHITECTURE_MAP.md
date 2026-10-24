@@ -454,4 +454,28 @@
 
 - GET /daily-sheets -> renders (Hosts KitchenViewTab and RiderViewTab)
 
+### 5. Whole Lechon Freebies & Confirmation Extension
+
+#### Backend Contracts and Endpoints
+
+- `LechonSystem.Api/Models/Order.cs` persists `FreebiesSummary`, `FreebiesConfigJson`, `DownpaymentMethod`, `IsOwnerConfirmed`, `OwnerConfirmedAt`, and `OwnerConfirmedBy`.
+- `LechonSystem.Api/Models/PaymentLog.cs` persists canonical BIR `PaymentMethod` values: `Cash`, `GCash`, `Maya`, or `Bank Transfer`.
+- `POST /api/orders/{id}/confirm-owner` is Owner-only and stamps confirmation metadata plus an immutable audit entry.
+- `GET /api/dashboard/pending-owner-confirmations` is available to Owner/Cashier clients and returns active cashier orders awaiting review.
+- `GET /api/customers/lookup` includes `ActiveUpcomingOrders` and returns a wrapper even when no `CustomerProfile` row exists but a matching active order does.
+- Order directory/details expose channel aggregates and payment-log methods; daily sheets project `FreebiesSummary` for staff badges.
+
+#### Web Files
+
+- `lechon-system-web/src/utils/freebiesHelper.ts`: Canonical seven-item defaults, Raw Innards quota, opt-out state, JSON hydration, and compact summary formatting.
+- `lechon-system-web/src/components/ui/orders/FreebiesSelector.tsx`: Collapsed smart-pill selector shared by POS and edit forms.
+- `lechon-system-web/src/components/ui/orders/PaymentChannelPills.tsx`: Cash, GCash, Maya, and Bank Transfer selector.
+- `DashboardPage.tsx`, `OrdersPage.tsx`, and Manifest settlement modals expose Owner review and BIR channel visibility/actions.
+
+#### Mobile Files
+
+- `lechon-system-mobile/src/utils/freebiesHelper.ts`: Behaviorally synchronized copy of the web freebies engine.
+- `lechon-system-mobile/src/hooks/useNotifications.ts`: Authenticated permission/channel setup, 9:00 AM deposit reminder, 4:00 PM defrost reminder, Owner-queue increase alerts, Rush Defrost alerts, and test alerts.
+- `PosScreen.tsx` and `EditOrderModal.tsx` implement duplicate speed bumps, freebies, and four-channel selection; `FloorActionView.tsx` and `OrderDossierModal.tsx` implement Owner actions and operational visibility.
+
 **

@@ -19,11 +19,13 @@ import {
   useOrderAuditLogs,
   useRecordManualPaymentMutation,
   useCancelOrderMutation,
+  useConfirmOwnerOrderMutation,
   OrderDirectoryDto,
 } from '../../hooks/useOrders';
 import { useUpdateCustomerNotesMutation } from '../../hooks/usePos';
 import { generateBookingConfirmation } from '../../utils/messengerTemplates';
 import EditOrderModal from './EditOrderModal';
+import { useAuth } from '../../context/AuthContext';
 
 interface OrderDossierModalProps {
   orderId: number | null;
@@ -37,10 +39,13 @@ const PRESET_CANCEL_REASONS = [
   'Weather / Flooded Access',
 ];
 
-const PAYMENT_METHODS: Array<{ label: string; value: 'GCash' | 'Cash' | 'BankTransfer' }> = [
+type PaymentMethod = 'GCash' | 'Cash' | 'Maya' | 'Bank Transfer';
+
+const PAYMENT_METHODS: { label: string; value: PaymentMethod }[] = [
   { label: '📱 GCash', value: 'GCash' },
   { label: '💵 Cash', value: 'Cash' },
-  { label: '🏦 BankTransfer', value: 'BankTransfer' },
+  { label: '💚 Maya', value: 'Maya' },
+  { label: '🏦 Bank Transfer', value: 'Bank Transfer' },
 ];
 
 export default function OrderDossierModal({
@@ -48,6 +53,7 @@ export default function OrderDossierModal({
   fallbackOrder,
   onClose,
 }: OrderDossierModalProps) {
+  const { isOwner } = useAuth();
   const {
     data: orderDetails,
     isLoading: isDetailsLoading,
@@ -59,6 +65,7 @@ export default function OrderDossierModal({
 
   const paymentMutation = useRecordManualPaymentMutation();
   const cancelMutation = useCancelOrderMutation();
+  const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
 
   // Clipboard banner state
@@ -75,7 +82,7 @@ export default function OrderDossierModal({
   // Payment logger form state
   const [isPaymentExpanded, setIsPaymentExpanded] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'GCash' | 'Cash' | 'BankTransfer'>('GCash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('GCash');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [paymentFeedback, setPaymentFeedback] = useState<{
     type: 'success' | 'error';
@@ -121,6 +128,9 @@ export default function OrderDossierModal({
 
   const isCancelled = Boolean(orderDetails?.isCancelled ?? fallbackOrder?.isCancelled);
   const isDraft = Boolean(orderDetails?.isDraft ?? fallbackOrder?.isDraft);
+  const isOwnerConfirmed = Boolean(
+    orderDetails?.isOwnerConfirmed ?? fallbackOrder?.isOwnerConfirmed ?? true
+  );
   const routingStatus = (
     orderDetails?.routingStatus ||
     fallbackOrder?.routingStatus ||
@@ -249,6 +259,34 @@ export default function OrderDossierModal({
     }
   };
 
+  const handleConfirmOwner = () => {
+    if (!orderId) return;
+    Alert.alert(
+      'Confirm Order',
+      `Verify and confirm order #${displayOrderRef}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Order',
+          onPress: () => {
+            confirmOwnerMutation.mutate(orderId, {
+              onSuccess: () =>
+                setPaymentFeedback({
+                  type: 'success',
+                  message: 'Owner verification completed.',
+                }),
+              onError: () =>
+                setPaymentFeedback({
+                  type: 'error',
+                  message: 'Owner confirmation failed. Please retry.',
+                }),
+            });
+          },
+        },
+      ]
+    );
+  };
+
   const renderStatusBadge = () => {
     if (isDraft) {
       return (
@@ -337,6 +375,11 @@ export default function OrderDossierModal({
                 </View>
               )}
               {renderStatusBadge()}
+              {!isDraft && !isOwnerConfirmed && (
+                <View style={styles.ownerReviewBadge}>
+                  <Text style={styles.ownerReviewBadgeText}>⏳ Needs Owner Review</Text>
+                </View>
+              )}
             </View>
             <Text style={styles.customerNameTitle} numberOfLines={1}>
               {activeOrder?.customerName || 'Customer Dossier'}
@@ -452,6 +495,39 @@ export default function OrderDossierModal({
                 <Text style={styles.draftInquiryBannerSubtitle}>
                   This order is an unconfirmed draft. No kitchen schedule has been generated and no freezer inventory is locked.
                 </Text>
+              </View>
+            )}
+
+            {!isDraft && (
+              <View
+                style={[
+                  styles.ownerConfirmationBox,
+                  isOwnerConfirmed
+                    ? styles.ownerConfirmationComplete
+                    : styles.ownerConfirmationPending,
+                ]}
+              >
+                <View style={styles.ownerConfirmationCopy}>
+                  <Text style={styles.ownerConfirmationTitle}>
+                    {isOwnerConfirmed
+                      ? '✅ Owner Confirmed'
+                      : '⏳ Awaiting Owner Confirmation'}
+                  </Text>
+                  <Text style={styles.ownerConfirmationMeta}>
+                    {isOwnerConfirmed
+                      ? `Verified by ${orderDetails?.ownerConfirmedBy || fallbackOrder?.ownerConfirmedBy || 'Owner'}`
+                      : `Encoded by ${orderDetails?.createdBy || fallbackOrder?.createdBy || 'Cashier'}`}
+                  </Text>
+                </View>
+                {!isOwnerConfirmed && isOwner && (
+                  <Pressable
+                    style={styles.ownerConfirmButton}
+                    disabled={confirmOwnerMutation.isPending}
+                    onPress={handleConfirmOwner}
+                  >
+                    <Text style={styles.ownerConfirmButtonText}>✅ Confirm Order</Text>
+                  </Pressable>
+                )}
               </View>
             )}
 
@@ -863,6 +939,13 @@ export default function OrderDossierModal({
                     <Text style={styles.addOnsValue}>{orderDetails?.addOns}</Text>
                   </View>
                 )}
+                {Boolean(orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary) && (
+                  <View style={styles.freebiesBadge}>
+                    <Text style={styles.freebiesBadgeText}>
+                      {orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary}
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* Financial Ledger Summary */}
@@ -911,13 +994,47 @@ export default function OrderDossierModal({
 
                 <View style={styles.ledgerRow}>
                   <Text style={styles.downpaymentLabel}>Downpayment / Total Paid</Text>
-                  <Text style={styles.downpaymentValue}>
-                    - ₱
+                  <View style={styles.paymentAmountChannelWrap}>
+                    <Text style={styles.downpaymentValue}>
+                      - ₱
+                      {Number(
+                        orderDetails?.downpayment ?? fallbackOrder?.downpayment ?? 0
+                      ).toLocaleString()}
+                    </Text>
                     {Number(
                       orderDetails?.downpayment ?? fallbackOrder?.downpayment ?? 0
-                    ).toLocaleString()}
-                  </Text>
+                    ) > 0 && (
+                      <Text style={styles.paymentChannelBadge}>
+                        {orderDetails?.downpaymentMethod ||
+                          fallbackOrder?.downpaymentMethod ||
+                          'GCash'}
+                      </Text>
+                    )}
+                  </View>
                 </View>
+
+                {orderDetails?.paymentLogs?.length ? (
+                  <View style={styles.paymentHistoryBox}>
+                    <Text style={styles.paymentHistoryTitle}>BIR PAYMENT CHANNELS</Text>
+                    {orderDetails.paymentLogs.map((payment) => (
+                      <View key={payment.id} style={styles.paymentHistoryRow}>
+                        <Text style={styles.paymentHistoryMethod}>
+                          {payment.paymentMethod === 'Cash'
+                            ? '💵'
+                            : payment.paymentMethod === 'Maya'
+                              ? '💚'
+                              : payment.paymentMethod === 'Bank Transfer'
+                                ? '🏦'
+                                : '📱'}{' '}
+                          {payment.paymentMethod}
+                        </Text>
+                        <Text style={styles.paymentHistoryAmount}>
+                          ₱{Number(payment.amount).toLocaleString()}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
 
                 <View style={styles.balanceHighlightBox}>
                   <Text style={styles.balanceHighlightLabel}>Remaining Balance Due</Text>
@@ -1209,6 +1326,71 @@ export default function OrderDossierModal({
 }
 
 const styles = StyleSheet.create({
+  ownerReviewBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  ownerReviewBadgeText: { color: '#92400E', fontSize: 10, fontWeight: '800' },
+  ownerConfirmationBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  ownerConfirmationComplete: { backgroundColor: '#ECFDF5', borderColor: '#6EE7B7' },
+  ownerConfirmationPending: { backgroundColor: '#FFFBEB', borderColor: '#FCD34D' },
+  ownerConfirmationCopy: { flex: 1 },
+  ownerConfirmationTitle: { color: '#44403C', fontSize: 12, fontWeight: '900' },
+  ownerConfirmationMeta: { color: '#78716C', fontSize: 10, marginTop: 2 },
+  ownerConfirmButton: {
+    backgroundColor: '#16A34A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  ownerConfirmButtonText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900' },
+  freebiesBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    marginTop: 4,
+  },
+  freebiesBadgeText: { color: '#92400E', fontSize: 11, fontWeight: '900' },
+  paymentAmountChannelWrap: { alignItems: 'flex-end', gap: 3 },
+  paymentChannelBadge: {
+    color: '#065F46',
+    backgroundColor: '#ECFDF5',
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  paymentHistoryBox: {
+    backgroundColor: '#FAFAF9',
+    borderRadius: 8,
+    padding: 9,
+    gap: 5,
+  },
+  paymentHistoryTitle: { color: '#78716C', fontSize: 9, fontWeight: '900' },
+  paymentHistoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  paymentHistoryMethod: { color: '#44403C', fontSize: 11, fontWeight: '700' },
+  paymentHistoryAmount: { color: '#1C1917', fontSize: 11, fontWeight: '900' },
   safeArea: {
     flex: 1,
     backgroundColor: '#FAF6F4',

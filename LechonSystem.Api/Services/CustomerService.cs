@@ -37,13 +37,54 @@ public class CustomerService : ICustomerService
         var normalizedPhone = NormalizePhoneNumber(phone);
         var digitCount = normalizedPhone.Count(char.IsDigit);
         var trimmedFb = string.IsNullOrWhiteSpace(fbName) ? null : fbName.Trim();
+        var rawTrimmedPhone = phone?.Trim() ?? string.Empty;
+        var fbLower = trimmedFb?.ToLower();
+
+        if (digitCount < 7 && (string.IsNullOrWhiteSpace(trimmedFb) || trimmedFb.Length < 3))
+        {
+            return null;
+        }
+
+        var activeFrom = DateTime.Today.AddDays(-1);
+        var activeTo = DateTime.Today.AddDays(60);
+        var activeOrders = await _context.Orders
+            .AsNoTracking()
+            .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.ItemCategory)
+            .Where(o => !o.IsCancelled &&
+                (o.IsDraft || (o.TargetDeliveryTime >= activeFrom && o.TargetDeliveryTime <= activeTo)) &&
+                ((digitCount >= 7 && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawTrimmedPhone)) ||
+                 (fbLower != null &&
+                    ((o.FacebookName != null && o.FacebookName.ToLower() == fbLower) ||
+                     o.CustomerName.ToLower() == fbLower))))
+            .OrderBy(o => o.TargetDeliveryTime ?? DateTime.MaxValue)
+            .ThenByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        var activeSummaries = activeOrders.Select(o =>
+        {
+            var itemParts = o.OrderItems
+                .Select(oi => $"{oi.Quantity}x {oi.ItemCategory?.Name ?? "Lechon"}")
+                .ToList();
+            if (!string.IsNullOrWhiteSpace(o.AddOns)) itemParts.Add(o.AddOns.Trim());
+
+            return new ActiveCustomerOrderSummaryDto
+            {
+                OrderId = o.Id,
+                OrderReference = o.OrderReference,
+                TargetDeliveryTime = o.TargetDeliveryTime,
+                GrandTotal = o.GrandTotal,
+                ItemsSummary = itemParts.Count > 0 ? string.Join(", ", itemParts) : "Lechon Reservation",
+                CreatedBy = o.CreatedBy,
+                IsDraft = o.IsDraft
+            };
+        }).ToList();
 
         CustomerProfile? profile = null;
 
         // 1. Primary lookup by ContactNumber if phone has at least 7 digits
         if (digitCount >= 7)
         {
-            var rawTrimmedPhone = phone!.Trim();
             profile = await _context.CustomerProfiles
                 .AsNoTracking()
                 .FirstOrDefaultAsync(c => c.ContactNumber == normalizedPhone || c.ContactNumber == rawTrimmedPhone);
@@ -52,28 +93,28 @@ public class CustomerService : ICustomerService
         // 2. Fallback lookup by case-insensitive FacebookName
         if (profile == null && !string.IsNullOrWhiteSpace(trimmedFb) && trimmedFb.Length >= 3)
         {
-            var fbLower = trimmedFb.ToLower();
             profile = await _context.CustomerProfiles
                 .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.FacebookName != null && c.FacebookName.ToLower() == fbLower);
+                .FirstOrDefaultAsync(c =>
+                    (c.FacebookName != null && c.FacebookName.ToLower() == fbLower) ||
+                    c.FullName.ToLower() == fbLower);
         }
 
         if (profile != null)
         {
-            return MapToDto(profile);
+            return MapToDto(profile, activeSummaries);
         }
 
         // 3. Lazy historical fallback from Orders if no CustomerProfile row exists yet
         if (digitCount >= 7 || (!string.IsNullOrWhiteSpace(trimmedFb) && trimmedFb.Length >= 3))
         {
-            var rawTrimmedPhone = phone?.Trim() ?? string.Empty;
-            var fbLower = trimmedFb?.ToLower();
-
             var historicalOrders = await _context.Orders
                 .AsNoTracking()
                 .Where(o => !o.IsCancelled && (
                     (digitCount >= 7 && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawTrimmedPhone)) ||
-                    (fbLower != null && o.FacebookName != null && o.FacebookName.ToLower() == fbLower)
+                    (fbLower != null &&
+                        ((o.FacebookName != null && o.FacebookName.ToLower() == fbLower) ||
+                         o.CustomerName.ToLower() == fbLower))
                 ))
                 .OrderByDescending(o => o.CreatedAt)
                 .ToListAsync();
@@ -89,7 +130,7 @@ public class CustomerService : ICustomerService
 
                     if (existing != null)
                     {
-                        return MapToDto(existing);
+                        return MapToDto(existing, activeSummaries);
                     }
 
                     var seededProfile = new CustomerProfile
@@ -109,12 +150,12 @@ public class CustomerService : ICustomerService
                     {
                         _context.CustomerProfiles.Add(seededProfile);
                         await _context.SaveChangesAsync();
-                        return MapToDto(seededProfile);
+                        return MapToDto(seededProfile, activeSummaries);
                     }
                     catch
                     {
                         // Return snapshot DTO without failing if concurrent insert occurred
-                        return MapToDto(seededProfile);
+                        return MapToDto(seededProfile, activeSummaries);
                     }
                 }
 
@@ -128,9 +169,28 @@ public class CustomerService : ICustomerService
                     DefaultLandmark = latest.Landmark,
                     IsVip = historicalOrders.Any(o => o.IsTrustedCustomer),
                     TotalOrdersCount = historicalOrders.Count,
-                    UpdatedAt = latest.UpdatedAt ?? latest.CreatedAt
+                    UpdatedAt = latest.UpdatedAt ?? latest.CreatedAt,
+                    ActiveUpcomingOrders = activeSummaries
                 };
             }
+        }
+
+        if (activeOrders.Count > 0)
+        {
+            var latest = activeOrders.OrderByDescending(o => o.CreatedAt).First();
+            return new CustomerProfileDto
+            {
+                Id = 0,
+                ContactNumber = latest.ContactNumber ?? normalizedPhone,
+                FullName = latest.CustomerName,
+                FacebookName = latest.FacebookName,
+                DefaultAddress = latest.DeliveryAddress,
+                DefaultLandmark = latest.Landmark,
+                IsVip = activeOrders.Any(o => o.IsTrustedCustomer),
+                TotalOrdersCount = activeOrders.Count,
+                UpdatedAt = latest.UpdatedAt ?? latest.CreatedAt,
+                ActiveUpcomingOrders = activeSummaries
+            };
         }
 
         return null;
@@ -243,7 +303,9 @@ public class CustomerService : ICustomerService
         return MapToDto(profile);
     }
 
-    private static CustomerProfileDto MapToDto(CustomerProfile profile)
+    private static CustomerProfileDto MapToDto(
+        CustomerProfile profile,
+        List<ActiveCustomerOrderSummaryDto>? activeUpcomingOrders = null)
     {
         return new CustomerProfileDto
         {
@@ -257,7 +319,8 @@ public class CustomerService : ICustomerService
             ComplaintHistory = profile.ComplaintHistory,
             IsVip = profile.IsVip,
             TotalOrdersCount = profile.TotalOrdersCount,
-            UpdatedAt = profile.UpdatedAt
+            UpdatedAt = profile.UpdatedAt,
+            ActiveUpcomingOrders = activeUpcomingOrders ?? new()
         };
     }
 }

@@ -43,6 +43,26 @@ export interface PendingConfirmationItemDto {
   itemsSummary: string;
 }
 
+export interface PendingOwnerConfirmationDto {
+  id: number;
+  orderId: number;
+  orderReference: string;
+  customerName: string;
+  targetDeliveryTime?: string | null;
+  itemsSummary: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
+  deliveryFee: number;
+  grandTotal: number;
+  downpayment: number;
+  downpaymentMethod: string;
+  createdBy: string;
+  createdAt: string;
+  isOwnerConfirmed: boolean;
+  ownerConfirmedAt?: string | null;
+  ownerConfirmedBy?: string | null;
+}
+
 export const useDefrostRosterQuery = () => {
   return useQuery<DefrostRosterItemDto[]>({
     queryKey: ['dashboard', 'roster'],
@@ -59,6 +79,19 @@ export const usePendingConfirmationsQuery = () => {
     queryKey: ['dashboard', 'pending-confirmations'],
     queryFn: async () => {
       const response = await apiClient.get<PendingConfirmationItemDto[]>('/dashboard/pending-confirmations');
+      return response.data;
+    },
+    staleTime: 1000 * 30,
+  });
+};
+
+export const usePendingOwnerConfirmationsQuery = () => {
+  return useQuery<PendingOwnerConfirmationDto[]>({
+    queryKey: ['dashboard', 'pending-owner-confirmations'],
+    queryFn: async () => {
+      const response = await apiClient.get<PendingOwnerConfirmationDto[]>(
+        '/dashboard/pending-owner-confirmations'
+      );
       return response.data;
     },
     staleTime: 1000 * 30,

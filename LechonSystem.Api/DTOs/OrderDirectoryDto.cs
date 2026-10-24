@@ -19,6 +19,9 @@ public class OrderDirectoryDto
     public DateTime? RiderDepartureTime { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal Downpayment { get; set; }
+    public string DownpaymentMethod { get; set; } = "None";
+    public string? FreebiesSummary { get; set; }
+    public string? FreebiesConfigJson { get; set; }
     public decimal BalanceDue { get; set; }
     public bool IsTrustedCustomer { get; set; }
     public bool IsCancelled { get; set; }
@@ -29,4 +32,8 @@ public class OrderDirectoryDto
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
     public string? RiderName { get; set; }
     public bool IsRemittedToOwner { get; set; }
+    public bool IsOwnerConfirmed { get; set; }
+    public DateTime? OwnerConfirmedAt { get; set; }
+    public string? OwnerConfirmedBy { get; set; }
+    public List<PaymentChannelTotalDto> PaymentChannelsSummary { get; set; } = new();
 }

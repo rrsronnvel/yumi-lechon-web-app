@@ -1,35 +1,36 @@
 {
   "expo": {
-    "name": "lechon-system-mobile",
-    "slug": "lechon-system-mobile",
+    "name": "Yumi's Lechon",
+    "slug": "yumis-lechon",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF6F4"
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FAF6F4",
+        "foregroundImage": "./assets/android-icon-foreground.png"
       },
-      "predictiveBackGestureEnabled": false,
       "package": "com.ronnvelsteam.lechonsystemmobile",
       "usesCleartextTraffic": true
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
       "expo-secure-store",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-notifications"
     ],
     "extra": {
       "eas": {
-        "projectId": "8f661415-3c10-413c-9d32-4dc3f9caaed6"
+        "projectId": "6a449890-600d-4e69-afd5-a800438de869"
       }
     }
   }

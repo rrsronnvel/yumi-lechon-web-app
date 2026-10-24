@@ -28,11 +28,17 @@ public class DailySheetItemDto
     public DateTime PackagingStartTime { get; set; }
     public string Location { get; set; } = string.Empty;
     public string Remarks { get; set; } = string.Empty;
+    public string? FreebiesSummary { get; set; }
+    public string? FreebiesConfigJson { get; set; }
     public string AddOns { get; set; } = "-";
     public decimal Price { get; set; }
     public decimal DeliveryFee { get; set; }
     public decimal Downpayment { get; set; }
+    public string DownpaymentMethod { get; set; } = "None";
     public decimal GrandTotal { get; set; }
+    public bool IsOwnerConfirmed { get; set; }
+    public DateTime? OwnerConfirmedAt { get; set; }
+    public string? OwnerConfirmedBy { get; set; }
     public int Fulfillment { get; set; }
     public int Quantity { get; set; }
     public string RiderName { get; set; } = "Unassigned";

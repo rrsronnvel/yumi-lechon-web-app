@@ -13,6 +13,18 @@ public class CustomerProfileDto
     public bool IsVip { get; set; }
     public int TotalOrdersCount { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public List<ActiveCustomerOrderSummaryDto> ActiveUpcomingOrders { get; set; } = new();
+}
+
+public class ActiveCustomerOrderSummaryDto
+{
+    public int OrderId { get; set; }
+    public string OrderReference { get; set; } = string.Empty;
+    public DateTime? TargetDeliveryTime { get; set; }
+    public decimal GrandTotal { get; set; }
+    public string ItemsSummary { get; set; } = string.Empty;
+    public string CreatedBy { get; set; } = string.Empty;
+    public bool IsDraft { get; set; }
 }
 
 public class UpdateCustomerNotesRequest

@@ -25,6 +25,12 @@ namespace LechonSystem.Api.DTOs
         public string? AddOns { get; set; }
         public decimal DeliveryFee { get; set; }
         public decimal Downpayment { get; set; }
+        public string DownpaymentMethod { get; set; } = "None";
+        public string? FreebiesSummary { get; set; }
+        public string? FreebiesConfigJson { get; set; }
+        public bool IsOwnerConfirmed { get; set; }
+        public DateTime? OwnerConfirmedAt { get; set; }
+        public string? OwnerConfirmedBy { get; set; }
 
         public decimal Discount { get; set; }
         public decimal GrandTotal { get; set; }

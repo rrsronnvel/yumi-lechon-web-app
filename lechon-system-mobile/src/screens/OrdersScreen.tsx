@@ -13,7 +13,11 @@ import {
 } from 'react-native';
 import { useOrdersDirectory, OrderDirectoryDto } from '../hooks/useOrders';
 import OrderDossierModal from '../components/orders/OrderDossierModal';
-import { useDefrostRosterQuery, usePendingConfirmationsQuery } from '../hooks/useFloorAction';
+import {
+  useDefrostRosterQuery,
+  usePendingConfirmationsQuery,
+  usePendingOwnerConfirmationsQuery,
+} from '../hooks/useFloorAction';
 import FloorActionView from '../components/orders/FloorActionView';
 
 type SmartPillKey =
@@ -53,7 +57,15 @@ const isSameLocalDay = (dateA: Date, dateB: Date): boolean => {
   );
 };
 
-export default function OrdersScreen() {
+interface OrdersScreenProps {
+  alertsActive: boolean;
+  sendTestNotification: () => Promise<void>;
+}
+
+export default function OrdersScreen({
+  alertsActive,
+  sendTestNotification,
+}: OrdersScreenProps) {
   const [activeView, setActiveView] = useState<'directory' | 'floor-action'>('directory');
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [rawSearch, setRawSearch] = useState('');
@@ -64,8 +76,12 @@ export default function OrdersScreen() {
 
   const { data: defrostRoster } = useDefrostRosterQuery();
   const { data: pendingConfirmations } = usePendingConfirmationsQuery();
+  const { data: pendingOwnerConfirmations } = usePendingOwnerConfirmationsQuery();
 
-  const floorActionCount = (pendingConfirmations?.length ?? 0) + (defrostRoster?.length ?? 0);
+  const floorActionCount =
+    (pendingConfirmations?.length ?? 0) +
+    (pendingOwnerConfirmations?.length ?? 0) +
+    (defrostRoster?.length ?? 0);
 
   // 300ms debounce
   useEffect(() => {
@@ -338,6 +354,11 @@ export default function OrdersScreen() {
                 <Text style={styles.editedPillText}>✏️ Edited</Text>
               </View>
             )}
+            {!isDraft && !item.isOwnerConfirmed && (
+              <View style={styles.ownerReviewPill}>
+                <Text style={styles.ownerReviewPillText}>⏳ Owner Review</Text>
+              </View>
+            )}
             <Text style={styles.customerName} numberOfLines={1}>
               {item.customerName}
             </Text>
@@ -448,6 +469,8 @@ export default function OrdersScreen() {
 
       {activeView === 'floor-action' ? (
         <FloorActionView
+          alertsActive={alertsActive}
+          sendTestNotification={sendTestNotification}
           onSelectOrderForDeposit={(orderId) => {
             const match = rawOrders?.find((o) => o.id === orderId) ?? null;
             setSelectedOrder(match);
@@ -883,6 +906,19 @@ const styles = StyleSheet.create({
   editedPillText: {
     fontSize: 10,
     fontWeight: '700',
+    color: '#92400E',
+  },
+  ownerReviewPill: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+  },
+  ownerReviewPillText: {
+    fontSize: 9,
+    fontWeight: '800',
     color: '#92400E',
   },
   customerName: {

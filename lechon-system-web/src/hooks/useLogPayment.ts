@@ -9,7 +9,11 @@ export function useLogPayment() {
     return useMutation({
         mutationFn: async (paymentData: { orderId: number; amount: number; paymentProvider: string }) => {
            
-            const response = await apiClient.post(`/internal/payments/manual`, paymentData);
+            const response = await apiClient.post(`/internal/payments/manual`, {
+                orderId: paymentData.orderId,
+                amount: paymentData.amount,
+                paymentMethod: paymentData.paymentProvider,
+            });
             return response.data;
         },
         onSuccess: async () => {

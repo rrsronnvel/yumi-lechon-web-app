@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -33,6 +33,13 @@ import {
   RIDER_DEPARTURE_NUDGE_PILLS,
   TemplateOrderData,
 } from '../utils/messengerTemplates';
+import FreebiesSelector from '../components/orders/FreebiesSelector';
+import PaymentChannelPills from '../components/orders/PaymentChannelPills';
+import {
+  FreebiesConfig,
+  createDefaultFreebiesConfig,
+  formatFreebiesSummary,
+} from '../utils/freebiesHelper';
 
 export interface CartItem {
   itemCategoryId: number;
@@ -41,6 +48,7 @@ export interface CartItem {
   quantity: number;
   weightRange?: string;
   isRoast: boolean;
+  minimumWeightKg: number;
 }
 
 type CategoryFilterType = 'whole' | 'belly' | 'addon';
@@ -113,7 +121,13 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [deliveryFee, setDeliveryFee] = useState('0');
   const [discount, setDiscount] = useState('0');
   const [downpayment, setDownpayment] = useState('0');
+  const [downpaymentMethod, setDownpaymentMethod] = useState('None');
   const [isTrustedCustomer, setIsTrustedCustomer] = useState(false);
+  const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
+    createDefaultFreebiesConfig(0)
+  );
+  const freebiesDiscountApplied = useRef(0);
+  const previousWholePigCount = useRef(0);
 
   // Feedback & Modals
   const [hydrationBanner, setHydrationBanner] = useState<string | null>(null);
@@ -137,6 +151,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     debouncedPhone,
     debouncedFbName
   );
+  const activeDuplicateOrders = customerProfile?.activeUpcomingOrders ?? [];
 
   useEffect(() => {
     const isoTarget = `${targetDate.trim()}T${targetTime.trim()}:00`;
@@ -200,12 +215,52 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   // Active item count per category for quick pill badges
   const wholeLechonCount = useMemo(() => {
     return cartItems
-      .filter((item) => {
-        const cat = categories.find((c) => c.id === item.itemCategoryId);
-        return cat ? isWholeLechon(cat) : item.isRoast;
-      })
+      .filter((item) => item.minimumWeightKg >= 13)
       .reduce((sum, item) => sum + item.quantity, 0);
-  }, [cartItems, categories]);
+  }, [cartItems]);
+
+  useEffect(() => {
+    if (previousWholePigCount.current === wholeLechonCount) return;
+
+    setDiscount((currentDiscount) =>
+      String(
+        Math.max(
+          0,
+          (parseFloat(currentDiscount) || 0) - freebiesDiscountApplied.current
+        )
+      )
+    );
+    freebiesDiscountApplied.current = 0;
+    previousWholePigCount.current = wholeLechonCount;
+    setFreebiesConfig(createDefaultFreebiesConfig(wholeLechonCount));
+  }, [wholeLechonCount]);
+
+  useEffect(() => {
+    const amount = Math.max(0, parseFloat(downpayment) || 0);
+    if (amount === 0 && downpaymentMethod !== 'None') {
+      setDownpaymentMethod('None');
+    } else if (amount > 0 && downpaymentMethod === 'None') {
+      setDownpaymentMethod('GCash');
+    }
+  }, [downpayment, downpaymentMethod]);
+
+  const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
+    const nextFreebiesDiscount = nextConfig.optOut
+      ? 2000 * wholeLechonCount
+      : 0;
+    setDiscount((currentDiscount) =>
+      String(
+        Math.max(
+          0,
+          (parseFloat(currentDiscount) || 0) -
+            freebiesDiscountApplied.current +
+            nextFreebiesDiscount
+        )
+      )
+    );
+    freebiesDiscountApplied.current = nextFreebiesDiscount;
+    setFreebiesConfig(nextConfig);
+  };
 
   const bellyCount = useMemo(() => {
     return cartItems
@@ -248,6 +303,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               ? `${category.minimumWeightKg.toFixed(1)}–${category.maximumWeightKg.toFixed(1)} kg`
               : undefined,
           isRoast: category.minimumWeightKg > 0,
+          minimumWeightKg: category.minimumWeightKg,
         },
       ];
     });
@@ -458,6 +514,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                   ? `${cat.minimumWeightKg.toFixed(1)}–${cat.maximumWeightKg.toFixed(1)} kg`
                   : undefined,
               isRoast: cat.minimumWeightKg > 0,
+              minimumWeightKg: cat.minimumWeightKg,
             });
           }
         }
@@ -491,6 +548,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setDeliveryFee('0');
     setDiscount('0');
     setDownpayment('0');
+    setDownpaymentMethod('None');
+    setFreebiesConfig(createDefaultFreebiesConfig(0));
+    freebiesDiscountApplied.current = 0;
+    previousWholePigCount.current = 0;
     setIsTrustedCustomer(false);
     setHydrationBanner(null);
     setValidationError(null);
@@ -692,6 +753,41 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     const resolvedAddress =
       trimmedAddress || (fulfillment === 0 ? 'Store Pickup' : '');
 
+    const hasSameDayDuplicate = Boolean(
+      isoTargetTime &&
+        activeDuplicateOrders.some((existingOrder) => {
+          if (!existingOrder.targetDeliveryTime) return false;
+          const existingDate = new Date(existingOrder.targetDeliveryTime);
+          const requestedDate = new Date(isoTargetTime as string);
+          return (
+            !isNaN(existingDate.getTime()) &&
+            !isNaN(requestedDate.getTime()) &&
+            existingDate.getFullYear() === requestedDate.getFullYear() &&
+            existingDate.getMonth() === requestedDate.getMonth() &&
+            existingDate.getDate() === requestedDate.getDate()
+          );
+        })
+    );
+
+    if (!isDraft && hasSameDayDuplicate) {
+      const shouldContinue = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          '🚨 Same-Day Duplicate Warning',
+          'This customer already has an active booking on the selected delivery date. Create another order anyway?',
+          [
+            { text: 'Go Back', style: 'cancel', onPress: () => resolve(false) },
+            {
+              text: 'Create Anyway',
+              style: 'destructive',
+              onPress: () => resolve(true),
+            },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) }
+        );
+      });
+      if (!shouldContinue) return;
+    }
+
     try {
       const savedOrder = await createOrderMutation.mutateAsync({
         isDraft,
@@ -712,6 +808,13 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         deliveryFee: effectiveDeliveryFee,
         discount: effectiveDiscount,
         downpayment: effectiveDownpayment,
+        downpaymentMethod,
+        freebiesSummary: formatFreebiesSummary(
+          freebiesConfig,
+          wholeLechonCount
+        ),
+        freebiesConfigJson:
+          wholeLechonCount > 0 ? JSON.stringify(freebiesConfig) : null,
         grandTotal,
         totalAmount: grandTotal,
         isTrustedCustomer,
@@ -886,6 +989,27 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         {validationError && (
           <View style={styles.errorBanner}>
             <Text style={styles.errorBannerText}>⚠️ {validationError}</Text>
+          </View>
+        )}
+
+        {activeDuplicateOrders.length > 0 && (
+          <View style={styles.duplicateWarningBanner}>
+            <Text style={styles.duplicateWarningTitle}>
+              🚨 POSSIBLE DUPLICATE ORDER DETECTED!
+            </Text>
+            {activeDuplicateOrders.slice(0, 2).map((existingOrder) => (
+              <Text key={existingOrder.orderId} style={styles.duplicateWarningText}>
+                {customerName || customerProfile?.fullName || 'This customer'} already
+                has {existingOrder.orderReference} for{' '}
+                {existingOrder.targetDeliveryTime
+                  ? new Date(existingOrder.targetDeliveryTime).toLocaleDateString(
+                      'en-PH',
+                      { month: 'short', day: 'numeric', year: 'numeric' }
+                    )
+                  : 'an upcoming date'}{' '}
+                ({existingOrder.itemsSummary}) encoded by {existingOrder.createdBy}.
+              </Text>
+            ))}
           </View>
         )}
 
@@ -1532,6 +1656,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               })}
             </View>
           )}
+
+          <FreebiesSelector
+            wholePigCount={wholeLechonCount}
+            config={freebiesConfig}
+            onChange={handleFreebiesChange}
+          />
         </View>
 
         {/* 4. Financial Adjustments Card */}
@@ -1614,6 +1744,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               value={downpayment}
               onChangeText={setDownpayment}
             />
+            {effectiveDownpayment > 0 && (
+              <PaymentChannelPills
+                value={downpaymentMethod}
+                onChange={setDownpaymentMethod}
+              />
+            )}
           </View>
 
           {/* VIP Bypass Toggle */}
@@ -1949,6 +2085,27 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  duplicateWarningBanner: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 2,
+    borderColor: '#E11D48',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  duplicateWarningTitle: {
+    color: '#9F1239',
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  duplicateWarningText: {
+    color: '#881337',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   screenContainer: {
     flex: 1,
     backgroundColor: '#FAF6F4',

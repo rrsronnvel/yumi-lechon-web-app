@@ -38,6 +38,27 @@ namespace LechonSystem.Api.Services
         public DateTime? RiderDepartureTime { get; set; }
     }
 
+    public class PendingOwnerConfirmationDto
+    {
+        public int Id { get; set; }
+        public int OrderId { get; set; }
+        public string OrderReference { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public DateTime? TargetDeliveryTime { get; set; }
+        public string ItemsSummary { get; set; } = string.Empty;
+        public string? FreebiesSummary { get; set; }
+        public string? FreebiesConfigJson { get; set; }
+        public decimal DeliveryFee { get; set; }
+        public decimal GrandTotal { get; set; }
+        public decimal Downpayment { get; set; }
+        public string DownpaymentMethod { get; set; } = "None";
+        public string CreatedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public bool IsOwnerConfirmed { get; set; }
+        public DateTime? OwnerConfirmedAt { get; set; }
+        public string? OwnerConfirmedBy { get; set; }
+    }
+
     public class DefrostRosterDto
     {
         public int Id { get; set; }
@@ -71,6 +92,7 @@ namespace LechonSystem.Api.Services
     public interface IDashboardService
     {
         Task<List<PendingConfirmationDto>> GetPendingConfirmationsAsync();
+        Task<List<PendingOwnerConfirmationDto>> GetPendingOwnerConfirmationsAsync();
         Task<List<DeliveryVerificationDto>> GetDeliveryVerificationsAsync();
         Task<List<DefrostRosterDto>> GetDefrostingRosterAsync();
         Task<List<RenegotiationTaskDto>> GetRenegotiationTasksAsync();
@@ -136,6 +158,46 @@ namespace LechonSystem.Api.Services
                     TotalAmount = o.GrandTotal,
                     BalanceDue = o.GrandTotal - o.Downpayment,
                     ItemsSummary = summary
+                };
+            }).ToList();
+        }
+
+        public async Task<List<PendingOwnerConfirmationDto>> GetPendingOwnerConfirmationsAsync()
+        {
+            var orders = await _context.Orders
+                .AsNoTracking()
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .Where(o => !o.IsCancelled && !o.IsDraft && !o.IsOwnerConfirmed)
+                .OrderByDescending(o => o.CreatedAt)
+                .ToListAsync();
+
+            return orders.Select(o =>
+            {
+                var itemParts = o.OrderItems
+                    .Select(oi => $"{oi.Quantity}x {oi.ItemCategory?.Name ?? "Lechon"}")
+                    .ToList();
+                if (!string.IsNullOrWhiteSpace(o.AddOns)) itemParts.Add(o.AddOns.Trim());
+
+                return new PendingOwnerConfirmationDto
+                {
+                    Id = o.Id,
+                    OrderId = o.Id,
+                    OrderReference = o.OrderReference,
+                    CustomerName = o.CustomerName,
+                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    ItemsSummary = itemParts.Count > 0 ? string.Join(", ", itemParts) : "Lechon Reservation",
+                    FreebiesSummary = o.FreebiesSummary,
+                    FreebiesConfigJson = o.FreebiesConfigJson,
+                    DeliveryFee = o.DeliveryFee,
+                    GrandTotal = o.GrandTotal,
+                    Downpayment = o.Downpayment,
+                    DownpaymentMethod = o.DownpaymentMethod,
+                    CreatedBy = o.CreatedBy,
+                    CreatedAt = o.CreatedAt,
+                    IsOwnerConfirmed = o.IsOwnerConfirmed,
+                    OwnerConfirmedAt = o.OwnerConfirmedAt,
+                    OwnerConfirmedBy = o.OwnerConfirmedBy
                 };
             }).ToList();
         }

@@ -100,6 +100,7 @@ public static class QaDataSeeder
             Remarks = "Walang dinuguan, print shoutout: Happy Birthday!",
             DeliveryFee = 280.00m, // 100 base + 12km * 15
             Downpayment = 3000.00m,
+            DownpaymentMethod = "GCash",
             Discount = 0.00m,
             Price = 12700.00m,
             GrandTotal = 12980.00m,
@@ -144,6 +145,7 @@ public static class QaDataSeeder
             OrderId = orderA.Id,
             GatewayReferenceId = $"QA-{orderA.OrderReference}-DP",
             Provider = PaymentProvider.ManualGCash,
+            PaymentMethod = "GCash",
             Amount = orderA.Downpayment,
             Status = PaymentStatus.Success,
             CreatedAt = DateTime.UtcNow
@@ -178,6 +180,7 @@ public static class QaDataSeeder
             Remarks = "Extra crispy skin, call 30 mins before arrival",
             DeliveryFee = 670.00m, // 100 base + 38km * 15
             Downpayment = 5000.00m,
+            DownpaymentMethod = "GCash",
             Discount = 0.00m,
             Price = 11000.00m,
             GrandTotal = 11670.00m,
@@ -227,6 +230,7 @@ public static class QaDataSeeder
             OrderId = orderB.Id,
             GatewayReferenceId = $"QA-{orderB.OrderReference}-DP",
             Provider = PaymentProvider.ManualGCash,
+            PaymentMethod = "GCash",
             Amount = orderB.Downpayment,
             Status = PaymentStatus.Success,
             CreatedAt = DateTime.UtcNow
@@ -261,6 +265,7 @@ public static class QaDataSeeder
             Remarks = "Chop belly separately in foil tray",
             DeliveryFee = 0.00m,
             Downpayment = 2000.00m,
+            DownpaymentMethod = "Cash",
             Discount = 0.00m,
             Price = 12000.00m,
             GrandTotal = 12000.00m,
@@ -305,6 +310,7 @@ public static class QaDataSeeder
             OrderId = orderC.Id,
             GatewayReferenceId = $"QA-{orderC.OrderReference}-DP",
             Provider = PaymentProvider.Cash,
+            PaymentMethod = "Cash",
             Amount = orderC.Downpayment,
             Status = PaymentStatus.Success,
             CreatedAt = DateTime.UtcNow

@@ -381,6 +381,12 @@ export function QrSettlementModal({
                   <SelectItem value="GCash">
                     📱 Direct Store GCash (Customer Paid Store Directly)
                   </SelectItem>
+                  <SelectItem value="Maya">
+                    💚 Maya Remittance
+                  </SelectItem>
+                  <SelectItem value="Bank Transfer">
+                    🏦 Bank Transfer
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

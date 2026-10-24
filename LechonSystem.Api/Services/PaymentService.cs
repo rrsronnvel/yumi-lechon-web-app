@@ -23,7 +23,12 @@ namespace LechonSystem.Api.Services
             _httpContextAccessor = httpContextAccessor;
         }
 
-        public async Task<bool> ProcessPaymentAsync(int orderId, decimal amount, string referenceId, PaymentProvider provider)
+        public async Task<bool> ProcessPaymentAsync(
+            int orderId,
+            decimal amount,
+            string referenceId,
+            PaymentProvider provider,
+            string? paymentMethod = null)
         {
             // 1. Strict Idempotency Check: Have we processed this transaction reference before?
             var existingPayment = await _context.PaymentLogs
@@ -53,18 +58,28 @@ namespace LechonSystem.Api.Services
             }
 
             // 4. Create the audit trail log
+            var normalizedPaymentMethod = PaymentChannels.Normalize(
+                paymentMethod,
+                PaymentChannels.FromProvider(provider));
+
             var paymentLog = new PaymentLog
             {
                 OrderId = orderId,
                 GatewayReferenceId = referenceId,
                 Provider = provider,
+                PaymentMethod = normalizedPaymentMethod,
                 Amount = amount,
                 Status = PaymentStatus.Success
             };
 
             _context.PaymentLogs.Add(paymentLog);
 
+            var hadPayment = order.Downpayment > 0;
             order.Downpayment += amount;
+            if (!hadPayment)
+            {
+                order.DownpaymentMethod = normalizedPaymentMethod;
+            }
 
             // 🚀 THE BLACK BOX: Record the financial event in the Order Audit Trail
             var auditLog = new OrderAuditLog
@@ -72,7 +87,7 @@ namespace LechonSystem.Api.Services
                 OrderId = orderId,
                 ActionType = "Payment Logged",
                 // We use {amount:N2} so it formats the number beautifully (e.g., 3,000.00)
-                Changes = $"Logged payment of ₱{amount:N2} via {provider}",
+                Changes = $"Logged payment of ₱{amount:N2} via {normalizedPaymentMethod}",
                 ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             };

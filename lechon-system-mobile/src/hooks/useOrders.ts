@@ -19,6 +19,9 @@ export interface OrderDirectoryDto {
   riderDepartureTime?: string | null;
   grandTotal: number;
   downpayment: number;
+  downpaymentMethod: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
   balanceDue: number;
   isTrustedCustomer: boolean;
   isCancelled: boolean;
@@ -29,6 +32,15 @@ export interface OrderDirectoryDto {
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   riderName?: string | null;
   isRemittedToOwner?: boolean;
+  isOwnerConfirmed: boolean;
+  ownerConfirmedAt?: string | null;
+  ownerConfirmedBy?: string | null;
+  paymentChannelsSummary: PaymentChannelTotalDto[];
+}
+
+export interface PaymentChannelTotalDto {
+  paymentMethod: string;
+  amount: number;
 }
 
 export interface OrderDetailCategoryDto {
@@ -65,6 +77,9 @@ export interface OrderDetailsDto {
   addOns?: string | null;
   deliveryFee: number;
   downpayment: number;
+  downpaymentMethod: string;
+  freebiesSummary?: string | null;
+  freebiesConfigJson?: string | null;
   discount: number;
   grandTotal: number;
   balanceDue: number;
@@ -88,7 +103,21 @@ export interface OrderDetailsDto {
   customerPreferences?: string | null;
   customerComplaintHistory?: string | null;
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
+  isOwnerConfirmed: boolean;
+  ownerConfirmedAt?: string | null;
+  ownerConfirmedBy?: string | null;
   orderItems: OrderDetailItemDto[];
+  paymentLogs: PaymentLogDto[];
+  paymentChannelsSummary: PaymentChannelTotalDto[];
+}
+
+export interface PaymentLogDto {
+  id: number;
+  amount: number;
+  paymentMethod: string;
+  status: string;
+  gatewayReferenceId: string;
+  createdAt: string;
 }
 
 export interface OrderAuditLogDto {
@@ -104,7 +133,7 @@ export interface OrderAuditLogDto {
 export interface RecordManualPaymentPayload {
   orderId: number;
   amount: number;
-  paymentMethod: 'GCash' | 'Cash' | 'BankTransfer' | string;
+  paymentMethod: 'GCash' | 'Cash' | 'Maya' | 'Bank Transfer' | string;
   referenceNumber?: string;
 }
 
@@ -192,6 +221,23 @@ export const useCancelOrderMutation = () => {
       await queryClient.invalidateQueries({ queryKey: ['orders', 'directory'] });
       await queryClient.invalidateQueries({ queryKey: ['orders', 'details'] });
       await queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] });
+    },
+  });
+};
+
+export const useConfirmOwnerOrderMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post(`/orders/${orderId}/confirm-owner`);
+      return response.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      ]);
     },
   });
 };
