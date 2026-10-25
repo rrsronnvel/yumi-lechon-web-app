@@ -48,6 +48,7 @@ export interface OverrideSchedulePayload {
   salangStartTime?: string;
   packagingStartTime?: string;
   riderDepartureTime?: string;
+  departureTime?: string;
   riderName?: string;
   remarks?: string;
 }

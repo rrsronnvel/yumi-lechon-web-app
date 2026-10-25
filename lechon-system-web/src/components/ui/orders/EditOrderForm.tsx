@@ -33,10 +33,14 @@ import {
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
   FreebiesConfig,
+  getPigsWithFreebies,
   parseFreebiesConfig,
+  updatePigsWithFreebies,
 } from "@/utils/freebiesHelper";
 
 interface AddOnItem {
+  id?: number;
+  itemCategoryId?: number;
   quantity: number;
   name: string;
 }
@@ -66,7 +70,7 @@ export default function EditOrderForm({
   const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
     createDefaultFreebiesConfig(0),
   );
-  const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
+  const appliedFreebiesDiscount = useRef(0);
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const previousWholePigCount = useRef(0);
   const pendingHydratedWholePigCount = useRef<number | null>(null);
@@ -133,7 +137,7 @@ export default function EditOrderForm({
       landmark: "",
       targetDeliveryTime: "",
       riderDepartureTime: "",
-      items: order?.isDraft ? [] : [{ id: 0, itemCategoryId: 1, quantity: 1 }],
+      items: [],
       contactNumber: "",
       contactNumber2: "",
       deliveryAddress: "",
@@ -202,12 +206,86 @@ export default function EditOrderForm({
         })
         .filter(Boolean) as AddOnItem[];
 
-      const mappedOrderItems = order.orderItems?.map((i: any) => ({
-        id: i.id,
-        itemCategoryId: i.itemCategoryId,
-        quantity: i.quantity,
-      })) || [
-        { id: 0, itemCategoryId: lechonOptions[0]?.id || 1, quantity: 1 },
+      const normalizedOrderItems = (order.orderItems || []).flatMap(
+        (item: any) => {
+          const itemCategoryId = Number(
+            item.itemCategoryId ?? item.itemCategory?.id,
+          );
+          const quantity = Number(item.quantity);
+          const category =
+            categories.find(
+              (candidate: any) => Number(candidate.id) === itemCategoryId,
+            ) ?? item.itemCategory;
+
+          if (
+            !Number.isInteger(itemCategoryId) ||
+            itemCategoryId <= 0 ||
+            !Number.isFinite(quantity) ||
+            quantity <= 0 ||
+            !category
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              id: Number(item.id) || 0,
+              itemCategoryId,
+              quantity,
+              category,
+            },
+          ];
+        },
+      );
+
+      const mappedOrderItems = normalizedOrderItems
+        .filter(
+          (item: any) =>
+            Number(item.category.maximumWeightKg) > 0 ||
+            Number(item.category.minimumWeightKg) > 0,
+        )
+        .map(({ id, itemCategoryId, quantity }: any) => ({
+          id,
+          itemCategoryId,
+          quantity,
+        }));
+
+      const persistedAddOns: AddOnItem[] = normalizedOrderItems
+        .filter(
+          (item: any) =>
+            !Number(item.category.maximumWeightKg) &&
+            !Number(item.category.minimumWeightKg),
+        )
+        .map((item: any) => ({
+          id: item.id,
+          itemCategoryId: item.itemCategoryId,
+          quantity: item.quantity,
+          name: item.category.name,
+        }));
+
+      const hydratedAddOns = [
+        ...persistedAddOns,
+        ...parsedAddOns
+          .filter(
+            (parsed) =>
+              !persistedAddOns.some(
+                (persisted) =>
+                  persisted.name.trim().toLowerCase() ===
+                  parsed.name.trim().toLowerCase(),
+              ),
+          )
+          .map((parsed) => {
+            const category = liveAddOns.find(
+              (candidate: any) =>
+                candidate.name.trim().toLowerCase() ===
+                parsed.name.trim().toLowerCase(),
+            );
+            return {
+              ...parsed,
+              id: 0,
+              itemCategoryId: category?.id,
+            };
+          }),
       ];
 
       const hydratedWholePigCount = mappedOrderItems.reduce(
@@ -221,16 +299,27 @@ export default function EditOrderForm({
         },
         0,
       );
-      const hydratedFreebies = parseFreebiesConfig(
+      let hydratedFreebies = parseFreebiesConfig(
         order.freebiesConfigJson,
         hydratedWholePigCount,
       );
+      if (
+        !order.freebiesConfigJson &&
+        String(order.freebiesSummary || "")
+          .toLowerCase()
+          .includes("no freebies")
+      ) {
+        hydratedFreebies = updatePigsWithFreebies(
+          hydratedFreebies,
+          hydratedWholePigCount,
+          0,
+        );
+      }
+      appliedFreebiesDiscount.current =
+        (hydratedWholePigCount -
+          getPigsWithFreebies(hydratedFreebies, hydratedWholePigCount)) *
+        noFreebiesDiscountPerPig;
       setFreebiesConfig(hydratedFreebies);
-      setAppliedFreebiesDiscount(
-        hydratedFreebies.optOut
-          ? noFreebiesDiscountPerPig * hydratedWholePigCount
-          : 0,
-      );
       previousWholePigCount.current = hydratedWholePigCount;
       pendingHydratedWholePigCount.current = hydratedWholePigCount;
 
@@ -272,11 +361,11 @@ export default function EditOrderForm({
         freebiesSummary: order.freebiesSummary || null,
         freebiesConfigJson: order.freebiesConfigJson || null,
         fulfillment: resolvedFulfillment,
-        dynamicAddOns: parsedAddOns,
+        dynamicAddOns: hydratedAddOns,
         items: mappedOrderItems,
       });
     }
-  }, [order, form, lechonOptions, categories]);
+  }, [order, form, categories, liveAddOns, noFreebiesDiscountPerPig]);
 
   // THE SMART BALANCE & BOUNCER STATE (Deeply Reactive via useWatch)
   const watchedItems = useWatch({
@@ -407,49 +496,39 @@ export default function EditOrderForm({
     previousWholePigCount.current = wholePigCount;
     setFreebiesConfig((current) => {
       if (current.optOut) {
-        return {
-          ...current,
-          counts: Object.fromEntries(
-            Object.keys(current.counts).map((item) => [item, 0]),
-          ),
-        };
+        return updatePigsWithFreebies(current, wholePigCount, 0);
       }
       const delta = wholePigCount - previousCount;
-      return {
-        ...current,
-        counts: Object.fromEntries(
-          Object.entries(current.counts).map(([item, quantity]) => [
-            item,
-            current.rawInnards && item === "Dinuguan"
-              ? 0
-              : Math.max(0, Number(quantity) + delta),
-          ]),
-        ),
-      };
+      const previousPigsWithFreebies = getPigsWithFreebies(
+        current,
+        previousCount,
+      );
+      return updatePigsWithFreebies(
+        current,
+        wholePigCount,
+        previousPigsWithFreebies + delta,
+      );
     });
   }, [wholePigCount]);
 
-  const desiredFreebiesDiscount = freebiesConfig.optOut
-    ? noFreebiesDiscountPerPig * wholePigCount
-    : 0;
+  const desiredFreebiesDiscount =
+    (wholePigCount - getPigsWithFreebies(freebiesConfig, wholePigCount)) *
+    noFreebiesDiscountPerPig;
 
   useEffect(() => {
-    if (desiredFreebiesDiscount === appliedFreebiesDiscount) return;
+    const previouslyAppliedDiscount = appliedFreebiesDiscount.current;
+    if (desiredFreebiesDiscount === previouslyAppliedDiscount) return;
     const currentDiscount = Number(form.getValues("discount")) || 0;
     form.setValue(
       "discount",
       Math.max(
         0,
-        currentDiscount - appliedFreebiesDiscount + desiredFreebiesDiscount,
+        currentDiscount - previouslyAppliedDiscount + desiredFreebiesDiscount,
       ),
       { shouldDirty: true },
     );
-    setAppliedFreebiesDiscount(desiredFreebiesDiscount);
-  }, [
-    desiredFreebiesDiscount,
-    appliedFreebiesDiscount,
-    form,
-  ]);
+    appliedFreebiesDiscount.current = desiredFreebiesDiscount;
+  }, [desiredFreebiesDiscount, form]);
   const currentFulfillment = Number(fulfillment);
   const activeDeliveryFee =
     currentFulfillment === 0 || currentFulfillment === 2
@@ -468,6 +547,58 @@ export default function EditOrderForm({
   function onSubmit(data: any) {
     const isDraft = Boolean(form.watch("isDraft"));
     const fulfillmentNum = Number(data.fulfillment);
+    const validLechonItems = (data.items || []).flatMap((item: any) => {
+      const itemCategoryId = Number(item.itemCategoryId);
+      const quantity = Number(item.quantity);
+      const isKnownLechon = lechonOptions.some(
+        (category: any) => Number(category.id) === itemCategoryId,
+      );
+
+      if (
+        !Number.isInteger(itemCategoryId) ||
+        itemCategoryId <= 0 ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0 ||
+        !isKnownLechon
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: Number(item.id) || 0,
+          itemCategoryId,
+          quantity,
+        },
+      ];
+    });
+    const validAddOnItems = (data.dynamicAddOns || []).flatMap(
+      (addOn: AddOnItem) => {
+        const category = liveAddOns.find(
+          (candidate: any) =>
+            candidate.name.trim().toLowerCase() ===
+            addOn.name?.trim().toLowerCase(),
+        );
+        const quantity = Number(addOn.quantity);
+        if (!category || !Number.isFinite(quantity) || quantity <= 0) {
+          return [];
+        }
+
+        const itemCategoryId = Number(category.id);
+        const originalCategoryId = Number(addOn.itemCategoryId);
+        return [
+          {
+            id:
+              originalCategoryId === itemCategoryId
+                ? Number(addOn.id) || 0
+                : 0,
+            itemCategoryId,
+            quantity,
+          },
+        ];
+      },
+    );
+    const validOrderItems = [...validLechonItems, ...validAddOnItems];
 
     if (!isDraft) {
       if (!data.customerName || data.customerName.trim().length < 2) {
@@ -506,7 +637,7 @@ export default function EditOrderForm({
         });
         return;
       }
-      if (!data.items || data.items.length === 0) {
+      if (validOrderItems.length === 0) {
         toast.error("Cart is empty", {
           description:
             "At least one item is required in the cart to lock into production.",
@@ -581,10 +712,14 @@ export default function EditOrderForm({
       addOns: combinedAddOns,
       downpaymentMethod:
         Number(data.downpayment) > 0 ? data.downpaymentMethod : "None",
-      freebiesSummary: formatFreebiesSummary(freebiesConfig, wholePigCount),
-      freebiesConfigJson:
-        wholePigCount > 0 ? JSON.stringify(freebiesConfig) : null,
+      freebiesSummary: formatFreebiesSummary(
+        freebiesConfig,
+        wholePigCount,
+        noFreebiesDiscountPerPig,
+      ),
+      freebiesConfigJson: JSON.stringify(freebiesConfig),
       grandTotal: dynamicGrandTotal,
+      items: validOrderItems,
     };
 
     // Strip out the temporary React array so C# doesn't choke on it!

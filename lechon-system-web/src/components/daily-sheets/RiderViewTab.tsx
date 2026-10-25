@@ -88,7 +88,8 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
     setIsEditorOpen(true);
   };
 
-  const isEdit = mode === "edit";
+  const isCleanView = mode === "clean";
+  const isEdit = !isCleanView;
 
   const handleCopyDispatch = (item: RoastingScheduleItem) => {
     const matchedRider = registeredRiders.find(
@@ -260,49 +261,70 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                     title={isEdit ? "Click to assign or change rider" : undefined}
                   >
                     <div className="flex flex-col items-center justify-center gap-0.5">
-                      <div className="flex items-center justify-center gap-1">
-                        {item.fulfillment === 0 ? (
-                          <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
-                            🏪 Store Pickup
-                          </span>
-                        ) : item.fulfillment === 2 ? (
-                          <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
-                            📦 Lalamove Courier
-                          </span>
-                        ) : (
-                          <span
-                            className={
-                              item.riderName && item.riderName !== "Unassigned"
-                                ? "text-blue-700 font-bold"
-                                : "text-slate-400 italic font-normal"
-                            }
-                          >
-                            {item.riderName || "Unassigned"}
-                          </span>
-                        )}
-                        {isEdit && (
-                          <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
-                        )}
-                      </div>
-                      {((item.riderName && item.riderName !== "Unassigned") || item.fulfillment === 0 || item.fulfillment === 2) && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-[9px] font-semibold print:hidden shadow-2xs transition-colors mt-0.5"
-                          title="Copy Messenger Alert"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopyDispatch(item);
-                          }}
+                      {isCleanView ? (
+                        <span
+                          className={
+                            item.fulfillment === 1 &&
+                            (!item.riderName || item.riderName === "Unassigned")
+                              ? "text-slate-400 italic font-normal"
+                              : "text-slate-900 font-bold"
+                          }
                         >
-                          <Copy className="w-2.5 h-2.5" />
-                          <span>
-                            {item.fulfillment === 0
-                              ? "Pickup Alert"
-                              : item.fulfillment === 2
-                              ? "Lalamove Alert"
-                              : "Dispatch Alert"}
-                          </span>
-                        </button>
+                          {item.fulfillment === 0
+                            ? "Store Pickup"
+                            : item.fulfillment === 2
+                              ? "Lalamove Courier"
+                              : item.riderName || "Unassigned"}
+                        </span>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-center gap-1">
+                            {item.fulfillment === 0 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
+                                🏪 Store Pickup
+                              </span>
+                            ) : item.fulfillment === 2 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
+                                📦 Lalamove Courier
+                              </span>
+                            ) : (
+                              <span
+                                className={
+                                  item.riderName && item.riderName !== "Unassigned"
+                                    ? "text-blue-700 font-bold"
+                                    : "text-slate-400 italic font-normal"
+                                }
+                              >
+                                {item.riderName || "Unassigned"}
+                              </span>
+                            )}
+                            {isEdit && (
+                              <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
+                            )}
+                          </div>
+                          {((item.riderName && item.riderName !== "Unassigned") ||
+                            item.fulfillment === 0 ||
+                            item.fulfillment === 2) && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-[9px] font-semibold print:hidden shadow-2xs transition-colors mt-0.5"
+                              title="Copy Messenger Alert"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyDispatch(item);
+                              }}
+                            >
+                              <Copy className="w-2.5 h-2.5" />
+                              <span>
+                                {item.fulfillment === 0
+                                  ? "Pickup Alert"
+                                  : item.fulfillment === 2
+                                    ? "Lalamove Alert"
+                                    : "Dispatch Alert"}
+                              </span>
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </td>

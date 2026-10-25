@@ -4,8 +4,10 @@ import {
   FREEBIE_ITEMS,
   FreebiesConfig,
   formatFreebiesSummary,
+  getPigsWithFreebies,
   getFreebiesAllowedQuota,
   normalizeFreebiesConfig,
+  updatePigsWithFreebies,
 } from '../../utils/freebiesHelper';
 
 interface FreebiesSelectorProps {
@@ -30,11 +32,17 @@ export default function FreebiesSelector({
     0
   );
   const allowedQuota = getFreebiesAllowedQuota(normalized, wholePigCount);
-  const summary = formatFreebiesSummary(normalized, wholePigCount);
+  const pigsWithFreebies = getPigsWithFreebies(normalized, wholePigCount);
+  const summary = formatFreebiesSummary(
+    normalized,
+    wholePigCount,
+    noFreebiesDiscountPerPig
+  );
 
   const selectStandard = () => {
     onChange({
       optOut: false,
+      pigsWithFreebies: wholePigCount,
       rawInnards: false,
       counts: Object.fromEntries(
         FREEBIE_ITEMS.map((item) => [item, wholePigCount])
@@ -45,10 +53,21 @@ export default function FreebiesSelector({
   const selectOptOut = () => {
     onChange({
       optOut: true,
+      pigsWithFreebies: 0,
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
     });
     setIsExpanded(false);
+  };
+
+  const setPigsWithFreebies = (nextCount: number) => {
+    const nextConfig = updatePigsWithFreebies(
+      normalized,
+      wholePigCount,
+      nextCount
+    );
+    onChange(nextConfig);
+    if (nextConfig.optOut) setIsExpanded(false);
   };
 
   const toggleRawInnards = () => {
@@ -58,7 +77,7 @@ export default function FreebiesSelector({
       rawInnards,
       counts: {
         ...normalized.counts,
-        Dinuguan: rawInnards ? 0 : wholePigCount,
+        Dinuguan: rawInnards ? 0 : pigsWithFreebies,
       },
     });
   };
@@ -77,35 +96,67 @@ export default function FreebiesSelector({
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>🎁 Whole Lechon Freebies</Text>
-      <View style={styles.primaryRow}>
-        <Pressable
-          style={[styles.primaryPill, !normalized.optOut && styles.standardActive]}
-          onPress={selectStandard}
-        >
-          <Text
-            style={[
-              styles.primaryPillText,
-              !normalized.optOut && styles.standardActiveText,
-            ]}
+      {wholePigCount === 1 ? (
+        <View style={styles.primaryRow}>
+          <Pressable
+            style={[styles.primaryPill, !normalized.optOut && styles.standardActive]}
+            onPress={selectStandard}
           >
-            🎁 Standard {7 * wholePigCount} Freebies
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.primaryPill, normalized.optOut && styles.optOutActive]}
-          onPress={selectOptOut}
-        >
-          <Text
-            style={[
-              styles.primaryPillText,
-              normalized.optOut && styles.optOutActiveText,
-            ]}
+            <Text
+              style={[
+                styles.primaryPillText,
+                !normalized.optOut && styles.standardActiveText,
+              ]}
+            >
+              🎁 Standard 7 Freebies
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.primaryPill, normalized.optOut && styles.optOutActive]}
+            onPress={selectOptOut}
           >
-            🚫 No Freebies (-₱
-            {(noFreebiesDiscountPerPig * wholePigCount).toLocaleString()})
-          </Text>
-        </Pressable>
-      </View>
+            <Text
+              style={[
+                styles.primaryPillText,
+                normalized.optOut && styles.optOutActiveText,
+              ]}
+            >
+              🚫 No Freebies (-₱{noFreebiesDiscountPerPig.toLocaleString()})
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.pigDistributionRow}>
+          <Text style={styles.pigDistributionLabel}>Pigs with 7 Freebies:</Text>
+          <View style={styles.pigDistributionControls}>
+            <Pressable
+              accessibilityLabel="Remove one pig with freebies"
+              style={[
+                styles.distributionButton,
+                pigsWithFreebies <= 0 && styles.disabledButton,
+              ]}
+              disabled={pigsWithFreebies <= 0}
+              onPress={() => setPigsWithFreebies(pigsWithFreebies - 1)}
+            >
+              <Text style={styles.distributionButtonText}>−</Text>
+            </Pressable>
+            <Text style={styles.pigCountText}>{pigsWithFreebies}</Text>
+            <Pressable
+              accessibilityLabel="Add one pig with freebies"
+              style={[
+                styles.distributionButton,
+                styles.distributionAddButton,
+                pigsWithFreebies >= wholePigCount && styles.disabledButton,
+              ]}
+              disabled={pigsWithFreebies >= wholePigCount}
+              onPress={() => setPigsWithFreebies(pigsWithFreebies + 1)}
+            >
+              <Text style={styles.distributionAddButtonText}>+</Text>
+            </Pressable>
+            <Text style={styles.quotaText}>(Quota: {pigsWithFreebies * 7})</Text>
+          </View>
+        </View>
+      )}
 
       {!normalized.optOut && (
         <>
@@ -205,6 +256,46 @@ const styles = StyleSheet.create({
   standardActiveText: { color: '#065F46' },
   optOutActive: { backgroundColor: '#FFF1F2', borderColor: '#FB7185' },
   optOutActiveText: { color: '#9F1239' },
+  pigDistributionRow: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pigDistributionLabel: { color: '#78350F', fontSize: 11, fontWeight: '900' },
+  pigDistributionControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  distributionButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 7,
+    backgroundColor: '#E7E5E4',
+  },
+  distributionAddButton: { backgroundColor: '#292524' },
+  distributionButtonText: { color: '#292524', fontSize: 16, fontWeight: '900' },
+  distributionAddButtonText: { color: '#FCD34D', fontSize: 16, fontWeight: '900' },
+  disabledButton: { opacity: 0.4 },
+  pigCountText: {
+    width: 20,
+    color: '#1C1917',
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  quotaText: { color: '#57534E', fontSize: 10, fontWeight: '700' },
   secondaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
   secondaryPill: {
     borderWidth: 1,

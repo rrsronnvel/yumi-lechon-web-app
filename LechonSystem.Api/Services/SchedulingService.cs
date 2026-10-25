@@ -187,28 +187,76 @@ namespace LechonSystem.Api.Services
             }).ToList();
         }
 
+        private static readonly TimeZoneInfo PhilippineTimeZone = GetPhilippineTimeZone();
+
+        private static TimeZoneInfo GetPhilippineTimeZone()
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Singapore Standard Time"); // Windows ID for UTC+8
+            }
+            catch
+            {
+                try
+                {
+                    return TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila"); // Linux / IANA ID
+                }
+                catch
+                {
+                    return TimeZoneInfo.CreateCustomTimeZone("PST", TimeSpan.FromHours(8), "Philippine Standard Time", "Philippine Standard Time");
+                }
+            }
+        }
+
+        private static DateTime NormalizeToLocalStoreTime(DateTime dt)
+        {
+            if (dt.Kind == DateTimeKind.Utc)
+            {
+                var localTime = TimeZoneInfo.ConvertTimeFromUtc(dt, PhilippineTimeZone);
+                return DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified);
+            }
+
+            if (dt.Kind == DateTimeKind.Local)
+            {
+                var utcTime = dt.ToUniversalTime();
+                var localTime = TimeZoneInfo.ConvertTimeFromUtc(utcTime, PhilippineTimeZone);
+                return DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified);
+            }
+
+            return DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+        }
+
+        public Task<OrderItemSchedule> OverrideScheduleAsync(int orderItemId, OverrideScheduleRequest request)
+            => OverrideScheduleItemAsync(orderItemId, request);
+
         public async Task<OrderItemSchedule> OverrideScheduleItemAsync(int orderItemId, OverrideScheduleRequest request)
         {
             var schedule = await _context.OrderItemSchedules
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
                         .ThenInclude(o => o!.DeliveryTrip)
-                .FirstOrDefaultAsync(s => s.OrderItemId == orderItemId || s.Id == orderItemId);
+                .FirstOrDefaultAsync(s => s.OrderItemId == orderItemId)
+                ?? await _context.OrderItemSchedules
+                    .Include(s => s.OrderItem)
+                        .ThenInclude(oi => oi!.Order)
+                            .ThenInclude(o => o!.DeliveryTrip)
+                    .FirstOrDefaultAsync(s => s.Id == orderItemId);
 
             if (schedule == null)
                 throw new KeyNotFoundException($"Schedule for OrderItem #{orderItemId} not found.");
 
             if (request.TahiStartTime.HasValue)
-                schedule.TahiStartTime = request.TahiStartTime.Value;
+                schedule.TahiStartTime = NormalizeToLocalStoreTime(request.TahiStartTime.Value);
 
             if (request.SalangStartTime.HasValue)
-                schedule.SalangStartTime = request.SalangStartTime.Value;
+                schedule.SalangStartTime = NormalizeToLocalStoreTime(request.SalangStartTime.Value);
 
             if (request.PackagingStartTime.HasValue)
-                schedule.PackagingStartTime = request.PackagingStartTime.Value;
+                schedule.PackagingStartTime = NormalizeToLocalStoreTime(request.PackagingStartTime.Value);
 
-            if (request.RiderDepartureTime.HasValue && schedule.OrderItem?.Order != null)
-                schedule.OrderItem.Order.RiderDepartureTime = request.RiderDepartureTime.Value;
+            var effectiveDeparture = request.DepartureTime ?? request.RiderDepartureTime;
+            if (effectiveDeparture.HasValue && schedule.OrderItem?.Order != null)
+                schedule.OrderItem.Order.RiderDepartureTime = NormalizeToLocalStoreTime(effectiveDeparture.Value);
 
             schedule.IsManualOverride = true;
 

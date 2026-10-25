@@ -59,11 +59,13 @@ const isSameLocalDay = (dateA: Date, dateB: Date): boolean => {
 
 interface OrdersScreenProps {
   alertsActive: boolean;
+  usesInAppFallback: boolean;
   sendTestNotification: () => Promise<void>;
 }
 
 export default function OrdersScreen({
   alertsActive,
+  usesInAppFallback,
   sendTestNotification,
 }: OrdersScreenProps) {
   const [activeView, setActiveView] = useState<'directory' | 'floor-action'>('directory');
@@ -484,6 +486,7 @@ export default function OrdersScreen({
       {activeView === 'floor-action' ? (
         <FloorActionView
           alertsActive={alertsActive}
+          usesInAppFallback={usesInAppFallback}
           sendTestNotification={sendTestNotification}
           onSelectOrderForDeposit={(orderId) => {
             const match = rawOrders?.find((o) => o.id === orderId) ?? null;

@@ -28,6 +28,7 @@ public class SchedulesController : ControllerBase
     }
 
     [HttpPut("items/{orderItemId}/override")]
+    [HttpPut("{orderItemId}/override")]
     public async Task<IActionResult> OverrideSchedule(int orderItemId, [FromBody] OverrideScheduleRequest request)
     {
         try

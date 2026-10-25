@@ -18,7 +18,7 @@ export default function MainShell() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('orders');
   const { data: ownerConfirmations = [] } = usePendingOwnerConfirmationsQuery();
   const { data: defrostRoster = [] } = useDefrostRosterQuery();
-  const { alertsActive, sendTestNotification } = useNotifications({
+  const { alertsActive, usesInAppFallback, sendTestNotification } = useNotifications({
     isAuthenticated,
     isOwner,
     pendingOwnerConfirmations: ownerConfirmations.length,
@@ -32,6 +32,7 @@ export default function MainShell() {
       return (
         <OrdersScreen
           alertsActive={alertsActive}
+          usesInAppFallback={usesInAppFallback}
           sendTestNotification={sendTestNotification}
         />
       );

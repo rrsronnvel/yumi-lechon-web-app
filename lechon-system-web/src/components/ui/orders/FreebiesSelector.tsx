@@ -4,8 +4,10 @@ import {
   formatFreebiesSummary,
   FREEBIE_ITEMS,
   FreebiesConfig,
+  getPigsWithFreebies,
   getFreebiesAllowedQuota,
   normalizeFreebiesConfig,
+  updatePigsWithFreebies,
 } from "@/utils/freebiesHelper";
 
 interface FreebiesSelectorProps {
@@ -34,7 +36,12 @@ export default function FreebiesSelector({
     (sum, item) => sum + (normalized.counts[item] ?? 0),
     0,
   );
-  const summary = formatFreebiesSummary(normalized, wholePigCount);
+  const pigsWithFreebies = getPigsWithFreebies(normalized, wholePigCount);
+  const summary = formatFreebiesSummary(
+    normalized,
+    wholePigCount,
+    noFreebiesDiscountPerPig,
+  );
 
   const selectStandard = () => {
     onChange(createDefaultFreebiesConfig(wholePigCount));
@@ -43,10 +50,21 @@ export default function FreebiesSelector({
   const selectOptOut = () => {
     onChange({
       optOut: true,
+      pigsWithFreebies: 0,
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
     });
     setIsExpanded(false);
+  };
+
+  const setPigsWithFreebies = (nextCount: number) => {
+    const nextConfig = updatePigsWithFreebies(
+      normalized,
+      wholePigCount,
+      nextCount,
+    );
+    onChange(nextConfig);
+    if (nextConfig.optOut) setIsExpanded(false);
   };
 
   const toggleRawInnards = () => {
@@ -56,7 +74,7 @@ export default function FreebiesSelector({
       rawInnards: enabled,
       counts: {
         ...normalized.counts,
-        Dinuguan: enabled ? 0 : wholePigCount,
+        Dinuguan: enabled ? 0 : pigsWithFreebies,
       },
     });
   };
@@ -86,30 +104,64 @@ export default function FreebiesSelector({
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={selectStandard}
-          className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
-            !normalized.optOut
-              ? "border-emerald-500 bg-emerald-100 text-emerald-900"
-              : "border-stone-300 bg-white text-stone-600"
-          }`}
-        >
-          🎁 Standard {7 * wholePigCount} Freebies
-        </button>
-        <button
-          type="button"
-          onClick={selectOptOut}
-          className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
-            normalized.optOut
-              ? "border-rose-500 bg-rose-100 text-rose-900"
-              : "border-stone-300 bg-white text-stone-600"
-          }`}
-        >
-          🚫 No Freebies (-₱{(noFreebiesDiscountPerPig * wholePigCount).toLocaleString()})
-        </button>
-      </div>
+      {wholePigCount === 1 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={selectStandard}
+            className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+              !normalized.optOut
+                ? "border-emerald-500 bg-emerald-100 text-emerald-900"
+                : "border-stone-300 bg-white text-stone-600"
+            }`}
+          >
+            🎁 Standard 7 Freebies
+          </button>
+          <button
+            type="button"
+            onClick={selectOptOut}
+            className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+              normalized.optOut
+                ? "border-rose-500 bg-rose-100 text-rose-900"
+                : "border-stone-300 bg-white text-stone-600"
+            }`}
+          >
+            🚫 No Freebies (-₱{noFreebiesDiscountPerPig.toLocaleString()})
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2">
+          <span className="text-[11px] font-bold text-amber-950">
+            Pigs with 7 Freebies:
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="Remove one pig with freebies"
+              disabled={pigsWithFreebies <= 0}
+              onClick={() => setPigsWithFreebies(pigsWithFreebies - 1)}
+              className="h-7 w-7 rounded-md bg-stone-200 text-sm font-black text-stone-800 disabled:opacity-40"
+            >
+              −
+            </button>
+            <span className="w-5 text-center font-mono text-sm font-black text-stone-900">
+              {pigsWithFreebies}
+            </span>
+            <button
+              type="button"
+              aria-label="Add one pig with freebies"
+              disabled={pigsWithFreebies >= wholePigCount}
+              onClick={() => setPigsWithFreebies(pigsWithFreebies + 1)}
+              className="h-7 w-7 rounded-md bg-stone-900 text-sm font-black text-amber-300 disabled:opacity-40"
+            >
+              +
+            </button>
+            <span className="text-[10px] font-semibold text-stone-600">
+              (Quota: {pigsWithFreebies * 7})
+            </span>
+          </div>
+        </div>
+      )}
 
       {!normalized.optOut && (
         <>

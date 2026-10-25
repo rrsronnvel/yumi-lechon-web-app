@@ -8,6 +8,7 @@ public class OverrideScheduleRequest
     public DateTime? SalangStartTime { get; set; }
     public DateTime? PackagingStartTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
+    public DateTime? DepartureTime { get; set; }
     public string? RiderName { get; set; }
     public string? Remarks { get; set; }
 }

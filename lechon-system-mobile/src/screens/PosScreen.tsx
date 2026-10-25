@@ -39,6 +39,8 @@ import {
   FreebiesConfig,
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
+  getPigsWithFreebies,
+  updatePigsWithFreebies,
 } from '../utils/freebiesHelper';
 
 export interface CartItem {
@@ -132,7 +134,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   );
   const freebiesDiscountApplied = useRef(0);
   const previousWholePigCount = useRef(0);
-  const previousNoFreebiesDiscountPerPig = useRef(noFreebiesDiscountPerPig);
 
   // Feedback & Modals
   const [hydrationBanner, setHydrationBanner] = useState<string | null>(null);
@@ -227,39 +228,52 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   useEffect(() => {
     const wholePigCountChanged =
       previousWholePigCount.current !== wholeLechonCount;
-    const pricingChanged =
-      previousNoFreebiesDiscountPerPig.current !== noFreebiesDiscountPerPig;
-    if (!wholePigCountChanged && !pricingChanged) return;
-    if (!wholePigCountChanged && !freebiesConfig.optOut) {
-      previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
-      return;
+
+    let nextConfig = freebiesConfig;
+    if (wholePigCountChanged) {
+      const previousPigsWithFreebies = getPigsWithFreebies(
+        freebiesConfig,
+        previousWholePigCount.current
+      );
+      const nextPigsWithFreebies = freebiesConfig.optOut
+        ? 0
+        : previousPigsWithFreebies +
+          (wholeLechonCount - previousWholePigCount.current);
+      nextConfig = updatePigsWithFreebies(
+        freebiesConfig,
+        wholeLechonCount,
+        nextPigsWithFreebies
+      );
+      setFreebiesConfig(nextConfig);
     }
 
-    const nextFreebiesDiscount = freebiesConfig.optOut
-      ? noFreebiesDiscountPerPig * wholeLechonCount
-      : 0;
-    setDiscount((currentDiscount) =>
-      String(
-        Math.max(
+    const pigsWithDiscount = nextConfig.optOut
+      ? wholeLechonCount
+      : Math.max(
           0,
-          (parseFloat(currentDiscount) || 0) -
-            freebiesDiscountApplied.current +
-            nextFreebiesDiscount
+          wholeLechonCount -
+            (nextConfig.pigsWithFreebies ?? wholeLechonCount)
+        );
+    const nextFreebiesDiscount =
+      pigsWithDiscount * (noFreebiesDiscountPerPig || 2000);
+    const previousFreebiesDiscount = freebiesDiscountApplied.current;
+
+    if (nextFreebiesDiscount !== previousFreebiesDiscount) {
+      setDiscount((currentDiscount) =>
+        String(
+          Math.max(
+            0,
+            (parseFloat(currentDiscount) || 0) -
+              previousFreebiesDiscount +
+              nextFreebiesDiscount
+          )
         )
-      )
-    );
-    freebiesDiscountApplied.current = nextFreebiesDiscount;
-    previousWholePigCount.current = wholeLechonCount;
-    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
-    if (wholePigCountChanged) {
-      setFreebiesConfig((currentConfig) => {
-        const nextConfig = createDefaultFreebiesConfig(wholeLechonCount);
-        return currentConfig.optOut
-          ? { ...nextConfig, optOut: true }
-          : nextConfig;
-      });
+      );
+      freebiesDiscountApplied.current = nextFreebiesDiscount;
     }
-  }, [wholeLechonCount, noFreebiesDiscountPerPig]);
+
+    previousWholePigCount.current = wholeLechonCount;
+  }, [freebiesConfig, wholeLechonCount, noFreebiesDiscountPerPig]);
 
   useEffect(() => {
     const amount = Math.max(0, parseFloat(downpayment) || 0);
@@ -271,20 +285,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   }, [downpayment, downpaymentMethod]);
 
   const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
-    const nextFreebiesDiscount = nextConfig.optOut
-      ? noFreebiesDiscountPerPig * wholeLechonCount
-      : 0;
-    setDiscount((currentDiscount) =>
-      String(
-        Math.max(
-          0,
-          (parseFloat(currentDiscount) || 0) -
-            freebiesDiscountApplied.current +
-            nextFreebiesDiscount
-        )
-      )
-    );
-    freebiesDiscountApplied.current = nextFreebiesDiscount;
     setFreebiesConfig(nextConfig);
   };
 
@@ -582,13 +582,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       .filter((item) => item.minimumWeightKg >= 13)
       .reduce((sum, item) => sum + item.quantity, 0);
     previousWholePigCount.current = hydratedWholePigCount;
-    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
 
     const hydratedFreebies = createDefaultFreebiesConfig(hydratedWholePigCount);
     if (draft.freebiesOptOut === true) {
       const optOutDiscount =
         noFreebiesDiscountPerPig * hydratedWholePigCount;
-      setFreebiesConfig({ ...hydratedFreebies, optOut: true });
+      setFreebiesConfig(
+        updatePigsWithFreebies(hydratedFreebies, hydratedWholePigCount, 0)
+      );
       setDiscount(String(optOutDiscount));
       freebiesDiscountApplied.current = optOutDiscount;
     } else {
@@ -644,7 +645,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setFreebiesConfig(createDefaultFreebiesConfig(0));
     freebiesDiscountApplied.current = 0;
     previousWholePigCount.current = 0;
-    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
     setIsTrustedCustomer(false);
     setHydrationBanner(null);
     setValidationError(null);
@@ -919,7 +919,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         downpaymentMethod,
         freebiesSummary: formatFreebiesSummary(
           freebiesConfig,
-          wholeLechonCount
+          wholeLechonCount,
+          noFreebiesDiscountPerPig
         ),
         freebiesConfigJson:
           wholeLechonCount > 0 ? JSON.stringify(freebiesConfig) : null,

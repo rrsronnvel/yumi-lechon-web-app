@@ -50,6 +50,11 @@ import {
 } from "@/utils/messengerTemplates";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useDeliveryPricing } from "@/hooks/useCms";
+import {
+  formatFreebiesSummary,
+  parseFreebiesConfig,
+} from "@/utils/freebiesHelper";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -72,6 +77,7 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { isOwner } = useAuth();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
+  const { data: deliveryPricing } = useDeliveryPricing();
   const [filterTab, setFilterTab] = useState("upcoming");
   const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [rawSearch, setRawSearch] = useState("");
@@ -208,6 +214,28 @@ export default function OrdersPage() {
     selectedOrder?.id || null
   );
   const orderDetails = data as any;
+  const displayedFreebiesSummary = useMemo(() => {
+    if (!orderDetails?.freebiesConfigJson) {
+      return orderDetails?.freebiesSummary || null;
+    }
+
+    const wholePigCount = (orderDetails.orderItems || []).reduce(
+      (total: number, item: any) =>
+        Number(item.itemCategory?.minimumWeightKg) >= 13
+          ? total + (Number(item.quantity) || 0)
+          : total,
+      0,
+    );
+    if (wholePigCount <= 0) return orderDetails.freebiesSummary || null;
+
+    return (
+      formatFreebiesSummary(
+        parseFreebiesConfig(orderDetails.freebiesConfigJson, wholePigCount),
+        wholePigCount,
+        deliveryPricing?.noFreebiesDiscountPerPig ?? 2000,
+      ) || orderDetails.freebiesSummary || null
+    );
+  }, [orderDetails, deliveryPricing?.noFreebiesDiscountPerPig]);
 
   const cancelOrderMutation = useMutation({
     mutationFn: async ({
@@ -1527,19 +1555,19 @@ export default function OrdersPage() {
                     <h3 className="font-semibold text-lg border-b border-stone-200 pb-2 mb-3 text-stone-900">
                       Order Manifest
                     </h3>
-                    {orderDetails.freebiesSummary && (
+                    {displayedFreebiesSummary && (
                       <Badge
                         variant="outline"
-                        className={`mb-3 font-semibold ${
-                          orderDetails.freebiesSummary === "🚫 No Freebies"
+                        className={`mb-3 h-auto max-w-full whitespace-normal break-words py-1 text-left font-semibold leading-snug ${
+                          displayedFreebiesSummary === "🚫 No Freebies"
                             ? "bg-rose-100 text-rose-800 border-rose-300"
-                            : orderDetails.freebiesSummary.includes("Raw Innards") ||
-                                orderDetails.freebiesSummary.includes(":")
+                            : displayedFreebiesSummary.includes("Raw Innards") ||
+                                displayedFreebiesSummary.includes(":")
                               ? "bg-amber-100 text-amber-900 border-amber-300"
                               : "bg-emerald-100 text-emerald-800 border-emerald-300"
                         }`}
                       >
-                        {orderDetails.freebiesSummary}
+                        {displayedFreebiesSummary}
                       </Badge>
                     )}
                     <div className="space-y-3">

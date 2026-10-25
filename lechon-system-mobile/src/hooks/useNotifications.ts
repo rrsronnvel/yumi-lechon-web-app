@@ -1,28 +1,47 @@
+import { isRunningInExpoGo } from 'expo';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
-import { AndroidImportance } from 'expo-notifications/build/NotificationChannelManager.types';
-import {
-  getPermissionsAsync,
-  requestPermissionsAsync,
-} from 'expo-notifications/build/NotificationPermissions';
-import { setNotificationHandler } from 'expo-notifications/build/NotificationsHandler';
-import { SchedulableTriggerInputTypes } from 'expo-notifications/build/Notifications.types';
-import { getAllScheduledNotificationsAsync } from 'expo-notifications/build/getAllScheduledNotificationsAsync';
-import { scheduleNotificationAsync } from 'expo-notifications/build/scheduleNotificationAsync';
-import { setNotificationChannelAsync } from 'expo-notifications/build/setNotificationChannelAsync';
+import { Alert, Platform } from 'react-native';
+
+type NotificationsModule = typeof import('expo-notifications');
 
 const CHANNEL_ID = 'default';
 const DEFROST_REMINDER_KEY = 'daily-defrost';
 const DEPOSIT_REMINDER_KEY = 'daily-deposit';
+const IS_ANDROID_EXPO_GO = Platform.OS === 'android' && isRunningInExpoGo();
 
-setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+let notificationsModulePromise: Promise<NotificationsModule | null> | null =
+  null;
+
+const loadNotificationsModule = async (): Promise<NotificationsModule | null> => {
+  // Expo Go for Android currently omits ExpoTopicSubscriptionModule. Importing
+  // expo-notifications there crashes before a runtime fallback can be shown.
+  if (IS_ANDROID_EXPO_GO) return null;
+
+  if (!notificationsModulePromise) {
+    notificationsModulePromise = import('expo-notifications')
+      .then((notifications) => {
+        notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowBanner: true,
+            shouldShowList: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+          }),
+        });
+        return notifications;
+      })
+      .catch(() => null);
+  }
+
+  return notificationsModulePromise;
+};
+
+const showTestNotificationFallback = () => {
+  Alert.alert(
+    '🔔 Test Defrost Alert (Simulator Preview)',
+    "Freezer Defrost Time! Pull 6 Whole Lechons & 2 Bellies for tomorrow's roster."
+  );
+};
 
 interface UseNotificationsOptions {
   isAuthenticated: boolean;
@@ -37,80 +56,107 @@ export const useNotifications = ({
   pendingOwnerConfirmations,
   rushDefrostIds,
 }: UseNotificationsOptions) => {
-  const [alertsActive, setAlertsActive] = useState(false);
+  const [hasPermission, setHasPermission] = useState(false);
+  const [usesInAppFallback, setUsesInAppFallback] =
+    useState(IS_ANDROID_EXPO_GO);
   const previousOwnerCount = useRef<number | null>(null);
   const previousRushIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
+      setHasPermission(false);
       return;
     }
 
     let isMounted = true;
 
-    const configureNotifications = async () => {
-      if (Platform.OS === 'android') {
-        await setNotificationChannelAsync(CHANNEL_ID, {
-          name: 'Operational alerts',
-          importance: AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-        });
-      }
-
-      const currentPermissions = await getPermissionsAsync();
-      const permissions = currentPermissions.granted
-        ? currentPermissions
-        : await requestPermissionsAsync();
-
-      if (!permissions.granted) {
-        if (isMounted) setAlertsActive(false);
+    const initNotifications = async () => {
+      const notifications = await loadNotificationsModule();
+      if (!notifications) {
+        if (isMounted) {
+          setHasPermission(false);
+          setUsesInAppFallback(true);
+        }
         return;
       }
 
-      const scheduled = await getAllScheduledNotificationsAsync();
-      const reminderKeys = new Set(
-        scheduled
-          .map((notification) => notification.content.data?.operationalReminder)
-          .filter((value): value is string => typeof value === 'string')
-      );
+      if (isMounted) setUsesInAppFallback(false);
 
-      if (!reminderKeys.has(DEFROST_REMINDER_KEY)) {
-        await scheduleNotificationAsync({
-          content: {
-            title: '🐷 Freezer Defrost Time!',
-            body: "Check Tonight's Defrost Roster in Floor Action and copy the pull-list for the kitchen.",
-            data: { operationalReminder: DEFROST_REMINDER_KEY },
-          },
-          trigger: {
-            type: SchedulableTriggerInputTypes.DAILY,
-            hour: 16,
-            minute: 0,
-            channelId: CHANNEL_ID,
-          },
+      if (Platform.OS === 'android') {
+        await notifications.setNotificationChannelAsync(CHANNEL_ID, {
+          name: 'default',
+          importance: notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#C81E1E',
         });
       }
 
-      if (!reminderKeys.has(DEPOSIT_REMINDER_KEY)) {
-        await scheduleNotificationAsync({
-          content: {
-            title: '⚠️ Deposit Follow-Up',
-            body: 'Check the 4-day Downpayment Radar in Floor Action.',
-            data: { operationalReminder: DEPOSIT_REMINDER_KEY },
-          },
-          trigger: {
-            type: SchedulableTriggerInputTypes.DAILY,
-            hour: 9,
-            minute: 0,
-            channelId: CHANNEL_ID,
-          },
-        });
+      const { status: existingStatus } =
+        await notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const requestedPermissions =
+          await notifications.requestPermissionsAsync();
+        finalStatus = requestedPermissions.status;
       }
 
-      if (isMounted) setAlertsActive(true);
+      const permissionGranted = finalStatus === 'granted';
+      if (isMounted) setHasPermission(permissionGranted);
+      if (!permissionGranted) return;
+
+      try {
+        const scheduled =
+          await notifications.getAllScheduledNotificationsAsync();
+        const reminderKeys = new Set(
+          scheduled
+            .map(
+              (notification) =>
+                notification.content.data?.operationalReminder
+            )
+            .filter((value): value is string => typeof value === 'string')
+        );
+
+        if (!reminderKeys.has(DEFROST_REMINDER_KEY)) {
+          await notifications.scheduleNotificationAsync({
+            content: {
+              title: '🐷 Freezer Defrost Time!',
+              body: "Check Tonight's Defrost Roster in Floor Action and copy the pull-list for the kitchen.",
+              data: { operationalReminder: DEFROST_REMINDER_KEY },
+            },
+            trigger: {
+              type: notifications.SchedulableTriggerInputTypes.DAILY,
+              hour: 16,
+              minute: 0,
+              channelId: CHANNEL_ID,
+            },
+          });
+        }
+
+        if (!reminderKeys.has(DEPOSIT_REMINDER_KEY)) {
+          await notifications.scheduleNotificationAsync({
+            content: {
+              title: '⚠️ Deposit Follow-Up',
+              body: 'Check the 4-day Downpayment Radar in Floor Action.',
+              data: { operationalReminder: DEPOSIT_REMINDER_KEY },
+            },
+            trigger: {
+              type: notifications.SchedulableTriggerInputTypes.DAILY,
+              hour: 9,
+              minute: 0,
+              channelId: CHANNEL_ID,
+            },
+          });
+        }
+      } catch {
+        // Permission remains valid even if a simulator cannot persist reminders.
+      }
     };
 
-    configureNotifications().catch(() => {
-      if (isMounted) setAlertsActive(false);
+    initNotifications().catch(() => {
+      if (isMounted) {
+        setHasPermission(false);
+        setUsesInAppFallback(true);
+      }
     });
 
     return () => {
@@ -125,21 +171,25 @@ export const useNotifications = ({
     }
 
     if (
-      alertsActive &&
+      hasPermission &&
       isOwner &&
       pendingOwnerConfirmations > previousOwnerCount.current
     ) {
-      void scheduleNotificationAsync({
-        content: {
-          title: '👑 New Order Needs Confirmation',
-          body: 'A cashier order is waiting for Owner review in Floor Action.',
-        },
-        trigger: null,
-      });
+      void loadNotificationsModule().then((notifications) =>
+        notifications
+          ?.scheduleNotificationAsync({
+            content: {
+              title: '👑 New Order Needs Confirmation',
+              body: 'A cashier order is waiting for Owner review in Floor Action.',
+            },
+            trigger: null,
+          })
+          .catch(() => undefined)
+      );
     }
 
     previousOwnerCount.current = pendingOwnerConfirmations;
-  }, [alertsActive, isOwner, pendingOwnerConfirmations]);
+  }, [hasPermission, isOwner, pendingOwnerConfirmations]);
 
   useEffect(() => {
     const currentRushIds = new Set(rushDefrostIds);
@@ -151,32 +201,57 @@ export const useNotifications = ({
     const hasNewRushItem = rushDefrostIds.some(
       (rushId) => !previousRushIds.current?.has(rushId)
     );
-    if (alertsActive && hasNewRushItem) {
-      void scheduleNotificationAsync({
-        content: {
-          title: '🚨 Rush Defrost Added',
-          body: 'A new rush item needs immediate freezer action. Check Floor Action now.',
-        },
-        trigger: null,
-      });
+    if (hasPermission && hasNewRushItem) {
+      void loadNotificationsModule().then((notifications) =>
+        notifications
+          ?.scheduleNotificationAsync({
+            content: {
+              title: '🚨 Rush Defrost Added',
+              body: 'A new rush item needs immediate freezer action. Check Floor Action now.',
+            },
+            trigger: null,
+          })
+          .catch(() => undefined)
+      );
     }
 
     previousRushIds.current = currentRushIds;
-  }, [alertsActive, rushDefrostIds]);
+  }, [hasPermission, rushDefrostIds]);
 
   const sendTestNotification = useCallback(async () => {
-    if (!alertsActive) {
-      throw new Error('Notification permission is not enabled on this device.');
+    try {
+      const notifications = await loadNotificationsModule();
+      if (!notifications) {
+        setUsesInAppFallback(true);
+        showTestNotificationFallback();
+        return;
+      }
+
+      let permissionGranted = hasPermission;
+      if (!permissionGranted) {
+        const requestedPermissions =
+          await notifications.requestPermissionsAsync();
+        permissionGranted = requestedPermissions.status === 'granted';
+        setHasPermission(permissionGranted);
+      }
+
+      if (!permissionGranted) {
+        showTestNotificationFallback();
+        return;
+      }
+
+      await notifications.scheduleNotificationAsync({
+        content: {
+          title: "🔔 Yumi's Alerts Active",
+          body: 'Operational notifications are working on this handset.',
+        },
+        trigger: null,
+      });
+    } catch {
+      setUsesInAppFallback(true);
+      showTestNotificationFallback();
     }
+  }, [hasPermission]);
 
-    await scheduleNotificationAsync({
-      content: {
-        title: '🔔 Yumi\'s Alerts Active',
-        body: 'Operational notifications are working on this handset.',
-      },
-      trigger: null,
-    });
-  }, [alertsActive]);
-
-  return { alertsActive, sendTestNotification };
+  return { alertsActive: hasPermission, usesInAppFallback, sendTestNotification };
 };

@@ -30,6 +30,7 @@ interface FloorActionViewProps {
   onRefresh?: () => Promise<unknown> | void;
   isRefreshing?: boolean;
   alertsActive: boolean;
+  usesInAppFallback: boolean;
   sendTestNotification: () => Promise<void>;
 }
 
@@ -82,6 +83,7 @@ export default function FloorActionView({
   onRefresh,
   isRefreshing = false,
   alertsActive,
+  usesInAppFallback,
   sendTestNotification,
 }: FloorActionViewProps) {
   const { isOwner } = useAuth();
@@ -137,12 +139,7 @@ export default function FloorActionView({
   };
 
   const handleTestNotification = () => {
-    sendTestNotification().catch((error: unknown) => {
-      Alert.alert(
-        'Alerts Unavailable',
-        error instanceof Error ? error.message : 'Could not send a test alert.'
-      );
-    });
+    void sendTestNotification();
   };
 
   const handleConfirmOwnerOrder = (orderId: number, reference: string) => {
@@ -262,7 +259,11 @@ export default function FloorActionView({
     >
       <View style={styles.notificationBar}>
         <Text style={styles.notificationStatus}>
-          {alertsActive ? '🔔 Alerts Active' : '🔕 Alerts Permission Needed'}
+          {alertsActive
+            ? '🔔 Alerts Active'
+            : usesInAppFallback
+              ? '🔔 In-App Alert Preview'
+              : '🔕 Alerts Permission Needed'}
         </Text>
         <Pressable style={styles.testAlertButton} onPress={handleTestNotification}>
           <Text style={styles.testAlertButtonText}>🔔 Test Alert</Text>

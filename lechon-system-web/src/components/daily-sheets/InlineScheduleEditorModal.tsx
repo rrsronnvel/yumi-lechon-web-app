@@ -54,16 +54,46 @@ const formatReadableDate = (timeString?: string | null): string => {
   }
 };
 
-const buildIsoTime = (referenceDateStr: string | undefined, timeHHMM: string): string | undefined => {
-  if (!timeHHMM) return undefined;
-  let baseDate = referenceDateStr ? new Date(referenceDateStr) : new Date();
-  if (isNaN(baseDate.getTime())) {
-    baseDate = new Date();
+const getOrderDateStr = (referenceDateStr?: string | null): string => {
+  if (!referenceDateStr) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
-  const [hours, minutes] = timeHHMM.split(":").map(Number);
-  const combined = new Date(baseDate.getTime());
-  combined.setHours(hours, minutes, 0, 0);
-  return combined.toISOString();
+
+  // Pure local date or ISO without Z / timezone offset (e.g. "2026-10-26T12:00:00")
+  if (typeof referenceDateStr === "string" && /^\d{4}-\d{2}-\d{2}/.test(referenceDateStr)) {
+    if (!referenceDateStr.includes("Z") && !/[+-]\d{2}:\d{2}$/.test(referenceDateStr)) {
+      return referenceDateStr.substring(0, 10);
+    }
+  }
+
+  // If it has timezone offset or Z, parse as Date and extract local calendar date
+  const d = new Date(referenceDateStr);
+  if (!isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const buildIsoTime = (referenceDateStr: string | undefined, timeHHMM: string): string | undefined => {
+  if (!timeHHMM || !timeHHMM.trim()) return undefined;
+  const orderDateStr = getOrderDateStr(referenceDateStr);
+  const parts = timeHHMM.trim().split(":");
+  if (parts.length < 2) return undefined;
+  const hours = parts[0].padStart(2, "0");
+  const minutes = parts[1].padStart(2, "0");
+  return `${orderDateStr}T${hours}:${minutes}:00`;
 };
 
 export function InlineScheduleEditorModal({
@@ -114,15 +144,18 @@ export function InlineScheduleEditorModal({
 
     try {
       const refDate = item.targetDeliveryTime || item.tahiStartTime;
+      const formattedDeparture =
+        item.fulfillment === 0
+          ? undefined
+          : buildIsoTime(refDate, departureTime);
+
       await overrideMutation.mutateAsync({
         orderItemId: targetId,
         tahiStartTime: buildIsoTime(refDate, tahiTime),
         salangStartTime: buildIsoTime(refDate, salangTime),
         packagingStartTime: buildIsoTime(refDate, packagingTime),
-        riderDepartureTime:
-          item.fulfillment === 0
-            ? undefined
-            : buildIsoTime(refDate, departureTime),
+        riderDepartureTime: formattedDeparture,
+        departureTime: formattedDeparture,
         riderName: riderName.trim() || undefined,
         remarks: remarks.trim() || undefined,
       });

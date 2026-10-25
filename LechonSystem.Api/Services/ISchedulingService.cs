@@ -11,4 +11,5 @@ public interface ISchedulingService
     Task<object> GetDailyRosterAsync(DateTime targetDate);
     Task<System.Collections.Generic.List<DailySheetItemDto>> GetDailySheetsAsync(DateTime targetDate);
     Task<OrderItemSchedule> OverrideScheduleItemAsync(int orderItemId, OverrideScheduleRequest request);
+    Task<OrderItemSchedule> OverrideScheduleAsync(int orderItemId, OverrideScheduleRequest request);
 }

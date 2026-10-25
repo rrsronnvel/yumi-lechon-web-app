@@ -45,6 +45,8 @@ import {
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
   FreebiesConfig,
+  getPigsWithFreebies,
+  updatePigsWithFreebies,
 } from "@/utils/freebiesHelper";
 
 import {
@@ -73,6 +75,7 @@ export interface OrderFormProps {
   onClose?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  orderId?: number;
 }
 
 const formatLocalDateTimeInput = (date: Date): string => {
@@ -85,6 +88,7 @@ export default function OrderForm({
   onClose,
   open: _open,
   onOpenChange,
+  orderId: currentOrderId,
 }: OrderFormProps) {
   const queryClient = useQueryClient();
   const [savedOrderForModal, setSavedOrderForModal] =
@@ -196,7 +200,6 @@ export default function OrderForm({
     watchedCustomerPhone || "",
     watchedFacebookName || "",
   );
-  const duplicateOrders = customerProfile?.activeUpcomingOrders ?? [];
 
   // Reset form to clean empty state when modal opens
   useEffect(() => {
@@ -302,6 +305,7 @@ export default function OrderForm({
         if (pending.optOut) {
           return {
             optOut: true,
+            pigsWithFreebies: 0,
             rawInnards: false,
             counts: Object.fromEntries(
               Object.keys(createDefaultFreebiesConfig(wholePigCount).counts).map(
@@ -319,31 +323,26 @@ export default function OrderForm({
       }
 
       if (current.optOut) {
-        return {
-          ...current,
-          counts: Object.fromEntries(
-            Object.keys(current.counts).map((item) => [item, 0]),
-          ),
-        };
+        return updatePigsWithFreebies(current, wholePigCount, 0);
       }
 
       const delta = wholePigCount - previousCount;
-      const counts = Object.fromEntries(
-        Object.entries(current.counts).map(([item, quantity]) => [
-          item,
-          current.rawInnards && item === "Dinuguan"
-            ? 0
-            : Math.max(0, Number(quantity) + delta),
-        ]),
+      const previousPigsWithFreebies = getPigsWithFreebies(
+        current,
+        previousCount,
       );
-      return { ...current, counts };
+      return updatePigsWithFreebies(
+        current,
+        wholePigCount,
+        previousPigsWithFreebies + delta,
+      );
     });
     previousWholePigCount.current = wholePigCount;
   }, [wholePigCount]);
 
-  const desiredFreebiesDiscount = freebiesConfig.optOut
-    ? noFreebiesDiscountPerPig * wholePigCount
-    : 0;
+  const desiredFreebiesDiscount =
+    (wholePigCount - getPigsWithFreebies(freebiesConfig, wholePigCount)) *
+    noFreebiesDiscountPerPig;
 
   useEffect(() => {
     if (desiredFreebiesDiscount === appliedFreebiesDiscount) return;
@@ -477,6 +476,15 @@ export default function OrderForm({
     },
   });
 
+  const filteredUpcoming =
+    customerProfile?.activeUpcomingOrders?.filter(
+      (order) =>
+        order.orderReference !== savedOrderRef &&
+        order.orderId !== currentOrderId,
+    ) ?? [];
+  const duplicateOrders =
+    createOrderMutation.isSuccess || isSuccessModalOpen ? [] : filteredUpcoming;
+
   function onSubmit(data: OrderFormData) {
     if (!data.isDraft && (!data.items || data.items.length === 0)) {
       toast.error("Cart is empty", {
@@ -574,7 +582,11 @@ export default function OrderForm({
       downpayment: Number(data.downpayment) || 0,
       downpaymentMethod:
         Number(data.downpayment) > 0 ? data.downpaymentMethod : "None",
-      freebiesSummary: formatFreebiesSummary(freebiesConfig, wholePigCount),
+      freebiesSummary: formatFreebiesSummary(
+        freebiesConfig,
+        wholePigCount,
+        noFreebiesDiscountPerPig,
+      ),
       freebiesConfigJson:
         wholePigCount > 0 ? JSON.stringify(freebiesConfig) : null,
       grandTotal: computedGrandTotal,
@@ -722,6 +734,7 @@ export default function OrderForm({
       const parsedConfig = createDefaultFreebiesConfig(parsedWholePigCount);
       if (parsedFreebies.optOut) {
         parsedConfig.optOut = true;
+        parsedConfig.pigsWithFreebies = 0;
         parsedConfig.counts = Object.fromEntries(
           Object.keys(parsedConfig.counts).map((item) => [item, 0]),
         );
@@ -737,6 +750,7 @@ export default function OrderForm({
       const nextConfig = createDefaultFreebiesConfig(wholePigCount);
       if (draft.freebiesOptOut === true) {
         nextConfig.optOut = true;
+        nextConfig.pigsWithFreebies = 0;
         nextConfig.counts = Object.fromEntries(
           Object.keys(nextConfig.counts).map((item) => [item, 0]),
         );
@@ -794,6 +808,20 @@ export default function OrderForm({
     }
   };
 
+  const closeSuccessModal = () => {
+    setIsSuccessModalOpen(false);
+    setSavedOrderForModal(null);
+    form.reset();
+    setFreebiesConfig(createDefaultFreebiesConfig(0));
+    setAppliedFreebiesDiscount(0);
+    setShowSecondaryPhone(false);
+    previousWholePigCount.current = 0;
+    pendingParsedFreebies.current = null;
+    createOrderMutation.reset();
+    onClose?.();
+    onOpenChange?.(false);
+  };
+
   return (
     <Form {...form}>
       <form
@@ -813,7 +841,9 @@ export default function OrderForm({
             </p>
           </div>
 
-          {duplicateOrders.length > 0 && (
+          {!createOrderMutation.isSuccess &&
+            !isSuccessModalOpen &&
+            duplicateOrders.length > 0 && (
             <div
               role="alert"
               className="rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-xs text-rose-950 shadow-sm"
@@ -1843,13 +1873,7 @@ export default function OrderForm({
       <Dialog
         open={isSuccessModalOpen}
         onOpenChange={(open) => {
-          if (!open) {
-            setIsSuccessModalOpen(false);
-            setSavedOrderForModal(null);
-            form.reset(DEFAULT_ORDER_VALUES);
-            onClose?.();
-            onOpenChange?.(false);
-          }
+          if (!open) closeSuccessModal();
         }}
       >
         <DialogContent className="overflow-x-hidden max-w-md w-full p-6 rounded-xl border-stone-200 bg-white">
@@ -1909,13 +1933,7 @@ export default function OrderForm({
               type="button"
               variant="outline"
               className="border-stone-300 text-stone-700 h-10"
-              onClick={() => {
-                setIsSuccessModalOpen(false);
-                setSavedOrderForModal(null);
-                form.reset(DEFAULT_ORDER_VALUES);
-                onClose?.();
-                onOpenChange?.(false);
-              }}
+              onClick={closeSuccessModal}
             >
               Done / Close
             </Button>

@@ -551,6 +551,20 @@ namespace LechonSystem.Api.Services
             if (order.Remarks != request.Remarks)
                 auditChanges.Add($"Remarks changed from '{order.Remarks}' to '{request.Remarks}'");
 
+            var freebiesSummaryChanged = request.FreebiesSummary != null &&
+                !string.Equals(order.FreebiesSummary, request.FreebiesSummary, StringComparison.Ordinal);
+            var freebiesConfigChanged = request.FreebiesConfigJson != null &&
+                !string.Equals(order.FreebiesConfigJson, request.FreebiesConfigJson, StringComparison.Ordinal);
+
+            if (freebiesSummaryChanged)
+            {
+                auditChanges.Add($"Freebies package changed from '{order.FreebiesSummary ?? "None"}' to '{request.FreebiesSummary ?? "None"}'");
+            }
+            else if (freebiesConfigChanged)
+            {
+                auditChanges.Add($"Freebies package customization changed for '{request.FreebiesSummary ?? order.FreebiesSummary ?? "Standard Freebies"}'");
+            }
+
             if (order.Discount != request.Discount)
                 auditChanges.Add($"Discount changed from ₱{order.Discount} to ₱{request.Discount}");
 
@@ -611,8 +625,14 @@ namespace LechonSystem.Api.Services
             order.DownpaymentMethod = request.Downpayment > 0
                 ? PaymentChannels.Normalize(request.DownpaymentMethod, "GCash")
                 : "None";
-            order.FreebiesSummary = request.FreebiesSummary;
-            order.FreebiesConfigJson = request.FreebiesConfigJson;
+            if (!string.IsNullOrWhiteSpace(request.FreebiesSummary))
+            {
+                order.FreebiesSummary = request.FreebiesSummary;
+            }
+            if (request.FreebiesConfigJson != null)
+            {
+                order.FreebiesConfigJson = request.FreebiesConfigJson;
+            }
             order.Discount = request.Discount;
             order.GrandTotal = request.GrandTotal;
             order.UpdatedAt = DateTime.UtcNow;

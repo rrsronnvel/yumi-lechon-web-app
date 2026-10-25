@@ -34,7 +34,9 @@ import {
   FreebiesConfig,
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
+  getPigsWithFreebies,
   parseFreebiesConfig,
+  updatePigsWithFreebies,
 } from '../../utils/freebiesHelper';
 
 interface EditableCartItem {
@@ -114,7 +116,6 @@ export default function EditOrderModal({
   );
   const freebiesDiscountApplied = useRef(0);
   const previousWholePigCount = useRef(0);
-  const previousNoFreebiesDiscountPerPig = useRef(noFreebiesDiscountPerPig);
   const pendingHydratedWholePigCount = useRef<number | null>(null);
   const [isDraft, setIsDraft] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -203,44 +204,77 @@ export default function EditOrderModal({
       }
     }
 
-    const mappedItems: EditableCartItem[] = (order.orderItems || []).map((item) => {
-      const cat =
-        item.itemCategory ||
-        categories.find((c) => c.id === item.itemCategoryId);
-      const minW = cat?.minimumWeightKg ?? 0;
-      const maxW = cat?.maximumWeightKg ?? 0;
-      const unitPrice =
-        item.price > 0
-          ? item.price
-          : cat?.basePrice ??
-            (item.quantity > 0 ? item.totalPrice / item.quantity : 0);
+    const mappedItems: EditableCartItem[] = (order.orderItems || []).flatMap(
+      (item) => {
+        const itemCategoryId = Number(
+          item.itemCategoryId ?? item.itemCategory?.id
+        );
+        const quantity = Number(item.quantity);
+        const cat =
+          item.itemCategory ||
+          categories.find((c) => c.id === itemCategoryId);
 
-      return {
-        id: item.id || 0,
-        itemCategoryId: item.itemCategoryId,
-        name: cat?.name || 'Lechon Item',
-        unitPrice,
-        quantity: item.quantity || 1,
-        weightRange:
-          minW > 0 ? `${minW.toFixed(1)}–${maxW.toFixed(1)} kg` : undefined,
-        isRoast: minW > 0,
-        minimumWeightKg: minW,
-      };
-    });
+        if (
+          !Number.isInteger(itemCategoryId) ||
+          itemCategoryId <= 0 ||
+          !Number.isFinite(quantity) ||
+          quantity <= 0 ||
+          !cat
+        ) {
+          return [];
+        }
+
+        const minW = cat.minimumWeightKg ?? 0;
+        const maxW = cat.maximumWeightKg ?? 0;
+        const unitPrice =
+          item.price > 0
+            ? item.price
+            : cat.basePrice ??
+              (quantity > 0 ? item.totalPrice / quantity : 0);
+
+        return [
+          {
+            id: item.id || 0,
+            itemCategoryId,
+            name: cat.name,
+            unitPrice,
+            quantity,
+            weightRange:
+              minW > 0
+                ? `${minW.toFixed(1)}–${maxW.toFixed(1)} kg`
+                : undefined,
+            isRoast: minW > 0,
+            minimumWeightKg: minW,
+          },
+        ];
+      }
+    );
 
     const mappedWholePigCount = mappedItems
       .filter((item) => item.minimumWeightKg >= 13)
       .reduce((sum, item) => sum + item.quantity, 0);
-    const mappedFreebiesConfig = parseFreebiesConfig(
+    let mappedFreebiesConfig = parseFreebiesConfig(
       order.freebiesConfigJson,
       mappedWholePigCount
     );
+    if (
+      !order.freebiesConfigJson &&
+      String(order.freebiesSummary || '')
+        .toLowerCase()
+        .includes('no freebies')
+    ) {
+      mappedFreebiesConfig = updatePigsWithFreebies(
+        mappedFreebiesConfig,
+        mappedWholePigCount,
+        0
+      );
+    }
     previousWholePigCount.current = mappedWholePigCount;
-    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
     pendingHydratedWholePigCount.current = mappedWholePigCount;
-    freebiesDiscountApplied.current = mappedFreebiesConfig.optOut
-      ? noFreebiesDiscountPerPig * mappedWholePigCount
-      : 0;
+    freebiesDiscountApplied.current =
+      (mappedWholePigCount -
+        getPigsWithFreebies(mappedFreebiesConfig, mappedWholePigCount)) *
+      noFreebiesDiscountPerPig;
     setFreebiesConfig(mappedFreebiesConfig);
     setCartItems(mappedItems);
   }, [visible, order, categories, noFreebiesDiscountPerPig]);
@@ -456,55 +490,54 @@ export default function EditOrderModal({
 
     const wholePigCountChanged =
       previousWholePigCount.current !== wholeLechonCount;
-    const pricingChanged =
-      previousNoFreebiesDiscountPerPig.current !== noFreebiesDiscountPerPig;
-    if (!wholePigCountChanged && !pricingChanged) return;
-    if (!wholePigCountChanged && !freebiesConfig.optOut) {
-      previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
-      return;
+
+    let nextConfig = freebiesConfig;
+    if (wholePigCountChanged) {
+      const previousPigsWithFreebies = getPigsWithFreebies(
+        freebiesConfig,
+        previousWholePigCount.current
+      );
+      const nextPigsWithFreebies = freebiesConfig.optOut
+        ? 0
+        : previousPigsWithFreebies +
+          (wholeLechonCount - previousWholePigCount.current);
+      nextConfig = updatePigsWithFreebies(
+        freebiesConfig,
+        wholeLechonCount,
+        nextPigsWithFreebies
+      );
+      setFreebiesConfig(nextConfig);
     }
 
-    const nextFreebiesDiscount = freebiesConfig.optOut
-      ? noFreebiesDiscountPerPig * wholeLechonCount
-      : 0;
-    setDiscount((currentDiscount) =>
-      String(
-        Math.max(
+    const pigsWithDiscount = nextConfig.optOut
+      ? wholeLechonCount
+      : Math.max(
           0,
-          (parseFloat(currentDiscount) || 0) -
-            freebiesDiscountApplied.current +
-            nextFreebiesDiscount
+          wholeLechonCount -
+            (nextConfig.pigsWithFreebies ?? wholeLechonCount)
+        );
+    const nextFreebiesDiscount =
+      pigsWithDiscount * (noFreebiesDiscountPerPig || 2000);
+    const previousFreebiesDiscount = freebiesDiscountApplied.current;
+
+    if (nextFreebiesDiscount !== previousFreebiesDiscount) {
+      setDiscount((currentDiscount) =>
+        String(
+          Math.max(
+            0,
+            (parseFloat(currentDiscount) || 0) -
+              previousFreebiesDiscount +
+              nextFreebiesDiscount
+          )
         )
-      )
-    );
-    freebiesDiscountApplied.current = nextFreebiesDiscount;
-    previousWholePigCount.current = wholeLechonCount;
-    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
-    if (wholePigCountChanged) {
-      setFreebiesConfig((currentConfig) => {
-        const nextConfig = createDefaultFreebiesConfig(wholeLechonCount);
-        return currentConfig.optOut
-          ? { ...nextConfig, optOut: true }
-          : nextConfig;
-      });
+      );
+      freebiesDiscountApplied.current = nextFreebiesDiscount;
     }
-  }, [wholeLechonCount, noFreebiesDiscountPerPig]);
+
+    previousWholePigCount.current = wholeLechonCount;
+  }, [freebiesConfig, wholeLechonCount, noFreebiesDiscountPerPig]);
 
   const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
-    const nextFreebiesDiscount = nextConfig.optOut
-      ? noFreebiesDiscountPerPig * wholeLechonCount
-      : 0;
-    setDiscount((currentDiscount) =>
-      String(
-        Math.max(
-          0,
-          (parseFloat(currentDiscount) || 0) -
-            freebiesDiscountApplied.current +
-            nextFreebiesDiscount
-        )
-      )
-    );
-    freebiesDiscountApplied.current = nextFreebiesDiscount;
     setFreebiesConfig(nextConfig);
   };
 
@@ -549,6 +582,14 @@ export default function EditOrderModal({
     if (!order) return;
     setValidationError(null);
 
+    const validCartItems = cartItems.filter(
+      (item) =>
+        Number.isInteger(item.itemCategoryId) &&
+        item.itemCategoryId > 0 &&
+        Number.isFinite(item.quantity) &&
+        item.quantity > 0
+    );
+
     const trimmedName = customerName.trim();
     const trimmedFbName = facebookName.trim();
     const trimmedPhone = contactNumber.trim();
@@ -584,7 +625,7 @@ export default function EditOrderModal({
         setValidationError('Delivery / drop-off address is required.');
         return;
       }
-      if (cartItems.length === 0) {
+      if (validCartItems.length === 0) {
         setValidationError('Order must contain at least one item.');
         return;
       }
@@ -670,13 +711,13 @@ export default function EditOrderModal({
         downpaymentMethod,
         freebiesSummary: formatFreebiesSummary(
           freebiesConfig,
-          wholeLechonCount
+          wholeLechonCount,
+          noFreebiesDiscountPerPig
         ),
-        freebiesConfigJson:
-          wholeLechonCount > 0 ? JSON.stringify(freebiesConfig) : null,
+        freebiesConfigJson: JSON.stringify(freebiesConfig),
         discount: effectiveDiscount,
         grandTotal,
-        items: cartItems.map((i) => ({
+        items: validCartItems.map((i) => ({
           id: i.id,
           itemCategoryId: i.itemCategoryId,
           quantity: i.quantity,
