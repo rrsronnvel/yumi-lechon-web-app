@@ -155,6 +155,38 @@ The POS and Logistics engines enforce strict boundary rules across three distinc
   5. Inserts an immutable audit log entry: `"Draft inquiry finalized and locked into production by {CurrentUser}"`.
   6. The submit button displays `[ 🔒 Finalize & Lock Order ]`.
 
+#### 2.8 Dual-Contact Architecture (CP #1 & CP #2)
+* **Real-World Operational Context:** In Philippine catering and lechon dispatch, the booking party on Facebook Messenger (e.g., mother/organizer) is frequently distinct from the on-site recipient (e.g., event coordinator, relative, or caretaker). Recording an alternate contact line (`CP #2`) prevents failed deliveries when the primary line is busy, out of coverage, or unattended during transit.
+* **Database & Domain Entity:** `Order.ContactNumber` is configured with `[MaxLength(45)]` (`nvarchar(45)`) via migration `SetOrderContactNumberMaxLength45`. Contact numbers are persisted in a standard comma-delimited format: `"{PrimaryPhone},{SecondaryPhone}"` (e.g., `09171234567,09481234567`).
+* **Intake Ergonomics:** Both Web POS (`OrderForm.tsx`, `EditOrderForm.tsx`) and Mobile POS (`PosScreen.tsx`, `EditOrderModal.tsx`) mount a `[+ Add CP #2]` toggle button beside the primary `Mobile Number (CP #1)` field. Clicking displays an optional `Secondary Mobile Number (CP #2)` input with a 1-click `✕` remove button.
+* **Validation Guardrails:** Form schemas validate that the primary contact has at least 10 digits (`min 10 digits`), and if CP #2 is provided, validates that it also contains at least 10 digits.
+* **Customer Intelligence & History Lookup:** `CustomerService.ExtractPrimaryContactNumber` isolates CP #1 for phone normalization and profile indexing, while historical order lookups utilize `.Contains()` so returning customers are recognized regardless of whether they call from their primary or secondary mobile line.
+* **Floor Action & Dossier Telemetry:**
+  - `OrdersScreen.tsx` renders `contactNumbersStack` displaying both contact numbers on order cards.
+  - `OrderDossierModal.tsx` and `FloorActionView.tsx` display both phone numbers in the customer header.
+  - Tapping `📞 Call Customer` when multiple numbers exist triggers an interactive Action Sheet / Alert modal offering `[ 📞 CP #1 ({phone1}) ]` and `[ 📞 CP #2 ({phone2}) ]`, eliminating manual copy-pasting.
+
+#### 2.9 The 4-Phase Flexible Messenger Intake Parser
+* **Dual-Engine Architecture:** Operates simultaneously via backend Gemini Vision (`AiIntakeParserService.cs`) and high-performance client-side heuristic regex parser (`messengerTextParser.ts` on Web and Mobile) to parse both raw customer booking forms and staff Messenger receipts.
+* **Phase 1: Identity & Dual-Contact Isolation:**
+  - Extracts customer recipient name (`customerName`) from form body, avoiding confusion with Messenger navigation bar profile names (`facebookName`).
+  - Separates primary phone (`contactNumber` / CP #1) and secondary phone (`contactNumber2` / CP #2).
+  - Isolates dedicated `landmark` and `eventType` fields, keeping operational notes out of remarks.
+* **Phase 2: Schedule & Fulfillment Routing:**
+  - Flexible date & time normalization: parses split lines (`Date & Time:` followed by multi-line time or next-line values), relative day markers (`bukas`, `tomorrow`, `today`, `ngayon`), ISO formats, Month Day formats, and numeric formats.
+  - Meridiem and time phrase conversion: handles `am`, `pm`, `nn` (12:00 PM), `mn` (12:00 AM), `in the morning`, `in the afternoon`, `in the evening`, and 24-hour formats.
+  - Fulfillment detection: sniffs `Store Pickup` / `Pick-up` (sets fulfillment = 0, delivery fee = ₱0), `Lalamove` (fulfillment = 2, delivery fee = ₱0), and `Delivery` (fulfillment = 1).
+* **Phase 3: Menu Disambiguation & Freebie Intelligence:**
+  - Whole Lechon size matching: converts bracket aliases (`Super Jumbo`, `XXL`, `XL`, `Jumbo`, `L`, `M`, `S`, `XS`, `XXS`) to active Whole Lechon menu categories (`MinimumWeightKg >= 13`).
+  - Lechon Belly matching: maps `2kg` to `5kg` mentions directly to active Lechon Belly menu categories.
+  - Add-ons matching: identifies mentioned extras (`Sarsa`, `Dinuguan`, `Pancit`, `Palabok`, `Spaghetti`, `Puto`, `Coke`) and matches to active add-on categories (`MinimumWeightKg <= 0`).
+  - Freebies Opt-Out Sniffing: detects `less 2k`, `cash discount`, `walang freebie`, or `no freebies`, sets `FreebiesOptOut = true`, and computes the dynamic CMS discount (`noFreebiesDiscountPerPig * wholePigCount`).
+  - Raw Innards Sniffing: detects `hilaw na laman loob`, `raw innards`, or `walang dinuguan`, sets `RawInnards = true`, and locks Dinuguan to 0.
+* **Phase 4: Financial & Remarks Sanitization:**
+  - Downpayment & Payment Method: parses downpayment deposit values and sniffs payment method (`GCash`, `Maya`, `Bank Transfer`, `Cash`).
+  - Distance & Delivery Fee: extracts explicit distance and delivery charges.
+  - Boilerplate Remarks Sanitizer: automatically purges marketing and booking template chatter (`to confirm your order`, `with 7 freebies`, `spaghetti, palabok... consumed`, `total balance:`, etc.), leaving remarks clean and reserved solely for genuine kitchen prep instructions.
+
 ### 3. Dashboard Triggers & Exception Handling
 
 The "Zero-Inbox" Dashboard acts as a dynamic Command Center, programmed with a Time-Sensitive Trigger Engine to prevent screen clutter.
@@ -167,7 +199,7 @@ The "Zero-Inbox" Dashboard acts as a dynamic Command Center, programmed with a T
 - Pending Downpayments (4-Day Window): If an order is unpaid, it remains invisible until exactly 4 days before delivery. The table includes Action Center Integration, allowing the admin to click an order, open the "Customer Dossier" modal, and log a GCash receipt instantly without leaving the dashboard.
 - Final Follow-Up & Cancellation (1-Day Window): If the order remains unpaid 1 day before delivery, it becomes a critical follow-up.
 - Unified Tomorrow's Operations Roster: A single, merged table combining Delivery Verifications and the Defrosting Roster. It groups customer delivery details alongside the exact pigs needed from the freezer tonight. Late additions to this list trigger a red [RUSH / LATE DEFROST] badge.
-- 1-Click Nightly Defrost List Generator (`[ 📋 Copy Defrost List ]`): Both the Web Dashboard (`DashboardPage.tsx`) and Mobile Floor Action Hub (`FloorActionView.tsx`) mount a 1-click `[ 📋 Copy Defrost List ]` button in the Operations Roster header (`generateDefrostRosterMessage` in `messengerTemplates.ts`). Clicking copies a clean Taglish freezer pull-list formatted for the kitchen Messenger group chat (`Ito po mga ilalabas para bukas, {MonthShort} {Day}`), automatically partitioning items into `Whole Lechon` (`{WeightRange} - {CustomerName}`, e.g. `28-30 - Vivian`) and `Belly` (`{SizeLabel} - {CustomerName}`, e.g. `3kg - Angelo`), expanding multi-quantity rows (`quantity > 1`) into individual carcass lines, and omitting empty group headers.
+- 1-Click Nightly Defrost List Generator & The Defrost Roster Carcass Bouncer (`[ 📋 Copy Defrost List ]`): Both the Web Dashboard (`DashboardPage.tsx`) and Mobile Floor Action Hub (`FloorActionView.tsx`) mount a 1-click `[ 📋 Copy Defrost List ]` button in the Operations Roster header (`generateDefrostRosterMessage` in `messengerTemplates.ts`). The Defrost Roster Carcass Bouncer strictly enforces `MinimumWeightKg > 0` at the database level (`DashboardService.cs`) and filters out non-carcass add-on items (`NON_CARCASS_ADDON_PATTERN` matching sauces, dinuguan, pancit, palabok, spaghetti, puto, coke) on both Web and Mobile client displays and clipboard strings. Only genuine roasted carcasses (Whole Lechon and Lechon Belly) appear on the defrost roster. Clicking copies a clean Taglish freezer pull-list formatted for the kitchen Messenger group chat (`Ito po mga ilalabas para bukas, {MonthShort} {Day}`), automatically partitioning items into `Whole Lechon` (`{WeightRange} - {CustomerName}`, e.g. `28-30 - Vivian`) and `Belly` (`{SizeLabel} - {CustomerName}`, e.g. `3kg - Angelo`), expanding multi-quantity rows (`quantity > 1`) into individual carcass lines, and omitting empty group headers.
 - Peak Season Renegotiation List (Dynamic): Only appears when base prices are hiked in the CMS. Displays affected advance bookings, allowing admins to manually mark them as [Customer Agreed], [Waive Hike], or [Customer Cancelled] after communicating with the client.
 
 ### 4. Kitchen Operations (The Backbone)
@@ -221,6 +253,7 @@ To eliminate interface fragmentation and workflow duplication, the Web Logistics
     - In `Edit & Plan Mode`, clicking `TAHI`, `SALANG`, `DEPARTURE / PICKUP`, `PACKAGING`, `REMARKS`, or `RIDER` opens `InlineScheduleEditorModal.tsx`.
   - **Tab 2: Rider View & Rider Anti-Complacency Column Rule (`RiderViewTab.tsx`):** Sorted chronologically by departure time. Hides cooking data and shows exact cash splits.
     - **Rider Anti-Complacency Guard:** The time column is labeled `DEPARTURE / PICKUP` and renders **ONLY** `riderDepartureTime ?? targetDeliveryTime` in bold primary monospace text. The customer's venue arrival time (`targetDeliveryTime`) and any secondary arrival subtext are **strictly hidden/removed** from the Rider View so freelance riders cannot self-calculate buffer slack or delay their departure from the store.
+  - **The Dispatch Planner Carcass Bouncer:** Both `KitchenViewTab.tsx` and `RiderViewTab.tsx` strictly enforce the Carcass Bouncer (`MinimumWeightKg > 0`). Only Whole Lechon and Lechon Belly appear as schedule rows; lightweight add-ons (sauces, dinuguan, pancit, drinks, etc.) are strictly excluded from generating schedule/departure rows and are captured exclusively inside the `ADD-ONS` column (Column 12 on Kitchen View, Column 10 on Rider View). This prevents add-ons from inflating the `Total Deliveries` count or duplicating the order's `Amount to Collect` on the rider manifest.
 
 #### 5.3 Freelance Rider Directory & Customer Communication Bridge
 
@@ -810,7 +843,7 @@ Surfaces all active, non-cancelled orders scheduled within a 4-day trigger windo
 
 ### 15.3. Section B: Tonight's Defrost & Kitchen Prep Roster
 Renders all pig carcasses scheduled for tomorrow's roasting batches sorted strictly by **Earliest `TahiStartTime` (Preparation Priority)**:
-* **Header Summary:** Dynamic count of total carcasses scheduled (e.g., `Tonight's Defrost & Prep Roster (8 Heads)`).
+* **Header Summary & The Carcass Bouncer:** Dynamic count of total carcasses scheduled (e.g., `Tonight's Defrost & Prep Roster (8 Heads)`). Enforces the Defrost Roster Carcass Bouncer: add-ons (sauces, dinuguan, pancit, drinks, etc. with `MinimumWeightKg <= 0` or non-carcass category keywords) are strictly eliminated so roasters only defrost authentic pig carcasses.
 * **Weight & Quantity Badges:** Displays bracket (e.g., `1x Medium Whole (22.0–24.0 kg)`).
 * **Rush Defrost Detector (`IsRushDefrost`):** High-contrast red badge (`[🚨 RUSH / LATE DEFROST]`) flagged when orders are booked late (after 12:00 PM cutoff on the day prior to roasting), alerting roasters to initiate immediate rapid thawing protocols.
 * **Customer & VIP Telemetry:** Highlights `👑 VIP` status for trusted accounts and indicates fulfillment destination (`🏪 Store Pickup` vs. `📍 Delivery Address`).
@@ -824,7 +857,7 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 ### 16.1 Whole Lechon 7-Freebies Engine
 * **Eligibility:** Only quantities whose category has `MinimumWeightKg >= 13` count as Whole Lechon heads. Lechon Belly (`0 < MinimumWeightKg < 13`) and add-ons never create freebie quota.
 * **Standard Quota:** Each eligible head starts with one each of `Sarsa`, `1.5L Coke`, `Pancit`, `Palabok`, `Spaghetti`, `Dinuguan`, and `Puto` (`7 × wholePigCount`). Web and Mobile persist `FreebiesConfigJson` and the staff-facing `FreebiesSummary`.
-* **No-Freebies Option:** Opting out zeros every count and adds exactly `₱2,000 × wholePigCount` to `Discount`; returning to Standard removes only the engine-applied discount.
+* **Dynamic CMS No-Freebies Option:** Opting out zeros every count and applies `NoFreebiesDiscountPerPig × wholePigCount` to `Discount` (default ₱2,000 per whole lechon head). This discount rate is dynamically governed by the business owner in the CMS (`CmsPage.tsx` under Delivery & Pricing Configuration), persisted in `SystemSettings` (`NoFreebiesDiscountPerPig`), and surfaced via `DeliveryPricingDto`. Returning to Standard removes only the engine-applied discount without disrupting manual order discounts.
 * **Raw Innards:** Enabling Raw Innards locks `Dinuguan = 0`; the cooked-dish allowance becomes `6 × wholePigCount`, and the omitted Dinuguan cannot be replaced.
 * **Operations Visibility:** Kitchen and Rider Remarks cells show rose (`🚫 No Freebies`), emerald (unchanged standard), or amber (custom swap / Raw Innards) badges above ordinary staff remarks. Dossiers and Owner queues show the same summary.
 

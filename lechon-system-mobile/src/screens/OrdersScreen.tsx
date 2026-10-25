@@ -336,6 +336,10 @@ export default function OrdersScreen({
     const balanceDue = Number(item.balanceDue || 0);
     const isPaid = balanceDue <= 0;
     const isDraft = Boolean(item.isDraft);
+    const phones = (item.contactNumber || '')
+      .split(',')
+      .map((phone) => phone.trim())
+      .filter(Boolean);
 
     return (
       <Pressable
@@ -375,6 +379,16 @@ export default function OrdersScreen({
               : `₱${Number(item.grandTotal || 0).toLocaleString()}`}
           </Text>
         </View>
+
+        {phones.length > 0 && (
+          <View style={styles.contactNumbersStack}>
+            {phones.map((phone, index) => (
+              <Text key={`${phone}-${index}`} style={styles.contactNumberLine}>
+                📞 {phone}
+              </Text>
+            ))}
+          </View>
+        )}
 
         {/* Middle Row: Date & Time + Relative Day Badge | Payment Status */}
         <View style={styles.cardMiddleRow}>
@@ -926,6 +940,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1C1917',
     flexShrink: 1,
+  },
+  contactNumbersStack: {
+    gap: 1,
+    marginTop: -3,
+  },
+  contactNumberLine: {
+    color: '#57534E',
+    fontSize: 11,
+    fontWeight: '600',
   },
   vipBadge: {
     backgroundColor: '#FEF3C7',

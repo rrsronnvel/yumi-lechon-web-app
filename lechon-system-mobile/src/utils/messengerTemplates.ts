@@ -381,13 +381,22 @@ export const generateDefrostRosterMessage = (
   const bellyLines: string[] = [];
 
   for (const item of rosterItems || []) {
-    const qty = Math.max(1, Number(item.quantity) || 1);
     const nameLabel = (
       item.categoryName ||
       item.weightCategory ||
       item.weightRange ||
       ''
     ).toLowerCase();
+    const hasNonPositiveWeight =
+      item.minimumWeightKg !== undefined &&
+      Number(item.minimumWeightKg) <= 0;
+    const isKnownAddOn =
+      /sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke/i.test(
+        nameLabel
+      );
+    if (hasNonPositiveWeight || isKnownAddOn) continue;
+
+    const qty = Math.max(1, Number(item.quantity) || 1);
     const isBelly = nameLabel.includes('belly');
     const customer = (item.customerName || 'Customer').trim();
 

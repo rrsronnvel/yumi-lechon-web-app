@@ -79,7 +79,7 @@ yumi-lechon-web-app/
 │   ├── Models/                      # Domain entities & database models
 │   │   ├── BaseEntity.cs            # Id and CreatedAt baseline
 │   │   ├── CustomerProfile.cs       # Customer intelligence (preferences, complaint radar, VIP, order count)
-│   │   ├── Order.cs                 # Master order entity (customer, totals, statuses)
+│   │   ├── Order.cs                 # Master order entity (customer, dual contacts, totals, statuses)
 │   │   ├── OrderItem.cs             # Line items with locked Price snapshots
 │   │   ├── OrderItemSchedule.cs     # Calculated Tahi, Salang, Packaging, and Delivery timestamps
 │   │   ├── OrderAuditLog.cs         # Immutable "Black Box" diff history of modifications
@@ -105,7 +105,7 @@ yumi-lechon-web-app/
 │       ├── ParsedOrderDraftDto.cs   # Vision/text parser structured draft contract
 │       ├── UpdateOrderDto.cs        # Order modification payload
 │       ├── OrderDirectoryDto.cs     # Fast flat projection for directory searches
-│       ├── DeliveryPricingDto.cs    # CMS delivery base fare & rate per km
+│       ├── DeliveryPricingDto.cs    # CMS delivery base fare, rate per km & no-freebies discount
 │       ├── InventoryBalanceDto.cs   # Stock scoreboard view
 │       ├── InventoryTransactionDto.cs # Ledger transaction record
 │       ├── RenegotiationTaskDto.cs  # Advance bookings affected by price hikes
@@ -117,7 +117,7 @@ yumi-lechon-web-app/
 └── lechon-system-web/               # ⚛️ React 19 Frontend Client
     ├── src/
     │   ├── pages/                   # Application route views
-    │   │   ├── DashboardPage.tsx    # Zero-Inbox Command Center, Defrost List Copier & Remittance Alerts
+    │   │   ├── DashboardPage.tsx    # Zero-Inbox Command Center, Carcass Bouncer Defrost List & Remittance Alerts
     │   │   ├── OrdersPage.tsx       # Master Order Directory, Balance Due Sub-Pills, POS Modal, Dossier Drawer
     │   │   ├── KitchenPage.tsx      # Real-Time KDS Kanban & Roasting Spit Queue
     │   │   ├── InventoryPage.tsx    # Live Balance Scoreboard & Audit Ledger Tabs
@@ -125,7 +125,7 @@ yumi-lechon-web-app/
     │   │   ├── ManifestPage.tsx     # Customer-by-Customer Cash Reconciliation Matrix
     │   │   ├── DailySheetsPage.tsx  # Clean printable / screenshot views for Messenger
     │   │   ├── AnalyticsPage.tsx    # Visual KPI analytics & financial trend charts
-    │   │   └── CmsPage.tsx          # Price matrix, categories, and cooking profile settings
+    │   │   └── CmsPage.tsx          # Price matrix, categories, foldable delivery & discount policy cards
     │   │
     │   ├── components/
     │   │   ├── cms/                 # CMS modals & dialogs (CreateUserModal, ResetPasswordModal, ChangePriceModal)
@@ -137,13 +137,13 @@ yumi-lechon-web-app/
     │   │       ├── RootLayout.tsx   # Global app container with sidebar navigation
     │   │       ├── Sidebar.tsx      # Navigation sidebar with responsive indicators
     │   │       ├── orders/
-    │   │       │   ├── OrderForm.tsx       # Unified Order Intake Form (POS) with Downpayment presets
-    │   │       │   └── EditOrderForm.tsx   # "Flexible Cart, Locked Cash" modifier modal
+    │   │       │   ├── OrderForm.tsx       # Unified Order Intake Form (POS) with CP #2 & Downpayment presets
+    │   │       │   └── EditOrderForm.tsx   # "Flexible Cart, Locked Cash" modifier modal with CP #2 support
     │   │       ├── button.tsx, card.tsx, dialog.tsx, sheet.tsx, table.tsx, badge.tsx, etc.
     │   │
     │   ├── utils/
     │   │   ├── messengerTemplates.ts # Taglish Messenger receipts, defrost list generator & departure math
-    │   │   └── messengerTextParser.ts# Client-side heuristic parser for pasted Messenger text
+    │   │   └── messengerTextParser.ts# 4-Phase heuristic parser for pasted Messenger text & receipts
     │   │
     │   ├── hooks/                   # Custom TanStack Query hooks & mutators
     │   │   ├── useCustomers.ts      # Debounced customer intelligence lookup & notes mutator
@@ -267,8 +267,8 @@ Every AI agent and software engineer working on this repository must strictly ad
 * **4-Day Reminder Window:** Surfaces unpaid orders for staff to follow up via Facebook Messenger.
 * **1-Day Follow-Up Window:** Critical warning to collect payment or trigger cancellation.
 * **Rush Order Bypass:** Same-day or next-day reservations bypass the 4-day/2-day queues directly into active rosters.
-* **Tomorrow's Operations Roster & 1-Click Defrost List Copier:** Unified table merging delivery verifications with tonight's freezer defrosting schedule (late additions flagged with `[RUSH / LATE DEFROST]`), paired with a 1-click `[ 📋 Copy Defrost List ]` button (`generateDefrostRosterMessage`) on both Web Dashboard and Mobile Floor Action views.
-* **Dispatch Planner Rider Anti-Complacency Guard:** `KitchenViewTab.tsx` enforces a 14-column layout with `DEPARTURE / PICKUP` (`riderDepartureTime ?? targetDeliveryTime`) between `WEIGHT` and `CUSTOMER` and `DELIVERY` (`targetDeliveryTime`) between `ADD-ONS` and `RIDER`. `RiderViewTab.tsx` displays **ONLY** `DEPARTURE / PICKUP` and strictly hides `targetDeliveryTime` so riders cannot self-calculate buffer slack.
+* **Tomorrow's Operations Roster, Defrost Carcass Bouncer & 1-Click Defrost List Copier:** Unified table merging delivery verifications with tonight's freezer defrosting schedule (late additions flagged with `[RUSH / LATE DEFROST]`), paired with a 1-click `[ 📋 Copy Defrost List ]` button (`generateDefrostRosterMessage`) on both Web Dashboard and Mobile Floor Action views. Strictly enforces the Defrost Roster Carcass Bouncer (`MinimumWeightKg > 0` and non-carcass regex filters) to prevent add-ons (sauces, dinuguan, pancit, drinks, etc.) from ever polluting freezer pull-lists.
+* **Dispatch Planner Rider Anti-Complacency Guard & Carcass Bouncer:** `KitchenViewTab.tsx` enforces a 14-column layout with `DEPARTURE / PICKUP` (`riderDepartureTime ?? targetDeliveryTime`) between `WEIGHT` and `CUSTOMER` and `DELIVERY` (`targetDeliveryTime`) between `ADD-ONS` and `RIDER`. `RiderViewTab.tsx` displays **ONLY** `DEPARTURE / PICKUP` and strictly hides `targetDeliveryTime` so riders cannot self-calculate buffer slack. Both sheets strictly enforce the Carcass Bouncer (`MinimumWeightKg > 0`): only Whole Lechon and Lechon Belly appear as schedule rows; add-ons are captured in the `ADD-ONS` column and never duplicate rows or skew delivery totals.
 * **Unremitted Cash Card:** Highlights riders holding unremitted funds, glowing **RED** if held past the dispatch date until settled on the manifest.
 * **Peak Season Renegotiation Roster:** Automatically populated when base menu prices are updated in CMS, allowing dispatchers to log `[Customer Agreed]`, `[Waive Hike]`, or `[Customer Cancelled]`.
 
@@ -287,6 +287,16 @@ Every AI agent and software engineer working on this repository must strictly ad
   - Persisted in localStorage as `lechon_api_env` (with fallback to `lechon_api_environment`), defaulting to `'local'` on localhost and `'cloud'` in production.
   - **Live Cloud (`apiEnv === 'cloud'`):** The `1-TAP QUICK-FILL TEST PRESETS` container (`[ 👑 Fill Owner ]` and `[ 🧑‍🍳 Fill Cashier ]`) is **completely hidden and unmounted** from both Web (`LoginPage.tsx`) and Mobile (`LoginScreen.tsx`), and input credentials are automatically reset to `""` to prevent demo password leakage into live cloud databases.
   - **Local Development (`apiEnv === 'local'`):** Quick-fill presets are rendered for fast local shift testing.
+
+#### 7. Carcass Bouncer, Dynamic No-Freebies Discount, Dual-Contact & 4-Phase Intake
+* **Universal Carcass Bouncer (Defrost Roster, Kitchen View & Rider Manifest):** Strictly enforces `MinimumWeightKg > 0` across `DashboardService.cs` (Defrost Roster), `SchedulingService.cs` (`GetDailySheetsAsync`, `GetDailyRosterAsync`), and `OrderService.cs` (skipping `OrderItemSchedules` and `InventoryReservations` for lightweight add-ons during creation and updates). Backed by defensive client-side regex filters (`useSchedules.ts`, `KitchenViewTab.tsx`, `RiderViewTab.tsx`, `DashboardPage.tsx`, `FloorActionView.tsx`). Ensures lightweight add-ons (sauces, dinuguan, pancit, drinks, etc.) never generate roasting spit schedules, duplicate delivery manifest entries, or pollute kitchen/rider dispatch sheets.
+* **CMS Dynamic No-Freebies Discount:** Moved from hardcoded ₱2,000 to CMS-configured `NoFreebiesDiscountPerPig` (persisted in `SystemSettings`, default ₱2,000.00). Accessible to Owners via CMS Delivery & Pricing settings and automatically applied as `noFreebiesDiscountPerPig * wholePigCount` across Web and Mobile POS terminals.
+* **Dual-Contact Telemetry (`CP #1` & `CP #2`):** `Order.ContactNumber` column extended to `[MaxLength(45)]` (`nvarchar(45)`) storing comma-delimited `"{CP1},{CP2}"`. Both Web and Mobile POS feature `[+ Add CP #2]` toggle buttons and validation (min 10 digits). Customer intelligence isolates CP #1 for profiles while matching historical orders with `.Contains()`. Mobile Floor Action and Order Dossier provide interactive dialer Action Sheets (`📞 CP #1` vs. `📞 CP #2`).
+* **4-Phase Flexible Messenger Intake Parser:** Operates across Gemini Vision (`AiIntakeParserService.cs`) and client-side regex engines (`messengerTextParser.ts` on Web and Mobile) to parse customer booking forms and staff receipts:
+  1. *Identity & Contacts:* Extracts recipient name, Facebook profile name, primary phone (CP #1), secondary phone (CP #2), dedicated landmark, and event type.
+  2. *Schedule & Fulfillment:* Flexibly resolves multi-line dates, relative markers (`bukas`, `tomorrow`), 12h/24h times, and fulfillment modes (Store Pickup, Delivery, Lalamove).
+  3. *Menu & Freebie Intelligence:* Maps Whole Lechon brackets (Super Jumbo down to XXS) and Lechon Belly kg sizes, extracts add-ons, detects freebie opt-outs (`less 2k`, `cash discount`) with dynamic CMS discount calculation, and sniffs Raw Innards (`hilaw na laman loob`).
+  4. *Financials & Sanitization:* Parses downpayments, sniffs payment channels (GCash, Maya, Bank Transfer, Cash), extracts delivery fees, and purges marketing boilerplate from kitchen remarks.
 
 ---
 
@@ -324,7 +334,7 @@ npm run lint                         # Run ESLint validation
 
 These rules must remain aligned across `LechonSystem.Api`, `lechon-system-web`, and `lechon-system-mobile`:
 
-* **Whole Lechon Freebies:** `minimumWeightKg >= 13` is the only weight trigger. One head receives seven canonical freebies; opt-out applies `₱2,000` per head; Raw Innards fixes Dinuguan at zero with no replacement slot. Keep both `src/utils/freebiesHelper.ts` implementations behaviorally identical and persist `FreebiesSummary` plus `FreebiesConfigJson`.
+* **Whole Lechon Freebies:** `minimumWeightKg >= 13` is the only weight trigger. One head receives seven canonical freebies; opt-out applies the CMS-configured `NoFreebiesDiscountPerPig` (default `₱2,000`) per head; Raw Innards fixes Dinuguan at zero with no replacement slot. Keep both `src/utils/freebiesHelper.ts` implementations behaviorally identical and persist `FreebiesSummary` plus `FreebiesConfigJson`.
 * **Owner Confirmation:** Cashier-created active orders reserve and schedule immediately but require Owner review. Only `POST /api/orders/{id}/confirm-owner` completes the gate; pending work comes from `GET /api/dashboard/pending-owner-confirmations`.
 * **Duplicate Radar:** Customer lookup returns `ActiveUpcomingOrders` even without a profile. POS and edit surfaces warn proactively and require a second confirmation for exact same-day matches.
 * **BIR Channels:** Initial and subsequent payment logs use exactly `Cash`, `GCash`, `Maya`, or `Bank Transfer`. Positive unclassified downpayments default to GCash; zero downpayments use `None` on the order header.

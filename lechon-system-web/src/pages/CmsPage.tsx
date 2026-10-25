@@ -53,6 +53,11 @@ import {
   Lock,
   Users,
   AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Tag,
+  Calculator,
+  Save,
 } from "lucide-react";
 
 type FilterStatus = "all" | "active" | "hidden";
@@ -80,17 +85,28 @@ export default function CmsPage() {
   // Delivery Pricing Form State
   const [baseFareInput, setBaseFareInput] = useState<string>("100");
   const [ratePerKmInput, setRatePerKmInput] = useState<string>("15");
+  const [noFreebiesDiscountInput, setNoFreebiesDiscountInput] =
+    useState<string>("2000");
   const [previewDistanceKm, setPreviewDistanceKm] = useState<string>("10");
+  const [isDiscountOpen, setIsDiscountOpen] = useState(false);
+  const [isDeliveryOpen, setIsDeliveryOpen] = useState(false);
 
   useEffect(() => {
     if (deliveryPricing) {
       setBaseFareInput(String(deliveryPricing.baseFare ?? 100));
       setRatePerKmInput(String(deliveryPricing.ratePerKm ?? 15));
+      setNoFreebiesDiscountInput(
+        String(deliveryPricing.noFreebiesDiscountPerPig ?? 2000),
+      );
     }
   }, [deliveryPricing]);
 
   const parsedBaseFare = Math.max(0, parseFloat(baseFareInput) || 0);
   const parsedRatePerKm = Math.max(0, parseFloat(ratePerKmInput) || 0);
+  const parsedNoFreebiesDiscount = Math.max(
+    0,
+    parseFloat(noFreebiesDiscountInput) || 0,
+  );
   const parsedPreviewKm = Math.max(0, parseFloat(previewDistanceKm) || 0);
   const sampleComputedFee = Math.round(parsedPreviewKm * parsedRatePerKm + parsedBaseFare);
 
@@ -99,6 +115,7 @@ export default function CmsPage() {
     updateDeliveryPricingMutation.mutate({
       baseFare: parsedBaseFare,
       ratePerKm: parsedRatePerKm,
+      noFreebiesDiscountPerPig: parsedNoFreebiesDiscount,
     });
   };
 
@@ -293,105 +310,280 @@ export default function CmsPage() {
 
       {activeMainTab === "catalog" && (
         <>
-          {/* Delivery Pricing Configuration Card */}
-      <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">
-        <CardHeader className="pb-3 border-b border-stone-100">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800 shrink-0">
-                <Truck className="w-5 h-5" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold text-stone-900">
-                  Delivery Pricing Configuration
-                </CardTitle>
-                <CardDescription className="text-xs text-stone-500">
-                  Dynamic distance formula used by Web & Mobile POS terminals to auto-calculate Freelance Delivery fees.
-                </CardDescription>
-              </div>
-            </div>
-            {!isOwner && (
-              <Badge
-                variant="outline"
-                className="bg-amber-50 text-amber-800 border-amber-300 text-xs font-medium self-start sm:self-center flex items-center gap-1"
-              >
-                <Lock className="w-3 h-3" /> Owner Authorization Required to Edit
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-            <div className="md:col-span-3 space-y-1.5">
-              <label className="text-xs font-semibold text-stone-700 block">
-                Base Fare (₱)
-              </label>
-              <Input
-                type="number"
-                step="5"
-                min="0"
-                disabled={!isOwner || updateDeliveryPricingMutation.isPending}
-                value={baseFareInput}
-                onChange={(e) => setBaseFareInput(e.target.value)}
-                className="h-10 font-mono border-stone-300"
-              />
-            </div>
-
-            <div className="md:col-span-3 space-y-1.5">
-              <label className="text-xs font-semibold text-stone-700 block">
-                Rate Per KM (₱)
-              </label>
-              <Input
-                type="number"
-                step="1"
-                min="0"
-                disabled={!isOwner || updateDeliveryPricingMutation.isPending}
-                value={ratePerKmInput}
-                onChange={(e) => setRatePerKmInput(e.target.value)}
-                className="h-10 font-mono border-stone-300"
-              />
-            </div>
-
-            <div className="md:col-span-4 bg-stone-50 border border-stone-200 rounded-lg p-2.5 flex items-center justify-between gap-3">
-              <div className="space-y-0.5 min-w-0">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 block">
-                  Live Formula Preview
-                </span>
-                <span className="text-xs font-mono text-stone-700 block truncate">
-                  Fee = ({parsedPreviewKm} km × ₱{parsedRatePerKm}) + ₱{parsedBaseFare}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={previewDistanceKm}
-                  onChange={(e) => setPreviewDistanceKm(e.target.value)}
-                  className="w-16 h-8 text-xs font-mono text-center bg-white border-stone-300"
-                  title="Sample Distance (KM)"
-                />
-                <Badge className="bg-emerald-700 text-white font-mono text-xs px-2.5 py-1">
-                  ₱{sampleComputedFee.toLocaleString()}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <Button
+          {/* Foldable Policy Configurations (Discount & Delivery) */}
+          <div className="space-y-3">
+            {/* 1. Foldable Discount Configuration Card */}
+            <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden transition-all duration-200">
+              <button
                 type="button"
-                disabled={!isOwner || updateDeliveryPricingMutation.isPending}
-                onClick={handleSaveDeliveryPricing}
-                className="w-full h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50"
+                aria-expanded={isDiscountOpen}
+                aria-controls="discount-config-panel"
+                onClick={() => setIsDiscountOpen(!isDiscountOpen)}
+                className="w-full text-left px-5 py-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-stone-50/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 select-none"
               >
-                {updateDeliveryPricingMutation.isPending
-                  ? "Saving..."
-                  : "Save Delivery Rates"}
-              </Button>
-            </div>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800 shrink-0">
+                    <Tag className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-stone-900">
+                        Discount Configuration
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className="bg-emerald-50 text-emerald-800 border-emerald-300 text-[11px] font-mono font-medium px-2 py-0.5"
+                      >
+                        No-Freebies: -₱{parsedNoFreebiesDiscount.toLocaleString()} / head
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-stone-500 truncate mt-0.5">
+                      Dynamic discount applied when customers opt out of the Whole Lechon 7-freebies package.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {!isOwner && (
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-medium hidden sm:flex items-center gap-1"
+                    >
+                      <Lock className="w-3 h-3" /> View Only
+                    </Badge>
+                  )}
+                  <div className="w-7 h-7 rounded-md bg-stone-100 flex items-center justify-center text-stone-500 transition-transform duration-200">
+                    {isDiscountOpen ? (
+                      <ChevronUp className="w-4 h-4 text-stone-700" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-stone-700" />
+                    )}
+                  </div>
+                </div>
+              </button>
+
+              {isDiscountOpen && (
+                <CardContent id="discount-config-panel" className="pt-3 pb-5 px-5 border-t border-stone-100 bg-stone-50/40">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start pt-1">
+                    <div className="lg:col-span-5 space-y-2">
+                      <label className="text-xs font-semibold text-stone-800 block">
+                        No-Freebies Opt-Out Discount per Whole Lechon (₱)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-mono text-sm font-semibold">
+                          ₱
+                        </span>
+                        <Input
+                          type="number"
+                          step="100"
+                          min="0"
+                          disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                          value={noFreebiesDiscountInput}
+                          onChange={(e) => setNoFreebiesDiscountInput(e.target.value)}
+                          className="h-10 pl-8 font-mono text-sm bg-white border-stone-300 focus-visible:ring-emerald-500"
+                          placeholder="2000"
+                        />
+                      </div>
+                      <p className="text-[11px] text-stone-500 leading-relaxed">
+                        Automatically deducted from Grand Total for every eligible Whole Lechon (≥13kg) when customer selects <strong>🚫 No Freebies</strong>. Standard preset: ₱2,000.
+                      </p>
+                    </div>
+
+                    <div className="lg:col-span-4 bg-white border border-stone-200 rounded-lg p-3.5 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-semibold text-stone-700">
+                        <span className="flex items-center gap-1.5 text-stone-600">
+                          <Calculator className="w-3.5 h-3.5 text-emerald-600" />
+                          Live Multiplier Scaling Preview
+                        </span>
+                        <span className="text-[10px] font-mono text-stone-400">
+                          -₱{parsedNoFreebiesDiscount.toLocaleString()} × heads
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1 text-center font-mono">
+                        <div className="bg-stone-50 rounded-md p-2 border border-stone-150">
+                          <div className="text-[10px] text-stone-500 uppercase">1 Head</div>
+                          <div className="text-xs font-bold text-rose-600 mt-0.5">
+                            -₱{(parsedNoFreebiesDiscount * 1).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="bg-stone-50 rounded-md p-2 border border-stone-150">
+                          <div className="text-[10px] text-stone-500 uppercase">2 Heads</div>
+                          <div className="text-xs font-bold text-rose-600 mt-0.5">
+                            -₱{(parsedNoFreebiesDiscount * 2).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="bg-stone-50 rounded-md p-2 border border-stone-150">
+                          <div className="text-[10px] text-stone-500 uppercase">3 Heads</div>
+                          <div className="text-xs font-bold text-rose-600 mt-0.5">
+                            -₱{(parsedNoFreebiesDiscount * 3).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-3 flex flex-col justify-end self-end pt-1">
+                      <Button
+                        type="button"
+                        disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                        onClick={handleSaveDeliveryPricing}
+                        className="w-full h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {updateDeliveryPricingMutation.isPending ? "Saving..." : "Save Discount Settings"}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* 2. Foldable Delivery Configuration Card */}
+            <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden transition-all duration-200">
+              <button
+                type="button"
+                aria-expanded={isDeliveryOpen}
+                aria-controls="delivery-config-panel"
+                onClick={() => setIsDeliveryOpen(!isDeliveryOpen)}
+                className="w-full text-left px-5 py-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-stone-50/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 select-none"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800 shrink-0">
+                    <Truck className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-stone-900">
+                        Delivery Configuration
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-50 text-amber-800 border-amber-300 text-[11px] font-mono font-medium px-2 py-0.5"
+                      >
+                        Base: ₱{parsedBaseFare.toLocaleString()} • Rate: ₱{parsedRatePerKm.toLocaleString()}/km
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-stone-500 truncate mt-0.5">
+                      Dynamic distance formula used by Web & Mobile POS terminals to auto-calculate Freelance Delivery fees.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {!isOwner && (
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-medium hidden sm:flex items-center gap-1"
+                    >
+                      <Lock className="w-3 h-3" /> View Only
+                    </Badge>
+                  )}
+                  <div className="w-7 h-7 rounded-md bg-stone-100 flex items-center justify-center text-stone-500 transition-transform duration-200">
+                    {isDeliveryOpen ? (
+                      <ChevronUp className="w-4 h-4 text-stone-700" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-stone-700" />
+                    )}
+                  </div>
+                </div>
+              </button>
+
+              {isDeliveryOpen && (
+                <CardContent id="delivery-config-panel" className="pt-3 pb-5 px-5 border-t border-stone-100 bg-stone-50/40">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start pt-1">
+                    <div className="lg:col-span-3 space-y-1.5">
+                      <label className="text-xs font-semibold text-stone-800 block">
+                        Base Fare (₱)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-mono text-sm font-semibold">
+                          ₱
+                        </span>
+                        <Input
+                          type="number"
+                          step="5"
+                          min="0"
+                          disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                          value={baseFareInput}
+                          onChange={(e) => setBaseFareInput(e.target.value)}
+                          className="h-10 pl-8 font-mono text-sm bg-white border-stone-300 focus-visible:ring-amber-500"
+                          placeholder="100"
+                        />
+                      </div>
+                      <p className="text-[11px] text-stone-500">
+                        Minimum dispatch fee floor per delivery.
+                      </p>
+                    </div>
+
+                    <div className="lg:col-span-3 space-y-1.5">
+                      <label className="text-xs font-semibold text-stone-800 block">
+                        Rate Per KM (₱)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-mono text-sm font-semibold">
+                          ₱
+                        </span>
+                        <Input
+                          type="number"
+                          step="1"
+                          min="0"
+                          disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                          value={ratePerKmInput}
+                          onChange={(e) => setRatePerKmInput(e.target.value)}
+                          className="h-10 pl-8 font-mono text-sm bg-white border-stone-300 focus-visible:ring-amber-500"
+                          placeholder="15"
+                        />
+                      </div>
+                      <p className="text-[11px] text-stone-500">
+                        Charged per road kilometer from kitchen.
+                      </p>
+                    </div>
+
+                    <div className="lg:col-span-4 bg-white border border-stone-200 rounded-lg p-3.5 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-semibold text-stone-700">
+                        <span className="flex items-center gap-1.5 text-stone-600">
+                          <Calculator className="w-3.5 h-3.5 text-amber-600" />
+                          Live Distance Formula Preview
+                        </span>
+                        <span className="text-[10px] font-mono text-stone-400">
+                          Fee = (KM × ₱{parsedRatePerKm}) + ₱{parsedBaseFare}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 pt-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-stone-500">Sample:</span>
+                          <Input
+                            type="number"
+                            step="1"
+                            min="0"
+                            value={previewDistanceKm}
+                            onChange={(e) => setPreviewDistanceKm(e.target.value)}
+                            className="w-18 h-8 text-xs font-mono text-center bg-stone-50 border-stone-300"
+                            title="Sample Distance in KM"
+                          />
+                          <span className="text-xs font-mono text-stone-600">km</span>
+                        </div>
+                        <Badge className="bg-emerald-700 text-white font-mono text-xs px-3 py-1 font-bold shadow-2xs">
+                          Total: ₱{sampleComputedFee.toLocaleString()}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-2 flex flex-col justify-end self-end pt-1">
+                      <Button
+                        type="button"
+                        disabled={!isOwner || updateDeliveryPricingMutation.isPending}
+                        onClick={handleSaveDeliveryPricing}
+                        className="w-full h-10 bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {updateDeliveryPricingMutation.isPending ? "Saving..." : "Save Rates"}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
       {/* Main Governance Card */}
       <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">

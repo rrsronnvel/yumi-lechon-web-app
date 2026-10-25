@@ -61,10 +61,13 @@ export default function EditOrderForm({
 
   const baseFare = deliveryPricing?.baseFare ?? 100;
   const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
+  const noFreebiesDiscountPerPig =
+    deliveryPricing?.noFreebiesDiscountPerPig ?? 2000;
   const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
     createDefaultFreebiesConfig(0),
   );
   const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
+  const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const previousWholePigCount = useRef(0);
   const pendingHydratedWholePigCount = useRef<number | null>(null);
 
@@ -105,6 +108,7 @@ export default function EditOrderForm({
     targetDeliveryTime: string;
     riderDepartureTime: string;
     contactNumber: string;
+    contactNumber2: string;
     deliveryAddress: string;
     remarks: string;
     price: number;
@@ -131,6 +135,7 @@ export default function EditOrderForm({
       riderDepartureTime: "",
       items: order?.isDraft ? [] : [{ id: 0, itemCategoryId: 1, quantity: 1 }],
       contactNumber: "",
+      contactNumber2: "",
       deliveryAddress: "",
       remarks: "",
       price: 0,
@@ -222,10 +227,18 @@ export default function EditOrderForm({
       );
       setFreebiesConfig(hydratedFreebies);
       setAppliedFreebiesDiscount(
-        hydratedFreebies.optOut ? 2000 * hydratedWholePigCount : 0,
+        hydratedFreebies.optOut
+          ? noFreebiesDiscountPerPig * hydratedWholePigCount
+          : 0,
       );
       previousWholePigCount.current = hydratedWholePigCount;
       pendingHydratedWholePigCount.current = hydratedWholePigCount;
+
+      const hydratedPhones = (order.contactNumber || "")
+        .split(",")
+        .map((phone: string) => phone.trim())
+        .filter(Boolean);
+      setShowSecondaryPhone(hydratedPhones.length > 1);
 
       form.reset({
         id: order.id,
@@ -237,7 +250,8 @@ export default function EditOrderForm({
         landmark: order.landmark || "",
         targetDeliveryTime: formattedDate,
         riderDepartureTime: formattedDeparture,
-        contactNumber: order.contactNumber || "",
+        contactNumber: hydratedPhones[0] || "",
+        contactNumber2: hydratedPhones.slice(1).join(","),
         deliveryAddress: order.deliveryAddress || "",
         remarks: order.remarks || "",
         price: order.price || 0,
@@ -389,12 +403,34 @@ export default function EditOrderForm({
       return;
     }
     if (previousWholePigCount.current === wholePigCount) return;
+    const previousCount = previousWholePigCount.current;
     previousWholePigCount.current = wholePigCount;
-    setFreebiesConfig(createDefaultFreebiesConfig(wholePigCount));
+    setFreebiesConfig((current) => {
+      if (current.optOut) {
+        return {
+          ...current,
+          counts: Object.fromEntries(
+            Object.keys(current.counts).map((item) => [item, 0]),
+          ),
+        };
+      }
+      const delta = wholePigCount - previousCount;
+      return {
+        ...current,
+        counts: Object.fromEntries(
+          Object.entries(current.counts).map(([item, quantity]) => [
+            item,
+            current.rawInnards && item === "Dinuguan"
+              ? 0
+              : Math.max(0, Number(quantity) + delta),
+          ]),
+        ),
+      };
+    });
   }, [wholePigCount]);
 
   const desiredFreebiesDiscount = freebiesConfig.optOut
-    ? 2000 * wholePigCount
+    ? noFreebiesDiscountPerPig * wholePigCount
     : 0;
 
   useEffect(() => {
@@ -409,7 +445,11 @@ export default function EditOrderForm({
       { shouldDirty: true },
     );
     setAppliedFreebiesDiscount(desiredFreebiesDiscount);
-  }, [desiredFreebiesDiscount, appliedFreebiesDiscount, form]);
+  }, [
+    desiredFreebiesDiscount,
+    appliedFreebiesDiscount,
+    form,
+  ]);
   const currentFulfillment = Number(fulfillment);
   const activeDeliveryFee =
     currentFulfillment === 0 || currentFulfillment === 2
@@ -439,6 +479,15 @@ export default function EditOrderForm({
       if (!data.contactNumber || data.contactNumber.trim().length < 10) {
         toast.error("Contact Number required", {
           description: "Please enter a valid phone number (at least 10 digits).",
+        });
+        return;
+      }
+      if (
+        data.contactNumber2?.trim() &&
+        data.contactNumber2.replace(/\D/g, "").length < 10
+      ) {
+        toast.error("Secondary Contact Number invalid", {
+          description: "Please enter a valid CP #2 (at least 10 digits).",
         });
         return;
       }
@@ -507,8 +556,16 @@ export default function EditOrderForm({
         ? data.targetDeliveryTime || null
         : data.riderDepartureTime || data.targetDeliveryTime || null;
 
+    const primaryPhone = (data.contactNumber || "").split(",")[0].trim();
+    const secondaryPhone =
+      (data.contactNumber2 || "").trim() ||
+      (data.contactNumber || "").split(",").slice(1).join(",").trim();
+
     const payload = {
       ...data,
+      contactNumber: secondaryPhone
+        ? `${primaryPhone},${secondaryPhone}`
+        : primaryPhone,
       isDraft,
       facebookName: data.facebookName?.trim() || null,
       source: data.source?.trim() || "POS Terminal",
@@ -533,6 +590,7 @@ export default function EditOrderForm({
     // Strip out the temporary React array so C# doesn't choke on it!
     delete payload.dynamicAddOns;
     delete payload.distanceKm;
+    delete payload.contactNumber2;
 
     editMutation.mutate(payload, {
       onSuccess: () => {
@@ -633,8 +691,17 @@ export default function EditOrderForm({
               name="contactNumber"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-stone-700">
-                    Contact Number
+                  <FormLabel className="text-xs font-semibold text-stone-700 flex items-center justify-between gap-2">
+                    <span>Mobile Number (CP #1)</span>
+                    {!showSecondaryPhone && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSecondaryPhone(true)}
+                        className="text-[10px] font-bold text-blue-700 hover:text-blue-900"
+                      >
+                        + Add CP #2
+                      </button>
+                    )}
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -646,6 +713,40 @@ export default function EditOrderForm({
                 </FormItem>
               )}
             />
+
+            {showSecondaryPhone && (
+              <FormField
+                control={form.control}
+                name="contactNumber2"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs font-semibold text-stone-700 flex items-center justify-between gap-2">
+                      <span>Secondary Mobile Number (CP #2)</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          form.setValue("contactNumber2", "", {
+                            shouldDirty: true,
+                          });
+                          setShowSecondaryPhone(false);
+                        }}
+                        className="text-[10px] font-bold text-rose-600 hover:text-rose-800"
+                        aria-label="Clear secondary mobile number"
+                      >
+                        ✕
+                      </button>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="09XX..."
+                        className="h-10 bg-stone-50 border-stone-300"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}
@@ -1115,6 +1216,7 @@ export default function EditOrderForm({
             <div className="mt-3">
               <FreebiesSelector
                 wholePigCount={wholePigCount}
+                noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
                 config={freebiesConfig}
                 onChange={setFreebiesConfig}
               />

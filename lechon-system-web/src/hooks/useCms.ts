@@ -44,6 +44,7 @@ export interface UpdateCategoryDetailsPayload {
 export interface DeliveryPricingDto {
     baseFare: number;
     ratePerKm: number;
+    noFreebiesDiscountPerPig: number;
 }
 
 // 1. Fetch the live menu categories
@@ -198,7 +199,7 @@ export function useUpdateClocks() {
     });
 }
 
-// 8. Fetch CMS Delivery Pricing Configuration (Base Fare & Rate Per KM)
+// 8. Fetch CMS Delivery Pricing Configuration
 export function useDeliveryPricing() {
     return useQuery<DeliveryPricingDto>({
         queryKey: ['cms', 'delivery-pricing'],
@@ -220,8 +221,8 @@ export function useUpdateDeliveryPricing() {
             return response.data;
         },
         onSuccess: async () => {
-            toast.success("Delivery Rates Saved!", {
-                description: "New Base Fare & Rate Per KM are now active across POS terminals.",
+            toast.success("Pricing Configuration Saved!", {
+                description: "Delivery rates and the no-freebies discount are now active across POS terminals.",
             });
             await queryClient.invalidateQueries({ queryKey: ['cms', 'delivery-pricing'] });
         },

@@ -4,4 +4,5 @@ public class DeliveryPricingDto
 {
     public decimal BaseFare { get; set; } = 100.00m;
     public decimal RatePerKm { get; set; } = 15.00m;
+    public decimal NoFreebiesDiscountPerPig { get; set; } = 2000.00m;
 }

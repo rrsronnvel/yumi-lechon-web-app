@@ -34,9 +34,9 @@ namespace LechonSystem.Api.Controllers
         [Authorize(Roles = "Owner")]
         public async Task<IActionResult> UpdateDeliveryPricing([FromBody] DeliveryPricingDto request)
         {
-            if (request == null || request.BaseFare < 0 || request.RatePerKm < 0)
+            if (request == null || request.BaseFare < 0 || request.RatePerKm < 0 || request.NoFreebiesDiscountPerPig < 0)
             {
-                return BadRequest(new { message = "BaseFare and RatePerKm must be non-negative." });
+                return BadRequest(new { message = "BaseFare, RatePerKm, and NoFreebiesDiscountPerPig must be non-negative." });
             }
 
             try

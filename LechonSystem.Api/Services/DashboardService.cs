@@ -239,6 +239,8 @@ namespace LechonSystem.Api.Services
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
                 .Where(s => s.OrderItem != null 
+                         && s.OrderItem.ItemCategory != null
+                         && s.OrderItem.ItemCategory.MinimumWeightKg > 0
                          && s.OrderItem.Order != null 
                          && !s.OrderItem.Order.IsDraft
                          && !s.OrderItem.Order.IsCancelled 

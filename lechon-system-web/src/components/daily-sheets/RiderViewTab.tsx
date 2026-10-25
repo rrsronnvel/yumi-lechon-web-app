@@ -64,11 +64,19 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading logistics schedule...</div>;
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load logistics schedule.</div>;
-  if (!scheduleItems || scheduleItems.length === 0)
+  // Carcass Bouncer: Strictly Whole Lechon & Lechon Belly (MinimumWeightKg > 0, excludes lightweight add-ons)
+  const carcassRoster = (scheduleItems || []).filter((item) => {
+    const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
+    const name = (item.size || item.categoryName || "").toLowerCase();
+    const isNonCarcass = /(sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke|1\.5\s*l)/i.test(name);
+    return minW > 0 && !isNonCarcass;
+  });
+
+  if (carcassRoster.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No deliveries scheduled for the selected date.</div>;
 
   // Sort chronologically by Departure / Pickup Time for the Riders
-  const sortedByDelivery = [...scheduleItems].sort((a, b) => {
+  const sortedByDelivery = [...carcassRoster].sort((a, b) => {
     const timeA = new Date(a.riderDepartureTime ?? a.targetDeliveryTime).getTime();
     const timeB = new Date(b.riderDepartureTime ?? b.targetDeliveryTime).getTime();
     return timeA - timeB;

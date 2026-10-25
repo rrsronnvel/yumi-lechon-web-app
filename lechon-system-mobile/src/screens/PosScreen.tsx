@@ -85,6 +85,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
   const baseFare = deliveryPricing?.baseFare ?? 100;
   const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
+  const noFreebiesDiscountPerPig =
+    deliveryPricing?.noFreebiesDiscountPerPig ?? 2000;
 
   // Default date = Tomorrow at 11:30
   const getInitialDateStr = () => {
@@ -98,6 +100,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [customerName, setCustomerName] = useState('');
   const [facebookName, setFacebookName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [contactNumber2, setContactNumber2] = useState('');
+  const [showContactNumber2, setShowContactNumber2] = useState(false);
   const [debouncedPhone, setDebouncedPhone] = useState('');
   const [debouncedFbName, setDebouncedFbName] = useState('');
   const [source, setSource] = useState<string>('Business FB Page');
@@ -128,6 +132,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   );
   const freebiesDiscountApplied = useRef(0);
   const previousWholePigCount = useRef(0);
+  const previousNoFreebiesDiscountPerPig = useRef(noFreebiesDiscountPerPig);
 
   // Feedback & Modals
   const [hydrationBanner, setHydrationBanner] = useState<string | null>(null);
@@ -220,20 +225,41 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   }, [cartItems]);
 
   useEffect(() => {
-    if (previousWholePigCount.current === wholeLechonCount) return;
+    const wholePigCountChanged =
+      previousWholePigCount.current !== wholeLechonCount;
+    const pricingChanged =
+      previousNoFreebiesDiscountPerPig.current !== noFreebiesDiscountPerPig;
+    if (!wholePigCountChanged && !pricingChanged) return;
+    if (!wholePigCountChanged && !freebiesConfig.optOut) {
+      previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
+      return;
+    }
 
+    const nextFreebiesDiscount = freebiesConfig.optOut
+      ? noFreebiesDiscountPerPig * wholeLechonCount
+      : 0;
     setDiscount((currentDiscount) =>
       String(
         Math.max(
           0,
-          (parseFloat(currentDiscount) || 0) - freebiesDiscountApplied.current
+          (parseFloat(currentDiscount) || 0) -
+            freebiesDiscountApplied.current +
+            nextFreebiesDiscount
         )
       )
     );
-    freebiesDiscountApplied.current = 0;
+    freebiesDiscountApplied.current = nextFreebiesDiscount;
     previousWholePigCount.current = wholeLechonCount;
-    setFreebiesConfig(createDefaultFreebiesConfig(wholeLechonCount));
-  }, [wholeLechonCount]);
+    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
+    if (wholePigCountChanged) {
+      setFreebiesConfig((currentConfig) => {
+        const nextConfig = createDefaultFreebiesConfig(wholeLechonCount);
+        return currentConfig.optOut
+          ? { ...nextConfig, optOut: true }
+          : nextConfig;
+      });
+    }
+  }, [wholeLechonCount, noFreebiesDiscountPerPig]);
 
   useEffect(() => {
     const amount = Math.max(0, parseFloat(downpayment) || 0);
@@ -246,7 +272,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
   const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
     const nextFreebiesDiscount = nextConfig.optOut
-      ? 2000 * wholeLechonCount
+      ? noFreebiesDiscountPerPig * wholeLechonCount
       : 0;
     setDiscount((currentDiscount) =>
       String(
@@ -457,7 +483,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setCustomerName(draft.customerName || '');
     setFacebookName(draft.facebookName || '');
     if (draft.contactNumber) {
-      setContactNumber(draft.contactNumber);
+      const hydratedPhones = draft.contactNumber
+        .split(',')
+        .map((phone) => phone.trim())
+        .filter(Boolean);
+      setContactNumber(hydratedPhones[0] || '');
+      const secondaryPhone = draft.contactNumber2?.trim() || hydratedPhones[1] || '';
+      setContactNumber2(secondaryPhone);
+      setShowContactNumber2(Boolean(secondaryPhone));
+    } else if (draft.contactNumber2?.trim()) {
+      setContactNumber2(draft.contactNumber2.trim());
+      setShowContactNumber2(true);
     }
     if (draft.source) {
       setSource(draft.source);
@@ -489,15 +525,34 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     if (nextFulfillment === 0 || nextFulfillment === 2) {
       setDeliveryFee('0');
       setDistanceKm('0');
-    } else if (draft.deliveryFee !== undefined && draft.deliveryFee !== null) {
-      setDeliveryFee(String(Number(draft.deliveryFee) || 0));
+    } else {
+      const parsedDistance =
+        draft.distanceKm !== undefined && draft.distanceKm !== null
+          ? Math.max(0, Number(draft.distanceKm) || 0)
+          : null;
+      if (parsedDistance !== null) {
+        setDistanceKm(String(parsedDistance));
+      }
+      if (draft.deliveryFee !== undefined && draft.deliveryFee !== null) {
+        setDeliveryFee(String(Math.max(0, Number(draft.deliveryFee) || 0)));
+      } else if (parsedDistance !== null) {
+        const calculatedFee =
+          parsedDistance > 0
+            ? Math.round(parsedDistance * ratePerKm + baseFare)
+            : 0;
+        setDeliveryFee(String(calculatedFee));
+      }
     }
 
     if (draft.downpayment !== undefined && draft.downpayment !== null) {
       setDownpayment(String(Number(draft.downpayment) || 0));
     }
+    if (draft.downpaymentMethod) {
+      setDownpaymentMethod(draft.downpaymentMethod);
+    }
 
     // Direct Active Cart Hydration
+    let hydratedCart = cartItems;
     if (draft.items && draft.items.length > 0) {
       const nextCart: CartItem[] = [];
       for (const item of draft.items) {
@@ -520,6 +575,41 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         }
       }
       setCartItems(nextCart);
+      hydratedCart = nextCart;
+    }
+
+    const hydratedWholePigCount = hydratedCart
+      .filter((item) => item.minimumWeightKg >= 13)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    previousWholePigCount.current = hydratedWholePigCount;
+    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
+
+    const hydratedFreebies = createDefaultFreebiesConfig(hydratedWholePigCount);
+    if (draft.freebiesOptOut === true) {
+      const optOutDiscount =
+        noFreebiesDiscountPerPig * hydratedWholePigCount;
+      setFreebiesConfig({ ...hydratedFreebies, optOut: true });
+      setDiscount(String(optOutDiscount));
+      freebiesDiscountApplied.current = optOutDiscount;
+    } else {
+      const rawInnards = draft.rawInnards === true;
+      setFreebiesConfig(
+        rawInnards
+          ? {
+              ...hydratedFreebies,
+              rawInnards: true,
+              counts: { ...hydratedFreebies.counts, Dinuguan: 0 },
+            }
+          : hydratedFreebies
+      );
+      freebiesDiscountApplied.current = 0;
+      setDiscount(
+        String(
+          draft.discount !== undefined && draft.discount !== null
+            ? Math.max(0, Number(draft.discount) || 0)
+            : 0
+        )
+      );
     }
 
     setHydrationBanner(
@@ -533,6 +623,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setCustomerName('');
     setFacebookName('');
     setContactNumber('');
+    setContactNumber2('');
+    setShowContactNumber2(false);
     setSource('Business FB Page');
     setEventType('');
     setFulfillment(1);
@@ -552,6 +644,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setFreebiesConfig(createDefaultFreebiesConfig(0));
     freebiesDiscountApplied.current = 0;
     previousWholePigCount.current = 0;
+    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
     setIsTrustedCustomer(false);
     setHydrationBanner(null);
     setValidationError(null);
@@ -641,7 +734,11 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         );
         return;
       }
-      const draft = parseMessengerTextToDraft(clipText, categories);
+      const draft = parseMessengerTextToDraft(
+        clipText,
+        categories,
+        deliveryPricing
+      );
       applyDraftToForm(draft);
     } catch {
       setValidationError('Could not read text from clipboard.');
@@ -686,6 +783,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     const trimmedName = customerName.trim();
     const trimmedFbName = facebookName.trim();
     const trimmedPhone = contactNumber.trim();
+    const trimmedPhone2 = contactNumber2.trim();
+    const combinedContactNumber = trimmedPhone2
+      ? `${trimmedPhone},${trimmedPhone2}`
+      : trimmedPhone;
     const trimmedAddress = deliveryAddress.trim();
 
     if (isDraft) {
@@ -700,9 +801,15 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         setValidationError('Please enter Customer Name (at least 2 characters).');
         return;
       }
-      if (trimmedPhone.length < 10) {
+      if (trimmedPhone.replace(/\D/g, '').length < 10) {
         setValidationError(
-          'Please enter a valid Contact Number (at least 10 digits).'
+          'Please enter a valid Mobile Number (CP #1) with at least 10 digits.'
+        );
+        return;
+      }
+      if (trimmedPhone2 && trimmedPhone2.replace(/\D/g, '').length < 10) {
+        setValidationError(
+          'Please enter a valid Secondary Mobile Number (CP #2) with at least 10 digits.'
         );
         return;
       }
@@ -793,7 +900,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         isDraft,
         customerName: trimmedName || trimmedFbName,
         facebookName: trimmedFbName || undefined,
-        customerPhone: trimmedPhone,
+        customerPhone: combinedContactNumber,
+        contactNumber: combinedContactNumber,
         source: source || 'Business FB Page',
         eventType: eventType || undefined,
         targetDeliveryTime: isoTargetTime,
@@ -1082,7 +1190,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Mobile Contact Number *</Text>
+            <View style={styles.contactLabelRow}>
+              <Text style={styles.fieldLabel}>Mobile Number (CP #1) *</Text>
+              {!showContactNumber2 && (
+                <Pressable
+                  style={styles.addContactButton}
+                  onPress={() => setShowContactNumber2(true)}
+                >
+                  <Text style={styles.addContactButtonText}>+ Add CP #2</Text>
+                </Pressable>
+              )}
+            </View>
             <TextInput
               style={styles.textInput}
               placeholder="e.g., 09171234567"
@@ -1091,6 +1209,32 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               value={contactNumber}
               onChangeText={setContactNumber}
             />
+            {showContactNumber2 && (
+              <View style={styles.secondaryContactWrap}>
+                <View style={styles.contactLabelRow}>
+                  <Text style={styles.fieldLabel}>
+                    Secondary Mobile Number (CP #2)
+                  </Text>
+                  <Pressable
+                    style={styles.removeContactButton}
+                    onPress={() => {
+                      setContactNumber2('');
+                      setShowContactNumber2(false);
+                    }}
+                  >
+                    <Text style={styles.removeContactButtonText}>✕</Text>
+                  </Pressable>
+                </View>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="e.g., 09481234567"
+                  placeholderTextColor="#A8A29E"
+                  keyboardType="phone-pad"
+                  value={contactNumber2}
+                  onChangeText={setContactNumber2}
+                />
+              </View>
+            )}
           </View>
 
           {/* Source Quick-Select Pills */}
@@ -1659,6 +1803,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
           <FreebiesSelector
             wholePigCount={wholeLechonCount}
+            noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
             config={freebiesConfig}
             onChange={handleFreebiesChange}
           />
@@ -2268,6 +2413,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#44403C',
+  },
+  contactLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  addContactButton: {
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  addContactButtonText: {
+    color: '#92400E',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  secondaryContactWrap: {
+    gap: 6,
+    marginTop: 4,
+  },
+  removeContactButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FDA4AF',
+  },
+  removeContactButtonText: {
+    color: '#BE123C',
+    fontSize: 12,
+    fontWeight: '900',
   },
   textInput: {
     backgroundColor: '#FAFAF9',

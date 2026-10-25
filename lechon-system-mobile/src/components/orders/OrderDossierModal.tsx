@@ -112,6 +112,10 @@ export default function OrderDossierModal({
 
   const activeOrder = orderDetails || fallbackOrder;
   const isVisible = orderId !== null;
+  const contactPhones = (activeOrder?.contactNumber || '')
+    .split(',')
+    .map((phone) => phone.trim())
+    .filter(Boolean);
 
   const displayOrderRef =
     orderDetails?.orderReference ||
@@ -144,18 +148,44 @@ export default function OrderDossierModal({
   const isPhysicalCustodyActive =
     custodyStatus === 'InStaffDrawer' || routingStatus === 'Assigned';
 
-  const handleCallNumber = async (phone?: string | null) => {
-    const cleanPhone = (phone || '').trim();
-    if (!cleanPhone) {
-      Alert.alert('No Phone Number', 'No contact number is on file for this record.');
-      return;
-    }
+  const dialNumber = async (phone: string) => {
+    const cleanPhone = phone.replace(/[^\d+]/g, '');
+    if (!cleanPhone) return;
     const url = `tel:${cleanPhone}`;
     try {
       await Linking.openURL(url);
     } catch {
       Alert.alert('Dialer Error', `Could not launch phone dialer for ${cleanPhone}.`);
     }
+  };
+
+  const handleCallNumber = (phone?: string | null) => {
+    const phones = (phone || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const cleanPhone = phones[0];
+    if (!cleanPhone) {
+      Alert.alert('No Phone Number', 'No contact number is on file for this record.');
+      return;
+    }
+
+    if (phones.length > 1) {
+      Alert.alert('Select Number to Dial', 'Choose the customer contact number.', [
+        {
+          text: `📞 CP #1 (${phones[0]})`,
+          onPress: () => void dialNumber(phones[0]),
+        },
+        {
+          text: `📞 CP #2 (${phones[1]})`,
+          onPress: () => void dialNumber(phones[1]),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+
+    void dialNumber(cleanPhone);
   };
 
   const handleCopyReceipt = async () => {
@@ -384,6 +414,14 @@ export default function OrderDossierModal({
             <Text style={styles.customerNameTitle} numberOfLines={1}>
               {activeOrder?.customerName || 'Customer Dossier'}
             </Text>
+            {contactPhones.map((phone, index) => (
+              <Text
+                key={`${phone}-${index}`}
+                style={styles.customerContactLine}
+              >
+                📞 {phone}
+              </Text>
+            ))}
           </View>
 
           <Pressable
@@ -407,7 +445,8 @@ export default function OrderDossierModal({
             }
           >
             <Text style={styles.callCustomerBtnText}>
-              📞 Call ({activeOrder?.contactNumber || 'N/A'})
+              📞 Call Customer
+              {contactPhones.length > 1 ? ` (${contactPhones.length} numbers)` : ''}
             </Text>
           </Pressable>
 
@@ -1510,6 +1549,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  customerContactLine: {
+    color: '#D6D3D1',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   closeButton: {
     backgroundColor: '#2E2320',

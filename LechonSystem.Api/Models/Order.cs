@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace LechonSystem.Api.Models;
 
 public class Order : BaseEntity
@@ -6,6 +8,7 @@ public class Order : BaseEntity
     public string OrderReference { get; set; } = string.Empty; // Format: MMDDYY-XXX
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
+    [MaxLength(45)]
     public string ContactNumber { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string? EventType { get; set; }

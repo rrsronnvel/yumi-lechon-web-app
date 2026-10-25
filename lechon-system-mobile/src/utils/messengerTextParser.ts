@@ -17,6 +17,7 @@ export interface ParsedOrderDraftDto {
   customerName: string;
   facebookName?: string | null;
   contactNumber: string;
+  contactNumber2?: string | null;
   source?: string | null;
   eventType?: string | null;
   targetDeliveryTime?: string | null;
@@ -26,241 +27,115 @@ export interface ParsedOrderDraftDto {
   remarks?: string | null;
   deliveryFee?: number | null;
   downpayment?: number | null;
+  freebiesOptOut?: boolean | null;
+  rawInnards?: boolean | null;
+  distanceKm?: number | null;
+  discount?: number | null;
+  downpaymentMethod?: string | null;
   items: ParsedOrderItemDto[];
 }
 
+export interface MessengerParserPricingConfig {
+  noFreebiesDiscountPerPig?: number | null;
+}
+
+const BOILERPLATE_LINE_PATTERN =
+  /to confirm your order|^\s*with\s+7\s+fre+bb?ies\b|spaghetti,\s*palabok.*consumed|delivery suggestion\s*:|kung gusto nyo po ng mas masarap|total balance\s*:/i;
+
+const FIELD_LINE_PATTERN =
+  /^(?:name|customer(?:\s*name)?|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|pickup\s*or\s*deliver|del(?:ivery)?\s*add(?:ress)?|address|location|landmark|cp\s*#?\s*[12]|contact(?:\s*number)?|mobile|date\s*(?:&|and)\s*time|date|time|type\s*of\s*event|event(?:\s*type)?|occasion|order\s*\/\s*size|order|size|freebies?\s*or|add[\s-]*ons?|additional\s+.+|special\s*requests?|remarks?|notes?|distance|dp\s*(?:&|and)\s*mode|dp|down\s*payment|downpayment|deposit|delivery\s*(?:fee|charge)|deliver\s*charge|discount|price)\s*[:\-]/i;
+
 const parsePesoNumber = (raw: string): number => {
-  const cleaned = raw.replace(/[^0-9.]/g, '');
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? 0 : val;
+  const cleaned = raw.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+  const value = cleaned ? Number(cleaned[0]) : 0;
+  return Number.isFinite(value) ? value : 0;
 };
 
-/**
- * Parses unstructured or semi-structured Facebook Messenger booking text into a structured draft.
- */
-export function parseMessengerTextToDraft(
-  rawText: string,
-  categories: ItemCategory[]
-): ParsedOrderDraftDto {
-  const text = (rawText || '').trim();
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  let customerName = '';
-  let facebookName: string | null = null;
-  let contactNumber = '';
-  let eventType: string | null = null;
-  let landmark: string | null = null;
-  const secondaryPhones: string[] = [];
-  let fulfillment = 1; // Default Delivery
-  let deliveryAddress = '';
-  let deliveryFee: number | null = null;
-  let downpayment: number | null = null;
-  let targetDeliveryTime: string | null = null;
-  const remarksList: string[] = [];
+const sanitizeLine = (rawLine: string): string => {
+  let line = rawLine.trim();
+  if (!line) return '';
 
-  // 1. Extract all Philippine mobile numbers (09XXXXXXXXX or +639XXXXXXXXX)
-  const phoneRegex = /(?:\+63|0)9\d{2}[-\s]?\d{3}[-\s]?\d{4}/g;
-  const phoneMatches = text.match(phoneRegex) || [];
-  const normalizedPhones = Array.from(
-    new Set(
-      phoneMatches.map((p) => {
-        const digits = p.replace(/[-\s]/g, '');
-        return digits.startsWith('+63') ? '0' + digits.slice(3) : digits;
-      })
-    )
-  );
-
-  if (normalizedPhones.length > 0) {
-    contactNumber = normalizedPhones[0];
-    if (normalizedPhones.length > 1) {
-      secondaryPhones.push(...normalizedPhones.slice(1));
-    }
+  // An order line may legitimately end with this phrase. Keep the order and
+  // remove only the promotional suffix before applying the line-level guard.
+  if (/^\s*(?:order\s*\/\s*size|order|size)\s*[:\-]/i.test(line)) {
+    line = line.replace(/\s+with\s+7\s+fre+bb?ies\b.*$/i, '').trim();
   }
 
-  // 2. Detect Fulfillment Mode
-  if (/\blalamove\b/i.test(text)) {
-    fulfillment = 2;
-    deliveryFee = 0;
-  } else if (/\b(pick\s*-?\s*up|store\s*pickup)\b/i.test(text)) {
-    fulfillment = 0;
-    deliveryFee = 0;
+  return BOILERPLATE_LINE_PATTERN.test(line) ? '' : line;
+};
+
+const normalizePhone = (raw: string): string => {
+  const candidate = raw.match(/(?:\+63|0)9\d{2}(?:[-\s]?\d{3})(?:[-\s]?\d{4})/);
+  if (!candidate) return raw.trim();
+  const compact = candidate[0].replace(/[-\s]/g, '');
+  return compact.startsWith('+63') ? `0${compact.slice(3)}` : compact;
+};
+
+const normalizeEventType = (raw: string): string | null => {
+  if (!raw.trim()) return null;
+  if (/birthday|bday/i.test(raw)) return 'Birthday';
+  if (/anniversary/i.test(raw)) return 'Anniversary';
+  if (/binyag|baptismal|christening/i.test(raw)) return 'Binyag';
+  if (/wedding|kasal/i.test(raw)) return 'Wedding';
+  if (/fiesta/i.test(raw)) return 'Fiesta';
+  if (/corporate|office|company/i.test(raw)) return 'Corporate';
+  return 'Other';
+};
+
+const sniffPaymentMethod = (raw: string, downpayment: number | null): string | null => {
+  if (/pay\s*maya|\bmaya\b/i.test(raw)) return 'Maya';
+  if (/bank\s*transfer|\bbank\b|\bbdo\b|\bbpi\b/i.test(raw)) {
+    return 'Bank Transfer';
   }
+  if (/\bgcash\b|g[-\s]?cash/i.test(raw)) return 'GCash';
+  if (/\bcash\b/i.test(raw)) return 'Cash';
+  return downpayment !== null && downpayment > 0 ? 'GCash' : null;
+};
 
-  // 3. Line-by-line field extraction
-  let dateCandidate = '';
-  let timeCandidate = '';
+const pad2 = (value: number): string => String(value).padStart(2, '0');
 
-  for (const line of lines) {
-    // Customer Name
-    if (!customerName) {
-      const nameMatch = line.match(
-        /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by)\s*[:\-]\s*(.+)$/i
-      );
-      if (nameMatch) {
-        customerName = nameMatch[1].trim();
-        continue;
-      }
-    }
+const parseDateTime = (raw: string): string | null => {
+  const source = raw.replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!source) return null;
 
-    // Facebook / Messenger Name
-    if (!facebookName) {
-      const fbMatch = line.match(
-        /^(?:fb|facebook(?:\s*name)?|messenger(?:\s*name)?)\s*[:\-]\s*(.+)$/i
-      );
-      if (fbMatch) {
-        facebookName = fbMatch[1].trim();
-        continue;
-      }
-    }
-
-    // Address / Location
-    const addrMatch = line.match(
-      /^(?:address|location|delivery\s*address|drop[\s-]*off|brgy|venue)\s*[:\-]\s*(.+)$/i
-    );
-    if (addrMatch && !deliveryAddress) {
-      deliveryAddress = addrMatch[1].trim();
-      continue;
-    }
-
-    // Landmark
-    const landmarkMatch = line.match(
-      /^(?:landmark|palatandaan|near)\s*[:\-]\s*(.+)$/i
-    );
-    if (landmarkMatch && !landmark) {
-      landmark = landmarkMatch[1].trim();
-      continue;
-    }
-
-    // Event / Occasion
-    const eventMatch = line.match(
-      /^(?:type\s*of\s*event|event(?:\s*type)?|occasion|okasyon)\s*[:\-]\s*(.+)$/i
-    );
-    if (eventMatch && !eventType) {
-      const rawEvt = eventMatch[1].trim();
-      if (/bday|birthday/i.test(rawEvt)) eventType = 'Birthday';
-      else if (/anniversary/i.test(rawEvt)) eventType = 'Anniversary';
-      else if (/binyag|baptismal|christening/i.test(rawEvt)) eventType = 'Binyag';
-      else if (/fiesta/i.test(rawEvt)) eventType = 'Fiesta';
-      else if (/wedding|kasal/i.test(rawEvt)) eventType = 'Wedding';
-      else if (/corporate|office|company/i.test(rawEvt)) eventType = 'Corporate';
-      else eventType = rawEvt || 'Other';
-      continue;
-    }
-
-    // Kitchen Remarks / Notes
-    const noteMatch = line.match(
-      /^(?:remarks|notes?|bilin|instructions?)\s*[:\-]\s*(.+)$/i
-    );
-    if (noteMatch) {
-      remarksList.push(noteMatch[1].trim());
-      continue;
-    }
-
-    // Downpayment / Deposit
-    const dpMatch = line.match(
-      /(?:down\s*payment|downpayment|\bdp\b|deposit|paid\s*dp)\s*[:\-]?\s*(?:php|₱|p)?\s*([\d,]+(?:\.\d{1,2})?)/i
-    );
-    if (dpMatch && downpayment === null) {
-      downpayment = parsePesoNumber(dpMatch[1]);
-      continue;
-    }
-
-    // Delivery Fee
-    const dfMatch = line.match(
-      /(?:delivery\s*fee|deliver(?:y)?\s*charge|del\.?\s*fee|df|freight)\s*[:\-]?\s*(?:php|₱|p)?\s*([\d,]+(?:\.\d{1,2})?)/i
-    );
-    if (dfMatch && deliveryFee === null && fulfillment === 1) {
-      deliveryFee = parsePesoNumber(dfMatch[1]);
-      continue;
-    }
-
-    // Date line
-    const dateLineMatch = line.match(
-      /^(?:date|delivery\s*date|target\s*date|schedule|petsa)\s*[:\-]\s*(.+)$/i
-    );
-    if (dateLineMatch && !dateCandidate) {
-      dateCandidate = dateLineMatch[1].trim();
-      continue;
-    }
-
-    // Time line
-    const timeLineMatch = line.match(
-      /^(?:time|delivery\s*time|target\s*time|oras)\s*[:\-]\s*(.+)$/i
-    );
-    if (timeLineMatch && !timeCandidate) {
-      timeCandidate = timeLineMatch[1].trim();
-      continue;
-    }
-  }
-
-  // Fallback Customer Name: if first line looks like a person's name (no digits, no colon)
-  if (!customerName && lines.length > 0) {
-    const firstLine = lines[0];
-    if (
-      firstLine.length >= 3 &&
-      firstLine.length <= 45 &&
-      !/[:\d₱]/.test(firstLine) &&
-      !/^(order|lechon|booking|confirmation|hi|hello|good|magandang)/i.test(firstLine)
-    ) {
-      customerName = firstLine;
-    }
-  }
-
-  // Fallback Address: look for Cavite municipalities or common address keywords
-  if (!deliveryAddress) {
-    const addrLine = lines.find((l) =>
-      /\b(blk|block|lot|phase|subd|village|brgy|barangay|imus|bacoor|dasma|dasmariñas|kawit|noveleta|rosario|general\s*trias|gen\s*tri|tanza|trece|silang|tagaytay|cavite)\b/i.test(
-        l
-      )
-    );
-    if (addrLine) {
-      deliveryAddress = addrLine
-        .replace(/^(?:address|location|addr)\s*[:\-]\s*/i, '')
-        .trim();
-    }
-  }
-
-  // 4. Parse Date & Time into ISO string
   const now = new Date();
-  let parsedDate = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    12,
-    0,
-    0
-  );
-  let hasExtractedDateOrTime = false;
+  let year = now.getFullYear();
+  let month = now.getMonth();
+  let day = now.getDate();
+  let hasDate = false;
 
-  const combinedSource = `${dateCandidate} ${timeCandidate} ${text}`;
-
-  if (/\btomorrow\b|\bbukas\b/i.test(combinedSource)) {
-    parsedDate.setDate(parsedDate.getDate() + 1);
-    hasExtractedDateOrTime = true;
-  } else if (/\btoday\b|\bngayon\b/i.test(combinedSource)) {
-    hasExtractedDateOrTime = true;
+  if (/\b(?:tomorrow|bukas)\b/i.test(source)) {
+    const tomorrow = new Date(year, month, day + 1);
+    year = tomorrow.getFullYear();
+    month = tomorrow.getMonth();
+    day = tomorrow.getDate();
+    hasDate = true;
+  } else if (/\b(?:today|ngayon)\b/i.test(source)) {
+    hasDate = true;
   } else {
-    const isoDateMatch = combinedSource.match(
-      /\b(202\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/
+    const isoMatch = source.match(/\b(20\d{2})-(0?[1-9]|1[0-2])-(0?[1-9]|[12]\d|3[01])\b/);
+    const numericMatch = source.match(
+      /\b(0?[1-9]|1[0-2])[\/-](0?[1-9]|[12]\d|3[01])[\/-](\d{2}|20\d{2})\b/
     );
-    const monthNameMatch = combinedSource.match(
-      /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:[,\s]+(202\d))?\b/i
+    const monthMatch = source.match(
+      /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:\s*,?\s*(\d{2}|20\d{2}))?\b/i
     );
 
-    if (isoDateMatch) {
-      parsedDate = new Date(
-        parseInt(isoDateMatch[1], 10),
-        parseInt(isoDateMatch[2], 10) - 1,
-        parseInt(isoDateMatch[3], 10),
-        12,
-        0,
-        0
-      );
-      hasExtractedDateOrTime = true;
-    } else if (monthNameMatch) {
+    if (isoMatch) {
+      year = Number(isoMatch[1]);
+      month = Number(isoMatch[2]) - 1;
+      day = Number(isoMatch[3]);
+      hasDate = true;
+    } else if (numericMatch) {
+      month = Number(numericMatch[1]) - 1;
+      day = Number(numericMatch[2]);
+      const parsedYear = Number(numericMatch[3]);
+      year = parsedYear < 100 ? 2000 + parsedYear : parsedYear;
+      hasDate = true;
+    } else if (monthMatch) {
       const monthNames = [
         'jan',
         'feb',
@@ -275,171 +150,516 @@ export function parseMessengerTextToDraft(
         'nov',
         'dec',
       ];
-      const mIdx = monthNames.findIndex((m) =>
-        monthNameMatch[1].toLowerCase().startsWith(m)
+      month = monthNames.findIndex((entry) =>
+        monthMatch[1].toLowerCase().startsWith(entry)
       );
-      const dayNum = parseInt(monthNameMatch[2], 10);
-      const yrNum = monthNameMatch[3]
-        ? parseInt(monthNameMatch[3], 10)
-        : now.getFullYear();
-      if (mIdx >= 0 && dayNum >= 1 && dayNum <= 31) {
-        parsedDate = new Date(yrNum, mIdx, dayNum, 12, 0, 0);
-        hasExtractedDateOrTime = true;
+      day = Number(monthMatch[2]);
+      if (monthMatch[3]) {
+        const parsedYear = Number(monthMatch[3]);
+        year = parsedYear < 100 ? 2000 + parsedYear : parsedYear;
       }
+      hasDate = month >= 0;
     }
   }
 
-  // Extract time like "11:30 AM", "2:00 PM", "11am", "4pm"
-  const timeMatch = combinedSource.match(
-    /\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*(am|pm|nn|mn)\b/i
+  let hour = 12;
+  let minute = 0;
+  let hasTime = false;
+  const clockMatch = source.match(
+    /\b(0?\d|1\d|2[0-3])(?::([0-5]\d))?\s*(am|pm|a\.m\.|p\.m\.|nn|mn)\b/i
   );
-  if (timeMatch) {
-    let hours = parseInt(timeMatch[1], 10);
-    const mins = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-    const meridiem = timeMatch[3].toLowerCase();
-    if ((meridiem === 'pm' || meridiem === 'nn') && hours < 12) {
-      hours += 12;
-    } else if ((meridiem === 'am' || meridiem === 'mn') && hours === 12) {
-      hours = 0;
-    }
-    parsedDate.setHours(hours, mins, 0, 0);
-    hasExtractedDateOrTime = true;
+  const phraseMatch = source.match(
+    /\b(0?\d|1[0-2])(?::([0-5]\d))?\s*(?:in\s+the\s+)?(morning|afternoon|evening)\b/i
+  );
+  const twentyFourHourMatch = source.match(/(?:^|\s|\|)([01]?\d|2[0-3]):([0-5]\d)(?:\s|$)/);
+
+  if (clockMatch) {
+    hour = Number(clockMatch[1]);
+    minute = Number(clockMatch[2] || 0);
+    const meridiem = clockMatch[3].toLowerCase().replace(/\./g, '');
+    if ((meridiem === 'pm' || meridiem === 'nn') && hour < 12) hour += 12;
+    if ((meridiem === 'am' || meridiem === 'mn') && hour === 12) hour = 0;
+    hasTime = true;
+  } else if (phraseMatch) {
+    hour = Number(phraseMatch[1]);
+    minute = Number(phraseMatch[2] || 0);
+    const period = phraseMatch[3].toLowerCase();
+    if ((period === 'afternoon' || period === 'evening') && hour < 12) hour += 12;
+    if (period === 'morning' && hour === 12) hour = 0;
+    hasTime = true;
+  } else if (twentyFourHourMatch) {
+    hour = Number(twentyFourHourMatch[1]);
+    minute = Number(twentyFourHourMatch[2]);
+    hasTime = true;
   }
 
-  if (hasExtractedDateOrTime) {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    targetDeliveryTime = `${parsedDate.getFullYear()}-${pad(
-      parsedDate.getMonth() + 1
-    )}-${pad(parsedDate.getDate())}T${pad(parsedDate.getHours())}:${pad(
-      parsedDate.getMinutes()
-    )}`;
+  if (!hasDate && !hasTime) return null;
+  const parsed = new Date(year, month, day, hour, minute, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
+    parsed.getDate()
+  )}T${pad2(parsed.getHours())}:${pad2(parsed.getMinutes())}`;
+};
+
+const extractQuantity = (source: string): number => {
+  const explicit = source.match(/(?:^|\b)(\d+)\s*(?:x|pcs?|pieces?|orders?)\b/i);
+  if (explicit) return Math.max(1, Number(explicit[1]));
+  const leading = source.match(/^\s*(\d+)\s+(?!kg\b)/i);
+  return leading ? Math.max(1, Number(leading[1])) : 1;
+};
+
+const resolveWholeLechonCategory = (
+  source: string,
+  categories: ItemCategory[]
+): ItemCategory | undefined => {
+  const aliases: { source: RegExp; category: RegExp }[] = [
+    { source: /\bsuper\s*jumbo\b|\bs\.?\s*jumbo\b/i, category: /super\s*jumbo|s\.?\s*jumbo/i },
+    { source: /\bxxl\b/i, category: /\bxxl\b/i },
+    { source: /\bxxs\b/i, category: /\bxxs\b/i },
+    { source: /\bjumbo\b/i, category: /\bjumbo\b/i },
+    { source: /\bextra\s*large\b|\bxl\b/i, category: /extra\s*large|\bxl\b/i },
+    { source: /\bxs\b/i, category: /\bxs\b/i },
+    { source: /\blarge\b|(?:^|\W)l(?:$|\W)/i, category: /\blarge\b|(?:^|\W)l(?:$|\W)/i },
+    { source: /\bmedium\b|(?:^|\W)m(?:$|\W)/i, category: /\bmedium\b|(?:^|\W)m(?:$|\W)/i },
+    { source: /\bsmall\b|(?:^|\W)s(?:$|\W)/i, category: /\bsmall\b|(?:^|\W)s(?:$|\W)/i },
+    { source: /\bde\s*leche\b/i, category: /\bde\s*leche\b/i },
+  ];
+  const match = aliases.find((entry) => entry.source.test(source));
+  if (!match) return undefined;
+  return categories.find(
+    (category) =>
+      category.minimumWeightKg >= 13 && match.category.test(category.name)
+  );
+};
+
+const resolveBellyCategory = (
+  source: string,
+  categories: ItemCategory[]
+): ItemCategory | undefined => {
+  const kgMatch = source.match(/(\d+(?:\.\d+)?)\s*kg/i);
+  if (!/belly/i.test(source) && !kgMatch) return undefined;
+  if (!/belly/i.test(source) && kgMatch) {
+    const kg = Number(kgMatch[1]);
+    if (kg < 2 || kg > 5) return undefined;
   }
+  const bellyCategories = categories.filter(
+    (category) =>
+      /belly/i.test(category.name) ||
+      (category.minimumWeightKg > 0 && category.maximumWeightKg < 13)
+  );
+  if (!kgMatch) return bellyCategories[0];
+  const kg = Number(kgMatch[1]);
+  return bellyCategories.find(
+    (category) =>
+      new RegExp(`\\b${escapeRegExp(kgMatch[1])}\\s*kg\\b`, 'i').test(category.name) ||
+      (category.minimumWeightKg <= kg && category.maximumWeightKg >= kg)
+  );
+};
 
-  // 5. Resolve Items against Active Categories
-  const matchedItemsMap = new Map<number, number>();
-  const activeCats = categories.filter((c) => c.isActive !== false);
+const addOnKeyword = (categoryName: string): string => {
+  const known = categoryName.match(
+    /sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke/i
+  );
+  return known ? known[0] : categoryName;
+};
 
-  const addMatchedItem = (catId: number, qty: number) => {
-    const prev = matchedItemsMap.get(catId) || 0;
-    matchedItemsMap.set(catId, prev + Math.max(1, qty));
+/**
+ * Parses both the compact customer reply and the four-phase staff-annotated
+ * Messenger template into a POS draft.
+ */
+export function parseMessengerTextToDraft(
+  rawText: string,
+  categories: ItemCategory[],
+  pricingConfig?: MessengerParserPricingConfig
+): ParsedOrderDraftDto {
+  const rawLines = (rawText || '').split(/\r?\n/);
+  const lines = rawLines.map(sanitizeLine).filter(Boolean);
+  const text = lines.join('\n');
+  const noFreebiesDiscountPerPig = Math.max(
+    0,
+    Number(pricingConfig?.noFreebiesDiscountPerPig ?? 2000) || 0
+  );
+
+  let customerName = '';
+  let facebookName: string | null = null;
+  let contactNumber = '';
+  let contactNumber2: string | null = null;
+  let fulfillment = 1;
+  let fulfillmentExplicit = false;
+  let deliveryAddress = '';
+  let landmark: string | null = null;
+  let eventType: string | null = null;
+  let deliveryFee: number | null = null;
+  let distanceKm: number | null = null;
+  let downpayment: number | null = null;
+  let downpaymentMethod: string | null = null;
+  let explicitDiscount: number | null = null;
+  let dateTimeCandidate = '';
+  let separateDateCandidate = '';
+  let separateTimeCandidate = '';
+  const remarks: string[] = [];
+  const orderSources: string[] = [];
+  const addOnSources: string[] = [];
+  const additionalItemSources: { name: string; value: string }[] = [];
+  const freebiesSources: string[] = [];
+
+  const valueAfterLabel = (line: string, pattern: RegExp): string | null => {
+    const match = line.match(pattern);
+    return match ? (match[1] || '').trim() : null;
   };
 
-  // Check Lechon Belly kg mentions first (e.g., "Belly 3kg", "3kg belly", "2x Belly 5kg")
-  const bellyCategories = activeCats.filter((c) => /belly/i.test(c.name));
-  for (const bellyCat of bellyCategories) {
-    const kgNumMatch = bellyCat.name.match(/(\d+)\s*kg/i);
-    if (kgNumMatch) {
-      const kgVal = kgNumMatch[1];
-      const bellyRegex = new RegExp(
-        `(?:(\\d+)\\s*x?\\s*)?(?:belly\\s*${kgVal}\\s*kg|${kgVal}\\s*kg\\s*belly)`,
-        'i'
-      );
-      const m = text.match(bellyRegex);
-      if (m) {
-        const qty = m[1] ? parseInt(m[1], 10) : 1;
-        addMatchedItem(bellyCat.id, qty);
-      }
-    }
-  }
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    let value: string | null;
 
-  // Check Whole Lechon semantic sizes: Small, Medium, Large, XXL, XL, Jumbo, De Leche
-  const wholeCategories = activeCats.filter(
-    (c) => !/belly/i.test(c.name) && c.minimumWeightKg > 0
-  );
-  const sizeTokens = [
-    'XXL',
-    'S. Jumbo',
-    'Jumbo',
-    'Extra Large',
-    'XL',
-    'Large',
-    'Medium',
-    'Small',
-    'XXS',
-    'XS',
-    'L',
-    'M',
-    'S',
-    'De Leche',
-  ];
-
-  for (const token of sizeTokens) {
-    const targetCat = wholeCategories.find((c) =>
-      new RegExp(`^${token}$|\\b${token}\\b`, 'i').test(c.name)
+    value = valueAfterLabel(
+      line,
+      /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by)\s*[:\-]\s*(.*)$/i
     );
-    if (targetCat && !matchedItemsMap.has(targetCat.id)) {
-      const regex = new RegExp(
-        `(?:(\\d+)\\s*(?:x|pc|pcs|order|lechon)?\\s+)?\\b${token}\\b(?:\\s+(?:whole|lechon|size))?`,
-        'i'
-      );
-      const m = text.match(regex);
-      if (m) {
-        const qty = m[1] ? parseInt(m[1], 10) : 1;
-        addMatchedItem(targetCat.id, qty);
+    if (value !== null) {
+      customerName = value;
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:fb|facebook(?:\s*name)?|messenger(?:\s*name)?)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      facebookName = value || null;
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^pickup\s*or\s*deliver\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      if (/pick\s*-?\s*up/i.test(value)) fulfillment = 0;
+      else if (/lalamove/i.test(value)) fulfillment = 2;
+      else if (/deliver/i.test(value)) fulfillment = 1;
+      fulfillmentExplicit = true;
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:del(?:ivery)?\s*add(?:ress)?|address|location|drop[\s-]*off|venue)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      deliveryAddress = value;
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^(?:landmark|palatandaan|near)\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      landmark = value || null;
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^cp\s*#?\s*1\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      contactNumber = normalizePhone(value);
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^cp\s*#?\s*2\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      contactNumber2 = value ? normalizePhone(value) : null;
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:contact(?:\s*number)?|mobile|phone)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      contactNumber = normalizePhone(value);
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^date\s*(?:&|and)\s*time\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      const pieces = [value];
+      for (let lookahead = index + 1; lookahead < Math.min(lines.length, index + 3); lookahead += 1) {
+        const candidate = lines[lookahead];
+        if (FIELD_LINE_PATTERN.test(candidate)) break;
+        if (
+          /\b(?:am|pm|morning|afternoon|evening)\b/i.test(candidate) ||
+          /\b\d{1,2}:\d{2}\b/.test(candidate) ||
+          (!pieces[0] && /\b(?:20\d{2}|\d{2})\b/.test(candidate))
+        ) {
+          pieces.push(candidate);
+          index = lookahead;
+        } else if (!pieces[0]) {
+          pieces.push(candidate);
+          index = lookahead;
+        } else {
+          break;
+        }
       }
+      dateTimeCandidate = pieces.filter(Boolean).join(' ');
+      continue;
     }
-  }
 
-  // Check Add-on categories (minimumWeightKg === 0)
-  const addOnCats = activeCats.filter((c) => c.minimumWeightKg === 0);
-  for (const addCat of addOnCats) {
-    const escapedName = addCat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(?:(\\d+)\\s*x?\\s*)?${escapedName}`, 'i');
-    const m = text.match(regex);
-    if (m) {
-      const qty = m[1] ? parseInt(m[1], 10) : 1;
-      addMatchedItem(addCat.id, qty);
+    value = valueAfterLabel(
+      line,
+      /^(?:type\s*of\s*event|event(?:\s*type)?|occasion|okasyon)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      eventType = normalizeEventType(value);
+      continue;
     }
-  }
 
-  // Fallback: direct substring match on any category name if still empty
-  if (matchedItemsMap.size === 0) {
-    for (const cat of activeCats) {
-      if (text.toLowerCase().includes(cat.name.toLowerCase())) {
-        addMatchedItem(cat.id, 1);
+    value = valueAfterLabel(line, /^(?:order\s*\/\s*size|order|size)\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      orderSources.push(value.replace(/\s+with\s+7\s+fre+bb?ies\b.*$/i, '').trim());
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^freebies?\s*or\s*(?:less\s*2k|cash\s*discount)?\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      freebiesSources.push(value);
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^add[\s-]*ons?\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      if (value) addOnSources.push(value);
+      continue;
+    }
+
+    const additionalMatch = line.match(/^additional\s+(.+?)\s*[:\-]\s*(.*)$/i);
+    if (additionalMatch) {
+      additionalItemSources.push({
+        name: additionalMatch[1].trim(),
+        value: additionalMatch[2].trim(),
+      });
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^special\s*requests?\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      if (!value && lines[index + 1] && !FIELD_LINE_PATTERN.test(lines[index + 1])) {
+        value = lines[index + 1];
+        index += 1;
       }
+      if (value && !BOILERPLATE_LINE_PATTERN.test(value)) remarks.push(value);
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^distance\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      const parsedDistance = parsePesoNumber(value);
+      distanceKm = parsedDistance >= 0 ? parsedDistance : null;
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:dp\s*(?:&|and)\s*mode|dp|down\s*payment|downpayment|deposit)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      downpayment = parsePesoNumber(value);
+      downpaymentMethod = sniffPaymentMethod(value, downpayment);
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:delivery\s*(?:fee|charge)|deliver\s*charge|del\.?\s*fee|df)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      deliveryFee = parsePesoNumber(value);
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^discount\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      explicitDiscount = parsePesoNumber(value);
+      continue;
+    }
+
+    value = valueAfterLabel(line, /^price\s*[:\-]\s*(.*)$/i);
+    if (value !== null) {
+      freebiesSources.push(value);
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:date|delivery\s*date|target\s*date|schedule|petsa)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      separateDateCandidate = value;
+      continue;
+    }
+
+    value = valueAfterLabel(
+      line,
+      /^(?:time|delivery\s*time|target\s*time|oras)\s*[:\-]\s*(.*)$/i
+    );
+    if (value !== null) {
+      separateTimeCandidate = value;
     }
   }
 
-  // 6. Bundle secondary phones and occasion keywords
-  if (secondaryPhones.length > 0) {
-    remarksList.unshift(`CP #2: ${secondaryPhones.join(', ')}`);
+  const phoneMatches = text.match(/(?:\+63|0)9\d{2}(?:[-\s]?\d{3})(?:[-\s]?\d{4})/g) || [];
+  const normalizedPhones = Array.from(new Set(phoneMatches.map(normalizePhone)));
+  if (!contactNumber && normalizedPhones[0]) contactNumber = normalizedPhones[0];
+  if (!contactNumber2) {
+    contactNumber2 =
+      normalizedPhones.find((phone) => phone !== contactNumber) || null;
+  }
+
+  if (!customerName && lines[0] && !FIELD_LINE_PATTERN.test(lines[0])) {
+    const firstLine = lines[0];
+    if (
+      firstLine.length >= 3 &&
+      firstLine.length <= 45 &&
+      !/[:\d₱]/.test(firstLine) &&
+      !/^(order|lechon|booking|confirmation|hi|hello|good|magandang)/i.test(firstLine)
+    ) {
+      customerName = firstLine;
+    }
+  }
+
+  if (!fulfillmentExplicit) {
+    if (/\blalamove\b/i.test(text)) fulfillment = 2;
+    else if (/\b(?:pick\s*-?\s*up|store\s*pickup)\b/i.test(text)) fulfillment = 0;
+  }
+
+  if (!deliveryAddress) {
+    const addressLine = lines.find(
+      (line) =>
+        !FIELD_LINE_PATTERN.test(line) &&
+        /\b(?:blk|block|lot|phase|subd|village|brgy|barangay|imus|bacoor|dasma|dasmarinas|kawit|noveleta|rosario|general\s*trias|gen\s*tri|tanza|trece|silang|tagaytay|cavite)\b/i.test(
+          line
+        )
+    );
+    if (addressLine) deliveryAddress = addressLine;
   }
 
   if (!eventType) {
-    const occasionMatch = text.match(
-      /\b(birthday|bday|baptismal|binyag|wedding|kasal|anniversary|fiesta|corporate|blessing|christmas|new\s*year)\b/i
+    const eventMatch = text.match(
+      /\b(?:birthday|bday|anniversary|binyag|baptismal|wedding|kasal|fiesta|corporate)\b.*$/im
     );
-    if (occasionMatch) {
-      const occ = occasionMatch[1].toLowerCase();
-      if (occ === 'birthday' || occ === 'bday') eventType = 'Birthday';
-      else if (occ === 'fiesta') eventType = 'Fiesta';
-      else if (occ === 'wedding' || occ === 'kasal') eventType = 'Wedding';
-      else if (occ === 'corporate') eventType = 'Corporate';
-      else eventType = 'Other';
+    if (eventMatch) eventType = normalizeEventType(eventMatch[0]);
+  }
+
+  const targetDeliveryTime = parseDateTime(
+    dateTimeCandidate || `${separateDateCandidate} ${separateTimeCandidate}`.trim()
+  );
+
+  const standaloneFreebiesSignals = lines
+    .filter((line) => !/^freebies?\s*or\b/i.test(line))
+    .join(' ');
+  const freebiesText = `${freebiesSources.join(' ')} ${standaloneFreebiesSignals}`;
+  let freebiesOptOut: boolean | null = null;
+  if (/less\s*2\s*k|less\s*2,?000|cash\s*discount|no\s*freebies?|walang\s*freebies?/i.test(freebiesText)) {
+    freebiesOptOut = true;
+  } else if (/\b(?:freebies?|frebbies?)\b/i.test(freebiesText)) {
+    freebiesOptOut = false;
+  }
+
+  const cleanRemarks = remarks
+    .map((entry) => entry.trim())
+    .filter((entry) => entry && !BOILERPLATE_LINE_PATTERN.test(entry));
+  const remarksText = cleanRemarks.join(' | ');
+  const rawInnards = /walang\s+dinuguan|hilaw\s+na\s+laman\s*loob|raw\s+innards?/i.test(
+    remarksText
+  );
+
+  const activeCategories = categories.filter((category) => category.isActive !== false);
+  const matchedItems = new Map<number, number>();
+  const addItem = (category: ItemCategory | undefined, quantity: number) => {
+    if (!category) return;
+    matchedItems.set(
+      category.id,
+      (matchedItems.get(category.id) || 0) + Math.max(1, Math.floor(quantity || 1))
+    );
+  };
+
+  const effectiveOrderSources =
+    orderSources.length > 0 ? orderSources : lines.filter((line) => !FIELD_LINE_PATTERN.test(line));
+  for (const source of effectiveOrderSources) {
+    const belly = resolveBellyCategory(source, activeCategories);
+    if (belly) {
+      const explicitQty = source.match(/\b(\d+)\s*x\s*(?:lechon\s*)?belly/i);
+      addItem(belly, explicitQty ? Number(explicitQty[1]) : 1);
+      continue;
+    }
+    addItem(resolveWholeLechonCategory(source, activeCategories), extractQuantity(source));
+  }
+
+  const addOnCategories = activeCategories.filter(
+    (category) => category.minimumWeightKg === 0
+  );
+  for (const source of addOnSources) {
+    for (const category of addOnCategories) {
+      const keyword = addOnKeyword(category.name);
+      const keywordPattern = new RegExp(`\\b${escapeRegExp(keyword)}\\b`, 'i');
+      if (!keywordPattern.test(source)) continue;
+      const prefix = source.slice(0, source.search(keywordPattern));
+      const quantityMatch = prefix.match(/(\d+)\s*(?:x|pcs?|pieces?)?\s*$/i);
+      addItem(category, quantityMatch ? Number(quantityMatch[1]) : 1);
     }
   }
 
-  const items: ParsedOrderItemDto[] = Array.from(matchedItemsMap.entries()).map(
-    ([itemCategoryId, quantity]) => ({
-      itemCategoryId,
-      quantity,
-    })
+  for (const additional of additionalItemSources) {
+    const category = addOnCategories.find((candidate) => {
+      const keyword = addOnKeyword(candidate.name);
+      return (
+        new RegExp(`\\b${escapeRegExp(keyword)}\\b`, 'i').test(additional.name) ||
+        candidate.name.toLowerCase().includes(additional.name.toLowerCase())
+      );
+    });
+    const quantityMatch = additional.value.match(/(\d+)\s*(?:x|pcs?|pieces?)\b/i);
+    addItem(category, quantityMatch ? Number(quantityMatch[1]) : 1);
+  }
+
+  if (orderSources.length === 0 && addOnSources.length === 0 && additionalItemSources.length === 0) {
+    for (const category of addOnCategories) {
+      if (matchedItems.has(category.id)) continue;
+      const keyword = addOnKeyword(category.name);
+      const match = text.match(new RegExp(`(?:(\\d+)\\s*x?\\s*)?${escapeRegExp(keyword)}`, 'i'));
+      if (match && !new RegExp(`(?:walang|no)\\s+${escapeRegExp(keyword)}`, 'i').test(text)) {
+        addItem(category, match[1] ? Number(match[1]) : 1);
+      }
+    }
+  }
+
+  const discount =
+    freebiesOptOut === true ? noFreebiesDiscountPerPig : explicitDiscount;
+  const items = Array.from(matchedItems.entries()).map(
+    ([itemCategoryId, quantity]) => ({ itemCategoryId, quantity })
   );
 
   return {
     customerName,
     facebookName,
     contactNumber,
+    contactNumber2,
     source: 'Business FB Page',
     eventType,
     targetDeliveryTime,
     fulfillment,
     deliveryAddress: deliveryAddress || null,
     landmark,
-    remarks: remarksList.length > 0 ? remarksList.join(' | ') : '',
+    remarks: remarksText,
     deliveryFee,
     downpayment,
+    freebiesOptOut,
+    rawInnards,
+    distanceKm,
+    discount,
+    downpaymentMethod,
     items,
   };
 }

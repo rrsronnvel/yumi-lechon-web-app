@@ -6,6 +6,7 @@ export const orderFormSchema = z
     isDraft: z.boolean().default(false),
     customerName: z.string().default(""),
     customerPhone: z.string().default(""),
+    customerPhone2: z.string().optional().default(""),
     facebookName: z.string().optional().default(""),
     source: z.string().optional().default("Business FB Page"),
     eventType: z.string().optional().default(""),
@@ -75,11 +76,22 @@ export const orderFormSchema = z
         });
       }
 
-      if (!data.customerPhone || data.customerPhone.trim().length < 10) {
+      const primaryPhone = (data.customerPhone || "").split(",")[0].trim();
+      const secondaryPhone =
+        (data.customerPhone2 || "").trim() ||
+        (data.customerPhone || "").split(",").slice(1).join(",").trim();
+      if (primaryPhone.replace(/\D/g, "").length < 10) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Please enter a valid phone number (min 10 digits).",
           path: ["customerPhone"],
+        });
+      }
+      if (secondaryPhone && secondaryPhone.replace(/\D/g, "").length < 10) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Please enter a valid secondary phone number (min 10 digits).",
+          path: ["customerPhone2"],
         });
       }
 
@@ -123,6 +135,7 @@ export interface ParsedOrderItemDto {
 export interface ParsedOrderDraftDto {
   customerName: string;
   contactNumber: string;
+  contactNumber2?: string | null;
   facebookName?: string | null;
   targetDeliveryTime?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
@@ -131,6 +144,11 @@ export interface ParsedOrderDraftDto {
   eventType?: string | null;
   remarks?: string | null;
   deliveryFee?: number | null;
+  distanceKm?: number | null;
+  discount?: number | null;
   downpayment?: number | null;
+  downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
+  freebiesOptOut?: boolean | null;
+  rawInnards?: boolean | null;
   items: ParsedOrderItemDto[];
 }

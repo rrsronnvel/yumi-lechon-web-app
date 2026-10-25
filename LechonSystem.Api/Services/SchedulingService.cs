@@ -74,6 +74,8 @@ namespace LechonSystem.Api.Services
                     .ThenInclude(oi => oi!.ItemCategory)
                 .Where(s => s.TargetDeliveryTime.Date == targetDate.Date
                          && s.OrderItem != null
+                         && s.OrderItem.ItemCategory != null
+                         && s.OrderItem.ItemCategory.MinimumWeightKg > 0
                          && s.OrderItem.Order != null
                          && !s.OrderItem.Order.IsDraft
                          && !s.OrderItem.Order.IsCancelled)
@@ -85,6 +87,7 @@ namespace LechonSystem.Api.Services
                     orderReference = s.OrderItem!.Order!.OrderReference,
                     customerName = s.OrderItem!.Order!.CustomerName,
                     facebookName = s.OrderItem!.Order!.FacebookName,
+                    contactNumber = s.OrderItem!.Order!.ContactNumber,
                     source = s.OrderItem!.Order!.Source,
                     eventType = s.OrderItem!.Order!.EventType,
                     landmark = s.OrderItem!.Order!.Landmark,
@@ -145,6 +148,7 @@ namespace LechonSystem.Api.Services
                     OrderReference = s.orderReference,
                     CustomerName = s.customerName,
                     FacebookName = s.facebookName,
+                    ContactNumber = s.contactNumber,
                     Source = s.source,
                     EventType = s.eventType,
                     Landmark = s.landmark,

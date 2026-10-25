@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -102,31 +103,29 @@ public class AiIntakeParserService : IAiIntakeParserService
             promptBuilder.AppendLine($"- Category ID: {cat.Id} | Name: \"{cat.Name}\" | Weight Range: {cat.MinimumWeightKg:F1}kg - {cat.MaximumWeightKg:F1}kg | Base Price: ₱{cat.BasePrice:N2}");
         }
         promptBuilder.AppendLine();
-        promptBuilder.AppendLine("CRITICAL EXTRACTION & FIELD SEPARATION RULES:");
-        promptBuilder.AppendLine("1. Human-in-the-Loop Safety: Extract ONLY visibly confirmed booking data directly from the image. Do NOT invent, assume, or hallucinate missing dates, phone numbers, addresses, or items. If a value is missing or unclear, leave it null or empty.");
-        promptBuilder.AppendLine("2. Header vs. Body Identity Separation:");
-        promptBuilder.AppendLine("   - 'facebookName' (Header Extraction): Extract the profile name shown at the top Messenger navigation bar/header (e.g., \"Macel Obina Mendoza\"). If not visible, return null or \"\".");
-        promptBuilder.AppendLine("   - 'customerName' (Body Extraction): Extract the recipient name labeled inside the booking form text (e.g., \"Name : Macel Mendoza\" -> \"Macel Mendoza\").");
-        promptBuilder.AppendLine("3. Dedicated Metadata Isolation (NEVER dump into 'remarks'):");
-        promptBuilder.AppendLine("   - 'landmark' (Dedicated Landmark): Extract any text labeled \"Landmark :\" or drop-off guide (e.g., \"Paseo de carmona\") directly into 'landmark'. NEVER put landmarks inside 'remarks'.");
-        promptBuilder.AppendLine("   - 'eventType' (Dedicated Event Type): Extract any text labeled \"Type of Event :\" or \"Event :\" (e.g., \"Anniversary\", \"Birthday\", \"Binyag\", \"Fiesta\", \"Wedding\", \"Corporate\") directly into 'eventType'. NEVER put event types inside 'remarks'.");
-        promptBuilder.AppendLine("4. Strict Kitchen Sanitation for 'remarks':");
-        promptBuilder.AppendLine("   - 'remarks' is strictly reserved for kitchen preparation, roasting, or packaging instructions (e.g., \"walang dinuguan\", \"print shoutout banner\", \"extra crispy skin\", \"liver sauce only\") plus any secondary contact number (CP # 2).");
-        promptBuilder.AppendLine("   - NEVER include landmarks, event types, addresses, or delivery charges in 'remarks'.");
-        promptBuilder.AppendLine("   - If the screenshot contains no kitchen-specific prep request or secondary phone number, 'remarks' MUST be an empty string \"\".");
-        promptBuilder.AppendLine("5. Menu Disambiguation:");
-        promptBuilder.AppendLine("   - Match word-based sizes (\"XXS\", \"XS\", \"S\", \"Small\", \"M\", \"Medium\", \"L\", \"Large\", \"XL\", \"XXL\", \"Jumbo\", \"S. Jumbo\") strictly to Whole Lechon categories.");
-        promptBuilder.AppendLine("   - Match kilogram weights (\"Belly 2kg\", \"Belly 3kg\", \"Belly 4kg\", \"Belly 5kg\", \"4kg Belly\", etc.) strictly to Lechon Belly categories.");
-        promptBuilder.AppendLine("   - Match mentioned add-ons (e.g., \"Sarsa\", \"Extra Dinuguan\", \"Pancit\", \"Palabok\", \"Spaghetti\", \"Puto\", \"1.5 L coke\") to matching add-on category IDs from the active categories list above. If no exact category exists in the active menu list for a requested culinary note, append only that kitchen instruction to 'remarks'.");
-        promptBuilder.AppendLine("   - For each item in 'items', 'itemCategoryId' MUST be a valid Category ID from the active menu categories list above, and 'quantity' must be an integer >= 1.");
-        promptBuilder.AppendLine("6. Contact & Fulfillment Rules:");
-        promptBuilder.AppendLine("   - Primary phone (CP # 1 / Cellphone / Mobile) maps to 'contactNumber'.");
-        promptBuilder.AppendLine("   - If 'Pickup' / 'Pick up' / 'Store pickup' is indicated: set 'fulfillment' = 0 and 'deliveryFee' = 0, and leave 'deliveryAddress' null or empty.");
-        promptBuilder.AppendLine("   - If 'Lalamove' is indicated: set 'fulfillment' = 2 and 'deliveryFee' = 0, and extract 'deliveryAddress'.");
-        promptBuilder.AppendLine("   - If 'Delivery' is indicated: set 'fulfillment' = 1, extract 'deliveryAddress', and extract 'deliveryFee' from explicitly stated delivery charges (e.g., \"Deliver Charge : 0\" -> 0, \"Delivery Charge : 565\" -> 565).");
-        promptBuilder.AppendLine("7. Downpayment & Target Time:");
-        promptBuilder.AppendLine("   - Extract paid deposits or downpayments (e.g., 'DP : 11,000 (paid)', 'DP: 3,000', 'Downpayment: ₱5,000', 'Deposit: 2000') into 'downpayment' as a numeric amount. If only total price is shown without payment confirmation, downpayment should be null or 0.");
-        promptBuilder.AppendLine("   - If target date/time is specified, convert to ISO 8601 string (e.g. '2026-10-25T12:00:00'). If year is not mentioned, infer the current year (2026). If time/date is not present, set to null.");
+        promptBuilder.AppendLine("CRITICAL 4-PHASE EXTRACTION & FIELD-SEPARATION RULES:");
+        promptBuilder.AppendLine("The booking may be a minimal customer reply or a longer staff-annotated four-phase template. Labels may be reordered, split across lines, piped together, or partially blank. Parse by label and meaning rather than fixed line position.");
+        promptBuilder.AppendLine("1. HUMAN-IN-THE-LOOP SAFETY: Extract ONLY visibly confirmed booking data. Never invent a missing date, phone, address, amount, item, or instruction. Use null/empty for unclear values.");
+        promptBuilder.AppendLine("2. PHASE 1 - CUSTOMER AND FULFILLMENT:");
+        promptBuilder.AppendLine("   - 'facebookName' comes only from the Messenger header/profile name. 'customerName' comes from the booking body label 'Name :'.");
+        promptBuilder.AppendLine("   - 'CP # 1 :' maps to 'contactNumber'. 'CP # 2 :' maps only to 'contactNumber2'. NEVER put CP # 2 into 'remarks'.");
+        promptBuilder.AppendLine("   - 'Pickup or Deliver :' maps Pickup/Pick-up to fulfillment 0, Lalamove to 2, and Delivery/Deliver to 1.");
+        promptBuilder.AppendLine("   - 'Del Add :' maps to 'deliveryAddress'; 'Landmark :' maps to 'landmark'. Never copy either into remarks.");
+        promptBuilder.AppendLine("3. PHASE 2 - SCHEDULE, EVENT, AND ORDER:");
+        promptBuilder.AppendLine("   - Parse 'Date & Time :' even when date and time are on separate lines. Examples: 'October 24,2026' followed by '10 in the morning' => 2026-10-24T10:00:00; 'OCTOBER 31, 26 | 9:00AM' => 2026-10-31T09:00:00. Morning means AM; afternoon/evening means PM. Date-only input is valid. If no year is present, infer 2026.");
+        promptBuilder.AppendLine("   - 'Type of Event :' maps to eventType (Birthday, Anniversary, Binyag/Baptismal, Wedding, Fiesta, Corporate, or Other). If text says Birthday/Fiesta, use Birthday.");
+        promptBuilder.AppendLine("   - Parse 'Order / Size :' into items and ignore trailing phrases such as 'with 7 freebies' or misspelled 'with 7 frebbies'. Word sizes XXS, XS, S/Small, M/Medium, L/Large, XL, XXL, Jumbo, and Super/S. Jumbo are Whole Lechon; 2kg through 5kg are Lechon Belly.");
+        promptBuilder.AppendLine("   - Parse both 'Add-ons :' quantities (for example '2 sarsa') and 'Additional {Item} : {Amount}' lines into items by matching Sarsa, Dinuguan, Pancit/Pansit, Palabok, Spaghetti, Puto, or Coke to active category IDs. The number after an Additional-item colon may be a price, not a quantity; use quantity 1 unless an explicit quantity is shown.");
+        promptBuilder.AppendLine("   - Every itemCategoryId must exist in the active menu above, and every quantity must be an integer >= 1.");
+        promptBuilder.AppendLine("4. PHASE 3 - FREEBIES, DELIVERY, AND PRICING:");
+        promptBuilder.AppendLine("   - For 'Freebies or Less 2k :', 'Freebies or Cash Discount :', 'No Freebies', or a Price containing '(less 2000)': set freebiesOptOut=true when the selected text says Less 2k, Less 2,000, Cash Discount, No Freebies, or Walang Freebies. Set freebiesOptOut=false when freebies/frebbies are selected.");
+        promptBuilder.AppendLine("   - Put an explicitly stated numeric discount in 'discount'. Do not treat the total price or total balance as a discount.");
+        promptBuilder.AppendLine("   - Parse 'Distance :' into numeric distanceKm and 'Delivery Charge :' or 'Deliver Charge :' into numeric deliveryFee.");
+        promptBuilder.AppendLine("   - Pickup sets deliveryFee=0 and leaves deliveryAddress empty. Lalamove sets deliveryFee=0 but may retain its destination. Delivery retains an explicitly stated fee.");
+        promptBuilder.AppendLine("5. PHASE 4 - PAYMENT AND SPECIAL REQUEST:");
+        promptBuilder.AppendLine("   - Parse 'DP & Mode :', 'DP :', Downpayment, or Deposit into numeric downpayment only when payment is indicated. Parse its channel into downpaymentMethod exactly as Cash, GCash, Maya, or Bank Transfer. PayMaya means Maya; BDO/BPI/Bank means Bank Transfer. If a positive DP has no visible channel, use GCash.");
+        promptBuilder.AppendLine("   - Only the value of 'Special Request :' may populate remarks. Never append unlabeled template prose or metadata. If it says 'walang dinuguan', 'hilaw na laman loob', or raw innards, set rawInnards=true while preserving the culinary request in remarks.");
+        promptBuilder.AppendLine("6. STRICT BOILERPLATE STRIPPER: remarks must NEVER contain any line beginning with or containing 'To confirm your order...', 'WITH 7 FREEBIES', 'Spaghetti, Palabok & Pansit should be consumed...', 'Delivery Suggestion :', 'Kung gusto nyo po ng mas masarap...', or 'Total Balance :'. If there is no Special Request value, remarks must be an empty string.");
 
         var systemInstructionText = promptBuilder.ToString();
 
@@ -173,14 +172,20 @@ public class AiIntakeParserService : IAiIntakeParserService
                         ["customerName"] = new { type = "STRING", description = "Recipient or customer name extracted from the booking form body (e.g. 'Name : Macel Mendoza' -> 'Macel Mendoza')" },
                         ["facebookName"] = new { type = "STRING", description = "Profile name shown in the top Messenger navigation bar/header (e.g. 'Macel Obina Mendoza'), or empty string if not visible" },
                         ["contactNumber"] = new { type = "STRING", description = "Primary contact mobile number (CP # 1)" },
+                        ["contactNumber2"] = new { type = "STRING", description = "Secondary contact mobile number from CP # 2 only; never include it in remarks" },
                         ["targetDeliveryTime"] = new { type = "STRING", description = "Target delivery or pickup ISO-8601 date string (e.g. 2026-12-25T11:30:00) if visible, or null/empty" },
                         ["fulfillment"] = new { type = "INTEGER", description = "0 for Pickup, 1 for Delivery, 2 for Lalamove" },
                         ["deliveryAddress"] = new { type = "STRING", description = "Delivery destination address (null/empty if Pickup)" },
                         ["landmark"] = new { type = "STRING", description = "Dedicated landmark or drop-off guide labeled 'Landmark :' (e.g. 'Paseo de carmona'). Never put in remarks." },
                         ["eventType"] = new { type = "STRING", description = "Dedicated event or occasion labeled 'Type of Event :' or 'Event :' (e.g. 'Anniversary', 'Birthday', 'Binyag', 'Fiesta', 'Wedding', 'Corporate'). Never put in remarks." },
-                        ["remarks"] = new { type = "STRING", description = "STRICTLY kitchen preparation, roasting, or packaging instructions plus secondary contact number (CP # 2). Must be empty string \"\" if none exist." },
+                        ["remarks"] = new { type = "STRING", description = "Only the culinary/packaging value labeled Special Request; no CP # 2, metadata, totals, or boilerplate. Empty string if absent." },
+                        ["freebiesOptOut"] = new { type = "BOOLEAN", description = "True for Less 2k, Cash Discount, No/Walang Freebies; false when freebies are selected; omitted if unclear" },
+                        ["rawInnards"] = new { type = "BOOLEAN", description = "True when Special Request says walang dinuguan, hilaw na laman loob, or raw innards" },
+                        ["distanceKm"] = new { type = "NUMBER", description = "Numeric kilometers explicitly stated in Distance" },
+                        ["discount"] = new { type = "NUMBER", description = "Explicit numeric discount, excluding total price and total balance" },
                         ["deliveryFee"] = new { type = "NUMBER", description = "Explicitly stated delivery charge (e.g. 'Deliver Charge : 0' -> 0, 'Delivery Charge : 565' -> 565)" },
                         ["downpayment"] = new { type = "NUMBER", description = "Paid downpayment or deposit amount if noted (e.g. DP: 11,000 (paid))" },
+                        ["downpaymentMethod"] = new { type = "STRING", description = "Cash, GCash, Maya, or Bank Transfer; defaults to GCash only when downpayment is positive and no mode is visible" },
                         ["items"] = new
                         {
                             type = "ARRAY",
@@ -420,21 +425,64 @@ public class AiIntakeParserService : IAiIntakeParserService
             deliveryFee = 0;
         }
 
+        var remarks = SanitizeRemarks(rawDraft?.Remarks);
+        var rawInnards = (rawDraft?.RawInnards ?? false)
+            || Regex.IsMatch(remarks, @"walang\s+dinuguan|hilaw\s+na\s+laman\s+loob|raw\s+innards?", RegexOptions.IgnoreCase);
+
+        string? downpaymentMethod = null;
+        if (!string.IsNullOrWhiteSpace(rawDraft?.DownpaymentMethod))
+        {
+            downpaymentMethod = PaymentChannels.Normalize(
+                rawDraft.DownpaymentMethod,
+                rawDraft.Downpayment.GetValueOrDefault() > 0 ? "GCash" : "Cash");
+        }
+        else if (rawDraft?.Downpayment.GetValueOrDefault() > 0)
+        {
+            downpaymentMethod = "GCash";
+        }
+
         return new ParsedOrderDraftDto
         {
             CustomerName = rawDraft?.CustomerName?.Trim() ?? string.Empty,
             FacebookName = string.IsNullOrWhiteSpace(rawDraft?.FacebookName) ? null : rawDraft.FacebookName.Trim(),
             ContactNumber = rawDraft?.ContactNumber?.Trim() ?? string.Empty,
+            ContactNumber2 = string.IsNullOrWhiteSpace(rawDraft?.ContactNumber2) ? null : rawDraft.ContactNumber2.Trim(),
             TargetDeliveryTime = targetDeliveryTime,
             Fulfillment = fulfillment,
             DeliveryAddress = fulfillment == 0 ? null : (string.IsNullOrWhiteSpace(rawDraft?.DeliveryAddress) ? null : rawDraft.DeliveryAddress.Trim()),
             Landmark = string.IsNullOrWhiteSpace(rawDraft?.Landmark) ? null : rawDraft.Landmark.Trim(),
             EventType = string.IsNullOrWhiteSpace(rawDraft?.EventType) ? null : rawDraft.EventType.Trim(),
-            Remarks = string.IsNullOrWhiteSpace(rawDraft?.Remarks) ? string.Empty : rawDraft.Remarks.Trim(),
+            Remarks = remarks,
+            FreebiesOptOut = rawDraft?.FreebiesOptOut,
+            RawInnards = rawInnards,
+            DistanceKm = rawDraft?.DistanceKm,
+            Discount = rawDraft?.Discount,
             DeliveryFee = deliveryFee,
             Downpayment = rawDraft?.Downpayment,
+            DownpaymentMethod = downpaymentMethod,
             Items = validItems
         };
+    }
+
+    private static string SanitizeRemarks(string? rawRemarks)
+    {
+        if (string.IsNullOrWhiteSpace(rawRemarks))
+        {
+            return string.Empty;
+        }
+
+        const string boilerplatePattern = @"to\s+confirm\s+your\s+order|with\s+7\s+freebies|spaghetti\s*,\s*palabok.*consumed|delivery\s+suggestion\s*:|kung\s+gusto\s+nyo\s+po\s+ng\s+mas\s+masarap|total\s+balance\s*:";
+        var sanitizedLines = rawRemarks
+            .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => !Regex.IsMatch(line, boilerplatePattern, RegexOptions.IgnoreCase))
+            .Select(line => Regex.Replace(
+                line,
+                @"\bCP\s*#?\s*2\s*:?.*$",
+                string.Empty,
+                RegexOptions.IgnoreCase).Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line));
+
+        return string.Join(Environment.NewLine, sanitizedLines).Trim();
     }
 
     private static ParsedOrderDraftDto GenerateMockOrderDraft(List<ItemCategory> activeCategories)
@@ -447,14 +495,20 @@ public class AiIntakeParserService : IAiIntakeParserService
             CustomerName = "Maria Santos",
             FacebookName = "Maria Obina Santos",
             ContactNumber = "09178901234",
+            ContactNumber2 = "09981234567",
             TargetDeliveryTime = DateTime.UtcNow.Date.AddDays(2).AddHours(12),
             Fulfillment = 1,
             DeliveryAddress = "Block 14 Lot 8, Camella Homes, Bacoor, Cavite",
             Landmark = "Near Gate 2 Clubhouse",
             EventType = "Birthday",
             Remarks = "",
+            FreebiesOptOut = false,
+            RawInnards = false,
+            DistanceKm = 10m,
+            Discount = 0m,
             DeliveryFee = 150m,
             Downpayment = 2000m,
+            DownpaymentMethod = "GCash",
             Items = selectedCategory != null
                 ? new List<ParsedOrderItemDto> { new() { ItemCategoryId = selectedCategory.Id, Quantity = 1 } }
                 : new List<ParsedOrderItemDto>()
@@ -466,14 +520,20 @@ public class AiIntakeParserService : IAiIntakeParserService
         public string? CustomerName { get; set; }
         public string? FacebookName { get; set; }
         public string? ContactNumber { get; set; }
+        public string? ContactNumber2 { get; set; }
         public string? TargetDeliveryTime { get; set; }
         public int? Fulfillment { get; set; }
         public string? DeliveryAddress { get; set; }
         public string? Landmark { get; set; }
         public string? EventType { get; set; }
         public string? Remarks { get; set; }
+        public bool? FreebiesOptOut { get; set; }
+        public bool? RawInnards { get; set; }
+        public decimal? DistanceKm { get; set; }
+        public decimal? Discount { get; set; }
         public decimal? DeliveryFee { get; set; }
         public decimal? Downpayment { get; set; }
+        public string? DownpaymentMethod { get; set; }
         public List<RawGeminiItem>? Items { get; set; }
     }
 

@@ -59,8 +59,9 @@ namespace LechonSystem.Api.Services
             }
 
             var rawContactNumber = !string.IsNullOrWhiteSpace(request.ContactNumber)
-                ? request.ContactNumber
-                : (request.CustomerPhone ?? string.Empty);
+                ? request.ContactNumber.Trim()
+                : (request.CustomerPhone ?? string.Empty).Trim();
+            var rawPrimaryPhone = CustomerService.ExtractPrimaryContactNumber(rawContactNumber);
             var normalizedPhone = CustomerService.NormalizePhoneNumber(rawContactNumber);
 
             var resolvedDeliveryAddress = !string.IsNullOrWhiteSpace(request.DeliveryAddress)
@@ -80,7 +81,7 @@ namespace LechonSystem.Api.Services
                 IsDeliveryDetailsConfirmed = false,
 
                 // -- 🚀 NEW MAPPINGS HERE --
-                ContactNumber = !string.IsNullOrWhiteSpace(normalizedPhone) ? normalizedPhone : rawContactNumber,
+                ContactNumber = rawContactNumber,
                 DeliveryAddress = resolvedDeliveryAddress,
                 Landmark = request.Landmark,
                 Source = request.Source,
@@ -107,7 +108,7 @@ namespace LechonSystem.Api.Services
             if (!string.IsNullOrWhiteSpace(normalizedPhone))
             {
                 var profile = await _context.CustomerProfiles
-                    .FirstOrDefaultAsync(c => c.ContactNumber == normalizedPhone || c.ContactNumber == rawContactNumber);
+                    .FirstOrDefaultAsync(c => c.ContactNumber == normalizedPhone || c.ContactNumber == rawPrimaryPhone);
 
                 if (profile != null)
                 {
@@ -128,7 +129,7 @@ namespace LechonSystem.Api.Services
                 else
                 {
                     var priorOrdersCount = await _context.Orders
-                        .CountAsync(o => !o.IsCancelled && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawContactNumber));
+                        .CountAsync(o => !o.IsCancelled && (o.ContactNumber.Contains(normalizedPhone) || o.ContactNumber.Contains(rawPrimaryPhone)));
 
                     var newProfile = new CustomerProfile
                     {
@@ -188,6 +189,11 @@ namespace LechonSystem.Api.Services
             {
                 foreach (var savedItem in order.OrderItems)
                 {
+                    if (categories.TryGetValue(savedItem.ItemCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    {
+                        continue; // Exclude add-ons from kitchen schedules and freezer reservations
+                    }
+
                     var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
                         savedItem.Id,
                         order.TargetDeliveryTime.Value,
@@ -705,8 +711,18 @@ namespace LechonSystem.Api.Services
             // Handle finalization or rescheduling
             if (isFinalizing && order.TargetDeliveryTime.HasValue)
             {
+                var itemCatIds = order.OrderItems.Select(i => i.ItemCategoryId).Distinct().ToList();
+                var itemCategories = await _context.ItemCategories
+                    .Where(c => itemCatIds.Contains(c.Id))
+                    .ToDictionaryAsync(c => c.Id, c => c);
+
                 foreach (var item in order.OrderItems)
                 {
+                    if (itemCategories.TryGetValue(item.ItemCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    {
+                        continue; // Exclude add-ons
+                    }
+
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
                         item.Id,
                         order.TargetDeliveryTime.Value,
@@ -726,10 +742,21 @@ namespace LechonSystem.Api.Services
             }
             else if (!order.IsDraft && requiresRescheduling && order.TargetDeliveryTime.HasValue)
             {
+                var itemCatIds = order.OrderItems.Select(i => i.ItemCategoryId).Distinct().ToList();
+                var itemCategories = await _context.ItemCategories
+                    .Where(c => itemCatIds.Contains(c.Id))
+                    .ToDictionaryAsync(c => c.Id, c => c);
+
                 foreach (var item in order.OrderItems)
                 {
                     var oldSchedule = await _context.OrderItemSchedules
                         .FirstOrDefaultAsync(s => s.OrderItemId == item.Id);
+
+                    if (itemCategories.TryGetValue(item.ItemCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    {
+                        if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
+                        continue;
+                    }
 
                     if (oldSchedule != null && oldSchedule.IsManualOverride)
                     {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -95,6 +95,12 @@ export default function OrderForm({
     createDefaultFreebiesConfig(0),
   );
   const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
+  const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
+  const previousWholePigCount = useRef(0);
+  const pendingParsedFreebies = useRef<{
+    optOut: boolean;
+    rawInnards: boolean;
+  } | null>(null);
 
   // 1. Fetch live inventory categories & CMS delivery pricing
   const { data: categories = [], isLoading: isCategoriesLoading } =
@@ -103,6 +109,8 @@ export default function OrderForm({
 
   const baseFare = deliveryPricing?.baseFare ?? 100;
   const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
+  const noFreebiesDiscountPerPig =
+    deliveryPricing?.noFreebiesDiscountPerPig ?? 2000;
 
   // Partition categories into Roast Lechon vs Add-Ons
   const roastCategories = useMemo(
@@ -127,6 +135,7 @@ export default function OrderForm({
       isDraft: false,
       customerName: "",
       customerPhone: "",
+      customerPhone2: "",
       facebookName: "",
       source: "Business FB Page",
       eventType: "",
@@ -195,6 +204,9 @@ export default function OrderForm({
       form.reset(DEFAULT_ORDER_VALUES);
       setFreebiesConfig(createDefaultFreebiesConfig(0));
       setAppliedFreebiesDiscount(0);
+      setShowSecondaryPhone(false);
+      previousWholePigCount.current = 0;
+      pendingParsedFreebies.current = null;
     }
   }, [_open, form, DEFAULT_ORDER_VALUES]);
 
@@ -282,11 +294,55 @@ export default function OrderForm({
   }, [watchedItems, categories]);
 
   useEffect(() => {
-    setFreebiesConfig(createDefaultFreebiesConfig(wholePigCount));
+    const previousCount = previousWholePigCount.current;
+    const pending = pendingParsedFreebies.current;
+    setFreebiesConfig((current) => {
+      if (pending) {
+        pendingParsedFreebies.current = null;
+        if (pending.optOut) {
+          return {
+            optOut: true,
+            rawInnards: false,
+            counts: Object.fromEntries(
+              Object.keys(createDefaultFreebiesConfig(wholePigCount).counts).map(
+                (item) => [item, 0],
+              ),
+            ),
+          };
+        }
+        const defaults = createDefaultFreebiesConfig(wholePigCount);
+        if (pending.rawInnards) {
+          defaults.rawInnards = true;
+          defaults.counts.Dinuguan = 0;
+        }
+        return defaults;
+      }
+
+      if (current.optOut) {
+        return {
+          ...current,
+          counts: Object.fromEntries(
+            Object.keys(current.counts).map((item) => [item, 0]),
+          ),
+        };
+      }
+
+      const delta = wholePigCount - previousCount;
+      const counts = Object.fromEntries(
+        Object.entries(current.counts).map(([item, quantity]) => [
+          item,
+          current.rawInnards && item === "Dinuguan"
+            ? 0
+            : Math.max(0, Number(quantity) + delta),
+        ]),
+      );
+      return { ...current, counts };
+    });
+    previousWholePigCount.current = wholePigCount;
   }, [wholePigCount]);
 
   const desiredFreebiesDiscount = freebiesConfig.optOut
-    ? 2000 * wholePigCount
+    ? noFreebiesDiscountPerPig * wholePigCount
     : 0;
 
   useEffect(() => {
@@ -305,6 +361,7 @@ export default function OrderForm({
     desiredFreebiesDiscount,
     appliedFreebiesDiscount,
     form,
+    noFreebiesDiscountPerPig,
   ]);
 
   useEffect(() => {
@@ -483,10 +540,18 @@ export default function OrderForm({
         ? data.targetDeliveryTime || null
         : data.riderDepartureTime || data.targetDeliveryTime || null;
 
+    const primaryPhone = (data.customerPhone || "").split(",")[0].trim();
+    const secondaryPhone =
+      (data.customerPhone2 || "").trim() ||
+      (data.customerPhone || "").split(",").slice(1).join(",").trim();
+    const combinedContactNumber = secondaryPhone
+      ? `${primaryPhone},${secondaryPhone}`
+      : primaryPhone;
+
     const payload = {
       isDraft: Boolean(data.isDraft),
       customerName: data.customerName,
-      customerPhone: data.customerPhone,
+      customerPhone: combinedContactNumber,
       facebookName: data.facebookName?.trim() || null,
       source: data.source?.trim() || "POS Terminal",
       eventType: data.eventType?.trim() || null,
@@ -527,12 +592,24 @@ export default function OrderForm({
       shouldValidate: true,
       shouldDirty: true,
     });
-    if (draft.contactNumber) {
-      form.setValue("customerPhone", draft.contactNumber, {
+    const draftPhones = (draft.contactNumber || "")
+      .split(",")
+      .map((phone) => phone.trim())
+      .filter(Boolean);
+    const primaryPhone = draftPhones[0] || "";
+    const secondaryPhone =
+      draft.contactNumber2?.trim() || draftPhones.slice(1).join(",").trim();
+    if (primaryPhone) {
+      form.setValue("customerPhone", primaryPhone, {
         shouldValidate: true,
         shouldDirty: true,
       });
     }
+    form.setValue("customerPhone2", secondaryPhone, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    setShowSecondaryPhone(Boolean(secondaryPhone));
     form.setValue("facebookName", draft.facebookName || "", {
       shouldValidate: true,
       shouldDirty: true,
@@ -577,18 +654,49 @@ export default function OrderForm({
       shouldDirty: true,
     });
 
+    const parsedDistance = Math.max(0, Number(draft.distanceKm ?? 0) || 0);
+    form.setValue("distanceKm", parsedDistance, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+
+    const hasExplicitFee =
+      draft.deliveryFee !== undefined && draft.deliveryFee !== null;
     const parsedFee =
       fulfillmentVal === 0 || fulfillmentVal === 2
         ? 0
-        : Number(draft.deliveryFee ?? 0) || 0;
+        : hasExplicitFee
+          ? Math.max(0, Number(draft.deliveryFee) || 0)
+          : parsedDistance > 0
+            ? Math.round(parsedDistance * ratePerKm + baseFare)
+            : 0;
     form.setValue("deliveryFee", parsedFee, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
+    const parsedDownpayment = Number(draft.downpayment ?? 0) || 0;
     if (draft.downpayment !== undefined && draft.downpayment !== null) {
-      const parsedDownpayment = Number(draft.downpayment) || 0;
       form.setValue("downpayment", parsedDownpayment, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+    if (draft.downpaymentMethod || parsedDownpayment > 0) {
+      const supportedMethods: PaymentChannel[] = [
+        "Cash",
+        "GCash",
+        "Maya",
+        "Bank Transfer",
+      ];
+      const parsedMethod = supportedMethods.includes(
+        draft.downpaymentMethod as PaymentChannel,
+      )
+        ? (draft.downpaymentMethod as PaymentChannel)
+        : parsedDownpayment > 0
+          ? "GCash"
+          : "None";
+      form.setValue("downpaymentMethod", parsedMethod, {
         shouldValidate: true,
         shouldDirty: true,
       });
@@ -599,8 +707,53 @@ export default function OrderForm({
         itemCategoryId: i.itemCategoryId,
         quantity: i.quantity || 1,
       }));
+      const parsedWholePigCount = mappedItems.reduce((total, item) => {
+        const category = categories.find(
+          (candidate) => candidate.id === Number(item.itemCategoryId),
+        );
+        return category && category.minimumWeightKg >= 13
+          ? total + (Number(item.quantity) || 0)
+          : total;
+      }, 0);
+      const parsedFreebies = {
+        optOut: draft.freebiesOptOut === true,
+        rawInnards: draft.rawInnards === true,
+      };
+      const parsedConfig = createDefaultFreebiesConfig(parsedWholePigCount);
+      if (parsedFreebies.optOut) {
+        parsedConfig.optOut = true;
+        parsedConfig.counts = Object.fromEntries(
+          Object.keys(parsedConfig.counts).map((item) => [item, 0]),
+        );
+      } else if (parsedFreebies.rawInnards) {
+        parsedConfig.rawInnards = true;
+        parsedConfig.counts.Dinuguan = 0;
+      }
+      setFreebiesConfig(parsedConfig);
+      pendingParsedFreebies.current =
+        parsedWholePigCount !== wholePigCount ? parsedFreebies : null;
       replace(mappedItems);
+    } else if (draft.freebiesOptOut != null || draft.rawInnards != null) {
+      const nextConfig = createDefaultFreebiesConfig(wholePigCount);
+      if (draft.freebiesOptOut === true) {
+        nextConfig.optOut = true;
+        nextConfig.counts = Object.fromEntries(
+          Object.keys(nextConfig.counts).map((item) => [item, 0]),
+        );
+      } else if (draft.rawInnards === true) {
+        nextConfig.rawInnards = true;
+        nextConfig.counts.Dinuguan = 0;
+      }
+      setFreebiesConfig(nextConfig);
     }
+
+    form.setValue(
+      "discount",
+      draft.freebiesOptOut === true
+        ? 0
+        : Math.max(0, Number(draft.discount ?? 0) || 0),
+      { shouldValidate: true, shouldDirty: true },
+    );
 
     toast.success(`${sourceLabel} parsed. Please review before saving.`, {
       description:
@@ -629,7 +782,9 @@ export default function OrderForm({
         });
         return;
       }
-      const draft = parseMessengerTextToDraft(clipText, categories);
+      const draft = parseMessengerTextToDraft(clipText, categories, {
+        noFreebiesDiscountPerPig,
+      });
       applyDraftToForm(draft, "Messenger chat text");
     } catch {
       toast.error("Clipboard Access Denied", {
@@ -799,8 +954,17 @@ export default function OrderForm({
               name="customerPhone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold text-stone-700">
-                    Mobile Number
+                  <FormLabel className="text-xs font-semibold text-stone-700 flex items-center justify-between gap-2">
+                    <span>Mobile Number (CP #1)</span>
+                    {!showSecondaryPhone && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSecondaryPhone(true)}
+                        className="text-[10px] font-bold text-blue-700 hover:text-blue-900"
+                      >
+                        + Add CP #2
+                      </button>
+                    )}
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -813,6 +977,42 @@ export default function OrderForm({
                 </FormItem>
               )}
             />
+
+            {showSecondaryPhone && (
+              <FormField
+                control={form.control}
+                name="customerPhone2"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs font-semibold text-stone-700 flex items-center justify-between gap-2">
+                      <span>Secondary Mobile Number (CP #2)</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          form.setValue("customerPhone2", "", {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          setShowSecondaryPhone(false);
+                        }}
+                        className="text-[10px] font-bold text-rose-600 hover:text-rose-800"
+                        aria-label="Clear secondary mobile number"
+                      >
+                        ✕
+                      </button>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g., 09481234567"
+                        className="h-10 text-xs border-stone-300"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage className="text-[11px]" />
+                  </FormItem>
+                )}
+              />
+            )}
           </div>
 
           {/* 2B. Facebook Name & Order Source Pills */}
@@ -1339,6 +1539,7 @@ export default function OrderForm({
 
             <FreebiesSelector
               wholePigCount={wholePigCount}
+              noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
               config={freebiesConfig}
               onChange={setFreebiesConfig}
             />

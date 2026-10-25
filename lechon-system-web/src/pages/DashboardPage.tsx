@@ -64,6 +64,9 @@ import {
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
 
+const NON_CARCASS_ADDON_PATTERN =
+  /\b(?:sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke)\b/i;
+
 export default function DashboardPage() {
   const queryClient = useQueryClient();
   const { isOwner } = useAuth();
@@ -135,6 +138,23 @@ export default function DashboardPage() {
   } = usePendingConfirmations();
   const { isLoading: deliveriesLoading } = useDeliveryVerifications();
   const { data: defrost, isLoading: defrostLoading } = useDefrostRoster();
+  const carcassOnlyDefrost = useMemo(
+    () =>
+      (defrost || []).filter((item) => {
+        if (
+          item.minimumWeightKg !== undefined &&
+          item.minimumWeightKg <= 0
+        ) {
+          return false;
+        }
+        return !NON_CARCASS_ADDON_PATTERN.test(
+          [item.categoryName, item.weightCategory, item.weightRange]
+            .filter(Boolean)
+            .join(" "),
+        );
+      }),
+    [defrost],
+  );
   const { data: settlements = [] } = usePendingSettlements();
   const { data: renegotiations } = useRenegotiationTasks();
   const { data: pendingOwnerConfirmations = [] } =
@@ -145,12 +165,12 @@ export default function DashboardPage() {
 
   // 1. Tomorrow's Roasting Demand Math & Breakdown
   const tomorrowCount =
-    defrost?.reduce((total, item) => total + item.quantity, 0) || 0;
+    carcassOnlyDefrost.reduce((total, item) => total + item.quantity, 0);
 
   const carcassBreakdown = useMemo(() => {
-    if (!defrost || defrost.length === 0) return "No roasting scheduled for tomorrow";
+    if (carcassOnlyDefrost.length === 0) return "No roasting scheduled for tomorrow";
     const map = new Map<string, number>();
-    for (const d of defrost) {
+    for (const d of carcassOnlyDefrost) {
       const key = d.weightCategory || "Lechon";
       map.set(key, (map.get(key) || 0) + d.quantity);
     }
@@ -159,7 +179,7 @@ export default function DashboardPage() {
       parts.push(`${qty} ${name}`);
     });
     return parts.join(" • ");
-  }, [defrost]);
+  }, [carcassOnlyDefrost]);
 
   // 2. Pending Remittances Math & Overdue Detector (> 24 hours)
   const totalPendingRemittance = settlements.reduce(
@@ -213,7 +233,7 @@ export default function DashboardPage() {
   // 4. Unified Operations Roster (Shift-Aware Math)
   const unifiedRoster = useMemo(() => {
     return (
-      defrost?.map((item) => {
+      carcassOnlyDefrost.map((item) => {
         const rushCutoff = new Date(item.tahiStartTime);
 
         if (rushCutoff.getHours() < 12) {
@@ -230,9 +250,9 @@ export default function DashboardPage() {
             : "Store Pickup",
           isRush,
         };
-      }) || []
+      })
     );
-  }, [defrost]);
+  }, [carcassOnlyDefrost]);
 
   // Modal & Slide-out State
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);

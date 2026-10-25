@@ -30,3 +30,8 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 LechonSystem.Api/appsettings.Production.json
+
+# ==========================================
+# 4. Local AI & MCP Tooling Configurations
+# ==========================================
+.agents/

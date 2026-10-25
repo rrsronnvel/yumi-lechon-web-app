@@ -507,7 +507,8 @@ namespace LechonSystem.Api.Migrations
 
                     b.Property<string>("ContactNumber")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");

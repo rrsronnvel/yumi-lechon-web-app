@@ -238,11 +238,14 @@ namespace LechonSystem.Api.Services
         {
             var settings = await _context.SystemSettings
                 .AsNoTracking()
-                .Where(s => s.SettingKey == "DeliveryFeeBaseFare" || s.SettingKey == "DeliveryFeeRatePerKm")
+                .Where(s => s.SettingKey == "DeliveryFeeBaseFare"
+                         || s.SettingKey == "DeliveryFeeRatePerKm"
+                         || s.SettingKey == "NoFreebiesDiscountPerPig")
                 .ToListAsync();
 
             decimal baseFare = 100.00m;
             decimal ratePerKm = 15.00m;
+            decimal noFreebiesDiscountPerPig = 2000.00m;
 
             var baseFareRow = settings.FirstOrDefault(s => s.SettingKey == "DeliveryFeeBaseFare");
             if (baseFareRow != null && decimal.TryParse(baseFareRow.SettingValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedBase))
@@ -256,10 +259,17 @@ namespace LechonSystem.Api.Services
                 ratePerKm = parsedRate;
             }
 
+            var noFreebiesDiscountRow = settings.FirstOrDefault(s => s.SettingKey == "NoFreebiesDiscountPerPig");
+            if (noFreebiesDiscountRow != null && decimal.TryParse(noFreebiesDiscountRow.SettingValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedDiscount))
+            {
+                noFreebiesDiscountPerPig = parsedDiscount;
+            }
+
             return new DeliveryPricingDto
             {
                 BaseFare = baseFare,
-                RatePerKm = ratePerKm
+                RatePerKm = ratePerKm,
+                NoFreebiesDiscountPerPig = noFreebiesDiscountPerPig
             };
         }
 
@@ -273,6 +283,11 @@ namespace LechonSystem.Api.Services
             if (dto.RatePerKm < 0)
             {
                 throw new ArgumentException("Rate per KM cannot be negative.");
+            }
+
+            if (dto.NoFreebiesDiscountPerPig < 0)
+            {
+                throw new ArgumentException("No-freebies discount per pig cannot be negative.");
             }
 
             var now = DateTime.UtcNow;
@@ -306,12 +321,27 @@ namespace LechonSystem.Api.Services
             ratePerKmSetting.UpdatedBy = user;
             ratePerKmSetting.UpdatedAt = now;
 
+            var noFreebiesDiscountSetting = await _context.SystemSettings
+                .FirstOrDefaultAsync(s => s.SettingKey == "NoFreebiesDiscountPerPig");
+            if (noFreebiesDiscountSetting == null)
+            {
+                noFreebiesDiscountSetting = new SystemSetting
+                {
+                    SettingKey = "NoFreebiesDiscountPerPig"
+                };
+                _context.SystemSettings.Add(noFreebiesDiscountSetting);
+            }
+            noFreebiesDiscountSetting.SettingValue = dto.NoFreebiesDiscountPerPig.ToString("0.00", CultureInfo.InvariantCulture);
+            noFreebiesDiscountSetting.UpdatedBy = user;
+            noFreebiesDiscountSetting.UpdatedAt = now;
+
             await _context.SaveChangesAsync();
 
             return new DeliveryPricingDto
             {
                 BaseFare = dto.BaseFare,
-                RatePerKm = dto.RatePerKm
+                RatePerKm = dto.RatePerKm,
+                NoFreebiesDiscountPerPig = dto.NoFreebiesDiscountPerPig
             };
         }
     }

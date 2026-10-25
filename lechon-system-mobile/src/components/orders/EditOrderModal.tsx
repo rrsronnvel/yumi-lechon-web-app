@@ -80,10 +80,14 @@ export default function EditOrderModal({
 
   const baseFare = deliveryPricing?.baseFare ?? 100;
   const ratePerKm = deliveryPricing?.ratePerKm ?? 15;
+  const noFreebiesDiscountPerPig =
+    deliveryPricing?.noFreebiesDiscountPerPig ?? 2000;
 
   const [customerName, setCustomerName] = useState('');
   const [facebookName, setFacebookName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [contactNumber2, setContactNumber2] = useState('');
+  const [showContactNumber2, setShowContactNumber2] = useState(false);
   const [debouncedPhone, setDebouncedPhone] = useState('');
   const [debouncedFbName, setDebouncedFbName] = useState('');
   const [source, setSource] = useState('Business FB Page');
@@ -110,6 +114,8 @@ export default function EditOrderModal({
   );
   const freebiesDiscountApplied = useRef(0);
   const previousWholePigCount = useRef(0);
+  const previousNoFreebiesDiscountPerPig = useRef(noFreebiesDiscountPerPig);
+  const pendingHydratedWholePigCount = useRef<number | null>(null);
   const [isDraft, setIsDraft] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -137,7 +143,13 @@ export default function EditOrderModal({
     setIsDraft(order.isDraft ?? false);
     setCustomerName(order.customerName || '');
     setFacebookName(order.facebookName || '');
-    setContactNumber(order.contactNumber || '');
+    const hydratedPhones = (order.contactNumber || '')
+      .split(',')
+      .map((phone) => phone.trim())
+      .filter(Boolean);
+    setContactNumber(hydratedPhones[0] || '');
+    setContactNumber2(hydratedPhones[1] || '');
+    setShowContactNumber2(Boolean(hydratedPhones[1]));
     setSource(order.source || 'Business FB Page');
     setEventType(order.eventType || '');
     setFulfillment(Number(order.fulfillment ?? 1));
@@ -224,12 +236,14 @@ export default function EditOrderModal({
       mappedWholePigCount
     );
     previousWholePigCount.current = mappedWholePigCount;
+    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
+    pendingHydratedWholePigCount.current = mappedWholePigCount;
     freebiesDiscountApplied.current = mappedFreebiesConfig.optOut
-      ? 2000 * mappedWholePigCount
+      ? noFreebiesDiscountPerPig * mappedWholePigCount
       : 0;
     setFreebiesConfig(mappedFreebiesConfig);
     setCartItems(mappedItems);
-  }, [visible, order, categories]);
+  }, [visible, order, categories, noFreebiesDiscountPerPig]);
 
   const handleApplyNudgeOffset = (offsetMinutes: number) => {
     if (fulfillment === 0) return;
@@ -433,24 +447,52 @@ export default function EditOrderModal({
   );
 
   useEffect(() => {
-    if (previousWholePigCount.current === wholeLechonCount) return;
+    if (pendingHydratedWholePigCount.current !== null) {
+      if (wholeLechonCount === pendingHydratedWholePigCount.current) {
+        pendingHydratedWholePigCount.current = null;
+      }
+      return;
+    }
 
+    const wholePigCountChanged =
+      previousWholePigCount.current !== wholeLechonCount;
+    const pricingChanged =
+      previousNoFreebiesDiscountPerPig.current !== noFreebiesDiscountPerPig;
+    if (!wholePigCountChanged && !pricingChanged) return;
+    if (!wholePigCountChanged && !freebiesConfig.optOut) {
+      previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
+      return;
+    }
+
+    const nextFreebiesDiscount = freebiesConfig.optOut
+      ? noFreebiesDiscountPerPig * wholeLechonCount
+      : 0;
     setDiscount((currentDiscount) =>
       String(
         Math.max(
           0,
-          (parseFloat(currentDiscount) || 0) - freebiesDiscountApplied.current
+          (parseFloat(currentDiscount) || 0) -
+            freebiesDiscountApplied.current +
+            nextFreebiesDiscount
         )
       )
     );
-    freebiesDiscountApplied.current = 0;
+    freebiesDiscountApplied.current = nextFreebiesDiscount;
     previousWholePigCount.current = wholeLechonCount;
-    setFreebiesConfig(createDefaultFreebiesConfig(wholeLechonCount));
-  }, [wholeLechonCount]);
+    previousNoFreebiesDiscountPerPig.current = noFreebiesDiscountPerPig;
+    if (wholePigCountChanged) {
+      setFreebiesConfig((currentConfig) => {
+        const nextConfig = createDefaultFreebiesConfig(wholeLechonCount);
+        return currentConfig.optOut
+          ? { ...nextConfig, optOut: true }
+          : nextConfig;
+      });
+    }
+  }, [wholeLechonCount, noFreebiesDiscountPerPig]);
 
   const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
     const nextFreebiesDiscount = nextConfig.optOut
-      ? 2000 * wholeLechonCount
+      ? noFreebiesDiscountPerPig * wholeLechonCount
       : 0;
     setDiscount((currentDiscount) =>
       String(
@@ -510,6 +552,10 @@ export default function EditOrderModal({
     const trimmedName = customerName.trim();
     const trimmedFbName = facebookName.trim();
     const trimmedPhone = contactNumber.trim();
+    const trimmedPhone2 = contactNumber2.trim();
+    const combinedContactNumber = trimmedPhone2
+      ? `${trimmedPhone},${trimmedPhone2}`
+      : trimmedPhone;
     const trimmedAddress = deliveryAddress.trim();
 
     if (isDraft) {
@@ -524,8 +570,14 @@ export default function EditOrderModal({
         setValidationError('Customer Name must be at least 2 characters.');
         return;
       }
-      if (trimmedPhone.length < 10) {
-        setValidationError('Contact Number must be at least 10 digits.');
+      if (trimmedPhone.replace(/\D/g, '').length < 10) {
+        setValidationError('Mobile Number (CP #1) must be at least 10 digits.');
+        return;
+      }
+      if (trimmedPhone2 && trimmedPhone2.replace(/\D/g, '').length < 10) {
+        setValidationError(
+          'Secondary Mobile Number (CP #2) must be at least 10 digits.'
+        );
         return;
       }
       if ((fulfillment === 1 || fulfillment === 2) && !trimmedAddress) {
@@ -602,7 +654,7 @@ export default function EditOrderModal({
         isDraft,
         customerName: trimmedName || trimmedFbName,
         facebookName: trimmedFbName || undefined,
-        contactNumber: trimmedPhone,
+        contactNumber: combinedContactNumber,
         source: source || 'Business FB Page',
         eventType: eventType || undefined,
         deliveryAddress: resolvedAddress || undefined,
@@ -760,7 +812,17 @@ export default function EditOrderModal({
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Contact Number *</Text>
+              <View style={styles.contactLabelRow}>
+                <Text style={styles.fieldLabel}>Mobile Number (CP #1) *</Text>
+                {!showContactNumber2 && (
+                  <Pressable
+                    style={styles.addContactButton}
+                    onPress={() => setShowContactNumber2(true)}
+                  >
+                    <Text style={styles.addContactButtonText}>+ Add CP #2</Text>
+                  </Pressable>
+                )}
+              </View>
               <TextInput
                 style={styles.textInput}
                 keyboardType="phone-pad"
@@ -769,6 +831,32 @@ export default function EditOrderModal({
                 placeholder="09171234567"
                 placeholderTextColor="#A8A29E"
               />
+              {showContactNumber2 && (
+                <View style={styles.secondaryContactWrap}>
+                  <View style={styles.contactLabelRow}>
+                    <Text style={styles.fieldLabel}>
+                      Secondary Mobile Number (CP #2)
+                    </Text>
+                    <Pressable
+                      style={styles.removeContactButton}
+                      onPress={() => {
+                        setContactNumber2('');
+                        setShowContactNumber2(false);
+                      }}
+                    >
+                      <Text style={styles.removeContactButtonText}>✕</Text>
+                    </Pressable>
+                  </View>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="phone-pad"
+                    value={contactNumber2}
+                    onChangeText={setContactNumber2}
+                    placeholder="09481234567"
+                    placeholderTextColor="#A8A29E"
+                  />
+                </View>
+              )}
             </View>
 
             {/* Source Pills */}
@@ -1097,6 +1185,7 @@ export default function EditOrderModal({
             )}
             <FreebiesSelector
               wholePigCount={wholeLechonCount}
+              noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
               config={freebiesConfig}
               onChange={handleFreebiesChange}
             />
@@ -1416,6 +1505,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#44403C',
+  },
+  contactLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  addContactButton: {
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  addContactButtonText: {
+    color: '#92400E',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  secondaryContactWrap: {
+    gap: 6,
+    marginTop: 4,
+  },
+  removeContactButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FDA4AF',
+  },
+  removeContactButtonText: {
+    color: '#BE123C',
+    fontSize: 12,
+    fontWeight: '900',
   },
   textInput: {
     backgroundColor: '#FAFAF9',

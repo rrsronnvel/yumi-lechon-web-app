@@ -16,9 +16,10 @@ public class CustomerService : ICustomerService
 
     public static string NormalizePhoneNumber(string? phone)
     {
-        if (string.IsNullOrWhiteSpace(phone)) return string.Empty;
+        var primaryPhone = ExtractPrimaryContactNumber(phone);
+        if (string.IsNullOrWhiteSpace(primaryPhone)) return string.Empty;
 
-        var cleaned = phone.Trim()
+        var cleaned = primaryPhone
             .Replace("-", string.Empty)
             .Replace(" ", string.Empty)
             .Replace("(", string.Empty)
@@ -32,12 +33,19 @@ public class CustomerService : ICustomerService
         return cleaned.Length > 20 ? cleaned.Substring(0, 20) : cleaned;
     }
 
+    public static string ExtractPrimaryContactNumber(string? contactNumber)
+    {
+        return string.IsNullOrWhiteSpace(contactNumber)
+            ? string.Empty
+            : contactNumber.Split(',', 2)[0].Trim();
+    }
+
     public async Task<CustomerProfileDto?> LookupCustomerAsync(string? phone, string? fbName)
     {
         var normalizedPhone = NormalizePhoneNumber(phone);
         var digitCount = normalizedPhone.Count(char.IsDigit);
         var trimmedFb = string.IsNullOrWhiteSpace(fbName) ? null : fbName.Trim();
-        var rawTrimmedPhone = phone?.Trim() ?? string.Empty;
+        var rawTrimmedPhone = ExtractPrimaryContactNumber(phone);
         var fbLower = trimmedFb?.ToLower();
 
         if (digitCount < 7 && (string.IsNullOrWhiteSpace(trimmedFb) || trimmedFb.Length < 3))
@@ -53,7 +61,7 @@ public class CustomerService : ICustomerService
                 .ThenInclude(oi => oi.ItemCategory)
             .Where(o => !o.IsCancelled &&
                 (o.IsDraft || (o.TargetDeliveryTime >= activeFrom && o.TargetDeliveryTime <= activeTo)) &&
-                ((digitCount >= 7 && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawTrimmedPhone)) ||
+                ((digitCount >= 7 && (o.ContactNumber.Contains(normalizedPhone) || o.ContactNumber.Contains(rawTrimmedPhone))) ||
                  (fbLower != null &&
                     ((o.FacebookName != null && o.FacebookName.ToLower() == fbLower) ||
                      o.CustomerName.ToLower() == fbLower))))
@@ -111,7 +119,7 @@ public class CustomerService : ICustomerService
             var historicalOrders = await _context.Orders
                 .AsNoTracking()
                 .Where(o => !o.IsCancelled && (
-                    (digitCount >= 7 && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawTrimmedPhone)) ||
+                    (digitCount >= 7 && (o.ContactNumber.Contains(normalizedPhone) || o.ContactNumber.Contains(rawTrimmedPhone))) ||
                     (fbLower != null &&
                         ((o.FacebookName != null && o.FacebookName.ToLower() == fbLower) ||
                          o.CustomerName.ToLower() == fbLower))
@@ -230,7 +238,7 @@ public class CustomerService : ICustomerService
         UpdateCustomerNotesRequest request)
     {
         var normalizedPhone = NormalizePhoneNumber(phone);
-        var rawTrimmedPhone = phone.Trim();
+        var rawTrimmedPhone = ExtractPrimaryContactNumber(phone);
 
         var profile = await _context.CustomerProfiles
             .FirstOrDefaultAsync(c => c.ContactNumber == normalizedPhone || c.ContactNumber == rawTrimmedPhone);
@@ -247,7 +255,9 @@ public class CustomerService : ICustomerService
         {
             var historicalOrders = await _context.Orders
                 .AsNoTracking()
-                .Where(o => !o.IsCancelled && (o.ContactNumber == normalizedPhone || o.ContactNumber == rawTrimmedPhone))
+                .Where(o => !o.IsCancelled &&
+                    ((!string.IsNullOrEmpty(normalizedPhone) && o.ContactNumber.Contains(normalizedPhone)) ||
+                     (!string.IsNullOrEmpty(rawTrimmedPhone) && o.ContactNumber.Contains(rawTrimmedPhone))))
                 .OrderByDescending(o => o.CreatedAt)
                 .ToListAsync();
 

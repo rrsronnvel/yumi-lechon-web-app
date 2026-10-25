@@ -10,6 +10,7 @@ public class DailySheetItemDto
     public string OrderReference { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
+    public string ContactNumber { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string? EventType { get; set; }
     public string? Landmark { get; set; }

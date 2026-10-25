@@ -347,7 +347,18 @@ export const generateDefrostRosterMessage = (
   const wholeLechonLines: string[] = [];
   const bellyLines: string[] = [];
 
+  const nonCarcassPattern = /\b(?:sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke)\b/i;
+
   for (const item of rosterItems || []) {
+    const categoryLabel = [item.categoryName, item.weightCategory, item.weightRange]
+      .filter(Boolean)
+      .join(" ");
+    if (
+      (item.minimumWeightKg !== undefined && item.minimumWeightKg <= 0) ||
+      nonCarcassPattern.test(categoryLabel)
+    ) {
+      continue;
+    }
     const qty = Math.max(1, Number(item.quantity) || 1);
     const nameLabel = (
       item.categoryName ||

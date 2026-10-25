@@ -94,11 +94,24 @@ export default function FloorActionView({
   } = usePendingConfirmationsQuery();
 
   const {
-    data: defrostRoster = [],
+    data: rawDefrostRoster = [],
     isLoading: isRosterLoading,
     isError: isRosterError,
     refetch: refetchRoster,
   } = useDefrostRosterQuery();
+
+  const defrostRoster = rawDefrostRoster.filter((item) => {
+    const categoryName = `${item.categoryName || ''} ${
+      item.weightCategory || ''
+    }`.toLowerCase();
+    const hasNonPositiveWeight =
+      item.minimumWeightKg !== undefined && item.minimumWeightKg <= 0;
+    const isKnownAddOn =
+      /sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke/i.test(
+        categoryName
+      );
+    return !hasNonPositiveWeight && !isKnownAddOn;
+  });
 
   const {
     data: ownerConfirmations = [],
@@ -171,8 +184,8 @@ export default function FloorActionView({
     Alert.alert('Copied!', 'Defrost list copied for Messenger!');
   };
 
-  const handleCallCustomer = (contactNumber: string) => {
-    const cleanPhone = (contactNumber || '').replace(/[^\d+]/g, '');
+  const dialCustomerNumber = (phone: string) => {
+    const cleanPhone = phone.replace(/[^\d+]/g, '');
     if (!cleanPhone) {
       Alert.alert('No Phone Number', 'No contact number is on file for this customer.');
       return;
@@ -180,6 +193,35 @@ export default function FloorActionView({
     Linking.openURL(`tel:${cleanPhone}`).catch(() => {
       Alert.alert('Dialer Error', `Could not launch phone dialer for ${cleanPhone}.`);
     });
+  };
+
+  const handleCallCustomer = (contactNumber: string) => {
+    const phones = (contactNumber || '')
+      .split(',')
+      .map((phone) => phone.trim())
+      .filter(Boolean);
+
+    if (phones.length === 0) {
+      Alert.alert('No Phone Number', 'No contact number is on file for this customer.');
+      return;
+    }
+
+    if (phones.length > 1) {
+      Alert.alert('Select Number to Dial', 'Choose the customer contact number.', [
+        {
+          text: `📞 CP #1 (${phones[0]})`,
+          onPress: () => dialCustomerNumber(phones[0]),
+        },
+        {
+          text: `📞 CP #2 (${phones[1]})`,
+          onPress: () => dialCustomerNumber(phones[1]),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+
+    dialCustomerNumber(phones[0]);
   };
 
   const totalHeads = defrostRoster.reduce((sum, item) => sum + (item.quantity || 1), 0);

@@ -47,11 +47,19 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading roasting schedule...</div>;
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load roasting schedule.</div>;
-  if (!scheduleItems || scheduleItems.length === 0)
+  // Carcass Bouncer: Strictly Whole Lechon & Lechon Belly (MinimumWeightKg > 0, excludes lightweight add-ons)
+  const carcassRoster = (scheduleItems || []).filter((item) => {
+    const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
+    const name = (item.size || item.categoryName || "").toLowerCase();
+    const isNonCarcass = /(sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke|1\.5\s*l)/i.test(name);
+    return minW > 0 && !isNonCarcass;
+  });
+
+  if (carcassRoster.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No orders scheduled for the selected date.</div>;
 
   // Dynamic Chronological Priority Sorting by Tahi Time
-  const sortedRoster = [...scheduleItems].sort((a, b) => {
+  const sortedRoster = [...carcassRoster].sort((a, b) => {
     const timeA = a.tahiStartTime ? new Date(a.tahiStartTime).getTime() : 0;
     const timeB = b.tahiStartTime ? new Date(b.tahiStartTime).getTime() : 0;
     return timeA - timeB;

@@ -8,6 +8,7 @@ export type { ItemCategory, ParsedOrderDraftDto };
 export interface DeliveryPricingDto {
   baseFare: number;
   ratePerKm: number;
+  noFreebiesDiscountPerPig: number;
 }
 
 export interface InventoryBalanceDto {

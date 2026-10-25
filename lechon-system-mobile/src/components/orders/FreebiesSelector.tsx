@@ -10,12 +10,14 @@ import {
 
 interface FreebiesSelectorProps {
   wholePigCount: number;
+  noFreebiesDiscountPerPig?: number;
   config: FreebiesConfig;
   onChange: (config: FreebiesConfig) => void;
 }
 
 export default function FreebiesSelector({
   wholePigCount,
+  noFreebiesDiscountPerPig = 2000,
   config,
   onChange,
 }: FreebiesSelectorProps) {
@@ -99,7 +101,8 @@ export default function FreebiesSelector({
               normalized.optOut && styles.optOutActiveText,
             ]}
           >
-            🚫 No Freebies (-₱{(2000 * wholePigCount).toLocaleString()})
+            🚫 No Freebies (-₱
+            {(noFreebiesDiscountPerPig * wholePigCount).toLocaleString()})
           </Text>
         </Pressable>
       </View>
