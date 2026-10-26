@@ -13,7 +13,7 @@ public interface IOrderService
     Task<bool> ConfirmDeliveryDetailsAsync(int orderId);
     Task<bool> ConfirmOrderByOwnerAsync(int orderId, string ownerUsername);
     Task<bool> CancelOrderAsync(int orderId, string reason = "Cancelled by dispatcher");
-    Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab);
+    Task<List<OrderDirectoryDto>> GetOrderDirectoryAsync(string? searchTerm, string? filterTab, DateTime? date = null);
     Task UpdateOrderAsync(int id, UpdateOrderDto request);
     Task<Order?> GetOrderByIdAsync(int orderId);
     Task<OrderDetailsDto?> GetOrderDetailsAsync(int orderId);

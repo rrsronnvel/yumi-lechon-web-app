@@ -14,6 +14,7 @@ public class Order : BaseEntity
     public string? EventType { get; set; }
 
     public bool IsDraft { get; set; } = false;
+    public bool IsTimeTbd { get; set; } = false;
 
     // THE MISSING FIELDS:
     public string? DeliveryAddress { get; set; }

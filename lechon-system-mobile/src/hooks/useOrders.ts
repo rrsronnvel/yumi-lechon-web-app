@@ -5,6 +5,7 @@ export interface OrderDirectoryDto {
   id: number;
   orderReference?: string;
   isDraft?: boolean;
+  isTimeTbd?: boolean;
   customerName: string;
   facebookName?: string | null;
   contactNumber: string;
@@ -17,6 +18,8 @@ export interface OrderDirectoryDto {
   routingStatus: string; // "Unassigned", "Assigned", "Delivered"
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  itemsCount?: number;
+  hasRoastItems?: boolean;
   grandTotal: number;
   downpayment: number;
   downpaymentMethod: string;
@@ -65,6 +68,7 @@ export interface OrderDetailsDto {
   id: number;
   orderReference?: string;
   isDraft?: boolean;
+  isTimeTbd?: boolean;
   customerName: string;
   facebookName?: string | null;
   contactNumber: string;
@@ -144,15 +148,17 @@ export interface CancelOrderPayload {
 
 export const useOrdersDirectory = (
   searchTerm: string = '',
-  filterTab: string = 'upcoming'
+  filterTab: string = 'upcoming',
+  selectedDate: string = ''
 ) => {
   return useQuery<OrderDirectoryDto[]>({
-    queryKey: ['orders', 'directory', { searchTerm, filterTab }],
+    queryKey: ['orders', 'directory', { searchTerm, filterTab, selectedDate }],
     queryFn: async () => {
       const response = await apiClient.get<OrderDirectoryDto[]>('/orders/directory', {
         params: {
           searchTerm: searchTerm.trim() || undefined,
           filterTab: filterTab || undefined,
+          date: selectedDate || undefined,
         },
       });
       return response.data;

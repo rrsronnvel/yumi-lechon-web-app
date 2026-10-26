@@ -106,6 +106,11 @@ using (var scope = app.Services.CreateScope())
         WHERE oi.Price = 0 AND o.IsCancelled = 0 AND o.TargetDeliveryTime >= CAST(GETDATE() AS DATE);
     ");
 
+    var retiredTestRiderNames = new[] { "Kuya AL", "Kuya Berto", "Kuya Jun" };
+    await context.Riders
+        .Where(rider => retiredTestRiderNames.Contains(rider.FullName) && rider.IsActive)
+        .ExecuteUpdateAsync(updates => updates.SetProperty(rider => rider.IsActive, false));
+
     // QA Test Data Seeder
     if (app.Environment.IsDevelopment())
     {

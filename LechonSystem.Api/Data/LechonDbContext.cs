@@ -71,7 +71,8 @@ public class LechonDbContext : DbContext
             new ItemCategory { Id = 17, Name = "Palabok", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
             new ItemCategory { Id = 18, Name = "Spaghetti", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
             new ItemCategory { Id = 19, Name = "Dinuguan", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
-            new ItemCategory { Id = 20, Name = "Puto", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate }
+            new ItemCategory { Id = 20, Name = "Puto", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 50.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate },
+            new ItemCategory { Id = 21, Name = "Raw Innards (Lamang-Loob)", MinimumWeightKg = 0.0m, MaximumWeightKg = 0.0m, BasePrice = 300.00m, MinimumSafetyStock = 0, IsActive = true, CreatedAt = seedDate }
         );
 
         // 2. Seed Product Cooking Profiles with explicitly pinned CreatedAt times
@@ -94,11 +95,20 @@ public class LechonDbContext : DbContext
             new ProductCookingProfile { Id = 13, ItemCategoryId = 13, Name = "Belly 5kg Profile", Description = "Belly 5kg duration metrics", TahiDurationMinutes = 30, SalangDurationMinutes = 135, PackagingDurationMinutes = 15, CreatedAt = seedDate }
         );
 
-        // 3. Seed Regular Freelance Riders
+        // 3. Seed Authentic Outsourced Delivery Riders
         modelBuilder.Entity<Rider>().HasData(
-            new Rider { Id = 1, FullName = "Kuya Berto", PhoneNumber = "09171234567", IsActive = true, CreatedAt = seedDate },
-            new Rider { Id = 2, FullName = "Kuya Jun", PhoneNumber = "09182345678", IsActive = true, CreatedAt = seedDate },
-            new Rider { Id = 3, FullName = "Kuya AL", PhoneNumber = "09193456789", IsActive = true, CreatedAt = seedDate }
+            new Rider { Id = 1, FullName = "Aaron", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 2, FullName = "AL", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 3, FullName = "Francis", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 4, FullName = "Joener", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 5, FullName = "Randy", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 6, FullName = "Rhoge", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 7, FullName = "Vhenz", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 8, FullName = "Macky", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 9, FullName = "Ranzel", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 10, FullName = "Bhek", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 11, FullName = "Adriane", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate },
+            new Rider { Id = 12, FullName = "Lerry", PhoneNumber = string.Empty, IsActive = true, CreatedAt = seedDate }
         );
 
         // 4. Seed Initial User Accounts

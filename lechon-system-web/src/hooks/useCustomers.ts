@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { useDebounce } from "@/hooks/useDebounce";
+import { isPlaceholderPhone } from "@/utils/similarityHelper";
 
 export interface CustomerProfileDto {
   id: number;
@@ -20,6 +21,10 @@ export interface CustomerProfileDto {
 export interface ActiveCustomerOrderSummaryDto {
   orderId: number;
   orderReference: string;
+  customerName?: string;
+  facebookName?: string | null;
+  contactNumber?: string | null;
+  deliveryAddress?: string | null;
   targetDeliveryTime?: string | null;
   grandTotal: number;
   itemsSummary: string;
@@ -42,16 +47,18 @@ export const useCustomerLookup = (phone: string, fbName?: string) => {
   const debouncedFbName = useDebounce((fbName || "").trim(), 300);
 
   const digitCount = debouncedPhone.replace(/\D/g, "").length;
-  const shouldFetch = digitCount >= 7 || debouncedFbName.length >= 3;
+  const isPlaceholder = isPlaceholderPhone(debouncedPhone);
+  const hasValidPhone = digitCount >= 7 && !isPlaceholder;
+  const shouldFetch = hasValidPhone || debouncedFbName.length >= 3;
 
   return useQuery<CustomerProfileDto | null>({
-    queryKey: ["customers", "lookup", debouncedPhone, debouncedFbName],
+    queryKey: ["customers", "lookup", hasValidPhone ? debouncedPhone : "", debouncedFbName],
     queryFn: async () => {
       const response = await apiClient.get<CustomerProfileDto | null>(
         "/customers/lookup",
         {
           params: {
-            phone: digitCount >= 7 ? debouncedPhone : undefined,
+            phone: hasValidPhone ? debouncedPhone : undefined,
             fbName: debouncedFbName.length >= 3 ? debouncedFbName : undefined,
           },
         }

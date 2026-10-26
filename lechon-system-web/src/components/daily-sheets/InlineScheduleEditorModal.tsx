@@ -106,7 +106,6 @@ export function InlineScheduleEditorModal({
 
   const [tahiTime, setTahiTime] = useState("");
   const [salangTime, setSalangTime] = useState("");
-  const [packagingTime, setPackagingTime] = useState("");
   const [departureTime, setDepartureTime] = useState("");
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
@@ -118,7 +117,6 @@ export function InlineScheduleEditorModal({
     if (item && open) {
       setTahiTime(formatToHHMM(item.tahiStartTime));
       setSalangTime(formatToHHMM(item.salangStartTime));
-      setPackagingTime(formatToHHMM(item.packagingStartTime));
       setDepartureTime(
         formatToHHMM(item.riderDepartureTime ?? item.targetDeliveryTime)
       );
@@ -153,7 +151,6 @@ export function InlineScheduleEditorModal({
         orderItemId: targetId,
         tahiStartTime: buildIsoTime(refDate, tahiTime),
         salangStartTime: buildIsoTime(refDate, salangTime),
-        packagingStartTime: buildIsoTime(refDate, packagingTime),
         riderDepartureTime: formattedDeparture,
         departureTime: formattedDeparture,
         riderName: riderName.trim() || undefined,
@@ -246,7 +243,7 @@ export function InlineScheduleEditorModal({
 
         {/* Form Inputs */}
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="tahiTime" className="text-xs font-semibold text-slate-700">
                 Tahi Time
@@ -269,19 +266,6 @@ export function InlineScheduleEditorModal({
                 type="time"
                 value={salangTime}
                 onChange={(e) => setSalangTime(e.target.value)}
-                className="font-mono text-sm"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="packagingTime" className="text-xs font-semibold text-slate-700">
-                Packaging Time
-              </Label>
-              <Input
-                id="packagingTime"
-                type="time"
-                value={packagingTime}
-                onChange={(e) => setPackagingTime(e.target.value)}
                 className="font-mono text-sm"
               />
             </div>

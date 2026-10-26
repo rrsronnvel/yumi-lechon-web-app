@@ -4,6 +4,7 @@ import { z } from "zod";
 export const orderFormSchema = z
   .object({
     isDraft: z.boolean().default(false),
+    isTimeTbd: z.boolean().default(false),
     customerName: z.string().default(""),
     customerPhone: z.string().default(""),
     customerPhone2: z.string().optional().default(""),

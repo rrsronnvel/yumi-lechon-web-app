@@ -54,6 +54,7 @@ import { useDeliveryPricing } from "@/hooks/useCms";
 import {
   formatFreebiesSummary,
   parseFreebiesConfig,
+  sanitizeFreebiesSummary,
 } from "@/utils/freebiesHelper";
 import {
   AlertDialog,
@@ -72,6 +73,17 @@ const PRESET_CANCEL_REASONS = [
   "Duplicate Entry",
 ];
 
+const formatLocalDate = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const shiftDate = (date: string, days: number) => {
+  const anchor = date ? new Date(`${date}T12:00:00`) : new Date();
+  anchor.setDate(anchor.getDate() + days);
+  return formatLocalDate(anchor);
+};
+
 export default function OrdersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -81,11 +93,13 @@ export default function OrdersPage() {
   const [filterTab, setFilterTab] = useState("upcoming");
   const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [rawSearch, setRawSearch] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
   const debouncedSearch = useDebounce(rawSearch, 300);
 
   const { data: orders, isLoading } = useOrdersDirectory(
     debouncedSearch,
-    filterTab
+    filterTab,
+    selectedDate,
   );
 
   const { data: draftOrders } = useOrdersDirectory("", "drafts");
@@ -216,7 +230,7 @@ export default function OrdersPage() {
   const orderDetails = data as any;
   const displayedFreebiesSummary = useMemo(() => {
     if (!orderDetails?.freebiesConfigJson) {
-      return orderDetails?.freebiesSummary || null;
+      return sanitizeFreebiesSummary(orderDetails?.freebiesSummary);
     }
 
     const wholePigCount = (orderDetails.orderItems || []).reduce(
@@ -226,14 +240,14 @@ export default function OrdersPage() {
           : total,
       0,
     );
-    if (wholePigCount <= 0) return orderDetails.freebiesSummary || null;
+    if (wholePigCount <= 0) return sanitizeFreebiesSummary(orderDetails.freebiesSummary);
 
-    return (
+    return sanitizeFreebiesSummary(
       formatFreebiesSummary(
         parseFreebiesConfig(orderDetails.freebiesConfigJson, wholePigCount),
         wholePigCount,
         deliveryPricing?.noFreebiesDiscountPerPig ?? 2000,
-      ) || orderDetails.freebiesSummary || null
+      ) || orderDetails.freebiesSummary,
     );
   }, [orderDetails, deliveryPricing?.noFreebiesDiscountPerPig]);
 
@@ -442,9 +456,15 @@ export default function OrdersPage() {
             </span>
           )}
         </div>
-        <div className="text-xs font-medium text-slate-700">
-          {formattedTime}
-        </div>
+        {order.isTimeTbd ? (
+          <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px]">
+            🕒 Time TBD
+          </Badge>
+        ) : (
+          <div className="text-xs font-medium text-slate-700">
+            {formattedTime}
+          </div>
+        )}
       </div>
     );
   };
@@ -531,9 +551,14 @@ export default function OrdersPage() {
       return (
         <Badge
           variant="outline"
-          className="bg-purple-100 text-purple-800 border-purple-300 font-medium"
+          className={cn(
+            "font-medium",
+            order.targetDeliveryTime
+              ? "bg-amber-100 text-amber-900 border-amber-300"
+              : "bg-purple-100 text-purple-800 border-purple-300",
+          )}
         >
-          📝 Incomplete Draft
+          ⚠️ Incomplete Draft
         </Badge>
       );
     }
@@ -640,7 +665,12 @@ export default function OrdersPage() {
               displayedOrders.map((order: OrderDirectoryDto) => (
                 <TableRow
                   key={order.id}
-                  className="cursor-pointer hover:bg-amber-50/40 transition-colors border-b border-stone-100"
+                  className={cn(
+                    "cursor-pointer transition-colors border-b border-stone-100",
+                    order.isDraft && order.targetDeliveryTime
+                      ? "bg-amber-50/70 hover:bg-amber-100/60 border-l-4 border-l-amber-500"
+                      : "hover:bg-amber-50/40",
+                  )}
                   onClick={() => handleRowClick(order)}
                 >
                   {/* Order Column */}
@@ -715,6 +745,25 @@ export default function OrdersPage() {
                   <TableCell>
                     <div className="flex flex-col items-start gap-1.5">
                       {renderStatus(order)}
+                      {order.isDraft && order.targetDeliveryTime && (
+                        <div className="flex flex-wrap gap-1">
+                          {order.isTimeTbd && (
+                            <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900">
+                              ⚠️ Time TBD
+                            </span>
+                          )}
+                          {Number(order.fulfillment) === 1 && !order.deliveryAddress?.trim() && (
+                            <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900">
+                              ⚠️ Venue TBD
+                            </span>
+                          )}
+                          {(order.itemsCount ?? 0) === 0 && (
+                            <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900">
+                              ⚠️ Size TBD
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {isOwner && !order.isOwnerConfirmed && !order.isDraft && (
                         <Button
                           type="button"
@@ -773,15 +822,31 @@ export default function OrdersPage() {
         </Dialog>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
-        <Input
-          placeholder="Search by customer name, FB name, phone, or #OrderRef..."
-          value={rawSearch}
-          onChange={(e) => setRawSearch(e.target.value)}
-          className="bg-white pl-9 h-10 border-stone-300"
-        />
+      {/* Search + Master Date Filter */}
+      <div className="flex flex-col xl:flex-row xl:items-center gap-2">
+        <div className="relative w-full xl:max-w-md">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
+          <Input
+            placeholder="Search by customer name, FB name, phone, or #OrderRef..."
+            value={rawSearch}
+            onChange={(e) => setRawSearch(e.target.value)}
+            className="bg-white pl-9 h-10 border-stone-300"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-stone-200 bg-white p-1.5 shadow-xs">
+          <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))} aria-label="Previous day">
+            &lt;
+          </Button>
+          <Input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="h-8 w-[155px] border-stone-300 text-xs" aria-label="Select order date" />
+          <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} aria-label="Next day">
+            &gt;
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedDate(formatLocalDate(new Date()))}>Today</Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedDate(shiftDate(formatLocalDate(new Date()), 1))}>Tomorrow</Button>
+          {selectedDate && (
+            <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-rose-700" onClick={() => setSelectedDate("")}>✕ Clear</Button>
+          )}
+        </div>
       </div>
 
       {/* 6-Tab Switch Slicing */}

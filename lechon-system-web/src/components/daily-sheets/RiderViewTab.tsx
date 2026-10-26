@@ -8,6 +8,7 @@ import {
   generateDispatchNotification,
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
+import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
 
 interface RiderViewTabProps {
   mode?: "edit" | "clean";
@@ -196,6 +197,7 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
           {/* Table Body */}
           <tbody className="divide-y divide-slate-300 bg-white">
             {sortedByDelivery.map((item) => {
+              const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
               const price = Number(item.price) || 0;
               const addOns = Number(item.addOns) || 0;
               const deliveryFee = Number(item.deliveryFee) || 0;
@@ -333,22 +335,22 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
                   <td
                     onClick={() => handleCellClick(item)}
                     className={`px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words ${editableCellClass}`}
-                    title={[item.freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
+                    title={[freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
                   >
                     <div className="flex items-start justify-between gap-1">
                       <div className="space-y-1">
-                        {item.freebiesSummary && (
+                        {freebiesSummary && (
                           <span
                             className={`inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
-                              item.freebiesSummary === "🚫 No Freebies"
+                              freebiesSummary === "🚫 No Freebies"
                                 ? "bg-rose-100 text-rose-800 border-rose-300"
-                                : item.freebiesSummary.includes("Raw Innards") ||
-                                    item.freebiesSummary.includes(":")
+                                : freebiesSummary.includes("Raw Innards") ||
+                                    freebiesSummary.includes(":")
                                   ? "bg-amber-100 text-amber-900 border-amber-300"
                                   : "bg-emerald-100 text-emerald-800 border-emerald-300"
                             }`}
                           >
-                            {item.freebiesSummary}
+                            {freebiesSummary}
                           </span>
                         )}
                         <span className="block break-words">{item.remarks || "-"}</span>

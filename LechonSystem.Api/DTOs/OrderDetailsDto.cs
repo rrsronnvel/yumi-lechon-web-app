@@ -8,6 +8,7 @@ public class OrderDetailsDto
     public int Id { get; set; }
     public string OrderReference { get; set; } = string.Empty;
     public bool IsDraft { get; set; } = false;
+    public bool IsTimeTbd { get; set; } = false;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
     public string ContactNumber { get; set; } = string.Empty;

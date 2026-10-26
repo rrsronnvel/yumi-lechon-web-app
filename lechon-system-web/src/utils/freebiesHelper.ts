@@ -17,6 +17,21 @@ export interface FreebiesConfig {
   counts: Record<string, number>;
 }
 
+export const sanitizeFreebiesSummary = (
+  text?: string | null,
+): string | null => {
+  if (!text) return null;
+  return text
+    .replace(/Ã°Å¸Å½\s*:?/g, "🎁 ")
+    .replace(/ðŸŽ\s*:?/g, "🎁 ")
+    .replace(/Ã°Å¸Å¡Â«/g, "🚫")
+    .replace(/ðŸš«/g, "🚫")
+    .replace(/Ã°Å¸Â¥Â©/g, "🥩")
+    .replace(/ðŸ¥©/g, "🥩")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 const createCounts = (wholePigCount: number): Record<string, number> => {
   const perItemCount = Math.max(0, Math.floor(wholePigCount));
   return Object.fromEntries(

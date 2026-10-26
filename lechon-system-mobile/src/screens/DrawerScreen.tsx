@@ -28,8 +28,6 @@ import {
   useDirectGcashSettlementMutation,
   useReleaseLalamoveMutation,
   useSettleManualPaymentMutation,
-  PendingSettlementDrop,
-  PendingPickupSettlement,
   PendingLalamoveSettlement,
 } from '../hooks/useManifest';
 
@@ -130,7 +128,7 @@ export default function DrawerScreen() {
     let uncollSum = 0;
     let uncollCnt = 0;
 
-    const combined: Array<{
+    const combined: {
       key: string;
       sourceType: 'Rider Delivery' | 'Walk-in Pickup';
       orderId: number;
@@ -141,7 +139,7 @@ export default function DrawerScreen() {
       riderSignedBy?: string | null;
       heldByStaffName: string;
       heldPaymentMethod?: string | null;
-    }> = [];
+    }[] = [];
 
     for (const r of riderDrops) {
       const amt = Number(r.netRemittance || 0);

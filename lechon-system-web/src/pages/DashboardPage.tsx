@@ -17,6 +17,7 @@ import { useOrderDetails } from "@/hooks/useOrderDetails";
 import { useLogPayment } from "@/hooks/useLogPayment";
 import { useInventoryBalances } from "@/hooks/useInventory";
 import { useMenuCategories } from "@/hooks/useCms";
+import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -633,19 +634,19 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <div className="text-xs text-stone-700">{item.itemsSummary}</div>
-                  {item.freebiesSummary && (
+                  {sanitizeFreebiesSummary(item.freebiesSummary) && (
                     <Badge
                       variant="outline"
                       className={`text-[10px] font-semibold ${
-                        item.freebiesSummary === "🚫 No Freebies"
+                        sanitizeFreebiesSummary(item.freebiesSummary) === "🚫 No Freebies"
                           ? "bg-rose-100 text-rose-800 border-rose-300"
-                          : item.freebiesSummary.includes("Raw Innards") ||
-                              item.freebiesSummary.includes(":")
+                          : sanitizeFreebiesSummary(item.freebiesSummary)?.includes("Raw Innards") ||
+                              sanitizeFreebiesSummary(item.freebiesSummary)?.includes(":")
                             ? "bg-amber-100 text-amber-900 border-amber-300"
                             : "bg-emerald-100 text-emerald-800 border-emerald-300"
                       }`}
                     >
-                      {item.freebiesSummary}
+                      {sanitizeFreebiesSummary(item.freebiesSummary)}
                     </Badge>
                   )}
                   <div className="grid grid-cols-2 gap-2 text-xs">

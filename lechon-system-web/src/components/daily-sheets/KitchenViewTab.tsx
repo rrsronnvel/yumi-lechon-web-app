@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRoastingRoster, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
 import { Pencil } from "lucide-react";
+import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
 
 interface KitchenViewTabProps {
   mode?: "edit" | "clean";
@@ -88,12 +89,11 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
             <col className="w-[4.5%]" />              {/* 6. Weight */}
             <col className="w-[7%]" />                {/* 7. Departure / Pickup */}
             <col className="w-[8.5%]" />              {/* 8. Customer Name */}
-            <col className="w-[5.5%]" />              {/* 9. Packaging Time */}
-            <col className="w-[15%]" />               {/* 10. Remarks (Expanded) */}
-            <col className="w-[15%]" />               {/* 11. Location (Expanded) */}
-            <col className="w-[4%]" />                {/* 12. Add-ons */}
-            <col className="w-[5.5%]" />              {/* 13. Delivery Time */}
-            <col className="w-[6.5%]" />              {/* 14. Rider Name */}
+            <col className="w-[18%]" />               {/* 9. Remarks (Expanded) */}
+            <col className="w-[18%]" />               {/* 10. Location (Expanded) */}
+            <col className="w-[4%]" />                {/* 11. Add-ons */}
+            <col className="w-[5.5%]" />              {/* 12. Delivery Time */}
+            <col className="w-[6.5%]" />              {/* 13. Rider Name */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}
@@ -107,7 +107,6 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-amber-950 text-amber-300">Departure / Pickup</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Packaging</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Remarks</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Location</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Add-ons</th>
@@ -122,6 +121,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
               const editableCellClass = isEdit
                 ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
                 : "";
+              const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
 
               return (
                 <tr
@@ -209,40 +209,26 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                     {item.customerName || "-"}
                   </td>
 
-                  {/* 9. Packaging Time */}
-                  <td
-                    onClick={() => handleCellClick(item)}
-                    className={`px-1.5 py-2 text-center font-medium text-slate-700 border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
-                    title={isEdit ? "Click to override production timings" : undefined}
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>{formatTime(item.packagingStartTime)}</span>
-                      {isEdit && (
-                        <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
-                      )}
-                    </div>
-                  </td>
-
-                  {/* 10. Remarks (Wrap naturally without truncation!) */}
+                  {/* 9. Remarks (Wrap naturally without truncation!) */}
                   <td
                     onClick={() => handleCellClick(item)}
                     className={`px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words ${editableCellClass}`}
-                    title={[item.freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
+                    title={[freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
                   >
                     <div className="flex items-start justify-between gap-1">
                       <div className="space-y-1">
-                        {item.freebiesSummary && (
+                        {freebiesSummary && (
                           <span
                             className={`inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
-                              item.freebiesSummary === "🚫 No Freebies"
+                              freebiesSummary === "🚫 No Freebies"
                                 ? "bg-rose-100 text-rose-800 border-rose-300"
-                                : item.freebiesSummary.includes("Raw Innards") ||
-                                    item.freebiesSummary.includes(":")
+                                : freebiesSummary.includes("Raw Innards") ||
+                                    freebiesSummary.includes(":")
                                   ? "bg-amber-100 text-amber-900 border-amber-300"
                                   : "bg-emerald-100 text-emerald-800 border-emerald-300"
                             }`}
                           >
-                            {item.freebiesSummary}
+                            {freebiesSummary}
                           </span>
                         )}
                         <span className="block break-words">{item.remarks || "-"}</span>
@@ -253,7 +239,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                     </div>
                   </td>
 
-                  {/* 11. Location (Wrap naturally without truncation!) */}
+                  {/* 10. Location (Wrap naturally without truncation!) */}
                   <td
                     className="px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words"
                     title={item.location || undefined}
@@ -266,17 +252,17 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                     )}
                   </td>
 
-                  {/* 12. Add-ons */}
+                  {/* 11. Add-ons */}
                   <td className="px-1.5 py-2 text-center text-slate-700 border-r border-slate-300 text-[11px] font-medium break-words">
                     {item.addOns || "-"}
                   </td>
 
-                  {/* 13. Delivery Time */}
+                  {/* 12. Delivery Time */}
                   <td className="px-1.5 py-2 text-center font-bold text-slate-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
                     {formatTime(item.targetDeliveryTime)}
                   </td>
 
-                  {/* 14. Rider Name */}
+                  {/* 13. Rider Name */}
                   <td
                     onClick={() => handleCellClick(item)}
                     className={`px-1.5 py-2 text-center text-[11px] font-bold ${editableCellClass}`}
@@ -313,7 +299,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                 <span className="mx-2 text-slate-400">|</span>
                 First Salang: <span className="text-black font-black">{formatTime(sortedRoster[0]?.salangStartTime)}</span>
               </td>
-              <td colSpan={4} className="px-3 py-2 text-right font-black uppercase text-slate-700">
+              <td colSpan={3} className="px-3 py-2 text-right font-black uppercase text-slate-700">
                 YUMI LECHON KITCHEN
               </td>
             </tr>

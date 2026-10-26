@@ -57,6 +57,17 @@ const isSameLocalDay = (dateA: Date, dateB: Date): boolean => {
   );
 };
 
+const formatLocalDate = (date: Date): string => {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const shiftDate = (date: string, days: number): string => {
+  const anchor = date ? new Date(`${date}T12:00:00`) : new Date();
+  anchor.setDate(anchor.getDate() + days);
+  return formatLocalDate(anchor);
+};
+
 interface OrdersScreenProps {
   alertsActive: boolean;
   usesInAppFallback: boolean;
@@ -73,6 +84,7 @@ export default function OrdersScreen({
   const [rawSearch, setRawSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activePill, setActivePill] = useState<SmartPillKey>('upcoming');
+  const [selectedDate, setSelectedDate] = useState('');
   const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
   const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(null);
 
@@ -104,6 +116,9 @@ export default function OrdersScreen({
     const found = FILTER_PILLS.find((p) => p.key === activePill);
     return found ? found.serverTab : 'upcoming';
   }, [activePill]);
+  const activeDateFilter = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+    ? selectedDate
+    : '';
 
   const {
     data: rawOrders,
@@ -111,7 +126,7 @@ export default function OrdersScreen({
     isRefetching,
     isError,
     refetch,
-  } = useOrdersDirectory(debouncedSearch, currentServerTab);
+  } = useOrdersDirectory(debouncedSearch, currentServerTab, activeDateFilter);
 
   // Dynamic custody counts for balance-due sub-pills
   const custodyCounts = useMemo(() => {
@@ -256,9 +271,10 @@ export default function OrdersScreen({
 
   const renderRoutingBadge = (order: OrderDirectoryDto) => {
     if (order.isDraft) {
+      const isDatedDraft = Boolean(order.targetDeliveryTime);
       return (
-        <View style={[styles.routingBadge, styles.routingDraft]}>
-          <Text style={styles.routingDraftText}>📝 Incomplete Draft</Text>
+        <View style={[styles.routingBadge, isDatedDraft ? styles.routingDatedDraft : styles.routingDraft]}>
+          <Text style={isDatedDraft ? styles.routingDatedDraftText : styles.routingDraftText}>⚠️ Incomplete Draft</Text>
         </View>
       );
     }
@@ -338,6 +354,7 @@ export default function OrdersScreen({
     const balanceDue = Number(item.balanceDue || 0);
     const isPaid = balanceDue <= 0;
     const isDraft = Boolean(item.isDraft);
+    const isDatedDraft = isDraft && Boolean(item.targetDeliveryTime);
     const phones = (item.contactNumber || '')
       .split(',')
       .map((phone) => phone.trim())
@@ -345,7 +362,11 @@ export default function OrdersScreen({
 
     return (
       <Pressable
-        style={({ pressed }) => [styles.orderCard, pressed && styles.orderCardPressed]}
+        style={({ pressed }) => [
+          styles.orderCard,
+          isDatedDraft && styles.datedDraftCard,
+          pressed && styles.orderCardPressed,
+        ]}
         onPress={() => {
           setSelectedOrder(item);
           setSelectedOrderId(item.id);
@@ -396,7 +417,11 @@ export default function OrdersScreen({
         <View style={styles.cardMiddleRow}>
           <View>
             <View style={styles.scheduleRow}>
-              <Text style={styles.scheduleText}>{schedule.formatted}</Text>
+              <Text style={styles.scheduleText}>
+                {item.isTimeTbd && item.targetDeliveryTime
+                  ? new Date(item.targetDeliveryTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                  : schedule.formatted}
+              </Text>
               {schedule.isToday && (
                 <View style={styles.todayBadge}>
                   <Text style={styles.todayBadgeText}>Today</Text>
@@ -408,6 +433,11 @@ export default function OrdersScreen({
                 </View>
               )}
             </View>
+            {item.isTimeTbd && item.targetDeliveryTime ? (
+              <View style={styles.timeTbdPill}>
+                <Text style={styles.timeTbdPillText}>🕒 Time TBD</Text>
+              </View>
+            ) : null}
             {schedule.isPending && item.remarks ? (
               <Text style={styles.schedulePendingRemarks} numberOfLines={1}>
                 {item.remarks}
@@ -440,6 +470,15 @@ export default function OrdersScreen({
           </Text>
           {renderRoutingBadge(item)}
         </View>
+        {isDatedDraft && (
+          <View style={styles.missingTagsRow}>
+            {item.isTimeTbd && <Text style={styles.missingTag}>⚠️ Time TBD</Text>}
+            {Number(item.fulfillment) === 1 && !item.deliveryAddress?.trim() && (
+              <Text style={styles.missingTag}>⚠️ Venue TBD</Text>
+            )}
+            {(item.itemsCount ?? 0) === 0 && <Text style={styles.missingTag}>⚠️ Size TBD</Text>}
+          </View>
+        )}
       </Pressable>
     );
   };
@@ -524,6 +563,38 @@ export default function OrdersScreen({
                 </Pressable>
               )}
             </View>
+          </View>
+
+          <View style={styles.dateFilterBar}>
+            <Pressable style={styles.dateNavButton} onPress={() => setSelectedDate(shiftDate(selectedDate, -1))}>
+              <Text style={styles.dateNavButtonText}>&lt;</Text>
+            </Pressable>
+            <View style={styles.dateInputShell}>
+              <Text style={styles.dateIcon}>📅</Text>
+              <TextInput
+                style={styles.dateInput}
+                value={selectedDate}
+                onChangeText={setSelectedDate}
+                placeholder="All Dates"
+                placeholderTextColor="#78716C"
+                maxLength={10}
+                keyboardType="numbers-and-punctuation"
+              />
+            </View>
+            <Pressable style={styles.dateNavButton} onPress={() => setSelectedDate(shiftDate(selectedDate, 1))}>
+              <Text style={styles.dateNavButtonText}>&gt;</Text>
+            </Pressable>
+            <Pressable style={styles.dateQuickButton} onPress={() => setSelectedDate(formatLocalDate(new Date()))}>
+              <Text style={styles.dateQuickButtonText}>Today</Text>
+            </Pressable>
+            <Pressable style={styles.dateQuickButton} onPress={() => setSelectedDate(shiftDate(formatLocalDate(new Date()), 1))}>
+              <Text style={styles.dateQuickButtonText}>Tomorrow</Text>
+            </Pressable>
+            {selectedDate ? (
+              <Pressable style={styles.dateClearButton} onPress={() => setSelectedDate('')}>
+                <Text style={styles.dateClearButtonText}>✕ Clear</Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Horizontal Scrollable Filter Pills */}
@@ -790,6 +861,62 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#44403C',
   },
+  dateFilterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  dateNavButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FAFAF9',
+  },
+  dateNavButtonText: {
+    color: '#292524',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  dateInputShell: {
+    minWidth: 142,
+    height: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+  },
+  dateIcon: { fontSize: 12, marginRight: 4 },
+  dateInput: {
+    flex: 1,
+    paddingVertical: 0,
+    fontSize: 12,
+    color: '#292524',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  dateQuickButton: {
+    height: 34,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FAFAF9',
+  },
+  dateQuickButtonText: { fontSize: 11, fontWeight: '700', color: '#44403C' },
+  dateClearButton: { height: 34, paddingHorizontal: 7, justifyContent: 'center' },
+  dateClearButtonText: { fontSize: 11, fontWeight: '700', color: '#BE123C' },
   pillsWrapper: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -925,6 +1052,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#92400E',
   },
+  datedDraftCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+  },
   ownerReviewPill: {
     backgroundColor: '#FEF3C7',
     borderWidth: 1,
@@ -987,6 +1119,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#44403C',
   },
+  timeTbdPill: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    backgroundColor: '#FEF3C7',
+  },
+  timeTbdPillText: { fontSize: 10, fontWeight: '800', color: '#92400E' },
   todayBadge: {
     backgroundColor: '#D1FAE5',
     borderWidth: 1,
@@ -1080,6 +1223,22 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F5F5F4',
   },
+  missingTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  missingTag: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#92400E',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
   locationText: {
     fontSize: 12,
     color: '#57534E',
@@ -1137,6 +1296,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#6D28D9',
+  },
+  routingDatedDraft: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  routingDatedDraftText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E',
   },
   draftDpText: {
     fontSize: 11,

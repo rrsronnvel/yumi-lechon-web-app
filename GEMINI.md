@@ -79,7 +79,7 @@ yumi-lechon-web-app/
 │   ├── Models/                      # Domain entities & database models
 │   │   ├── BaseEntity.cs            # Id and CreatedAt baseline
 │   │   ├── CustomerProfile.cs       # Customer intelligence (preferences, complaint radar, VIP, order count)
-│   │   ├── Order.cs                 # Master order entity (customer, dual contacts, totals, statuses)
+│   │   ├── Order.cs                 # Master order entity with IsDraft/IsTimeTbd lifecycle flags
 │   │   ├── OrderItem.cs             # Line items with locked Price snapshots
 │   │   ├── OrderItemSchedule.cs     # Calculated Tahi, Salang, Packaging, and Delivery timestamps
 │   │   ├── OrderAuditLog.cs         # Immutable "Black Box" diff history of modifications
@@ -101,7 +101,7 @@ yumi-lechon-web-app/
 │   └── DTOs/                        # High-speed data contracts & flat projections
 │       ├── CreateOrderRequest.cs    # POS intake payload
 │       ├── CustomerProfileDto.cs    # Customer intelligence & notes update contracts
-│       ├── DailySheetDtos.cs        # DailySheetItemDto for 14-column Kitchen & Rider manifests
+│       ├── DailySheetDtos.cs        # DailySheetItemDto for 13-column Kitchen & Rider manifests
 │       ├── ParsedOrderDraftDto.cs   # Vision/text parser structured draft contract
 │       ├── UpdateOrderDto.cs        # Order modification payload
 │       ├── OrderDirectoryDto.cs     # Fast flat projection for directory searches
@@ -118,7 +118,7 @@ yumi-lechon-web-app/
     ├── src/
     │   ├── pages/                   # Application route views
     │   │   ├── DashboardPage.tsx    # Zero-Inbox Command Center, Carcass Bouncer Defrost List & Remittance Alerts
-    │   │   ├── OrdersPage.tsx       # Master Order Directory, Balance Due Sub-Pills, POS Modal, Dossier Drawer
+    │   │   ├── OrdersPage.tsx       # Date-filtered two-tier Directory, payment strip, POS & dossier
     │   │   ├── KitchenPage.tsx      # Real-Time KDS Kanban & Roasting Spit Queue
     │   │   ├── InventoryPage.tsx    # Live Balance Scoreboard & Audit Ledger Tabs
     │   │   ├── LogisticsPage.tsx    # Dedicated Live Operations (Today) command center & Daily Sheets launcher
@@ -130,20 +130,21 @@ yumi-lechon-web-app/
     │   ├── components/
     │   │   ├── cms/                 # CMS modals & dialogs (CreateUserModal, ResetPasswordModal, ChangePriceModal)
     │   │   ├── daily-sheets/        # Daily Dispatch Planner print/screenshot tabs & inline editor
-    │   │   │   ├── KitchenViewTab.tsx           # 14-column Kitchen manifest sorted by Tahi time (hides prices)
+    │   │   │   ├── KitchenViewTab.tsx           # 13-column Kitchen manifest sorted by Tahi time (hides prices)
     │   │   │   ├── RiderViewTab.tsx             # 10-column Rider manifest with Anti-Complacency Guard
     │   │   │   └── InlineScheduleEditorModal.tsx# Interactive schedule, departure & rider override modal
     │   │   └── ui/                  # Reusable UI library (shadcn/ui + custom components)
     │   │       ├── RootLayout.tsx   # Global app container with sidebar navigation
     │   │       ├── Sidebar.tsx      # Navigation sidebar with responsive indicators
     │   │       ├── orders/
-    │   │       │   ├── OrderForm.tsx       # Unified Order Intake Form (POS) with CP #2 & Downpayment presets
-    │   │       │   └── EditOrderForm.tsx   # "Flexible Cart, Locked Cash" modifier modal with CP #2 support
+    │   │       │   ├── OrderForm.tsx       # POS with Time-TBD, extras-only mode, CP #2 & payment presets
+    │   │       │   └── EditOrderForm.tsx   # Edit parity for two-tier drafts and extras-only mode
     │   │       ├── button.tsx, card.tsx, dialog.tsx, sheet.tsx, table.tsx, badge.tsx, etc.
     │   │
     │   ├── utils/
     │   │   ├── messengerTemplates.ts # Taglish Messenger receipts, defrost list generator & departure math
-    │   │   └── messengerTextParser.ts# 4-Phase heuristic parser for pasted Messenger text & receipts
+    │   │   ├── messengerTextParser.ts# 4-Phase heuristic parser for pasted Messenger text & receipts
+    │   │   └── similarityHelper.ts   # Multi-factor composite matching engine & placeholder phone bouncer
     │   │
     │   ├── hooks/                   # Custom TanStack Query hooks & mutators
     │   │   ├── useCustomers.ts      # Debounced customer intelligence lookup & notes mutator
@@ -268,16 +269,16 @@ Every AI agent and software engineer working on this repository must strictly ad
 * **1-Day Follow-Up Window:** Critical warning to collect payment or trigger cancellation.
 * **Rush Order Bypass:** Same-day or next-day reservations bypass the 4-day/2-day queues directly into active rosters.
 * **Tomorrow's Operations Roster, Defrost Carcass Bouncer & 1-Click Defrost List Copier:** Unified table merging delivery verifications with tonight's freezer defrosting schedule (late additions flagged with `[RUSH / LATE DEFROST]`), paired with a 1-click `[ 📋 Copy Defrost List ]` button (`generateDefrostRosterMessage`) on both Web Dashboard and Mobile Floor Action views. Strictly enforces the Defrost Roster Carcass Bouncer (`MinimumWeightKg > 0` and non-carcass regex filters) to prevent add-ons (sauces, dinuguan, pancit, drinks, etc.) from ever polluting freezer pull-lists.
-* **Dispatch Planner Rider Anti-Complacency Guard & Carcass Bouncer:** `KitchenViewTab.tsx` enforces a 14-column layout with `DEPARTURE / PICKUP` (`riderDepartureTime ?? targetDeliveryTime`) between `WEIGHT` and `CUSTOMER` and `DELIVERY` (`targetDeliveryTime`) between `ADD-ONS` and `RIDER`. `RiderViewTab.tsx` displays **ONLY** `DEPARTURE / PICKUP` and strictly hides `targetDeliveryTime` so riders cannot self-calculate buffer slack. Both sheets strictly enforce the Carcass Bouncer (`MinimumWeightKg > 0`): only Whole Lechon and Lechon Belly appear as schedule rows; add-ons are captured in the `ADD-ONS` column and never duplicate rows or skew delivery totals.
+* **Dispatch Planner Rider Anti-Complacency Guard & Carcass Bouncer:** `KitchenViewTab.tsx` enforces the 13-column sequence `NO. | TAHI | SALANG | PRIORITY | SIZE | WEIGHT | DEPARTURE / PICKUP | CUSTOMER | REMARKS | LOCATION | ADD-ONS | DELIVERY | RIDER`; the retired `PACKAGING` display column gives remarks/location more room. `InlineScheduleEditorModal.tsx` edits only Tahi, Salang, Departure/Pickup, Rider, and Remarks. Both daily sheets require `MinimumWeightKg > 0`, while Rider View exposes only the departure/pickup clock.
 * **Unremitted Cash Card:** Highlights riders holding unremitted funds, glowing **RED** if held past the dispatch date until settled on the manifest.
 * **Peak Season Renegotiation Roster:** Automatically populated when base menu prices are updated in CMS, allowing dispatchers to log `[Customer Agreed]`, `[Waive Hike]`, or `[Customer Cancelled]`.
 
-#### 5. In-POS Tentative Reservation Drafts & Total Cockpit Quarantine
-* **The In-POS Draft Toggle (`IsDraft = true`):** Mounted at the top of Web (`OrderForm.tsx`, `EditOrderForm.tsx`) and Mobile POS (`PosScreen.tsx`, `EditOrderModal.tsx`), allowing cashiers to capture unconfirmed inquiries without dummy dates or fake items.
-* **Conditional Validation Engine:** When `IsDraft = true`, intake requires only one identifier (`CustomerName` or `FacebookName`); delivery date, venue address, and cart item count can be left blank/zero. When `IsDraft = false`, strict validation is re-armed.
-* **Production Cockpit Quarantine:** Drafts create `0` `InventoryReservation` records and `0` `OrderItemSchedule` records. Queries in `DashboardService`, `SchedulingService`, and `LogisticsService` strictly enforce `.Where(o => !o.IsDraft)`.
-* **Isolated 7th Tab Directory Slicing:** Web and Mobile directories isolate drafts in `[ 📝 Drafts ]` (`o.IsDraft && !o.IsCancelled`), showing `📅 Date Pending`, `📍 Venue TBD / Unset`, `Est. ₱...` + DP badge, and purple `[ 📝 Incomplete Draft ]` badge. Customer dossiers display a purple tentative inquiry alert banner.
-* **Finalization Transition:** Turning the draft toggle OFF on an existing draft validates required production fields, generates freezer reservations and backward kitchen roasting timers, logs an audit entry (`"Draft inquiry finalized and locked into production by {CurrentUser}"`), and renders `[ 🔒 Finalize & Lock Order ]`.
+#### 5. Two-Tier Drafts, Time-TBD, Date Filtering & Non-Lechon Isolation
+* **Tier 1:** `IsDraft && TargetDeliveryTime == null` appears only in `[ 📝 Drafts ]` with purple tentative-inquiry fallbacks.
+* **Tier 2:** `IsDraft && TargetDeliveryTime != null` stays in chronological `[ 📅 Upcoming ]`, highlighted amber with Time/Venue/Size TBD tags. The Master Directory accepts an optional single-day `date` filter; Web and Mobile mount previous/next, Today, Tomorrow, and Clear controls.
+* **Time TBD:** `IsTimeTbd` forces Draft on, stores the chosen date at local noon, clears rider departure, and generates no kitchen clocks until a concrete serving time is entered. Mobile target/rider controls use `hh:mm` plus `[ AM | PM ]` and the five canonical time presets.
+* **Non-Lechon / Extras Only:** POS create/edit surfaces restrict the cart to active `MinimumWeightKg == 0` categories, remove roast lines, and hide Event Type, Rider Departure, and Freebies. Extras-only orders create no carcass reservation or schedule and never enter Kitchen/Rider sheets.
+* **Finalization Transition:** Turning Draft off validates production fields, creates carcass reservations/backward clocks, records the audit transition, and renders `[ 🔒 Finalize & Lock Order ]`.
 
 #### 6. Owner-Controlled Staff Account Management & Production Environment-Gated Authentication Security
 * **Owner-Gated Staff Account Management:** Provisioning of new cashier or owner logins, shift password resets, and account deactivations are strictly restricted to the `[Owner]` role (`/api/users`).
@@ -336,10 +337,13 @@ These rules must remain aligned across `LechonSystem.Api`, `lechon-system-web`, 
 
 * **Whole Lechon Freebies:** `minimumWeightKg >= 13` is the only weight trigger. One head receives seven canonical freebies; opt-out applies the CMS-configured `NoFreebiesDiscountPerPig` (default `₱2,000`) per head; Raw Innards fixes Dinuguan at zero with no replacement slot. Keep both `src/utils/freebiesHelper.ts` implementations behaviorally identical and persist `FreebiesSummary` plus `FreebiesConfigJson`.
 * **Owner Confirmation:** Cashier-created active orders reserve and schedule immediately but require Owner review. Only `POST /api/orders/{id}/confirm-owner` completes the gate; pending work comes from `GET /api/dashboard/pending-owner-confirmations`.
-* **Duplicate Radar:** Customer lookup returns `ActiveUpcomingOrders` even without a profile. POS and edit surfaces warn proactively and require a second confirmation for exact same-day matches.
+* **Multi-Factor Duplicate Radar:** Composite 2-factor scoring engine (`similarityHelper.ts` across Web and Mobile, `CustomerService.cs` on Backend). The red duplicate alert (`🚨 POSSIBLE DUPLICATE ORDER DETECTED!`) fires ONLY when composite score $\ge 2$ across 4 independent factors: 1) Valid non-placeholder Phone Match (+1 pt), 2) Event Date Proximity (same day or $\pm 1$ day, +1 pt), 3) Name/FB Name Similarity (exact/token/Levenshtein $\ge 0.75$, +1 pt), 4) Address Overlap (same street/barangay & municipality, +1 pt). Placeholder numbers (`09000000000`, `00000000000`, length < 10, or $\le 2$ unique digits) are strictly excluded ($0$ points) and suppress both the red duplicate banner and repeat customer pill. Self-match immunity protects active orders during edit. Submissions with Score $\ge 2$ on the exact same date trigger an explicit confirmation speedbump modal.
 * **BIR Channels:** Initial and subsequent payment logs use exactly `Cash`, `GCash`, `Maya`, or `Bank Transfer`. Positive unclassified downpayments default to GCash; zero downpayments use `None` on the order header.
 * **Mobile Alerts:** `src/hooks/useNotifications.ts` owns permission/channel setup, daily 9:00 AM deposit reminders, daily 4:00 PM defrost reminders, Owner queue increase alerts, Rush Defrost alerts, and the Floor Action test trigger.
 * **Daily Sheets:** `SchedulingService` projects `FreebiesSummary`; Kitchen and Rider views render the semantic badge above ordinary remarks.
+* **Directory/Draft parity:** `Order.IsTimeTbd`, two-tier draft slicing, and date-filter query semantics must remain identical across API, Web, and Mobile. Dated incomplete records belong in Upcoming; only dateless drafts belong in Drafts.
+* **Non-Lechon parity:** `MinimumWeightKg === 0` is the extras-only boundary. These sales retain customer/routing/payment fields but must not create inventory reservations, roast schedules, or daily-sheet rows.
+* **Mobile time parity:** `PosScreen.tsx` and `EditOrderModal.tsx` display 12-hour inputs but always convert to 24-hour local ISO values before API submission.
 
 ### Verification Commands
 
@@ -362,12 +366,12 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
       │   ├── MainShell.tsx            # 3-tab mobile shell (Orders, New POS, Drawer) + top HUD
       │   └── orders/
       │       ├── OrderDossierModal.tsx# 3-second customer dossier, tel: dialer, payment & cancel modals
-      │       ├── EditOrderModal.tsx   # Mobile "Flexible Cart, Locked Cash" order editor modal
+      │       ├── EditOrderModal.tsx   # Mobile editor with Time-TBD, extras-only mode & 12-hour controls
       │       └── FloorActionView.tsx  # Mobile Floor Action Hub (Downpayment Radar & Tonight's Defrost Roster)
       ├── screens/
       │   ├── LoginScreen.tsx          # Shift login with API switcher pill & 1-tap demo presets
-      │   ├── OrdersScreen.tsx         # Debounced Master Order Directory + Segmented Floor Action Toggle Switcher
-      │   ├── PosScreen.tsx            # AI Screenshot & Text POS Terminal with tri-modal bouncer
+      │   ├── OrdersScreen.tsx         # Date-filtered two-tier Master Directory + Floor Action switcher
+      │   ├── PosScreen.tsx            # AI POS with extras-only mode, Time-TBD & AM/PM controls
       │   └── DrawerScreen.tsx         # 2-Hop Cash Custody & Tri-Modal Settlement Hub
       ├── hooks/
       │   ├── useOrders.ts             # Directory search, dossier fetch, manual pay & cancel mutations
@@ -376,7 +380,6 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
       │   └── useManifest.ts           # Rider/Pickup/Lalamove settlements & 2-Hop QR custody mutations
       └── utils/
           ├── messengerTemplates.ts    # Taglish Messenger receipts, defrost list generator & downpayment reminders
-          └── messengerTextParser.ts   # Client-side heuristic parser for pasted Messenger text
+          ├── messengerTextParser.ts   # Client-side heuristic parser for pasted Messenger text
+          └── similarityHelper.ts      # Multi-factor composite matching engine & placeholder phone bouncer
   ```
-
-

@@ -452,6 +452,17 @@ namespace LechonSystem.Api.Migrations
                             MinimumSafetyStock = 0,
                             MinimumWeightKg = 0.0m,
                             Name = "Puto"
+                        },
+                        new
+                        {
+                            Id = 21,
+                            BasePrice = 300.00m,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaximumWeightKg = 0.0m,
+                            MinimumSafetyStock = 0,
+                            MinimumWeightKg = 0.0m,
+                            Name = "Raw Innards (Lamang-Loob)"
                         });
                 });
 
@@ -579,6 +590,9 @@ namespace LechonSystem.Api.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsPriceWaived")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsTimeTbd")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsTrustedCustomer")
@@ -1154,25 +1168,97 @@ namespace LechonSystem.Api.Migrations
                         {
                             Id = 1,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            FullName = "Kuya Berto",
+                            FullName = "Aaron",
                             IsActive = true,
-                            PhoneNumber = "09171234567"
+                            PhoneNumber = ""
                         },
                         new
                         {
                             Id = 2,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            FullName = "Kuya Jun",
+                            FullName = "AL",
                             IsActive = true,
-                            PhoneNumber = "09182345678"
+                            PhoneNumber = ""
                         },
                         new
                         {
                             Id = 3,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            FullName = "Kuya AL",
+                            FullName = "Francis",
                             IsActive = true,
-                            PhoneNumber = "09193456789"
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Joener",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Randy",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Rhoge",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Vhenz",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Macky",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Ranzel",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Bhek",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Adriane",
+                            IsActive = true,
+                            PhoneNumber = ""
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            FullName = "Lerry",
+                            IsActive = true,
+                            PhoneNumber = ""
                         });
                 });
 

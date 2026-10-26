@@ -20,6 +20,10 @@ public class ActiveCustomerOrderSummaryDto
 {
     public int OrderId { get; set; }
     public string OrderReference { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public string? FacebookName { get; set; }
+    public string? ContactNumber { get; set; }
+    public string? DeliveryAddress { get; set; }
     public DateTime? TargetDeliveryTime { get; set; }
     public decimal GrandTotal { get; set; }
     public string ItemsSummary { get; set; } = string.Empty;

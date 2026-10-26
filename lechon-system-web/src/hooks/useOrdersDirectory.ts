@@ -10,6 +10,7 @@ export interface OrderDirectoryDto {
   id: number;
   orderReference?: string;
   isDraft?: boolean;
+  isTimeTbd?: boolean;
   customerName: string;
   facebookName?: string | null;
   source?: string;
@@ -22,6 +23,8 @@ export interface OrderDirectoryDto {
   routingStatus: string; // "Unassigned", "Assigned", "Delivered"
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  itemsCount?: number;
+  hasRoastItems?: boolean;
   grandTotal: number;
   downpayment: number;
   downpaymentMethod: string;
@@ -45,15 +48,17 @@ export interface OrderDirectoryDto {
 
 export const useOrdersDirectory = (
   searchTerm: string = "",
-  filterTab: string = "upcoming"
+  filterTab: string = "upcoming",
+  selectedDate: string = ""
 ) => {
   return useQuery<OrderDirectoryDto[]>({
-    queryKey: ["orders", "directory", { searchTerm, filterTab }],
+    queryKey: ["orders", "directory", { searchTerm, filterTab, selectedDate }],
     queryFn: async () => {
       const response = await apiClient.get("/orders/directory", {
         params: {
           searchTerm: searchTerm.trim() || undefined,
           filterTab: filterTab || undefined,
+          date: selectedDate || undefined,
         },
       });
       return response.data;

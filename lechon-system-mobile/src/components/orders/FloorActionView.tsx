@@ -24,6 +24,7 @@ import {
   generateDownpaymentReminder,
   generateDefrostRosterMessage,
 } from '../../utils/messengerTemplates';
+import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
 
 interface FloorActionViewProps {
   onSelectOrderForDeposit: (orderId: number) => void;
@@ -287,8 +288,8 @@ export default function FloorActionView({
               <Text style={styles.ownerMeta} numberOfLines={2}>
                 {item.itemsSummary} • encoded by {item.createdBy}
               </Text>
-              {item.freebiesSummary ? (
-                <Text style={styles.ownerFreebies}>{item.freebiesSummary}</Text>
+              {sanitizeFreebiesSummary(item.freebiesSummary) ? (
+                <Text style={styles.ownerFreebies}>{sanitizeFreebiesSummary(item.freebiesSummary)}</Text>
               ) : null}
               <View style={styles.ownerCardFooter}>
                 <Text style={styles.ownerAmount}>
@@ -446,7 +447,7 @@ export default function FloorActionView({
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleRow}>
             <Text style={styles.sectionTitle}>
-              Tonight's Defrost & Prep Roster
+              Tonight&apos;s Defrost &amp; Prep Roster
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={[styles.countBadge, styles.countBadgeRoster]}>
@@ -470,7 +471,7 @@ export default function FloorActionView({
             </View>
           </View>
           <Text style={styles.sectionSubtitle}>
-            Chest freezer carcasses scheduled for tomorrow's roasting batches.
+            Chest freezer carcasses scheduled for tomorrow&apos;s roasting batches.
           </Text>
         </View>
 
@@ -478,7 +479,7 @@ export default function FloorActionView({
           <View style={styles.emptyCard}>
             <Text style={styles.emptyCardEmoji}>🧊</Text>
             <Text style={styles.emptyCardText}>
-              No carcasses scheduled for tomorrow's defrost roster yet.
+              No carcasses scheduled for tomorrow&apos;s defrost roster yet.
             </Text>
           </View>
         ) : (

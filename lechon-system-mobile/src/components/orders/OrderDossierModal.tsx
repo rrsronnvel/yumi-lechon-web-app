@@ -26,6 +26,7 @@ import { useUpdateCustomerNotesMutation } from '../../hooks/usePos';
 import { generateBookingConfirmation } from '../../utils/messengerTemplates';
 import EditOrderModal from './EditOrderModal';
 import { useAuth } from '../../context/AuthContext';
+import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
 
 interface OrderDossierModalProps {
   orderId: number | null;
@@ -368,6 +369,20 @@ export default function OrderDossierModal({
     });
   };
 
+  const formatDateOnly = (dateStr?: string | null) => {
+    if (!dateStr) return '📅 Date Pending / Unset';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const isTimeTbd = Boolean(orderDetails?.isTimeTbd || fallbackOrder?.isTimeTbd);
+
   const fulfillmentCode = Number(orderDetails?.fulfillment ?? fallbackOrder?.fulfillment ?? 1);
   const fulfillmentLabel =
     fulfillmentCode === 0
@@ -632,21 +647,25 @@ export default function OrderDossierModal({
                 <View style={styles.infoBlock}>
                   <Text style={styles.infoLabel}>Target Delivery Date &amp; Time</Text>
                   <Text style={styles.infoValueHighlight}>
-                    {formatFullSchedule(
-                      orderDetails?.targetDeliveryTime || fallbackOrder?.targetDeliveryTime
-                    )}
+                    {isTimeTbd
+                      ? `${formatDateOnly(orderDetails?.targetDeliveryTime || fallbackOrder?.targetDeliveryTime)} • 🕒 Time TBD`
+                      : formatFullSchedule(
+                          orderDetails?.targetDeliveryTime || fallbackOrder?.targetDeliveryTime
+                        )}
                   </Text>
                 </View>
 
                 <View style={styles.infoBlock}>
                   <Text style={styles.infoLabel}>🛵 Rider Departure Time (Kitchen Anchor)</Text>
                   <Text style={styles.infoValue}>
-                    {formatFullSchedule(
-                      orderDetails?.riderDepartureTime ||
-                        fallbackOrder?.riderDepartureTime ||
-                        orderDetails?.targetDeliveryTime ||
-                        fallbackOrder?.targetDeliveryTime
-                    )}
+                    {isTimeTbd
+                      ? 'Not scheduled while time is TBD'
+                      : formatFullSchedule(
+                          orderDetails?.riderDepartureTime ||
+                            fallbackOrder?.riderDepartureTime ||
+                            orderDetails?.targetDeliveryTime ||
+                            fallbackOrder?.targetDeliveryTime
+                        )}
                   </Text>
                 </View>
 
@@ -978,10 +997,10 @@ export default function OrderDossierModal({
                     <Text style={styles.addOnsValue}>{orderDetails?.addOns}</Text>
                   </View>
                 )}
-                {Boolean(orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary) && (
+                {Boolean(sanitizeFreebiesSummary(orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary)) && (
                   <View style={styles.freebiesBadge}>
                     <Text style={styles.freebiesBadgeText}>
-                      {orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary}
+                      {sanitizeFreebiesSummary(orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary)}
                     </Text>
                   </View>
                 )}

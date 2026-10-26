@@ -5,6 +5,7 @@ namespace LechonSystem.Api.Models.DTOs
         // 1. The Anchor (Which order are we editing?)
         public int Id { get; set; }
         public bool IsDraft { get; set; } = false;
+        public bool IsTimeTbd { get; set; } = false;
 
         // 2. Customer & Routing Details
         public string CustomerName { get; set; } = string.Empty;

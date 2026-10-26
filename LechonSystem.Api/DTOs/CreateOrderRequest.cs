@@ -7,6 +7,7 @@ namespace LechonSystem.Api.DTOs
     public class CreateOrderRequest
     {
         public bool IsDraft { get; set; } = false;
+        public bool IsTimeTbd { get; set; } = false;
         public string CustomerName { get; set; } = string.Empty;
         public string? FacebookName { get; set; }
         public string CustomerPhone { get; set; } = string.Empty;

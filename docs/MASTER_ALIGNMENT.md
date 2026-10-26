@@ -111,49 +111,18 @@ The POS and Logistics engines enforce strict boundary rules across three distinc
 - Distance and Delivery Fee inputs are strictly forced to 0 and locked to ₱0 (preventing erroneous delivery fees from appearing on the store receipt).
 - Excluded from freelance driver batch dispatch and manifest cash remittance workflows.
 
-#### 2.7 In-POS Tentative Reservation Drafts & Production Quarantine Governance
+#### 2.7 Two-Tier Draft Lifecycle Architecture & Production Quarantine
 
-- Real-World Operational Context:
-  Customers frequently inquire via Facebook Messenger or telephone requesting quotes, tentative date holds, or preliminary pricing before confirming their venue, final guest count, or pig size, and before sending a GCash downpayment deposit. Forcing cashiers to input dummy delivery addresses, arbitrary delivery timestamps, or artificial pig sizes to satisfy validation corrupted kitchen rosters, locked up scarce physical pig carcasses in the freezer ledger, and flooded delivery dispatches.
+- **Tier 1 — Date-Less Draft Inquiry:** `IsDraft = true` and `TargetDeliveryTime = null`. These tentative quotes live only in `[ 📝 Drafts ]`, ordered by `UpdatedAt ?? CreatedAt`, and may omit venue and item size. The purple Draft control requires at least `CustomerName` or `FacebookName`; no freezer reservation or kitchen clock is created.
+- **Tier 2 — Dated Incomplete Order:** `IsDraft = true` and `TargetDeliveryTime != null`. These records are intentionally included chronologically in `[ 📅 Upcoming ]` and rendered with an amber left border plus `[ ⚠️ Incomplete Draft ]`. Missing-detail tags identify `⚠️ Time TBD`, `⚠️ Venue TBD`, and `⚠️ Size TBD` without extra dossier queries.
+- **Time TBD contract:** All Web/Mobile create and edit forms keep the event date active beside `[ 🕒 Time TBD ]`. Enabling it forces `IsDraft = true`, persists `TargetDeliveryTime` at local `12:00:00` for the selected date, sets `IsTimeTbd = true`, clears `RiderDepartureTime`, and suppresses all backward schedule generation. A concrete time must be supplied before finalization.
+- **Master Directory slicing:** `filterTab=drafts` is strictly `IsDraft && TargetDeliveryTime == null && !IsCancelled`; `filterTab=upcoming` is `!IsCancelled && TargetDeliveryTime != null && TargetDeliveryTime >= Today`, naturally combining confirmed work and Tier-2 drafts. An optional `date` query applies a half-open single-day range. Web and Mobile expose previous/next, Today, Tomorrow, and Clear controls; Web BIR channel totals recalculate from the filtered order list.
+- **Production quarantine:** Any draft or Time-TBD order produces zero `OrderItemSchedule` rows and zero active freezer reservations. `SchedulingService.GetDailySheetsAsync` excludes `IsDraft`, `IsTimeTbd`, and zero-weight items, keeping Kitchen and Rider manifests production-safe.
+- **Finalization:** Turning Draft off validates the target time, item list, and delivery address where required; then it creates carcass reservations/schedules, records the audit transition, and exposes `[ 🔒 Finalize & Lock Order ]`.
 
-- The In-POS Draft Toggle (`IsDraft = true`):
-  Both Web POS (`OrderForm.tsx`, `EditOrderForm.tsx`) and Mobile POS (`PosScreen.tsx`, `EditOrderModal.tsx`) mount a prominent purple switch banner: `[ 📝 Tentative Draft Inquiry (No Fixed Date/DP) ]`.
-  - When active, a purple informational callout informs staff: *"Draft Mode Active: Kitchen schedules and freezer stock locks are paused. Date, venue, and pig size can be left blank until confirmed."*
-  - The primary intake submit action transforms into `[ 💾 Save Draft Inquiry ]` (`bg-purple-600`).
+##### Non-Lechon / Extras-Only POS Mode
 
-- Conditional Intake Validation Engine:
-  - **Draft Mode Active (`isDraft === true`):**
-    - Relaxed identity requirement: Requires at least one customer identifier (`CustomerName` or `FacebookName`).
-    - Permits empty `TargetDeliveryTime` (`null`), empty `DeliveryAddress` (`null`), and `0` cart items (`items.length === 0`).
-  - **Production Mode Active (`isDraft === false`):**
-    - Re-arms strict production guardrails: Requires customer name (>= 2 characters), valid contact number (>= 10 digits), target delivery date & time, mandatory delivery address (if Fulfillment is Delivery or Lalamove), and at least 1 cart line item.
-
-- Zero-Impact Production Bouncer & Operational Cockpit Quarantine:
-  - **Zero Freezer Inventory Locks:** `OrderService.CreateOrderAsync` completely skips `_inventoryService.ReserveInventoryForOrderAsync` when `IsDraft == true` (generating `0` `InventoryReservation` records).
-  - **Zero Kitchen Roasting Clocks:** `OrderService.CreateOrderAsync` completely skips `_schedulingService.CalculateAndSaveScheduleAsync` when `IsDraft == true` (generating `0` `OrderItemSchedule` records).
-  - **Total Cockpit Quarantine (`!o.IsDraft`):**
-    1. *Zero-Inbox Command Center (`DashboardService.cs`):* Excluded from `Tomorrow's Lechon Demand`, `GetDefrostingRosterAsync`, `GetDeliveryVerificationsAsync`, `GetPendingConfirmationsAsync`, and `GetRenegotiationTasksAsync`.
-    2. *Kitchen Roasting Manifests (`SchedulingService.cs`):* Excluded from `GetDailySheetsAsync` (14-column Kitchen Sheet and 10-column Rider Sheet).
-    3. *Logistics Operations & Settlement Drops (`LogisticsService.cs`):* Excluded from `GetUnassignedDeliveryOrdersAsync`, `GetTodayDispatchesAsync`, `GetPendingSettlementDropsAsync`, `GetPendingPickupSettlementsAsync`, and `GetPendingLalamoveSettlementsAsync`.
-
-- Master Directory Slicing & Visual Fallbacks:
-  - **Dedicated 7th Tab (`drafts`):** Both Web Directory (`OrdersPage.tsx`) and Mobile Directory (`OrdersScreen.tsx`) isolate drafts into `[ 📝 Drafts ]` filtering `o.IsDraft && !o.IsCancelled` ordered by `UpdatedAt ?? CreatedAt` descending.
-  - **Production Tab Quarantine:** All active operational tabs (`Upcoming`, `Today Only`, `Tomorrow`, `Balance Due`, `Recent Edits`, `Past 30d`, `Cancelled`, `All Time`) strictly quarantine drafts via `!o.IsDraft`.
-  - **Graceful Visual Fallbacks:**
-    - *Schedule:* Displays `📅 Date Pending` (with customer `remarks` rendered in subtle monospace subtext if present).
-    - *Location:* Displays `📍 Venue TBD / Unset` (or `🏪 Store Pickup` if pickup).
-    - *Totals & Deposit:* Displays `Est. ₱{grandTotal}` with a muted `₱{downpayment} DP` badge.
-    - *Routing Status Badge:* Displays distinct purple badge `[ 📝 Incomplete Draft ]`.
-  - **Customer Dossier Modal/Sheet:** Renders an informational purple alert banner: *"📝 Tentative Inquiry: This order is an unconfirmed draft. No kitchen schedule has been generated and no freezer inventory is locked."*
-
-- The Draft Finalization Transition:
-  When an existing draft is updated and the draft toggle is flipped to `OFF` (`wasDraft && !request.IsDraft`):
-  1. The system enforces strict validation (ensuring `TargetDeliveryTime`, valid line items, and delivery address are present).
-  2. Sets `order.IsDraft = false`.
-  3. Triggers `_inventoryService` to create physical inventory reservations (`Committed` if `DownpaymentReceived > 0 || IsTrustedCustomer`, else `PendingPayment`).
-  4. Triggers `_schedulingService` to compute backward kitchen roasting schedules (`TahiStartTime`, `SalangStartTime`, `PackagingStartTime`, `RiderDepartureTime`).
-  5. Inserts an immutable audit log entry: `"Draft inquiry finalized and locked into production by {CurrentUser}"`.
-  6. The submit button displays `[ 🔒 Finalize & Lock Order ]`.
+Web and Mobile create/edit forms provide `[ 🐷 Whole / Belly Lechon | 🍲 Non-Lechon / Extras Only ]`. Extras-only mode restricts selection to active categories where `MinimumWeightKg == 0` (including `Raw Innards (Lamang-Loob)` and side dishes), removes carcass lines when activated, and hides Event Type, Rider Departure, and Whole-Lechon Freebies. Customer, fulfillment, target date/time, address, distance/fee, discount, deposit channel, and remarks remain available. The API clears roast-only metadata and creates zero carcass reservations/schedules, so standalone innards and side-dish sales never enter roasting sheets.
 
 #### 2.8 Dual-Contact Architecture (CP #1 & CP #2)
 * **Real-World Operational Context:** In Philippine catering and lechon dispatch, the booking party on Facebook Messenger (e.g., mother/organizer) is frequently distinct from the on-site recipient (e.g., event coordinator, relative, or caretaker). Recording an alternate contact line (`CP #2`) prevents failed deliveries when the primary line is busy, out of coverage, or unattended during transit.
@@ -214,7 +183,7 @@ While the system provides automated backward-scheduling based on product profile
 
 - Operational Authority:
 
-- The Daily Dispatch Planner provides an interactive planning mode allowing owners to manually fine-tune Tahi (prep), Salang (roasting), and Packaging times for individual order items.
+- The Daily Dispatch Planner provides an interactive planning mode allowing owners to manually fine-tune Tahi (prep), Salang (roasting), and Departure / Pickup times for individual order items; Packaging is intentionally not exposed in the sheet UI.
 
 - Dynamic Priority Re-Ranking:
 
@@ -226,7 +195,7 @@ While the system provides automated backward-scheduling based on product profile
 
 - Field Mutability Boundaries:
 
-- Mutable on Planner: TahiStartTime, SalangStartTime, PackagingStartTime, AssignedRider, OperationalRemarks.
+- Mutable on Planner: TahiStartTime, SalangStartTime, RiderDepartureTime, AssignedRider, OperationalRemarks.
 - Immutable on Planner: TargetDeliveryTime, ItemCategory/Size, CustomerName, WeightBracket. These fields remain bound to the Master Order Ledger.
 
 - Presentation Modes:
@@ -246,14 +215,15 @@ To eliminate interface fragmentation and workflow duplication, the Web Logistics
 #### 5.2 Operational Views
 - **Live Operations (Today):** Real-time monitoring board for orders scheduled for delivery today. Displays assigned rider names, destination addresses, and delivery status. Action Controls: Provides a `[Mark Delivered]` trigger to close trips upon receiving photo proof in Messenger, and an `[Edit Rider]` button to reassign orders on the fly in case of vehicle breakdowns or rider emergencies.
 - **Daily Dispatch Planner (`/daily-sheets`):**
-  - **Tab 1: Kitchen View (14-Column Production Sheet — `KitchenViewTab.tsx`):** Sorted by Tahi Time / Priority. Hides money data. Enforces the strict 14-column layout:
-    `NO.` | `TAHI` | `SALANG` | `PRIORITY` | `SIZE` | `WEIGHT` | `DEPARTURE / PICKUP` | `CUSTOMER` | `PACKAGING` | `REMARKS` | `LOCATION` | `ADD-ONS` | `DELIVERY` | `RIDER`.
+  - **Tab 1: Kitchen View (13-Column Production Sheet — `KitchenViewTab.tsx`):** Sorted by Tahi Time / Priority. Hides money data. Enforces the strict 13-column layout:
+    `NO.` | `TAHI` | `SALANG` | `PRIORITY` | `SIZE` | `WEIGHT` | `DEPARTURE / PICKUP` | `CUSTOMER` | `REMARKS` | `LOCATION` | `ADD-ONS` | `DELIVERY` | `RIDER`.
+    - The retired `PACKAGING` display column is intentionally omitted; its width is reallocated to `REMARKS` and `LOCATION`. Packaging calculations may remain internal, but the inline planner exposes only Tahi, Salang, and Departure / Pickup time overrides.
     - `DEPARTURE / PICKUP` sits between `WEIGHT` and `CUSTOMER`, displaying `riderDepartureTime ?? targetDeliveryTime` so master roasters and choppers see the exact store handover deadline right next to the pig weight and customer name.
     - `DELIVERY` sits between `ADD-ONS` and `RIDER`, displaying `targetDeliveryTime` (customer venue arrival time) for dispatch context.
-    - In `Edit & Plan Mode`, clicking `TAHI`, `SALANG`, `DEPARTURE / PICKUP`, `PACKAGING`, `REMARKS`, or `RIDER` opens `InlineScheduleEditorModal.tsx`.
+    - In `Edit & Plan Mode`, clicking `TAHI`, `SALANG`, `DEPARTURE / PICKUP`, `REMARKS`, or `RIDER` opens `InlineScheduleEditorModal.tsx`.
   - **Tab 2: Rider View & Rider Anti-Complacency Column Rule (`RiderViewTab.tsx`):** Sorted chronologically by departure time. Hides cooking data and shows exact cash splits.
     - **Rider Anti-Complacency Guard:** The time column is labeled `DEPARTURE / PICKUP` and renders **ONLY** `riderDepartureTime ?? targetDeliveryTime` in bold primary monospace text. The customer's venue arrival time (`targetDeliveryTime`) and any secondary arrival subtext are **strictly hidden/removed** from the Rider View so freelance riders cannot self-calculate buffer slack or delay their departure from the store.
-  - **The Dispatch Planner Carcass Bouncer:** Both `KitchenViewTab.tsx` and `RiderViewTab.tsx` strictly enforce the Carcass Bouncer (`MinimumWeightKg > 0`). Only Whole Lechon and Lechon Belly appear as schedule rows; lightweight add-ons (sauces, dinuguan, pancit, drinks, etc.) are strictly excluded from generating schedule/departure rows and are captured exclusively inside the `ADD-ONS` column (Column 12 on Kitchen View, Column 10 on Rider View). This prevents add-ons from inflating the `Total Deliveries` count or duplicating the order's `Amount to Collect` on the rider manifest.
+  - **The Dispatch Planner Carcass Bouncer:** Both `KitchenViewTab.tsx` and `RiderViewTab.tsx` strictly enforce `MinimumWeightKg > 0`. Only Whole Lechon and Lechon Belly appear as schedule rows; extras-only orders are excluded, while add-ons attached to a roast remain summarized in `ADD-ONS` (Column 11 on Kitchen View, Column 10 on Rider View).
 
 #### 5.3 Freelance Rider Directory & Customer Communication Bridge
 
@@ -866,9 +836,20 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 * Owner-created orders and drafts are confirmed at creation. Active Cashier-created orders remain `IsOwnerConfirmed = false` until an Owner invokes `POST /api/orders/{id}/confirm-owner`.
 * Confirmation stamps `OwnerConfirmedAt`, `OwnerConfirmedBy`, and `Order verified and confirmed by Owner ({username})`. Web Dashboard, Web/Mobile directories, Floor Action, and dossiers expose the pending state and Owner-only action.
 
-### 16.3 Proactive Duplicate Order Radar
-* Customer lookup matches normalized phone, Facebook name, or customer name and returns non-cancelled drafts plus bookings from yesterday through 60 days ahead, even without a `CustomerProfile` row.
-* Web and Mobile POS/Edit show a high-visibility warning with reference, schedule, item summary, and encoder. A second same-calendar-day speed bump requires explicit confirmation before create/update.
+### 16.3 Proactive Multi-Factor Composite Duplicate Order Radar
+* **Composite 2-Factor Scoring Architecture:** Replaces single-field triggers with a multi-factor scoring engine across Backend (`CustomerService.cs`), Web (`similarityHelper.ts`), and Mobile (`similarityHelper.ts`). The high-visibility red duplicate alert fires ONLY when composite score $\ge 2$.
+* **Placeholder Phone Immunity (`isPlaceholderPhone`):** Dummy/placeholder numbers (`09000000000`, `00000000000`, `09111111111`, `09999999999`, length < 10, or $\le 2$ unique digits) are strictly excluded from duplicate checks ($0$ points) and suppress both the red duplicate banner and repeat customer pill to eliminate false alarms.
+* **Self-Match Immunity:** In Edit Mode (`EditOrderForm.tsx` on Web, `EditOrderModal.tsx` on Mobile), the active order under edit (`orderId` / `orderReference`) is excluded from duplicate evaluation.
+* **Composite Scoring Matrix (Threshold: Score $\ge 2$ triggers Red Alert):**
+  1. **Factor 1: Valid Phone Match (+1 pt):** Non-placeholder, clean 10/11-digit phone match with an active booking (supports comma-delimited CP #1 and CP #2 dual-contacts).
+  2. **Factor 2: Event Date Proximity (+1 pt):** Target delivery/pickup date is on the exact same calendar day or within $\pm 1$ calendar day.
+  3. **Factor 3: Name / Facebook Name Similarity (+1 pt):** Case-insensitive exact match, token overlap (e.g., "Dianne Belen" vs. "Dianne De Belen"), or Levenshtein similarity ratio $\ge 0.75$.
+  4. **Factor 4: Address / Location Overlap (+1 pt):** Shared delivery street/barangay and municipality (excluding Store Pickup).
+* **UI Action Triggers & Submission Speedbump:**
+  - **Score $\ge 2$:** Displays `🚨 POSSIBLE DUPLICATE ORDER DETECTED!` with matching criteria badges (`Valid Phone Match`, `Exact Same Date`, `Name / FB Match`, `Delivery Address Overlap`), matching Order #, customer name, date, items, and encoder.
+  - **Exact Same-Day Speedbump:** Submitting an order when Score $\ge 2$ and the target date falls on the exact same day triggers a confirmation speedbump modal requiring staff to explicitly verify and override.
+  - **Score == 1 with Valid Phone Match (Different Date):** Displays ONLY the Gold Pill: `⭐ Repeat Customer • N Past Bookings` (no red banner).
+  - **Score < 2 with Placeholder Phone (`09000000000`):** Completely suppresses the alert banner.
 
 ### 16.4 BIR Four-Channel Payment Mapping
 * Every successful initial downpayment and later settlement writes a canonical `PaymentLog.PaymentMethod`: `Cash`, `GCash`, `Maya`, or `Bank Transfer`.

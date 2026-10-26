@@ -78,6 +78,7 @@ namespace LechonSystem.Api.Services
                          && s.OrderItem.ItemCategory.MinimumWeightKg > 0
                          && s.OrderItem.Order != null
                          && !s.OrderItem.Order.IsDraft
+                         && !s.OrderItem.Order.IsTimeTbd
                          && !s.OrderItem.Order.IsCancelled)
                 .Select(s => new
                 {

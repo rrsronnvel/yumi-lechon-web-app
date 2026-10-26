@@ -5,6 +5,7 @@ public class OrderDirectoryDto
     public int Id { get; set; }
     public string OrderReference { get; set; } = string.Empty;
     public bool IsDraft { get; set; } = false;
+    public bool IsTimeTbd { get; set; } = false;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
     public string ContactNumber { get; set; } = string.Empty;
@@ -17,6 +18,8 @@ public class OrderDirectoryDto
     public string RoutingStatus { get; set; } = string.Empty; // "Unassigned", "Assigned", "Delivered"
     public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
+    public int ItemsCount { get; set; }
+    public bool HasRoastItems { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal Downpayment { get; set; }
     public string DownpaymentMethod { get; set; } = "None";

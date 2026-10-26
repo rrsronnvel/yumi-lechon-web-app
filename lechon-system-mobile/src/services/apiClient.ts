@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { create } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
 export type ApiEnvironment = 'cloud' | 'local';
@@ -20,7 +20,7 @@ export const getApiBaseUrl = (): string => {
   return activeEnv === 'local' ? LOCAL_API_URL : CLOUD_API_URL;
 };
 
-const apiClient = axios.create({
+const apiClient = create({
   baseURL: CLOUD_API_URL,
   headers: {
     'Content-Type': 'application/json',
