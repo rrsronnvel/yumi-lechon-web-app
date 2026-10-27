@@ -898,12 +898,12 @@ export default function OrderForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="grid grid-cols-1 lg:grid-cols-12 w-full max-h-[92vh] h-full overflow-hidden bg-white"
+        className="grid max-h-[92dvh] w-full grid-cols-1 overflow-y-auto overscroll-contain bg-white [-webkit-overflow-scrolling:touch] lg:h-full lg:max-h-[92vh] lg:grid-cols-12 lg:overflow-hidden"
       >
         {/* ========================================================= */}
         {/* Left Column: Who & Where Logistics                        */}
         {/* ========================================================= */}
-        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] border-b lg:border-b-0 lg:border-r border-stone-200 space-y-4">
+        <div className="space-y-4 border-b border-stone-200 p-5 sm:p-6 lg:col-span-6 lg:max-h-[92vh] lg:overflow-y-auto lg:border-r lg:border-b-0">
           <div className="border-b border-stone-200 pb-3">
             <h2 className="text-lg font-bold text-stone-900 tracking-tight flex items-center gap-2">
               <span>🐷</span> Order Entry Terminal
@@ -1504,7 +1504,7 @@ export default function OrderForm({
         {/* ========================================================= */}
         {/* Right Column: What & Money Settlement                     */}
         {/* ========================================================= */}
-        <div className="lg:col-span-6 p-5 sm:p-6 overflow-y-auto max-h-[92vh] bg-[#FAF6F4] flex flex-col justify-between space-y-4">
+        <div className="flex flex-col justify-between space-y-4 bg-[#FAF6F4] p-5 sm:p-6 lg:col-span-6 lg:max-h-[92vh] lg:overflow-y-auto">
           {/* Top: Unified Order Cart */}
           <div className="border border-stone-200/90 rounded-xl p-4 bg-white shadow-xs space-y-3">
             {/* Category Selector Header */}
@@ -1564,7 +1564,7 @@ export default function OrderForm({
             </div>
 
             {/* Added Cart Line Items */}
-            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+            <div className="space-y-2 pr-1 lg:max-h-[220px] lg:overflow-y-auto">
               {(watchedItems?.length ?? 0) === 0 ? (
                 <div className="text-center py-8 border border-dashed border-stone-200 rounded-lg bg-stone-50/70 text-stone-500 space-y-1">
                   <p className="font-semibold text-xs text-stone-700">

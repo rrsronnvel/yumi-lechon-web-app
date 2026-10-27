@@ -1,18 +1,30 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  ClipboardList,
-  Truck,
-  FileSpreadsheet,
   Boxes,
-  Settings,
+  ClipboardList,
+  FileSpreadsheet,
+  LayoutDashboard,
   LogOut,
+  Menu,
+  Settings,
+  Truck,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 export default function Sidebar() {
   const location = useLocation();
   const { user, isOwner, logout, apiEnv, apiBaseUrl, switchApiEnv } = useAuth();
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -23,6 +35,10 @@ export default function Sidebar() {
     ...(isOwner ? [{ name: "Settings", href: "/cms", icon: Settings }] : []),
   ];
 
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
+
   const getInitials = (name?: string) => {
     if (!name) return "YL";
     const parts = name.trim().split(" ");
@@ -32,27 +48,37 @@ export default function Sidebar() {
     return name.slice(0, 2).toUpperCase();
   };
 
-  return (
-    <aside className="w-64 bg-[#181312] text-stone-100 h-screen flex flex-col border-r border-stone-800/80 shrink-0 select-none">
-      {/* Brand Header */}
-      <div className="p-5 border-b border-stone-800/80 flex items-center gap-3.5">
+  const renderSidebarContent = (onNavigate?: () => void, showCloseButton = false) => (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-3.5 border-b border-stone-800/80 p-5">
         <img
           src="/yumi-logo.png"
           alt="Yumi's Lechon Logo"
-          className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400/80 shadow-md shrink-0"
+          className="h-11 w-11 shrink-0 rounded-full object-cover shadow-md ring-2 ring-amber-400/80"
         />
-        <div className="min-w-0">
-          <h1 className="text-base font-extrabold tracking-wider text-amber-400 uppercase leading-tight truncate">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-base font-extrabold leading-tight tracking-wider text-amber-400 uppercase">
             YUMI&apos;S LECHON
           </h1>
-          <p className="text-[11px] text-stone-400 font-medium mt-0.5 truncate">
+          <p className="mt-0.5 truncate text-[11px] font-medium text-stone-400">
             Management System
           </p>
         </div>
+        {showCloseButton && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Close navigation menu"
+            onClick={() => setIsMobileNavOpen(false)}
+            className="shrink-0 text-stone-400 hover:bg-stone-900 hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        )}
       </div>
 
-      {/* Navigation Links */}
-      <nav className="flex-1 p-3.5 space-y-1 overflow-y-auto">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3.5" aria-label="Primary navigation">
         {navigation.map((item) => {
           const isActive =
             item.href === "/"
@@ -65,24 +91,27 @@ export default function Sidebar() {
             <Link
               key={item.name}
               to={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors ${
+              onClick={onNavigate}
+              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition-colors ${
                 isActive
-                  ? "bg-amber-500/15 text-amber-400 border-l-4 border-amber-400 font-semibold shadow-2xs"
-                  : "text-stone-400 hover:bg-stone-900 hover:text-stone-100 font-medium"
+                  ? "border-l-4 border-amber-400 bg-amber-500/15 font-semibold text-amber-400 shadow-2xs"
+                  : "font-medium text-stone-400 hover:bg-stone-900 hover:text-stone-100"
               }`}
             >
-              <Icon className="w-5 h-5 shrink-0" />
+              <Icon className="h-5 w-5 shrink-0" />
               <span>{item.name}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Target API Environment Switcher */}
-      <div className="px-3.5 py-2.5 border-t border-stone-800/80 bg-stone-950/40">
-        <div className="flex items-center justify-between mb-1.5 text-[10px] font-bold text-stone-400 tracking-wider uppercase">
+      <div className="border-t border-stone-800/80 bg-stone-950/40 px-3.5 py-2.5">
+        <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-stone-400 uppercase">
           <span>Target API</span>
-          <span className="text-[9px] font-mono text-amber-400/80 truncate max-w-[110px]" title={apiBaseUrl}>
+          <span
+            className="max-w-[110px] truncate font-mono text-[9px] text-amber-400/80"
+            title={apiBaseUrl}
+          >
             {apiEnv === "cloud" ? "Cloud" : "localhost:5199"}
           </span>
         </div>
@@ -91,55 +120,51 @@ export default function Sidebar() {
             type="button"
             onClick={() => switchApiEnv("cloud")}
             aria-pressed={apiEnv === "cloud"}
-            className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`flex cursor-pointer items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-all ${
               apiEnv === "cloud"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 shadow-2xs"
-                : "bg-stone-900/60 text-stone-400 hover:text-stone-200 border border-stone-800 hover:border-stone-700"
+                ? "border-amber-500/60 bg-amber-500/20 text-amber-300 shadow-2xs"
+                : "border-stone-800 bg-stone-900/60 text-stone-400 hover:border-stone-700 hover:text-stone-200"
             }`}
           >
             <span>☁️ Live Cloud</span>
-            {apiEnv === "cloud" && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+            {apiEnv === "cloud" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />}
           </button>
           <button
             type="button"
             onClick={() => switchApiEnv("local")}
             aria-pressed={apiEnv === "local"}
-            className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`flex cursor-pointer items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-all ${
               apiEnv === "local"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 shadow-2xs"
-                : "bg-stone-900/60 text-stone-400 hover:text-stone-200 border border-stone-800 hover:border-stone-700"
+                ? "border-amber-500/60 bg-amber-500/20 text-amber-300 shadow-2xs"
+                : "border-stone-800 bg-stone-900/60 text-stone-400 hover:border-stone-700 hover:text-stone-200"
             }`}
           >
             <span>💻 Local (5199)</span>
-            {apiEnv === "local" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+            {apiEnv === "local" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />}
           </button>
         </div>
       </div>
 
-      {/* Bottom User HUD Card */}
       {user && (
-        <div className="p-4 border-t border-stone-800/80 bg-stone-950/80">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-stone-900 border border-stone-700/80 flex items-center justify-center font-bold text-xs text-amber-400 shrink-0 shadow-inner">
+        <div className="border-t border-stone-800/80 bg-stone-950/80 p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-700/80 bg-stone-900 text-xs font-bold text-amber-400 shadow-inner">
               {getInitials(user.fullName)}
             </div>
-            <div className="flex-1 min-w-0">
-              <p
-                className="text-xs font-semibold text-stone-100 truncate"
-                title={user.fullName}
-              >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-stone-100" title={user.fullName}>
                 {user.fullName}
               </p>
               <div className="mt-1">
-                {user.role === "Owner" ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/40 shadow-2xs">
-                    👑 Owner
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-stone-800 text-stone-200 border border-stone-700 shadow-2xs">
-                    🧑‍💼 Cashier
-                  </span>
-                )}
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-2xs ${
+                    user.role === "Owner"
+                      ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                      : "border-stone-700 bg-stone-800 text-stone-200"
+                  }`}
+                >
+                  {user.role === "Owner" ? "👑 Owner" : "🧑‍💼 Cashier"}
+                </span>
               </div>
             </div>
           </div>
@@ -147,13 +172,74 @@ export default function Sidebar() {
           <button
             type="button"
             onClick={logout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-stone-400 hover:text-rose-300 hover:bg-rose-950/30 border border-stone-800 hover:border-rose-900/50 transition-colors cursor-pointer"
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-stone-800 px-3 py-2 text-xs font-medium text-stone-400 transition-colors hover:border-rose-900/50 hover:bg-rose-950/30 hover:text-rose-300"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="h-3.5 w-3.5" />
             <span>End Shift (Logout)</span>
           </button>
         </div>
       )}
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      <aside className="hidden h-screen w-64 shrink-0 select-none flex-col border-r border-stone-800/80 bg-[#181312] text-stone-100 lg:flex">
+        {renderSidebarContent()}
+      </aside>
+
+      <header className="sticky top-0 z-40 flex h-14 w-full shrink-0 items-center justify-between border-b border-stone-800 bg-[#181312] px-4 text-white lg:hidden">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Open navigation menu"
+            aria-expanded={isMobileNavOpen}
+            onClick={() => setIsMobileNavOpen(true)}
+            className="shrink-0 text-amber-400 hover:bg-stone-900 hover:text-amber-300"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <img
+            src="/yumi-logo.png"
+            alt="Yumi's Lechon Logo"
+            className="h-8 w-8 shrink-0 rounded-full object-cover ring-2 ring-amber-400/80"
+          />
+          <span className="truncate text-sm font-bold tracking-wide text-stone-100">Yumi&apos;s Lechon</span>
+        </div>
+
+        <div className="ml-2 flex shrink-0 items-center gap-1.5 text-[10px]">
+          {user && (
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-1 font-semibold text-amber-300">
+              {user.role === "Owner" ? "👑 Owner" : "Cashier"}
+            </span>
+          )}
+          <span
+            className="flex items-center gap-1 rounded-full border border-stone-700 bg-stone-900 px-2 py-1 text-stone-300"
+            title={`API: ${apiBaseUrl}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${apiEnv === "cloud" ? "bg-amber-400" : "bg-emerald-400"}`} />
+            {apiEnv === "cloud" ? "Cloud" : "Local"}
+          </span>
+        </div>
+      </header>
+
+      {isMobileNavOpen && (
+        <Sheet open onOpenChange={setIsMobileNavOpen}>
+          <SheetContent
+            side="left"
+            showCloseButton={false}
+            className="w-72! max-w-[85vw]! translate-x-0! gap-0 border-r border-stone-800 bg-[#181312] p-0 text-white opacity-100! transition-none! sm:max-w-none lg:hidden"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>Navigation menu</SheetTitle>
+              <SheetDescription>Navigate the Yumi&apos;s Lechon management system.</SheetDescription>
+            </SheetHeader>
+            {renderSidebarContent(() => setIsMobileNavOpen(false), true)}
+          </SheetContent>
+        </Sheet>
+      )}
+    </>
   );
 }

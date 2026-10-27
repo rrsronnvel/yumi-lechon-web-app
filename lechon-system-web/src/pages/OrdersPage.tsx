@@ -617,8 +617,8 @@ export default function OrdersPage() {
   };
 
   const renderDataGrid = () => (
-    <Card className="bg-white border border-stone-200/90 rounded-xl shadow-sm overflow-hidden">
-      <CardHeader className="py-3 px-4 border-b border-stone-200 bg-stone-50/80 flex flex-row items-center justify-between">
+    <Card className="overflow-hidden rounded-xl border border-stone-200/90 bg-white shadow-sm">
+      <CardHeader className="flex flex-col items-start justify-between gap-2 border-b border-stone-200 bg-stone-50/80 px-4 py-3 sm:flex-row sm:items-center">
         <CardTitle className="text-sm font-semibold text-stone-900">
           Order Directory Records
         </CardTitle>
@@ -628,7 +628,7 @@ export default function OrdersPage() {
           orders
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="w-full overflow-x-auto p-0 [-webkit-overflow-scrolling:touch]">
         <Table>
           <TableHeader>
             <TableRow className="bg-stone-100/70 border-b border-stone-200">
@@ -793,7 +793,7 @@ export default function OrdersPage() {
   );
 
   return (
-    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
       {/* Header with New Order Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200/90 pb-5">
         <div>
@@ -807,11 +807,11 @@ export default function OrdersPage() {
 
         {/* The New Order Modal */}
         <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
-          <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-[#C81E1E] hover:bg-[#A81818] text-white shadow-sm h-10 px-4 py-2 cursor-pointer">
+          <DialogTrigger className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[#C81E1E] px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#A81818] focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 sm:w-auto [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0">
             <Plus className="h-4 w-4" /> New Order
           </DialogTrigger>
           {/* Widescreen POS Terminal Modal Shell */}
-          <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0 rounded-xl border-stone-200">
+          <DialogContent className="max-h-[92dvh] w-full max-w-5xl gap-0 overflow-hidden rounded-xl border-stone-200 p-0 lg:max-h-[92vh] xl:max-w-6xl">
             <DialogHeader className="sr-only">
               <DialogTitle>New POS Order Entry</DialogTitle>
             </DialogHeader>
@@ -823,8 +823,8 @@ export default function OrdersPage() {
       </div>
 
       {/* Search + Master Date Filter */}
-      <div className="flex flex-col xl:flex-row xl:items-center gap-2">
-        <div className="relative w-full xl:max-w-md">
+      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start lg:items-center">
+        <div className="relative w-full sm:min-w-0 sm:flex-1 lg:max-w-md">
           <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
           <Input
             placeholder="Search by customer name, FB name, phone, or #OrderRef..."
@@ -833,11 +833,11 @@ export default function OrdersPage() {
             className="bg-white pl-9 h-10 border-stone-300"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-stone-200 bg-white p-1.5 shadow-xs">
+        <div className="flex w-full flex-wrap items-center gap-1.5 rounded-lg border border-stone-200 bg-white p-1.5 shadow-xs sm:w-auto">
           <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))} aria-label="Previous day">
             &lt;
           </Button>
-          <Input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="h-8 w-[155px] border-stone-300 text-xs" aria-label="Select order date" />
+          <Input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="h-8 min-w-[140px] flex-1 border-stone-300 text-xs sm:w-[155px] sm:flex-none" aria-label="Select order date" />
           <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} aria-label="Next day">
             &gt;
           </Button>

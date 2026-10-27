@@ -65,9 +65,9 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
       {/* HEADER & ACTIONS */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-stone-900">
             Inventory & Procurement
@@ -77,11 +77,11 @@ export default function InventoryPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           {/* FREEZER-GATE INTAKE */}
           <Button
             onClick={() => setIsReceiveModalOpen(true)}
-            className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+            className="h-10 w-full bg-emerald-600 font-semibold text-white shadow-sm hover:bg-emerald-700 sm:w-auto"
           >
             + Log Freezer Intake
           </Button>
@@ -90,7 +90,7 @@ export default function InventoryPage() {
           <Button
             variant="outline"
             onClick={() => setIsModalOpen(true)}
-            className="h-10 border-stone-300 text-stone-700 hover:bg-stone-100 font-medium"
+            className="h-10 w-full border-stone-300 font-medium text-stone-700 hover:bg-stone-100 sm:w-auto"
           >
             Manual Adjustment
           </Button>
@@ -111,30 +111,32 @@ export default function InventoryPage() {
       {/* THE DASHBOARD DISPLAY */}
       <Tabs defaultValue="balances" className="w-full space-y-6">
         {/* Navigation Tabs */}
-        <TabsList className="grid w-full max-w-lg grid-cols-3 h-auto p-1.5 gap-1.5 bg-stone-200/60 rounded-xl mb-6">
-          <TabsTrigger
-            value="balances"
-            className="py-1.5 px-4 text-sm font-medium rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
-          >
-            Live Balances
-          </TabsTrigger>
-          <TabsTrigger
-            value="ledger"
-            className="py-1.5 px-4 text-sm font-medium rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
-          >
-            Audit Ledger
-          </TabsTrigger>
-          <TabsTrigger
-            value="procurement"
-            className="py-1.5 px-4 text-sm font-medium rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
-          >
-            Procurement
-          </TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+          <TabsList className="mb-5 flex h-auto min-w-full w-max gap-1.5 rounded-xl bg-stone-200/60 p-1.5 sm:mb-6">
+            <TabsTrigger
+              value="balances"
+              className="shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-medium text-stone-600 transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
+            >
+              Live Balances
+            </TabsTrigger>
+            <TabsTrigger
+              value="ledger"
+              className="shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-medium text-stone-600 transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
+            >
+              Audit Ledger
+            </TabsTrigger>
+            <TabsTrigger
+              value="procurement"
+              className="shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-medium text-stone-600 transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
+            >
+              Procurement
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Tab 1: Live Balances (6-Column Scoreboard) */}
         <TabsContent value="balances">
-          <div className="border border-stone-200/90 rounded-xl bg-white shadow-sm overflow-x-auto">
+          <div className="w-full overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
             <Table>
               <TableHeader>
                 <TableRow className="bg-stone-100/70 border-b border-stone-200 text-stone-600 font-semibold uppercase tracking-wider text-xs">
@@ -257,7 +259,7 @@ export default function InventoryPage() {
 
         {/* Tab 2: Audit Ledger */}
         <TabsContent value="ledger">
-          <div className="border border-stone-200/90 rounded-xl bg-white shadow-sm overflow-x-auto">
+          <div className="w-full overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
             <Table>
               <TableHeader>
                 <TableRow className="bg-stone-100/70 border-b border-stone-200 text-stone-600 font-semibold uppercase tracking-wider text-xs">
@@ -328,7 +330,7 @@ export default function InventoryPage() {
 
         {/* Tab 3: Procurement */}
         <TabsContent value="procurement">
-          <div className="border border-stone-200/90 rounded-xl p-6 bg-white shadow-sm space-y-4">
+          <div className="space-y-4 rounded-xl border border-stone-200/90 bg-white p-4 shadow-sm sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-stone-200 pb-4">
               <div>
                 <h3 className="text-lg font-bold text-stone-900">

@@ -280,7 +280,7 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
         {/* Operational Header HUD */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-stone-200/90 pb-5">
           <div>
@@ -297,11 +297,11 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
               variant="outline"
               onClick={() => window.open("/daily-sheets", "_blank")}
-              className="border-stone-300 bg-white hover:bg-stone-100 text-stone-700 text-xs sm:text-sm h-10 px-4 shadow-2xs"
+              className="h-10 w-full border-stone-300 bg-white px-4 text-xs text-stone-700 shadow-2xs hover:bg-stone-100 sm:w-auto sm:text-sm"
             >
               <FileText className="w-4 h-4 mr-1.5" />
               Daily Sheets
@@ -309,7 +309,7 @@ export default function DashboardPage() {
 
             <Button
               onClick={() => setIsOrderModalOpen(true)}
-              className="bg-[#C81E1E] hover:bg-[#A81818] text-white font-medium shadow-sm transition-colors text-xs sm:text-sm h-10 px-4"
+              className="h-10 w-full bg-[#C81E1E] px-4 text-xs font-medium text-white shadow-sm transition-colors hover:bg-[#A81818] sm:w-auto sm:text-sm"
             >
               <Plus className="w-4 h-4 mr-1.5" />
               New Order
@@ -318,7 +318,7 @@ export default function DashboardPage() {
         </div>
 
         {/* 🚀 Symmetrical 3-Card KPI Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
           {/* Card 1: Tomorrow's Roasting Demand */}
           <Card className="min-h-[140px] flex flex-col justify-between bg-white border-stone-200/90 shadow-sm rounded-xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-5">
@@ -958,7 +958,7 @@ export default function DashboardPage() {
 
       {/* 🚀 New Order POS Terminal Dialog Modal */}
       <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
-        <DialogContent className="max-w-5xl xl:max-w-6xl w-full max-h-[92vh] p-0 overflow-hidden gap-0 rounded-xl border-stone-200">
+        <DialogContent className="max-h-[92dvh] w-full max-w-5xl gap-0 overflow-hidden rounded-xl border-stone-200 p-0 lg:max-h-[92vh] xl:max-w-6xl">
           <DialogHeader className="sr-only">
             <DialogTitle>New POS Order Entry</DialogTitle>
           </DialogHeader>

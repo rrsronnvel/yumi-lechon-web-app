@@ -96,16 +96,16 @@ export default function DailySheetsPage() {
   return (
     <PrintLayout>
       <div className="mb-4 space-y-3 border-b border-stone-200 pb-3 print:hidden">
-        <div className="flex flex-col items-center justify-between gap-3 md:flex-row">
+        <div className="flex flex-col items-stretch justify-between gap-3 md:flex-row md:items-center">
           {mode === "edit" ? (
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <img
                 src="/yumi-logo.png"
                 alt="Yumi's Lechon Logo"
                 className="h-9 w-9 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-amber-400/80"
               />
-              <div>
-                <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">
+              <div className="min-w-0">
+                <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight text-stone-900 sm:text-2xl">
                   <Sparkles className="h-5 w-5 text-amber-600" /> Daily Dispatch Planner
                 </h1>
                 <p className="mt-0.5 text-xs font-medium text-stone-500">
@@ -114,7 +114,7 @@ export default function DailySheetsPage() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               <img
                 src="/yumi-logo.png"
                 alt="Yumi's Lechon Logo"
@@ -129,7 +129,7 @@ export default function DailySheetsPage() {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
             {mode === "clean" && (
               <div className="flex items-center rounded-lg border border-stone-300 bg-stone-100 p-0.5 text-xs">
                 <button
@@ -199,7 +199,7 @@ export default function DailySheetsPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2 py-2 sm:px-3">
           <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-stone-600">
             <CalendarDays className="h-4 w-4 text-amber-700" /> Dispatch Date
           </span>
@@ -222,7 +222,7 @@ export default function DailySheetsPage() {
             type="date"
             value={selectedDate}
             onChange={(event) => selectDate(event.target.value)}
-            className="h-9 rounded-md border border-stone-300 bg-white px-3 text-sm font-semibold text-stone-900 shadow-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+            className="h-9 min-w-[145px] flex-1 rounded-md border border-stone-300 bg-white px-2 text-sm font-semibold text-stone-900 shadow-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 sm:max-w-[180px] sm:flex-none sm:px-3"
           />
           <Button
             type="button"
@@ -235,7 +235,7 @@ export default function DailySheetsPage() {
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <div className="ml-1 flex items-center gap-1.5 border-l border-stone-300 pl-3">
+          <div className="flex w-full items-center justify-center gap-1.5 border-t border-stone-300 pt-2 sm:ml-1 sm:w-auto sm:border-t-0 sm:border-l sm:pt-0 sm:pl-3">
             <Button
               type="button"
               size="sm"
@@ -284,7 +284,7 @@ export default function DailySheetsPage() {
 
         {mode === "edit" && (
           <div className="mb-4 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-start gap-2">
               <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900">
                 Edit Mode
               </span>
@@ -300,13 +300,13 @@ export default function DailySheetsPage() {
             <TabsList className="mx-auto mb-4 grid h-auto w-full max-w-md grid-cols-2 gap-1.5 rounded-xl bg-stone-200/60 p-1.5">
               <TabsTrigger
                 value="kitchen"
-                className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
+                className="min-w-0 px-2 py-1.5 text-[11px] font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm sm:px-4 sm:text-xs"
               >
                 <UtensilsCrossed className="h-3.5 w-3.5" /> Kitchen View (Timings)
               </TabsTrigger>
               <TabsTrigger
                 value="rider"
-                className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
+                className="min-w-0 px-2 py-1.5 text-[11px] font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm sm:px-4 sm:text-xs"
               >
                 <Truck className="h-3.5 w-3.5" /> Rider View (Cash Splits)
               </TabsTrigger>
