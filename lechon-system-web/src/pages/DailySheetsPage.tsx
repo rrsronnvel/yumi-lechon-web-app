@@ -1,23 +1,93 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import PrintLayout from "@/components/daily-sheets/PrintLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KitchenViewTab } from "@/components/daily-sheets/KitchenViewTab";
 import { RiderViewTab } from "@/components/daily-sheets/RiderViewTab";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Camera, Pencil, UtensilsCrossed, Truck, Printer } from "lucide-react";
+import { useDailySheets } from "@/hooks/useSchedules";
+import {
+  CalendarDays,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Printer,
+  Sparkles,
+  Truck,
+  UtensilsCrossed,
+} from "lucide-react";
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidIsoDate(value: string | null): value is string {
+  if (!value || !ISO_DATE_PATTERN.test(value)) return false;
+
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function getPhilippineDate(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const dateParts: Record<string, string> = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") dateParts[part.type] = part.value;
+  }
+
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+}
+
+function addDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatIsoDate(isoDate: string): string {
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "UTC",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "2-digit",
+  }).format(new Date(`${isoDate}T00:00:00Z`));
+}
 
 export default function DailySheetsPage() {
   const [mode, setMode] = useState<"edit" | "clean">("edit");
   const [activeTab, setActiveTab] = useState<string>("kitchen");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const philippineToday = useMemo(() => getPhilippineDate(), []);
+  const requestedDate = searchParams.get("date");
+  const selectedDate = isValidIsoDate(requestedDate) ? requestedDate : philippineToday;
+  const tomorrow = addDays(philippineToday, 1);
+  const { data: dailySheets } = useDailySheets(selectedDate);
+  const formattedDate =
+    dailySheets?.targetDate === selectedDate
+      ? dailySheets.formattedDate
+      : formatIsoDate(selectedDate);
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const formattedDate = tomorrow.toLocaleDateString("en-PH", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  useEffect(() => {
+    if (requestedDate === selectedDate) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("date", selectedDate);
+    setSearchParams(nextParams, { replace: true });
+  }, [requestedDate, searchParams, selectedDate, setSearchParams]);
+
+  const selectDate = (date: string) => {
+    if (!isValidIsoDate(date)) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("date", date);
+    setSearchParams(nextParams);
+  };
 
   const handlePrint = () => {
     window.print();
@@ -25,181 +95,230 @@ export default function DailySheetsPage() {
 
   return (
     <PrintLayout>
-      {/* 1. Mode Switcher & Top Control Banner (Hidden in Print) */}
-      <div className="mb-4 flex flex-col md:flex-row items-center justify-between gap-3 pb-3 border-b border-stone-200 print:hidden">
-        {mode === "edit" ? (
-          <div className="flex items-center gap-3">
-            <img
-              src="/yumi-logo.png"
-              alt="Yumi's Lechon Logo"
-              className="w-9 h-9 rounded-full object-cover ring-2 ring-amber-400/80 shadow-sm shrink-0"
-            />
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-stone-900 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-600" /> Daily Dispatch Planner
-              </h1>
-              <p className="text-xs font-medium text-stone-500 mt-0.5">
-                Scheduled Date: <span className="font-bold text-stone-800">{formattedDate}</span>
-              </p>
+      <div className="mb-4 space-y-3 border-b border-stone-200 pb-3 print:hidden">
+        <div className="flex flex-col items-center justify-between gap-3 md:flex-row">
+          {mode === "edit" ? (
+            <div className="flex items-center gap-3">
+              <img
+                src="/yumi-logo.png"
+                alt="Yumi's Lechon Logo"
+                className="h-9 w-9 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-amber-400/80"
+              />
+              <div>
+                <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">
+                  <Sparkles className="h-5 w-5 text-amber-600" /> Daily Dispatch Planner
+                </h1>
+                <p className="mt-0.5 text-xs font-medium text-stone-500">
+                  Scheduled Date: <span className="font-bold text-stone-800">{formattedDate}</span>
+                </p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2.5">
-            <img
-              src="/yumi-logo.png"
-              alt="Yumi's Lechon Logo"
-              className="w-9 h-9 rounded-full object-cover ring-2 ring-amber-400/80 shadow-sm shrink-0"
-            />
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#181312] text-white text-xs font-black uppercase tracking-wider">
-              <Camera className="w-3.5 h-3.5 text-amber-400" /> Clean Screenshot View
-            </span>
-            <span className="text-xs font-medium text-stone-600">
-              Zero-scroll high-contrast view • Ready to capture for Group Chat
-            </span>
-          </div>
-        )}
-
-        {/* Right Action Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* View Switcher in Clean Mode */}
-          {mode === "clean" && (
-            <div className="flex items-center border border-stone-300 rounded-lg p-0.5 bg-stone-100 text-xs">
-              <button
-                type="button"
-                onClick={() => setActiveTab("kitchen")}
-                className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 text-xs ${
-                  activeTab === "kitchen"
-                    ? "bg-white text-stone-900 shadow-xs border border-stone-200"
-                    : "text-stone-600 hover:text-stone-900"
-                }`}
-              >
-                <UtensilsCrossed className="w-3.5 h-3.5" /> Kitchen Sheet
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("rider")}
-                className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 text-xs ${
-                  activeTab === "rider"
-                    ? "bg-white text-stone-900 shadow-xs border border-stone-200"
-                    : "text-stone-600 hover:text-stone-900"
-                }`}
-              >
-                <Truck className="w-3.5 h-3.5" /> Rider Sheet
-              </button>
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/yumi-logo.png"
+                alt="Yumi's Lechon Logo"
+                className="h-9 w-9 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-amber-400/80"
+              />
+              <span className="inline-flex items-center gap-1.5 rounded bg-[#181312] px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
+                <Camera className="h-3.5 w-3.5 text-amber-400" /> Clean Screenshot View
+              </span>
+              <span className="text-xs font-medium text-stone-600">
+                Zero-scroll high-contrast view • Ready to capture for Group Chat
+              </span>
             </div>
           )}
 
-          {/* Print Button */}
+          <div className="flex flex-wrap items-center gap-2">
+            {mode === "clean" && (
+              <div className="flex items-center rounded-lg border border-stone-300 bg-stone-100 p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("kitchen")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                    activeTab === "kitchen"
+                      ? "border border-stone-200 bg-white text-stone-900 shadow-xs"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  <UtensilsCrossed className="h-3.5 w-3.5" /> Kitchen Sheet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("rider")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                    activeTab === "rider"
+                      ? "border border-stone-200 bg-white text-stone-900 shadow-xs"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  <Truck className="h-3.5 w-3.5" /> Rider Sheet
+                </button>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handlePrint}
+              className="h-8 border-stone-300 px-2.5 text-xs font-semibold"
+              title="Print or Save as PDF"
+            >
+              <Printer className="mr-1 h-3.5 w-3.5" /> Print / PDF
+            </Button>
+
+            <div className="inline-flex rounded-lg border border-stone-300 bg-stone-100 p-0.5 shadow-xs">
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "edit" ? "default" : "ghost"}
+                onClick={() => setMode("edit")}
+                className={`h-7 px-2.5 text-xs font-bold ${
+                  mode === "edit"
+                    ? "bg-[#C81E1E] text-white shadow-xs hover:bg-[#A81818]"
+                    : "text-stone-600 hover:bg-stone-200/60 hover:text-stone-900"
+                }`}
+              >
+                <Pencil className="mr-1 h-3.5 w-3.5" /> Edit Mode
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "clean" ? "default" : "ghost"}
+                onClick={() => setMode("clean")}
+                className={`h-7 px-2.5 text-xs font-bold ${
+                  mode === "clean"
+                    ? "bg-[#181312] text-white shadow-xs"
+                    : "text-stone-600 hover:bg-stone-200/60 hover:text-stone-900"
+                }`}
+              >
+                <Camera className="mr-1 h-3.5 w-3.5" /> Clean View
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+          <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-stone-600">
+            <CalendarDays className="h-4 w-4 text-amber-700" /> Dispatch Date
+          </span>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={handlePrint}
-            className="h-8 text-xs font-semibold px-2.5 border-stone-300"
-            title="Print or Save as PDF"
+            className="h-9 w-9 border-stone-300 p-0"
+            aria-label="Previous day"
+            title="Previous day"
+            onClick={() => selectDate(addDays(selectedDate, -1))}
           >
-            <Printer className="w-3.5 h-3.5 mr-1" /> Print / PDF
+            <ChevronLeft className="h-4 w-4" />
           </Button>
-
-          {/* Mode Toggle */}
-          <div className="inline-flex rounded-lg border border-stone-300 bg-stone-100 p-0.5 shadow-xs">
+          <label htmlFor="dispatch-date" className="sr-only">
+            Selected dispatch date
+          </label>
+          <input
+            id="dispatch-date"
+            type="date"
+            value={selectedDate}
+            onChange={(event) => selectDate(event.target.value)}
+            className="h-9 rounded-md border border-stone-300 bg-white px-3 text-sm font-semibold text-stone-900 shadow-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-9 w-9 border-stone-300 p-0"
+            aria-label="Next day"
+            title="Next day"
+            onClick={() => selectDate(addDays(selectedDate, 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <div className="ml-1 flex items-center gap-1.5 border-l border-stone-300 pl-3">
             <Button
               type="button"
               size="sm"
-              variant={mode === "edit" ? "default" : "ghost"}
-              onClick={() => setMode("edit")}
-              className={`h-7 text-xs font-bold px-2.5 ${
-                mode === "edit"
-                  ? "bg-[#C81E1E] hover:bg-[#A81818] text-white shadow-xs"
-                  : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
-              }`}
+              variant={selectedDate === philippineToday ? "default" : "outline"}
+              className="h-8 px-3 text-xs font-bold"
+              onClick={() => selectDate(philippineToday)}
             >
-              <Pencil className="w-3.5 h-3.5 mr-1" /> Edit Mode
+              Today
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={mode === "clean" ? "default" : "ghost"}
-              onClick={() => setMode("clean")}
-              className={`h-7 text-xs font-bold px-2.5 ${
-                mode === "clean"
-                  ? "bg-[#181312] text-white shadow-xs"
-                  : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
-              }`}
+              variant={selectedDate === tomorrow ? "default" : "outline"}
+              className="h-8 px-3 text-xs font-bold"
+              onClick={() => selectDate(tomorrow)}
             >
-              <Camera className="w-3.5 h-3.5 mr-1" /> Clean View
+              Tomorrow
             </Button>
           </div>
         </div>
       </div>
 
-      {/* 2. Document Container with Border (Perfect for Snipping Tool) */}
       <div className="w-full bg-white">
-        {/* Document Header in Clean Mode */}
         {mode === "clean" && (
-          <div className="border-b-2 border-black pb-3 mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2">
+          <div className="mb-4 flex flex-col items-start justify-between gap-2 border-b-2 border-black pb-3 sm:flex-row sm:items-end">
             <div>
               <div className="flex items-center gap-2">
-                <span className="bg-black text-white font-black text-[10px] px-2 py-0.5 uppercase tracking-widest rounded-xs">
+                <span className="rounded-xs bg-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">
                   YUMI LECHON
                 </span>
-                <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-black">
+                <h1 className="text-xl font-black uppercase tracking-tight text-black sm:text-2xl">
                   {activeTab === "kitchen" ? "Kitchen Production Roster" : "Rider Logistics & Settlement Manifest"}
                 </h1>
               </div>
-              <p className="text-xs font-bold text-slate-700 mt-1">
-                Target Operations: <span className="text-black font-extrabold">{formattedDate}</span> • Printed: {new Date().toLocaleDateString("en-PH")}
+              <p className="mt-1 text-xs font-bold text-slate-700">
+                Target Operations: <span className="font-extrabold text-black">{formattedDate}</span> • Printed: {formatIsoDate(philippineToday)}
               </p>
             </div>
             <div className="text-right">
-              <span className="text-xs font-black px-2.5 py-1 border-2 border-black uppercase tracking-wide text-black inline-block bg-slate-50">
+              <span className="inline-block border-2 border-black bg-slate-50 px-2.5 py-1 text-xs font-black uppercase tracking-wide text-black">
                 {activeTab === "kitchen" ? "Roasting Pit Copy" : "Logistics Settlement Copy"}
               </span>
             </div>
           </div>
         )}
 
-        {/* Helper Tip in Edit Mode */}
         {mode === "edit" && (
-          <div className="mb-4 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs text-amber-900 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
             <div className="flex items-center gap-2">
-              <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">
+              <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900">
                 Edit Mode
               </span>
               <span>
-                Click on any <strong>Tahi</strong>, <strong>Salang</strong>, <strong>Departure / Pickup</strong>, <strong>Packaging</strong>, <strong>Remarks</strong>, or <strong>Rider Name</strong> cell to level production or assign riders.
+                Click on any <strong>Tahi</strong>, <strong>Salang</strong>, <strong>Departure / Pickup</strong>, <strong>Remarks</strong>, or <strong>Rider Name</strong> cell to level production or assign riders.
               </span>
             </div>
           </div>
         )}
 
-        {/* Tab Switcher & Content */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {mode === "edit" && (
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 h-auto p-1.5 gap-1.5 bg-stone-200/60 rounded-xl mb-4">
+            <TabsList className="mx-auto mb-4 grid h-auto w-full max-w-md grid-cols-2 gap-1.5 rounded-xl bg-stone-200/60 p-1.5">
               <TabsTrigger
                 value="kitchen"
-                className="font-semibold flex items-center justify-center gap-1.5 text-xs py-1.5 px-4 rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
+                className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
               >
-                <UtensilsCrossed className="w-3.5 h-3.5" /> Kitchen View (Timings)
+                <UtensilsCrossed className="h-3.5 w-3.5" /> Kitchen View (Timings)
               </TabsTrigger>
               <TabsTrigger
                 value="rider"
-                className="font-semibold flex items-center justify-center gap-1.5 text-xs py-1.5 px-4 rounded-lg transition-all data-active:bg-white data-active:text-stone-900 data-active:shadow-sm data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm text-stone-600"
+                className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
               >
-                <Truck className="w-3.5 h-3.5" /> Rider View (Cash Splits)
+                <Truck className="h-3.5 w-3.5" /> Rider View (Cash Splits)
               </TabsTrigger>
             </TabsList>
           )}
 
-          {/* Tab 1: Kitchen View */}
           <TabsContent value="kitchen" className="mt-0 focus-visible:outline-none">
-            <KitchenViewTab mode={mode} />
+            <KitchenViewTab mode={mode} selectedDate={selectedDate} />
           </TabsContent>
 
-          {/* Tab 2: Rider View */}
           <TabsContent value="rider" className="mt-0 focus-visible:outline-none">
-            <RiderViewTab mode={mode} />
+            <RiderViewTab mode={mode} selectedDate={selectedDate} />
           </TabsContent>
         </Tabs>
       </div>

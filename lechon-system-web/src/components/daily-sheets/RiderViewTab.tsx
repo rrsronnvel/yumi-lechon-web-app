@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useRoastingRoster, RoastingScheduleItem } from "@/hooks/useSchedules";
+import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { useRidersQuery } from "@/hooks/useRiders";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
 import { Pencil, Copy } from "lucide-react";
@@ -12,6 +12,7 @@ import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
 
 interface RiderViewTabProps {
   mode?: "edit" | "clean";
+  selectedDate?: string;
 }
 
 // Bulletproof Time Formatter
@@ -55,8 +56,8 @@ const formatWeightDisplay = (weight?: string | null): string => {
     .trim() || "-";
 };
 
-export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
-  const { data: scheduleItems, isLoading, isError } = useRoastingRoster();
+export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps) {
+  const { data: dailySheets, isLoading, isError } = useDailySheets(selectedDate);
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const { data: registeredRiders = [] } = useRidersQuery();
@@ -65,7 +66,7 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading logistics schedule...</div>;
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load logistics schedule.</div>;
-  const allOrders = scheduleItems || [];
+  const allOrders = dailySheets?.items || [];
 
   if (allOrders.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No deliveries scheduled for the selected date.</div>;
@@ -234,7 +235,13 @@ export function RiderViewTab({ mode = "edit" }: RiderViewTabProps) {
 
                   {/* 5. Customer Name */}
                   <td className="px-1.5 py-2 font-bold text-slate-900 border-r border-slate-300 break-words leading-tight">
-                    {item.customerName || "-"}
+                    <div>{item.customerName || "-"}</div>
+                    {item.facebookName &&
+                      item.facebookName.toLocaleLowerCase() !== item.customerName?.toLocaleLowerCase() && (
+                        <div className="mt-0.5 text-[9px] font-semibold text-slate-500">
+                          {item.facebookName}
+                        </div>
+                      )}
                   </td>
 
                   {/* 6. Location (Wrap naturally without truncation!) */}

@@ -1,6 +1,14 @@
 using System;
+using System.Collections.Generic;
 
 namespace LechonSystem.Api.DTOs;
+
+public class DailySheetsResponseDto
+{
+    public string TargetDate { get; set; } = string.Empty;
+    public string FormattedDate { get; set; } = string.Empty;
+    public List<DailySheetItemDto> Items { get; set; } = new();
+}
 
 public class DailySheetItemDto
 {

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Models;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Services
 {
@@ -60,11 +61,14 @@ namespace LechonSystem.Api.Services
 
         public async Task<object> GetDailyRosterAsync(DateTime targetDate)
         {
-            return await GetDailySheetsAsync(targetDate);
+            var dailySheets = await GetDailySheetsAsync(targetDate);
+            return dailySheets.Items;
         }
 
-        public async Task<System.Collections.Generic.List<DailySheetItemDto>> GetDailySheetsAsync(DateTime targetDate)
+        public async Task<DailySheetsResponseDto> GetDailySheetsAsync(DateTime? date = null)
         {
+            var targetDate = (date ?? PhilippineTime.Today).Date;
+
             var roastItems = await _context.OrderItemSchedules
                 .AsNoTracking()
                 .Include(s => s.OrderItem)
@@ -72,14 +76,16 @@ namespace LechonSystem.Api.Services
                         .ThenInclude(o => o!.DeliveryTrip)
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.ItemCategory)
-                .Where(s => s.TargetDeliveryTime.Date == targetDate.Date
-                         && s.OrderItem != null
+                .Where(s => s.OrderItem != null
                          && s.OrderItem.ItemCategory != null
                          && s.OrderItem.ItemCategory.MinimumWeightKg > 0
                          && s.OrderItem.Order != null
+                         && s.OrderItem.Order.IsOwnerConfirmed
                          && !s.OrderItem.Order.IsDraft
                          && !s.OrderItem.Order.IsTimeTbd
-                         && !s.OrderItem.Order.IsCancelled)
+                         && !s.OrderItem.Order.IsCancelled
+                         && s.OrderItem.Order.TargetDeliveryTime.HasValue
+                         && s.OrderItem.Order.TargetDeliveryTime.Value.Date == targetDate)
                 .Select(s => new
                 {
                     id = s.Id,
@@ -196,10 +202,9 @@ namespace LechonSystem.Api.Services
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
                          && !o.IsTimeTbd
-                         && (
-                             (o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date == targetDate.Date)
-                             || (o.RiderDepartureTime.HasValue && o.RiderDepartureTime.Value.Date == targetDate.Date)
-                         )
+                         && o.IsOwnerConfirmed
+                         && o.TargetDeliveryTime.HasValue
+                         && o.TargetDeliveryTime.Value.Date == targetDate
                          && !o.OrderItems.Any(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg > 0))
                 .ToListAsync();
 
@@ -308,7 +313,12 @@ namespace LechonSystem.Api.Services
                 }
             }
 
-            return result;
+            return new DailySheetsResponseDto
+            {
+                TargetDate = targetDate.ToString("yyyy-MM-dd"),
+                FormattedDate = targetDate.ToString("dddd, MMMM dd, yyyy"),
+                Items = result
+            };
         }
 
         private static readonly TimeZoneInfo PhilippineTimeZone = GetPhilippineTimeZone();

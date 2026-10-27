@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Services;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Controllers;
 
@@ -20,11 +21,18 @@ public class SchedulesController : ControllerBase
     }
 
     [HttpGet("roster")]
-    public async Task<IActionResult> GetDailyRoster([FromQuery] string? date)
+    public async Task<IActionResult> GetDailyRoster([FromQuery] DateTime? date = null)
     {
-        var targetDate = string.IsNullOrEmpty(date) ? DateTime.Today : DateTime.Parse(date);
+        var targetDate = (date ?? PhilippineTime.Today).Date;
         var roster = await _schedulingService.GetDailyRosterAsync(targetDate);
         return Ok(roster);
+    }
+
+    [HttpGet("daily-sheets")]
+    public async Task<ActionResult<DailySheetsResponseDto>> GetDailySheetsAsync([FromQuery] DateTime? date = null)
+    {
+        var dailySheets = await _schedulingService.GetDailySheetsAsync(date);
+        return Ok(dailySheets);
     }
 
     [HttpPut("items/{orderItemId}/override")]

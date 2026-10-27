@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useRoastingRoster, RoastingScheduleItem } from "@/hooks/useSchedules";
+import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
 import { Pencil } from "lucide-react";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
 
 interface KitchenViewTabProps {
   mode?: "edit" | "clean";
+  selectedDate?: string;
 }
 
 // Bulletproof Time Formatter
@@ -39,8 +40,8 @@ const formatWeightDisplay = (weight?: string | null): string => {
     .trim() || "-";
 };
 
-export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
-  const { data: scheduleItems, isLoading, isError } = useRoastingRoster();
+export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabProps) {
+  const { data: dailySheets, isLoading, isError } = useDailySheets(selectedDate);
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
 
@@ -49,7 +50,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load roasting schedule.</div>;
 
-  const rawRoster = scheduleItems || [];
+  const rawRoster = dailySheets?.items || [];
   if (rawRoster.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No orders scheduled for the selected date.</div>;
 
@@ -221,7 +222,13 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
 
                   {/* 8. Customer Name */}
                   <td className="px-1.5 py-2 font-bold text-slate-900 border-r border-slate-300 break-words leading-tight">
-                    {item.customerName || "-"}
+                    <div>{item.customerName || "-"}</div>
+                    {item.facebookName &&
+                      item.facebookName.toLocaleLowerCase() !== item.customerName?.toLocaleLowerCase() && (
+                        <div className="mt-0.5 text-[9px] font-semibold text-slate-500">
+                          {item.facebookName}
+                        </div>
+                      )}
                   </td>
 
                   {/* 9. Remarks (Wrap naturally without truncation!) */}

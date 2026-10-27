@@ -7,6 +7,7 @@ using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.Interfaces;
 using LechonSystem.Api.DTOs;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Services
 {
@@ -132,11 +133,16 @@ namespace LechonSystem.Api.Services
 
         public async Task<IEnumerable<object>> GetTodayDispatchesAsync()
         {
+            var today = PhilippineTime.Today;
+
             return await _context.Orders
                 .Include(o => o.DeliveryTrip)
-                .Where(o => !o.IsDraft && !o.IsCancelled
-                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value.Date == DateTime.Today.Date)
-                .OrderBy(o => o.TargetDeliveryTime)
+                .Where(o => o.Fulfillment == FulfillmentType.Delivery
+                         && !o.IsCancelled
+                         && !o.IsDraft
+                         && o.TargetDeliveryTime.HasValue
+                         && o.TargetDeliveryTime.Value.Date == today)
+                .OrderBy(o => o.RiderDepartureTime ?? o.TargetDeliveryTime)
                 .Select(o => new
                 {
                     id = o.Id,

@@ -53,19 +53,31 @@ export interface OverrideSchedulePayload {
   remarks?: string;
 }
 
-export function useRoastingRoster(date?: string) {
-  // Dynamically calculate tomorrow's date if not provided
-  let targetDate = date;
-  if (!targetDate) {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    targetDate = tomorrow.toISOString().split('T')[0];
-  }
+export interface DailySheetsResponse {
+  targetDate: string;
+  formattedDate: string;
+  items: RoastingScheduleItem[];
+}
 
+export function useDailySheets(targetDate?: string) {
   return useQuery({
-    queryKey: ['roster', targetDate],
+    queryKey: ['schedules', 'daily-sheets', targetDate],
     queryFn: async () => {
-      const response = await apiClient.get(`/schedules/roster?date=${targetDate}`);
+      const response = await apiClient.get('/schedules/daily-sheets', {
+        params: targetDate ? { date: targetDate } : undefined,
+      });
+      return response.data as DailySheetsResponse;
+    },
+  });
+}
+
+export function useRoastingRoster(date?: string) {
+  return useQuery({
+    queryKey: ['roster', date],
+    queryFn: async () => {
+      const response = await apiClient.get('/schedules/roster', {
+        params: date ? { date } : undefined,
+      });
       return response.data as RoastingScheduleItem[];
     },
   });
