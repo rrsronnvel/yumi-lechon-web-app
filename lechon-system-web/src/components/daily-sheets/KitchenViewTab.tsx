@@ -31,7 +31,7 @@ const formatTime = (timeString?: string) => {
 };
 
 const formatWeightDisplay = (weight?: string | null): string => {
-  if (!weight) return "-";
+  if (!weight || weight === "-") return "-";
   return weight
     .replace(/\s*kg\b/gi, "")
     .replace(/\.00\b/g, "")
@@ -48,21 +48,29 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading roasting schedule...</div>;
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load roasting schedule.</div>;
-  // Carcass Bouncer: Strictly Whole Lechon & Lechon Belly (MinimumWeightKg > 0, excludes lightweight add-ons)
-  const carcassRoster = (scheduleItems || []).filter((item) => {
-    const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
-    const name = (item.size || item.categoryName || "").toLowerCase();
-    const isNonCarcass = /(sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke|1\.5\s*l)/i.test(name);
-    return minW > 0 && !isNonCarcass;
-  });
 
-  if (carcassRoster.length === 0)
+  const rawRoster = scheduleItems || [];
+  if (rawRoster.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No orders scheduled for the selected date.</div>;
 
-  // Dynamic Chronological Priority Sorting by Tahi Time
-  const sortedRoster = [...carcassRoster].sort((a, b) => {
-    const timeA = a.tahiStartTime ? new Date(a.tahiStartTime).getTime() : 0;
-    const timeB = b.tahiStartTime ? new Date(b.tahiStartTime).getTime() : 0;
+  // Dynamic Chronological Priority Sorting:
+  // - Roast items (with valid tahiStartTime) sort chronologically first (Priority 1, 2, 3...)
+  // - Non-lechon items (tahiStartTime == null) sort at the bottom by RiderDepartureTime
+  const sortedRoster = [...rawRoster].sort((a, b) => {
+    const hasTahiA = !!a.tahiStartTime;
+    const hasTahiB = !!b.tahiStartTime;
+
+    if (hasTahiA && hasTahiB) {
+      const timeA = new Date(a.tahiStartTime).getTime();
+      const timeB = new Date(b.tahiStartTime).getTime();
+      return timeA - timeB;
+    }
+
+    if (hasTahiA && !hasTahiB) return -1;
+    if (!hasTahiA && hasTahiB) return 1;
+
+    const timeA = new Date(a.riderDepartureTime ?? a.targetDeliveryTime ?? 0).getTime();
+    const timeB = new Date(b.riderDepartureTime ?? b.targetDeliveryTime ?? 0).getTime();
     return timeA - timeB;
   });
 
@@ -118,10 +126,13 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
           {/* Table Body */}
           <tbody className="divide-y divide-slate-300 bg-white">
             {sortedRoster.map((item, index) => {
-              const editableCellClass = isEdit
+              const hasTahi = !!item.tahiStartTime;
+              const editableCellClass = isEdit && hasTahi
                 ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
                 : "";
               const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
+              const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
+              const displayWeight = hasTahi && minW > 0 ? formatWeightDisplay(item.weight) : "-";
 
               return (
                 <tr
@@ -133,72 +144,76 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                     #{item.orderReference || item.orderId || item.id}
                   </td>
 
-                  {/* 2. Tahi (Editable in edit mode, High-Visibility Bold Red) */}
+                  {/* 2. Tahi (Editable in edit mode for roast items, High-Visibility Bold Red) */}
                   <td
-                    onClick={() => handleCellClick(item)}
+                    onClick={() => hasTahi && handleCellClick(item)}
                     className={`px-1.5 py-2 text-center font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
-                    title={isEdit ? "Click to override production timings" : undefined}
+                    title={isEdit && hasTahi ? "Click to override production timings" : undefined}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>{formatTime(item.tahiStartTime)}</span>
-                      {isEdit && (
+                      {isEdit && hasTahi && (
                         <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
                       )}
                     </div>
                   </td>
 
-                  {/* 3. Salang (Editable in edit mode, Bold Black) */}
+                  {/* 3. Salang (Editable in edit mode for roast items, Bold Black) */}
                   <td
-                    onClick={() => handleCellClick(item)}
+                    onClick={() => hasTahi && handleCellClick(item)}
                     className={`px-1.5 py-2 text-center font-extrabold text-slate-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
-                    title={isEdit ? "Click to override production timings" : undefined}
+                    title={isEdit && hasTahi ? "Click to override production timings" : undefined}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>{formatTime(item.salangStartTime)}</span>
-                      {isEdit && (
+                      {isEdit && hasTahi && (
                         <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
                       )}
                     </div>
                   </td>
 
-                  {/* 4. Priority (Dynamic index + 1) */}
+                  {/* 4. Priority (Dynamic index + 1 for roast items, dash for non-lechon) */}
                   <td className="px-1.5 py-2 text-center font-black border-r border-slate-300 whitespace-nowrap">
-                    {isEdit ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-black text-[11px]">
-                        P{index + 1}
-                        {item.isManualOverride && (
-                          <span
-                            className="bg-amber-600 text-white rounded text-[8px] px-1 font-bold"
-                            title="Manual override active"
-                          >
-                            MOD
-                          </span>
-                        )}
-                      </span>
+                    {hasTahi ? (
+                      isEdit ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-black text-[11px]">
+                          P{index + 1}
+                          {item.isManualOverride && (
+                            <span
+                              className="bg-amber-600 text-white rounded text-[8px] px-1 font-bold"
+                              title="Manual override active"
+                            >
+                              MOD
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="font-black text-slate-900 text-[11px] sm:text-xs">Priority {index + 1}</span>
+                      )
                     ) : (
-                      <span className="font-black text-slate-900 text-[11px] sm:text-xs">Priority {index + 1}</span>
+                      <span className="font-bold text-slate-400 text-xs">-</span>
                     )}
                   </td>
 
                   {/* 5. Size (Compact & Centered: fits "S. Jumbo" without wrapping) */}
                   <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 whitespace-nowrap text-xs">
-                    {item.size || "-"}
+                    {item.size || item.categoryName || "-"}
                   </td>
 
                   {/* 6. Weight */}
                   <td className="px-1.5 py-2 text-center font-medium text-slate-700 border-r border-slate-300 whitespace-nowrap text-[11px]">
-                    {formatWeightDisplay(item.weight)}
+                    {displayWeight}
                   </td>
 
                   {/* 7. Departure / Pickup Time (Editable in edit mode) */}
                   <td
-                    onClick={() => handleCellClick(item)}
+                    onClick={() => hasTahi && handleCellClick(item)}
                     className={`px-1.5 py-2 text-center font-mono font-bold text-amber-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
-                    title={isEdit ? "Click to override departure or production timings" : undefined}
+                    title={isEdit && hasTahi ? "Click to override departure or production timings" : undefined}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>{formatTime(item.riderDepartureTime ?? item.targetDeliveryTime)}</span>
-                      {isEdit && (
+                      {isEdit && hasTahi && (
                         <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
                       )}
                     </div>
@@ -211,7 +226,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
 
                   {/* 9. Remarks (Wrap naturally without truncation!) */}
                   <td
-                    onClick={() => handleCellClick(item)}
+                    onClick={() => hasTahi && handleCellClick(item)}
                     className={`px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words ${editableCellClass}`}
                     title={[freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
                   >
@@ -233,7 +248,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                         )}
                         <span className="block break-words">{item.remarks || "-"}</span>
                       </div>
-                      {isEdit && (
+                      {isEdit && hasTahi && (
                         <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0 mt-0.5" />
                       )}
                     </div>
@@ -264,9 +279,9 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
 
                   {/* 13. Rider Name */}
                   <td
-                    onClick={() => handleCellClick(item)}
+                    onClick={() => hasTahi && handleCellClick(item)}
                     className={`px-1.5 py-2 text-center text-[11px] font-bold ${editableCellClass}`}
-                    title={isEdit ? "Click to assign or change rider" : undefined}
+                    title={isEdit && hasTahi ? "Click to assign or change rider" : undefined}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span
@@ -278,7 +293,7 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                       >
                         {item.riderName || "Unassigned"}
                       </span>
-                      {isEdit && (
+                      {isEdit && hasTahi && (
                         <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
                       )}
                     </div>
@@ -295,9 +310,9 @@ export function KitchenViewTab({ mode = "edit" }: KitchenViewTabProps) {
                 Total Orders: {sortedRoster.length}
               </td>
               <td colSpan={6} className="px-3 py-2 text-left font-bold border-r border-slate-300">
-                First Tahi: <span className="text-red-700 font-black">{formatTime(sortedRoster[0]?.tahiStartTime)}</span>
+                First Tahi: <span className="text-red-700 font-black">{formatTime(sortedRoster.find((r) => !!r.tahiStartTime)?.tahiStartTime)}</span>
                 <span className="mx-2 text-slate-400">|</span>
-                First Salang: <span className="text-black font-black">{formatTime(sortedRoster[0]?.salangStartTime)}</span>
+                First Salang: <span className="text-black font-black">{formatTime(sortedRoster.find((r) => !!r.salangStartTime)?.salangStartTime)}</span>
               </td>
               <td colSpan={3} className="px-3 py-2 text-right font-black uppercase text-slate-700">
                 YUMI LECHON KITCHEN

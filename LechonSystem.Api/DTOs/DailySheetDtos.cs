@@ -22,11 +22,12 @@ public class DailySheetItemDto
     public decimal MaxWeight { get; set; }
     public decimal MinimumWeightKg { get; set; }
     public decimal MaximumWeightKg { get; set; }
-    public DateTime TargetDeliveryTime { get; set; }
+    public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
-    public DateTime TahiStartTime { get; set; }
-    public DateTime SalangStartTime { get; set; }
-    public DateTime PackagingStartTime { get; set; }
+    public DateTime? TahiStartTime { get; set; }
+    public DateTime? SalangStartTime { get; set; }
+    public DateTime? PackagingStartTime { get; set; }
+    public int? Priority { get; set; }
     public string Location { get; set; } = string.Empty;
     public string Remarks { get; set; } = string.Empty;
     public string? FreebiesSummary { get; set; }

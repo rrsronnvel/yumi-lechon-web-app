@@ -65,7 +65,7 @@ namespace LechonSystem.Api.Services
 
         public async Task<System.Collections.Generic.List<DailySheetItemDto>> GetDailySheetsAsync(DateTime targetDate)
         {
-            var items = await _context.OrderItemSchedules
+            var roastItems = await _context.OrderItemSchedules
                 .AsNoTracking()
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
@@ -98,11 +98,11 @@ namespace LechonSystem.Api.Services
                     maxWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MaximumWeightKg : 0m,
 
                     // TIMINGS
-                    targetDeliveryTime = s.TargetDeliveryTime,
+                    targetDeliveryTime = (DateTime?)s.TargetDeliveryTime,
                     riderDepartureTime = s.OrderItem!.Order!.RiderDepartureTime,
-                    tahiStartTime = s.TahiStartTime,
-                    salangStartTime = s.SalangStartTime,
-                    packagingStartTime = s.PackagingStartTime,
+                    tahiStartTime = (DateTime?)s.TahiStartTime,
+                    salangStartTime = (DateTime?)s.SalangStartTime,
+                    packagingStartTime = (DateTime?)s.PackagingStartTime,
 
                     // LOGISTICS & NOTES
                     location = s.OrderItem!.Order!.DeliveryAddress ?? string.Empty,
@@ -133,7 +133,7 @@ namespace LechonSystem.Api.Services
                 })
                 .ToListAsync();
 
-            return items.Select(s =>
+            var result = roastItems.Select(s =>
             {
                 var formattedWeight = (s.minWeight > 0 || s.maxWeight > 0)
                     ? (s.minWeight == s.maxWeight
@@ -186,6 +186,129 @@ namespace LechonSystem.Api.Services
                     IsManualOverride = s.isManualOverride
                 };
             }).ToList();
+
+            // Include confirmed Non-Lechon / Extras-Only orders scheduled on targetDate
+            var nonLechonOrders = await _context.Orders
+                .AsNoTracking()
+                .Include(o => o.DeliveryTrip)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .Where(o => !o.IsDraft
+                         && !o.IsCancelled
+                         && !o.IsTimeTbd
+                         && (
+                             (o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date == targetDate.Date)
+                             || (o.RiderDepartureTime.HasValue && o.RiderDepartureTime.Value.Date == targetDate.Date)
+                         )
+                         && !o.OrderItems.Any(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg > 0))
+                .ToListAsync();
+
+            foreach (var order in nonLechonOrders)
+            {
+                var nonLechonItems = order.OrderItems.Where(oi => oi.ItemCategory == null || oi.ItemCategory.MinimumWeightKg == 0).ToList();
+                if (nonLechonItems.Count == 0)
+                {
+                    result.Add(new DailySheetItemDto
+                    {
+                        Id = order.Id,
+                        OrderItemId = order.Id,
+                        OrderId = order.Id,
+                        OrderReference = order.OrderReference,
+                        CustomerName = order.CustomerName,
+                        FacebookName = order.FacebookName,
+                        ContactNumber = order.ContactNumber,
+                        Source = order.Source,
+                        EventType = order.EventType,
+                        Landmark = order.Landmark,
+                        Size = "Extras",
+                        CategoryName = "Extras",
+                        Weight = "-",
+                        WeightRange = "-",
+                        MinWeight = 0,
+                        MaxWeight = 0,
+                        MinimumWeightKg = 0,
+                        MaximumWeightKg = 0,
+                        TargetDeliveryTime = order.TargetDeliveryTime,
+                        RiderDepartureTime = order.RiderDepartureTime ?? order.TargetDeliveryTime,
+                        TahiStartTime = null,
+                        SalangStartTime = null,
+                        PackagingStartTime = null,
+                        Priority = null,
+                        Location = order.DeliveryAddress ?? string.Empty,
+                        Remarks = order.Remarks ?? string.Empty,
+                        FreebiesSummary = order.FreebiesSummary,
+                        FreebiesConfigJson = order.FreebiesConfigJson,
+                        AddOns = order.AddOns ?? "-",
+                        Price = order.Price,
+                        DeliveryFee = order.DeliveryFee,
+                        Downpayment = order.Downpayment,
+                        DownpaymentMethod = order.DownpaymentMethod,
+                        GrandTotal = order.GrandTotal,
+                        IsOwnerConfirmed = order.IsOwnerConfirmed,
+                        OwnerConfirmedAt = order.OwnerConfirmedAt,
+                        OwnerConfirmedBy = order.OwnerConfirmedBy,
+                        Fulfillment = (int)order.Fulfillment,
+                        Quantity = 1,
+                        RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                        Status = "Confirmed",
+                        IsManualOverride = false
+                    });
+                }
+                else
+                {
+                    foreach (var item in nonLechonItems)
+                    {
+                        var itemName = item.ItemCategory?.Name ?? "Extras";
+                        result.Add(new DailySheetItemDto
+                        {
+                            Id = item.Id,
+                            OrderItemId = item.Id,
+                            OrderId = order.Id,
+                            OrderReference = order.OrderReference,
+                            CustomerName = order.CustomerName,
+                            FacebookName = order.FacebookName,
+                            ContactNumber = order.ContactNumber,
+                            Source = order.Source,
+                            EventType = order.EventType,
+                            Landmark = order.Landmark,
+                            Size = itemName,
+                            CategoryName = itemName,
+                            Weight = "-",
+                            WeightRange = "-",
+                            MinWeight = 0,
+                            MaxWeight = 0,
+                            MinimumWeightKg = 0,
+                            MaximumWeightKg = 0,
+                            TargetDeliveryTime = order.TargetDeliveryTime,
+                            RiderDepartureTime = order.RiderDepartureTime ?? order.TargetDeliveryTime,
+                            TahiStartTime = null,
+                            SalangStartTime = null,
+                            PackagingStartTime = null,
+                            Priority = null,
+                            Location = order.DeliveryAddress ?? string.Empty,
+                            Remarks = order.Remarks ?? string.Empty,
+                            FreebiesSummary = order.FreebiesSummary,
+                            FreebiesConfigJson = order.FreebiesConfigJson,
+                            AddOns = order.AddOns ?? "-",
+                            Price = order.Price,
+                            DeliveryFee = order.DeliveryFee,
+                            Downpayment = order.Downpayment,
+                            DownpaymentMethod = order.DownpaymentMethod,
+                            GrandTotal = order.GrandTotal,
+                            IsOwnerConfirmed = order.IsOwnerConfirmed,
+                            OwnerConfirmedAt = order.OwnerConfirmedAt,
+                            OwnerConfirmedBy = order.OwnerConfirmedBy,
+                            Fulfillment = (int)order.Fulfillment,
+                            Quantity = item.Quantity,
+                            RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                            Status = "Confirmed",
+                            IsManualOverride = false
+                        });
+                    }
+                }
+            }
+
+            return result;
         }
 
         private static readonly TimeZoneInfo PhilippineTimeZone = GetPhilippineTimeZone();

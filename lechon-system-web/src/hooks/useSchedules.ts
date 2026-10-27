@@ -68,19 +68,6 @@ export function useRoastingRoster(date?: string) {
       const response = await apiClient.get(`/schedules/roster?date=${targetDate}`);
       return response.data as RoastingScheduleItem[];
     },
-    select: (data: RoastingScheduleItem[]) => {
-      const carcassOnly = (data || []).filter((item) => {
-        const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
-        const name = (item.size || item.categoryName || "").toLowerCase();
-        const isNonCarcass = /(sarsa|sauce|dinuguan|pancit|pansit|palabok|spaghetti|puto|coke|1\.5\s*l)/i.test(name);
-        return minW > 0 && !isNonCarcass;
-      });
-      return carcassOnly.sort((a, b) => {
-        const timeA = a.tahiStartTime ? new Date(a.tahiStartTime).getTime() : 0;
-        const timeB = b.tahiStartTime ? new Date(b.tahiStartTime).getTime() : 0;
-        return timeA - timeB;
-      });
-    },
   });
 }
 
