@@ -24,7 +24,7 @@ namespace LechonSystem.Api.Services
         {
             return await _context.PaymentLogs
                 .AsNoTracking()
-                .Where(p => p.Status == PaymentStatus.Success)
+                .Where(p => p.Status == PaymentStatus.Success && !p.IsVoided)
                 .GroupBy(p => p.CreatedAt.Date)
                 .Select(g => new
                 {

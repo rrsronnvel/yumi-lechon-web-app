@@ -165,6 +165,41 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
+        [HttpPost("{orderId}/payments/{paymentLogId}/void")]
+        public async Task<IActionResult> VoidPayment(
+            int orderId,
+            int paymentLogId,
+            [FromBody] VoidPaymentRequest request)
+        {
+            if (!User.IsInRole("Owner"))
+            {
+                return StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new { Message = "Only store owners are authorized to void payments" });
+            }
+
+            try
+            {
+                var updatedOrder = await _orderService.VoidPaymentAsync(
+                    orderId,
+                    paymentLogId,
+                    request);
+                return Ok(updatedOrder);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { Message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { Message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
+        }
+
         [HttpPatch("{id}/renegotiate/agree")]
         [Authorize(Roles = "Owner")]
         public async Task<IActionResult> AgreeToPriceHike(int id)

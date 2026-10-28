@@ -36,6 +36,11 @@ namespace LechonSystem.Api.Models
         public decimal Amount { get; set; }
         
         public PaymentStatus Status { get; set; }
+
+        public bool IsVoided { get; set; } = false;
+        public DateTime? VoidedAt { get; set; }
+        public string? VoidedBy { get; set; }
+        public string? VoidReason { get; set; }
         
         // Navigation property linking back to the master order
         public Order? Order { get; set; }

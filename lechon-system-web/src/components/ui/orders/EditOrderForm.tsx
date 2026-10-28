@@ -25,7 +25,7 @@ import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomers";
-import { evaluateDuplicateOrders } from "@/utils/similarityHelper";
+import { evaluateDuplicateOrders, formatCalendarDateLabel } from "@/utils/similarityHelper";
 import FreebiesSelector from "./FreebiesSelector";
 import PaymentChannelPills, {
   PaymentChannel,
@@ -439,6 +439,8 @@ export default function EditOrderForm({
 
   const duplicateOrders = duplicateEvaluation.duplicates;
 
+  const repeatCustomerBooking = duplicateEvaluation.repeatCustomerMatches[0];
+
   // 3. THE FEE BOUNCER: If changed to Pickup (0) or Lalamove (2), force fee & distance to 0!
   useEffect(() => {
     const currentFulfillment = Number(fulfillment);
@@ -839,6 +841,16 @@ export default function EditOrderForm({
             </div>
           )}
 
+          {repeatCustomerBooking && (
+            <div className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-xs">
+              ⭐ Repeat Customer • Active booking on{" "}
+              {formatCalendarDateLabel(
+                repeatCustomerBooking.order.targetDeliveryDate ??
+                  repeatCustomerBooking.order.targetDeliveryTime,
+              )}
+            </div>
+          )}
+
           {/* Draft Inquiry Toggle Banner */}
           <div className="bg-purple-50/80 border border-purple-200 rounded-lg p-3 space-y-2">
             <div className="flex items-center justify-between">

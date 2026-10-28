@@ -195,11 +195,11 @@ Every AI agent and software engineer working on this repository must strictly ad
   1. The line item price snapshots.
   2. The Grand Total and calculated Smart Balance.
   3. The backward-scheduled kitchen clock (Tahi / Salang times).
-* **The Locked Cash:** Existing `Downpayment` and `PaymentLog` entries are **strictly read-only and immutable**. Never update an existing payment row to reflect new money. All additional funds must be recorded via new `PaymentLog` records.
+* **The Locked Cash:** Never edit `PaymentLog.Amount` or delete a posted payment. All additional funds must be appended as new rows. The only reversal is the Owner-only “Pa-void po” workflow, which preserves the row and stamps `IsVoided`, `VoidedAt`, `VoidedBy`, and `VoidReason` after a mandatory reason.
 * **Price Snapshotting:** Every `OrderItem` must lock in the active `ItemCategory.BasePrice` at checkout (`TotalPrice = BasePrice * Quantity`). Menu price updates in the CMS must never alter existing, confirmed historical orders.
 
 ### D. The "Black Box" Immutable Audit Log
-* Every manual edit or cancellation must log an entry in `OrderAuditLogs` with:
+* Every manual edit, cancellation, or payment void must log an entry in `OrderAuditLogs` with:
   - `OrderId`
   - `ActionType` (e.g., `"Order Edited"`, `"Order Cancelled"`)
   - `Changes` (Human-readable diff: e.g., `"Address changed from 'Imus' to 'Bacoor' | Upgraded size to Medium"`)
@@ -263,6 +263,7 @@ Every AI agent and software engineer working on this repository must strictly ad
   2. `Direct GCash`: Customer sent money directly to store's main QR/phone.
   3. `Rider GCash Remittance`: Rider collected cash and transferred electronically to store GCash.
 * **Granular Cash Custody Sub-Pills (Directory Parity):** Slices active unpaid balances into `Road Cash` (in rider pouches on the street), `In Staff Drawer` (unremitted floor custody), and `Advance` (future AR commitments), providing instant cross-platform audit clarity and deep-link reconciliation.
+* **Owner-Only Payment Voiding (“Pa-void po”):** Cashiers may add payments but cannot edit, delete, or void them. Only an authenticated Owner may call `POST /api/orders/{orderId}/payments/{paymentLogId}/void` with a mandatory reason. The service preserves the payment, recalculates paid/balance values and channel/revenue summaries from non-voided successful logs, and records an immutable `Payment Voided` audit entry.
 
 #### 4. The Zero-Inbox Dashboard Trigger Windows
 * **4-Day Reminder Window:** Surfaces unpaid orders for staff to follow up via Facebook Messenger.
@@ -337,8 +338,9 @@ These rules must remain aligned across `LechonSystem.Api`, `lechon-system-web`, 
 
 * **Whole Lechon Freebies:** `minimumWeightKg >= 13` is the only weight trigger. One head receives seven canonical freebies; opt-out applies the CMS-configured `NoFreebiesDiscountPerPig` (default `₱2,000`) per head; Raw Innards fixes Dinuguan at zero with no replacement slot. Keep both `src/utils/freebiesHelper.ts` implementations behaviorally identical and persist `FreebiesSummary` plus `FreebiesConfigJson`.
 * **Owner Confirmation:** Cashier-created active orders reserve and schedule immediately but require Owner review. Only `POST /api/orders/{id}/confirm-owner` completes the gate; pending work comes from `GET /api/dashboard/pending-owner-confirmations`.
-* **Multi-Factor Duplicate Radar:** Composite 2-factor scoring engine (`similarityHelper.ts` across Web and Mobile, `CustomerService.cs` on Backend). The red duplicate alert (`🚨 POSSIBLE DUPLICATE ORDER DETECTED!`) fires ONLY when composite score $\ge 2$ across 4 independent factors: 1) Valid non-placeholder Phone Match (+1 pt), 2) Event Date Proximity (same day or $\pm 1$ day, +1 pt), 3) Name/FB Name Similarity (exact/token/Levenshtein $\ge 0.75$, +1 pt), 4) Address Overlap (same street/barangay & municipality, +1 pt). Placeholder numbers (`09000000000`, `00000000000`, length < 10, or $\le 2$ unique digits) are strictly excluded ($0$ points) and suppress both the red duplicate banner and repeat customer pill. Self-match immunity protects active orders during edit. Submissions with Score $\ge 2$ on the exact same date trigger an explicit confirmation speedbump modal.
+* **Mandatory Same-Date Duplicate Radar:** Web and Mobile normalize dates to `YYYY-MM-DD`. The red alert fires only for `exactSameCalendarDay && (valid non-placeholder phone || similar customer/FB name || non-pickup address overlap)`. The retired $\pm 1$ day rule is forbidden: matching identity on Nov 8 versus Nov 9 is strictly `isRepeatCustomerOnly`, shows `⭐ Repeat Customer • Active booking on [date]`, and never triggers red. Self-match and placeholder-phone immunity remain mandatory.
 * **BIR Channels:** Initial and subsequent payment logs use exactly `Cash`, `GCash`, `Maya`, or `Bank Transfer`. Positive unclassified downpayments default to GCash; zero downpayments use `None` on the order header.
+* **Owner-Only Payment Voiding:** `PaymentLog.cs`, `VoidPaymentRequest.cs`, `OrderService.VoidPaymentAsync`, both dossier UIs, and `useVoidPaymentMutation` must remain synchronized. Cashiers can append only; Owners can void with a reason; the original transaction and `OrderAuditLogs` evidence are permanent. Successful mutations invalidate `['orders']`, `['order', orderId]`, `['dashboard']`, and `['manifest']`.
 * **Mobile Alerts:** `src/hooks/useNotifications.ts` owns permission/channel setup, daily 9:00 AM deposit reminders, daily 4:00 PM defrost reminders, Owner queue increase alerts, Rush Defrost alerts, and the Floor Action test trigger.
 * **Daily Sheets:** `SchedulingService` projects `FreebiesSummary`; Kitchen and Rider views render the semantic badge above ordinary remarks.
 * **Directory/Draft parity:** `Order.IsTimeTbd`, two-tier draft slicing, and date-filter query semantics must remain identical across API, Web, and Mobile. Dated incomplete records belong in Upcoming; only dateless drafts belong in Drafts.
@@ -365,7 +367,7 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
       ├── components/
       │   ├── MainShell.tsx            # 3-tab mobile shell (Orders, New POS, Drawer) + top HUD
       │   └── orders/
-      │       ├── OrderDossierModal.tsx# 3-second customer dossier, tel: dialer, payment & cancel modals
+      │       ├── OrderDossierModal.tsx# 3-second customer dossier, payment history, Owner void & cancel controls
       │       ├── EditOrderModal.tsx   # Mobile editor with Time-TBD, extras-only mode & 12-hour controls
       │       └── FloorActionView.tsx  # Mobile Floor Action Hub (Downpayment Radar & Tonight's Defrost Roster)
       ├── screens/
@@ -374,7 +376,7 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
       │   ├── PosScreen.tsx            # AI POS with extras-only mode, Time-TBD & AM/PM controls
       │   └── DrawerScreen.tsx         # 2-Hop Cash Custody & Tri-Modal Settlement Hub
       ├── hooks/
-      │   ├── useOrders.ts             # Directory search, dossier fetch, manual pay & cancel mutations
+      │   ├── useOrders.ts             # Directory/details plus payment add/void and lifecycle mutations
       │   ├── useFloorAction.ts        # Tomorrow's defrost roster & 4-day pending confirmation queries
       │   ├── usePos.ts                # Catalog, inventory balances, screenshot parser & order creation
       │   └── useManifest.ts           # Rider/Pickup/Lalamove settlements & 2-Hop QR custody mutations

@@ -36,6 +36,7 @@ import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import { Button } from "@/components/ui/button";
 import OrderForm from "@/components/ui/orders/OrderForm";
 import { useOrderDetails } from "@/hooks/useOrderDetails";
+import { useVoidPaymentMutation } from "@/hooks/useVoidPayment";
 import { useLogPayment } from "@/hooks/useLogPayment";
 import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
 import { useUpdateCustomerNotesMutation } from "@/hooks/useCustomers";
@@ -87,7 +88,7 @@ const shiftDate = (date: string, days: number) => {
 export default function OrdersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isOwner } = useAuth();
+  const { isOwner, user } = useAuth();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const { data: deliveryPricing } = useDeliveryPricing();
   const [filterTab, setFilterTab] = useState("upcoming");
@@ -218,6 +219,7 @@ export default function OrdersPage() {
   const [draftPreferences, setDraftPreferences] = useState("");
   const [draftComplaints, setDraftComplaints] = useState("");
   const paymentMutation = useLogPayment();
+  const voidPaymentMutation = useVoidPaymentMutation();
   const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
 
   const { data, isLoading: isDetailsLoading } = useOrderDetails(
@@ -320,6 +322,8 @@ export default function OrdersPage() {
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentMethod, setPaymentMethod] = useState("GCash");
+  const [paymentToVoid, setPaymentToVoid] = useState<any | null>(null);
+  const [voidReason, setVoidReason] = useState("");
 
   const handleRowClick = (order: OrderDirectoryDto) => {
     setSelectedOrder(order);
@@ -1759,26 +1763,79 @@ export default function OrdersPage() {
                           <p className="font-semibold uppercase tracking-wide text-stone-500">
                             Payment history
                           </p>
-                          {orderDetails.paymentLogs.map((payment: any) => (
-                            <div
-                              key={payment.id}
-                              className="flex items-center justify-between text-stone-600"
-                            >
-                              <span>
-                                {payment.paymentMethod === "Cash"
-                                  ? "💵"
-                                  : payment.paymentMethod === "Maya"
-                                    ? "💚"
-                                    : payment.paymentMethod === "Bank Transfer"
-                                      ? "🏦"
-                                      : "📱"}{" "}
-                                {payment.paymentMethod}
-                              </span>
-                              <span className="font-mono font-semibold">
-                                ₱{Number(payment.amount || 0).toLocaleString()}
-                              </span>
-                            </div>
-                          ))}
+                          {orderDetails.paymentLogs.map((payment: any) => {
+                            const reference =
+                              payment.referenceNumber || payment.gatewayReferenceId;
+                            return (
+                              <div
+                                key={payment.id}
+                                className={cn(
+                                  "rounded-lg border border-stone-200 p-2.5",
+                                  payment.isVoided && "border-rose-200 bg-rose-50/70",
+                                )}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div
+                                    className={cn(
+                                      "min-w-0 space-y-0.5 text-stone-600",
+                                      payment.isVoided && "line-through opacity-70",
+                                    )}
+                                  >
+                                    <p className="font-semibold text-stone-800">
+                                      {payment.paymentMethod === "Cash"
+                                        ? "💵"
+                                        : payment.paymentMethod === "Maya"
+                                          ? "💚"
+                                          : payment.paymentMethod === "Bank Transfer"
+                                            ? "🏦"
+                                            : "📱"}{" "}
+                                      {payment.paymentMethod} • ₱
+                                      {Number(payment.amount || 0).toLocaleString()}
+                                    </p>
+                                    <p>
+                                      {new Date(payment.createdAt).toLocaleString("en-PH")}
+                                    </p>
+                                    {reference && <p className="break-all">Ref: {reference}</p>}
+                                  </div>
+
+                                  {payment.isVoided ? (
+                                    <Badge className="shrink-0 border border-rose-300 bg-rose-100 text-rose-800">
+                                      🚫 Voided by {payment.voidedBy || "owner"}
+                                    </Badge>
+                                  ) : isOwner ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 shrink-0 border-rose-300 px-2 text-[11px] font-bold text-rose-700 hover:bg-rose-50"
+                                      onClick={() => {
+                                        setPaymentToVoid(payment);
+                                        setVoidReason("");
+                                      }}
+                                    >
+                                      🗑️ Void
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled
+                                      title="Owner authorization required to void payments"
+                                      className="h-7 shrink-0 px-2 text-[11px]"
+                                    >
+                                      🗑️ Void
+                                    </Button>
+                                  )}
+                                </div>
+                                {payment.isVoided && payment.voidReason && (
+                                  <p className="mt-1.5 text-[11px] font-medium text-rose-700">
+                                    Reason: {payment.voidReason}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                       <div className="flex justify-between text-rose-600 font-bold text-lg border-t border-stone-200 pt-2 mt-2">
@@ -1955,6 +2012,76 @@ export default function OrdersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(paymentToVoid)}
+        onOpenChange={(open) => {
+          if (!open && !voidPaymentMutation.isPending) {
+            setPaymentToVoid(null);
+            setVoidReason("");
+          }
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md rounded-xl border-stone-200 bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-stone-900">
+              Are you sure you want to void this ₱
+              {Number(paymentToVoid?.amount || 0).toLocaleString()} payment?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-stone-600">
+              Pa-void po: only an Owner can reverse this ledger entry. The
+              original transaction will remain visible in the audit history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-1 py-2">
+            <label className="block text-xs font-medium text-stone-700">
+              Reason for voiding <span className="text-rose-500">*</span>
+            </label>
+            <Textarea
+              placeholder="Typo: meant ₱1,000 instead of ₱10,000"
+              value={voidReason}
+              onChange={(event) => setVoidReason(event.target.value)}
+              rows={3}
+              className="resize-none bg-white text-sm border-stone-300"
+              required
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={voidPaymentMutation.isPending}>
+              Keep Payment
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={voidPaymentMutation.isPending || !voidReason.trim()}
+              onClick={async () => {
+                const targetOrderId = orderDetails?.id || selectedOrder?.id;
+                if (!targetOrderId || !paymentToVoid) return;
+                try {
+                  await voidPaymentMutation.mutateAsync({
+                    orderId: targetOrderId,
+                    paymentLogId: paymentToVoid.id,
+                    reason: voidReason,
+                    voidedBy: user?.username || user?.fullName,
+                  });
+                  toast.success("Payment voided and balance due restored.");
+                  setPaymentToVoid(null);
+                  setVoidReason("");
+                } catch (error: any) {
+                  toast.error(
+                    error?.response?.data?.message ||
+                      "Failed to void payment. Owner authorization is required.",
+                  );
+                }
+              }}
+            >
+              {voidPaymentMutation.isPending ? "Voiding..." : "Confirm Void"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* In-Dossier Cancellation Confirmation Modal */}
       <AlertDialog

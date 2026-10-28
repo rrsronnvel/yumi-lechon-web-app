@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -471,7 +472,9 @@ namespace LechonSystem.Api.Services
             var directoryOrderIds = directory.Select(o => o.Id).ToList();
             var directoryPayments = await _context.PaymentLogs
                 .AsNoTracking()
-                .Where(p => directoryOrderIds.Contains(p.OrderId) && p.Status == PaymentStatus.Success)
+                .Where(p => directoryOrderIds.Contains(p.OrderId) &&
+                            p.Status == PaymentStatus.Success &&
+                            !p.IsVoided)
                 .Select(p => new { p.OrderId, p.PaymentMethod, p.Provider, p.Amount })
                 .ToListAsync();
 
@@ -977,7 +980,12 @@ namespace LechonSystem.Api.Services
                     PaymentMethod = p.PaymentMethod,
                     Status = p.Status.ToString(),
                     GatewayReferenceId = p.GatewayReferenceId,
-                    CreatedAt = p.CreatedAt
+                    ReferenceNumber = p.GatewayReferenceId,
+                    CreatedAt = p.CreatedAt,
+                    IsVoided = p.IsVoided,
+                    VoidedAt = p.VoidedAt,
+                    VoidedBy = p.VoidedBy,
+                    VoidReason = p.VoidReason
                 })
                 .ToListAsync();
 
@@ -986,7 +994,17 @@ namespace LechonSystem.Api.Services
                 payment.PaymentMethod = PaymentChannels.Normalize(payment.PaymentMethod);
             }
 
-            dto.PaymentChannelsSummary = dto.PaymentLogs
+            var activePayments = dto.PaymentLogs.Where(p => !p.IsVoided).ToList();
+            if (dto.PaymentLogs.Count > 0)
+            {
+                dto.Downpayment = activePayments.Sum(p => p.Amount);
+                dto.BalanceDue = Math.Max(0, dto.GrandTotal - dto.Downpayment);
+                dto.DownpaymentMethod = activePayments.Count > 0
+                    ? activePayments[^1].PaymentMethod
+                    : "None";
+            }
+
+            dto.PaymentChannelsSummary = activePayments
                 .GroupBy(p => p.PaymentMethod)
                 .Select(g => new PaymentChannelTotalDto
                 {
@@ -996,7 +1014,7 @@ namespace LechonSystem.Api.Services
                 .OrderBy(p => Array.IndexOf(PaymentChannels.Supported, p.PaymentMethod))
                 .ToList();
 
-            if (dto.PaymentChannelsSummary.Count == 0 && order.Downpayment > 0)
+            if (dto.PaymentLogs.Count == 0 && order.Downpayment > 0)
             {
                 dto.PaymentChannelsSummary.Add(new PaymentChannelTotalDto
                 {
@@ -1046,6 +1064,98 @@ namespace LechonSystem.Api.Services
             }
 
             return dto;
+        }
+
+        public async Task<OrderDetailsDto> VoidPaymentAsync(
+            int orderId,
+            int paymentLogId,
+            VoidPaymentRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                throw new ArgumentException("A reason is required to void a payment.");
+            }
+
+            var reason = request.Reason.Trim();
+            var voidedBy = string.IsNullOrWhiteSpace(request.VoidedBy)
+                ? CurrentUser
+                : request.VoidedBy.Trim();
+            var voidedAt = DateTime.UtcNow;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable);
+
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null)
+            {
+                throw new KeyNotFoundException($"Order {orderId} was not found.");
+            }
+
+            var payment = await _context.PaymentLogs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p =>
+                    p.Id == paymentLogId &&
+                    p.OrderId == orderId &&
+                    p.Status == PaymentStatus.Success);
+
+            if (payment == null)
+            {
+                throw new KeyNotFoundException(
+                    $"Payment {paymentLogId} was not found for order {orderId}.");
+            }
+
+            if (payment.IsVoided)
+            {
+                throw new InvalidOperationException("This payment has already been voided.");
+            }
+
+            var affectedRows = await _context.PaymentLogs
+                .Where(p =>
+                    p.Id == paymentLogId &&
+                    p.OrderId == orderId &&
+                    p.Status == PaymentStatus.Success &&
+                    !p.IsVoided)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(p => p.IsVoided, true)
+                    .SetProperty(p => p.VoidedAt, voidedAt)
+                    .SetProperty(p => p.VoidedBy, voidedBy)
+                    .SetProperty(p => p.VoidReason, reason));
+
+            if (affectedRows != 1)
+            {
+                throw new InvalidOperationException("This payment has already been voided.");
+            }
+
+            var activePayments = await _context.PaymentLogs
+                .AsNoTracking()
+                .Where(p =>
+                    p.OrderId == orderId &&
+                    p.Status == PaymentStatus.Success &&
+                    !p.IsVoided)
+                .OrderBy(p => p.CreatedAt)
+                .Select(p => new { p.Amount, p.PaymentMethod })
+                .ToListAsync();
+
+            order.Downpayment = activePayments.Sum(p => p.Amount);
+            order.DownpaymentMethod = activePayments.Count > 0
+                ? PaymentChannels.Normalize(activePayments[^1].PaymentMethod)
+                : "None";
+            order.UpdatedAt = voidedAt;
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ChangedBy = voidedBy,
+                ActionType = "Payment Voided",
+                Changes = $"Voided payment of ₱{payment.Amount:N2} ({PaymentChannels.Normalize(payment.PaymentMethod)}) recorded on {payment.CreatedAt:g}. Reason: {reason}",
+                Timestamp = voidedAt
+            });
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return await GetOrderDetailsAsync(orderId)
+                ?? throw new KeyNotFoundException($"Order {orderId} was not found.");
         }
 
         // Action 1: Customer Agreed

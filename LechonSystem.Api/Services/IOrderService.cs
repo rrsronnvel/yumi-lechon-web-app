@@ -17,6 +17,7 @@ public interface IOrderService
     Task UpdateOrderAsync(int id, UpdateOrderDto request);
     Task<Order?> GetOrderByIdAsync(int orderId);
     Task<OrderDetailsDto?> GetOrderDetailsAsync(int orderId);
+    Task<OrderDetailsDto> VoidPaymentAsync(int orderId, int paymentLogId, VoidPaymentRequest request);
     Task<bool> ApplyNewMenuPricesAsync(int orderId);
     Task<bool> WaivePriceHikeAsync(int orderId);
     Task<List<OrderAuditLog>> GetOrderAuditLogsAsync(int orderId);

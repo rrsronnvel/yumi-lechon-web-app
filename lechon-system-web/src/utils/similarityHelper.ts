@@ -5,6 +5,7 @@ export interface ActiveCustomerOrderSummary {
   facebookName?: string | null;
   contactNumber?: string | null;
   deliveryAddress?: string | null;
+  targetDeliveryDate?: string | null;
   targetDeliveryTime?: string | null;
   grandTotal: number;
   itemsSummary: string;
@@ -20,6 +21,12 @@ export interface DuplicateMatchEvaluation {
   isSameDay: boolean;
 }
 
+export interface RepeatCustomerMatchEvaluation {
+  order: ActiveCustomerOrderSummary;
+  matchingFactors: string[];
+  isRepeatCustomerOnly: true;
+}
+
 export interface CurrentOrderDetails {
   orderId?: number;
   orderReference?: string;
@@ -28,6 +35,7 @@ export interface CurrentOrderDetails {
   contactNumber?: string;
   contactNumber2?: string;
   deliveryAddress?: string;
+  targetDeliveryDate?: string | null;
   targetDate?: string | null;
 }
 
@@ -161,40 +169,51 @@ export const checkNameSimilarity = (
   return computeLevenshteinRatio(normA, normB) >= 0.75;
 };
 
+/** Normalizes only valid ISO calendar dates, without timezone conversion. */
+export const normalizeCalendarDate = (
+  value?: string | null,
+): string | null => {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() + 1 !== month ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${match[1]}-${match[2]}-${match[3]}`;
+};
+
 /**
- * Factor 2: Event Date Proximity (+1 pt)
- * Same day or within ±1 calendar day.
+ * Mandatory date gate for duplicate detection. `isNearby` is retained for
+ * compatibility, but now means exact same calendar day only.
  */
 export const checkDateProximity = (
   dateA?: string | null,
   dateB?: string | null,
 ): { isNearby: boolean; isSameDay: boolean } => {
-  if (!dateA || !dateB) return { isNearby: false, isSameDay: false };
+  const normalizedA = normalizeCalendarDate(dateA);
+  const normalizedB = normalizeCalendarDate(dateB);
+  const isSameDay = Boolean(normalizedA && normalizedB && normalizedA === normalizedB);
+  return { isNearby: isSameDay, isSameDay };
+};
 
-  const parseYMD = (
-    dStr: string,
-  ): { y: number; m: number; d: number } | null => {
-    const match = dStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-      return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) };
-    }
-    const d = new Date(dStr);
-    if (isNaN(d.getTime())) return null;
-    return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
-  };
-
-  const pA = parseYMD(dateA);
-  const pB = parseYMD(dateB);
-  if (!pA || !pB) return { isNearby: false, isSameDay: false };
-
-  const utcA = Date.UTC(pA.y, pA.m - 1, pA.d);
-  const utcB = Date.UTC(pB.y, pB.m - 1, pB.d);
-  const diffDays = Math.abs(utcA - utcB) / (1000 * 60 * 60 * 24);
-
-  return {
-    isSameDay: diffDays === 0,
-    isNearby: diffDays <= 1,
-  };
+export const formatCalendarDateLabel = (value?: string | null): string => {
+  const normalized = normalizeCalendarDate(value);
+  if (!normalized) return "date pending";
+  return new Date(`${normalized}T12:00:00`).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 };
 
 /**
@@ -258,23 +277,27 @@ export const checkAddressOverlap = (
 };
 
 /**
- * 2-Factor Composite Duplicate Scoring Engine
- * Red Alert only fires when Score >= 2 across:
- * - Factor 1: Valid Phone Match (+1 pt)
- * - Factor 2: Event Date Proximity (+1 pt)
- * - Factor 3: Name / Facebook Name Similarity (+1 pt)
- * - Factor 4: Address / Location Overlap (+1 pt)
+ * Exact-same-date duplicate engine. The date match is a mandatory gate, then
+ * at least one identity/location factor must match before a red alert fires.
  */
 export const evaluateDuplicateOrders = (
   current: CurrentOrderDetails,
   activeUpcomingOrders?: ActiveCustomerOrderSummary[] | null,
 ): {
   duplicates: DuplicateMatchEvaluation[];
+  repeatCustomerMatches: RepeatCustomerMatchEvaluation[];
   isRepeatCustomer: boolean;
+  isRepeatCustomerOnly: boolean;
   repeatOrderCount: number;
 } => {
   if (!activeUpcomingOrders || activeUpcomingOrders.length === 0) {
-    return { duplicates: [], isRepeatCustomer: false, repeatOrderCount: 0 };
+    return {
+      duplicates: [],
+      repeatCustomerMatches: [],
+      isRepeatCustomer: false,
+      isRepeatCustomerOnly: false,
+      repeatOrderCount: 0,
+    };
   }
 
   const currentPhones = [
@@ -284,7 +307,7 @@ export const evaluateDuplicateOrders = (
   const hasValidCurrentPhone = currentPhones.length > 0;
 
   const evaluations: DuplicateMatchEvaluation[] = [];
-  let validPhoneMatchesCount = 0;
+  const repeatCustomerMatches: RepeatCustomerMatchEvaluation[] = [];
 
   for (const candidate of activeUpcomingOrders) {
     // Self-Match Immunity in Edit Mode
@@ -300,56 +323,58 @@ export const evaluateDuplicateOrders = (
       continue;
     }
 
-    let score = 0;
-    const matchingFactors: string[] = [];
-
-    // Factor 1: Valid Phone Match (+1 pt)
     const candidatePhones = cleanPhoneDigits(candidate.contactNumber);
     const phoneMatches =
       hasValidCurrentPhone &&
       candidatePhones.some((cp) => currentPhones.includes(cp));
 
-    if (phoneMatches) {
-      score += 1;
-      matchingFactors.push("Valid Phone Match");
-      validPhoneMatchesCount += 1;
-    }
-
-    // Factor 2: Event Date Proximity (+1 pt)
-    const dateEval = checkDateProximity(
-      current.targetDate,
-      candidate.targetDeliveryTime,
-    );
-    if (dateEval.isNearby) {
-      score += 1;
-      matchingFactors.push(
-        dateEval.isSameDay ? "Exact Same Date" : "Date ±1 Day Proximity",
-      );
-    }
-
-    // Factor 3: Name / Facebook Name Similarity (+1 pt)
     const nameMatches =
       checkNameSimilarity(current.customerName, candidate.customerName) ||
       checkNameSimilarity(current.facebookName, candidate.facebookName) ||
       checkNameSimilarity(current.customerName, candidate.facebookName) ||
       checkNameSimilarity(current.facebookName, candidate.customerName);
 
-    if (nameMatches) {
-      score += 1;
-      matchingFactors.push("Name / FB Match");
-    }
-
-    // Factor 4: Address / Location Overlap (+1 pt)
     const addressMatches = checkAddressOverlap(
       current.deliveryAddress,
       candidate.deliveryAddress,
     );
+    const candidateDate =
+      candidate.targetDeliveryDate ?? candidate.targetDeliveryTime;
+    const dateEval = checkDateProximity(
+      current.targetDeliveryDate ?? current.targetDate,
+      candidateDate,
+    );
+
+    if (!dateEval.isSameDay) {
+      const repeatFactors: string[] = [];
+      if (phoneMatches) repeatFactors.push("Valid Phone Match");
+      if (nameMatches) repeatFactors.push("Name / FB Match");
+      if (repeatFactors.length > 0) {
+        repeatCustomerMatches.push({
+          order: candidate,
+          matchingFactors: repeatFactors,
+          isRepeatCustomerOnly: true,
+        });
+      }
+      continue;
+    }
+
+    let score = 1;
+    const matchingFactors = ["Exact Same Date"];
+    if (phoneMatches) {
+      score += 1;
+      matchingFactors.push("Valid Phone Match");
+    }
+    if (nameMatches) {
+      score += 1;
+      matchingFactors.push("Name / FB Match");
+    }
     if (addressMatches) {
       score += 1;
       matchingFactors.push("Delivery Address Overlap");
     }
 
-    // Threshold: Score >= 2 triggers duplicate flag
+    // Exact date plus at least one additional factor.
     if (score >= 2) {
       evaluations.push({
         order: candidate,
@@ -372,9 +397,22 @@ export const evaluateDuplicateOrders = (
     return dateA - dateB;
   });
 
+  repeatCustomerMatches.sort((a, b) => {
+    const dateA = normalizeCalendarDate(
+      a.order.targetDeliveryDate ?? a.order.targetDeliveryTime,
+    );
+    const dateB = normalizeCalendarDate(
+      b.order.targetDeliveryDate ?? b.order.targetDeliveryTime,
+    );
+    return (dateA ?? "9999-12-31").localeCompare(dateB ?? "9999-12-31");
+  });
+
   return {
     duplicates: evaluations,
-    isRepeatCustomer: validPhoneMatchesCount > 0,
-    repeatOrderCount: activeUpcomingOrders.length,
+    repeatCustomerMatches,
+    isRepeatCustomer: repeatCustomerMatches.length > 0,
+    isRepeatCustomerOnly:
+      evaluations.length === 0 && repeatCustomerMatches.length > 0,
+    repeatOrderCount: repeatCustomerMatches.length,
   };
 };

@@ -69,7 +69,12 @@ public class PaymentLogDto
     public string PaymentMethod { get; set; } = "Cash";
     public string Status { get; set; } = string.Empty;
     public string GatewayReferenceId { get; set; } = string.Empty;
+    public string ReferenceNumber { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public bool IsVoided { get; set; }
+    public DateTime? VoidedAt { get; set; }
+    public string? VoidedBy { get; set; }
+    public string? VoidReason { get; set; }
 }
 
 public class PaymentChannelTotalDto

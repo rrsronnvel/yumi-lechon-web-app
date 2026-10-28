@@ -121,7 +121,12 @@ export interface PaymentLogDto {
   paymentMethod: string;
   status: string;
   gatewayReferenceId: string;
+  referenceNumber: string;
   createdAt: string;
+  isVoided: boolean;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
 }
 
 export interface OrderAuditLogDto {
@@ -139,6 +144,13 @@ export interface RecordManualPaymentPayload {
   amount: number;
   paymentMethod: 'GCash' | 'Cash' | 'Maya' | 'Bank Transfer' | string;
   referenceNumber?: string;
+}
+
+export interface VoidPaymentPayload {
+  orderId: number;
+  paymentLogId: number;
+  reason: string;
+  voidedBy?: string;
 }
 
 export interface CancelOrderPayload {
@@ -209,6 +221,34 @@ export const useRecordManualPaymentMutation = () => {
       await queryClient.invalidateQueries({ queryKey: ['orders', 'directory'] });
       await queryClient.invalidateQueries({ queryKey: ['orders', 'details'] });
       await queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] });
+    },
+  });
+};
+
+export const useVoidPaymentMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      orderId,
+      paymentLogId,
+      reason,
+      voidedBy,
+    }: VoidPaymentPayload) => {
+      const response = await apiClient.post<OrderDetailsDto>(
+        `/orders/${orderId}/payments/${paymentLogId}/void`,
+        { reason: reason.trim(), voidedBy }
+      );
+      return response.data;
+    },
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['manifest'] }),
+        queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] }),
+      ]);
     },
   });
 };

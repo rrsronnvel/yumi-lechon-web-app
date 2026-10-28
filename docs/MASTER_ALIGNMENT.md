@@ -89,6 +89,8 @@ To prevent cashier fatigue and eliminate layout shift during rapid phone or Mess
   - `[ Full Paid ]`: Sets `downpayment = grandTotal`.
 - **Top Routing Distance Placement:** In both Web and Mobile POS terminals, `Est. Distance (KM)` is placed directly inside the top **Customer & Fulfillment Routing** section next to `Delivery Address` and above `Target Delivery Time` / `Rider Departure Time`. Entering distance immediately computes both the `RiderDepartureTime` (via the 6-tier distance ladder) and the suggested `DeliveryFee` (`Math.round((distanceKm * ratePerKm) + baseFare)`) before the cashier scrolls down to the cart or financial ledger.
 
+- **Payment Governance — “Pa-void po” Separation of Duties:** Cashiers may append new payment transactions but cannot edit, delete, or void an existing `PaymentLog`. Only an authenticated `Owner` may void an active payment, and a mandatory reason is required. The original row remains permanently visible with `IsVoided`, `VoidedAt`, `VoidedBy`, and `VoidReason`; active paid totals are recomputed from non-voided successful logs, the balance due is restored, and an immutable `Payment Voided` entry is appended to `OrderAuditLogs`.
+
 The POS and Logistics engines enforce strict boundary rules across three distinct fulfillment modes while preserving customer location data across all channels:
 
 1. Delivery Routing (Fulfillment = 1):
@@ -790,6 +792,12 @@ To protect live customer data while preserving developer speed during local test
 * **Interactive Nudge Pills:** Dispatchers can adjust `RiderDepartureTime` on the fly using quick-offset pills (`-30m`, `-45m`, `-1h`, `-1h 30m`, `-2h`) or manual datetime input for holiday traffic or custom routing.
 * **Kitchen Backward-Scheduling Anchor:** `SchedulingService` uses `anchorTime = order.RiderDepartureTime ?? order.TargetDeliveryTime` as the zero-hour baseline so every pig finishes packaging right as the rider departs the commissary.
 
+### 14.5. Owner-Only Payment Voiding (“Pa-void po” Rule)
+* **Cashier Boundary:** Cashiers can record additional funds but cannot alter, delete, or void a posted payment. Web and Mobile dossiers hide or disable the destructive action for non-owners.
+* **Owner Authorization:** `POST /api/orders/{orderId}/payments/{paymentLogId}/void` requires the authenticated `Owner` role and a non-empty reason; cashier attempts return `403 Forbidden` with `Only store owners are authorized to void payments`.
+* **Non-Destructive Reversal:** A void stamps the original `PaymentLog` instead of deleting it. `Order.Downpayment` becomes the sum of successful non-voided logs, `BalanceDue = Max(0, GrandTotal - Downpayment)`, voided rows remain struck through in payment history, and channel/daily-sales aggregates exclude them.
+* **Black Box Evidence:** Every reversal appends `ActionType = "Payment Voided"`, the amount, channel, original timestamp, mandatory reason, and authenticated owner attribution to `OrderAuditLogs`.
+
 
 ---
 
@@ -837,19 +845,14 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 * Confirmation stamps `OwnerConfirmedAt`, `OwnerConfirmedBy`, and `Order verified and confirmed by Owner ({username})`. Web Dashboard, Web/Mobile directories, Floor Action, and dossiers expose the pending state and Owner-only action.
 
 ### 16.3 Proactive Multi-Factor Composite Duplicate Order Radar
-* **Composite 2-Factor Scoring Architecture:** Replaces single-field triggers with a multi-factor scoring engine across Backend (`CustomerService.cs`), Web (`similarityHelper.ts`), and Mobile (`similarityHelper.ts`). The high-visibility red duplicate alert fires ONLY when composite score $\ge 2$.
-* **Placeholder Phone Immunity (`isPlaceholderPhone`):** Dummy/placeholder numbers (`09000000000`, `00000000000`, `09111111111`, `09999999999`, length < 10, or $\le 2$ unique digits) are strictly excluded from duplicate checks ($0$ points) and suppress both the red duplicate banner and repeat customer pill to eliminate false alarms.
+* **Mandatory Exact Same Calendar Day Gate:** Web and Mobile normalize both target dates strictly to `YYYY-MM-DD`. The high-visibility red duplicate alert can be evaluated only when the new order and candidate share the exact calendar date. The retired $\pm 1$ day proximity rule must never be reintroduced: Nov 8 versus Nov 9 is a legitimate consecutive-day booking and can never produce a red alert.
+* **Placeholder Phone Immunity (`isPlaceholderPhone`):** Dummy/placeholder numbers (`09000000000`, `00000000000`, `09111111111`, `09999999999`, length < 10, or $\le 2$ unique digits) receive no phone match. A real name/FB-name match can still identify a repeat customer, but the placeholder itself can never contribute to a duplicate trigger.
 * **Self-Match Immunity:** In Edit Mode (`EditOrderForm.tsx` on Web, `EditOrderModal.tsx` on Mobile), the active order under edit (`orderId` / `orderReference`) is excluded from duplicate evaluation.
-* **Composite Scoring Matrix (Threshold: Score $\ge 2$ triggers Red Alert):**
-  1. **Factor 1: Valid Phone Match (+1 pt):** Non-placeholder, clean 10/11-digit phone match with an active booking (supports comma-delimited CP #1 and CP #2 dual-contacts).
-  2. **Factor 2: Event Date Proximity (+1 pt):** Target delivery/pickup date is on the exact same calendar day or within $\pm 1$ calendar day.
-  3. **Factor 3: Name / Facebook Name Similarity (+1 pt):** Case-insensitive exact match, token overlap (e.g., "Dianne Belen" vs. "Dianne De Belen"), or Levenshtein similarity ratio $\ge 0.75$.
-  4. **Factor 4: Address / Location Overlap (+1 pt):** Shared delivery street/barangay and municipality (excluding Store Pickup).
+* **Red Alert Formula:** `isDuplicate = exactSameCalendarDay && (validPhoneMatch || nameOrFacebookSimilarity || deliveryAddressOverlap)`. Phone matching supports comma-delimited CP #1/CP #2, name matching uses exact/token/Levenshtein $\ge 0.75$, and address overlap excludes Store Pickup.
 * **UI Action Triggers & Submission Speedbump:**
-  - **Score $\ge 2$:** Displays `🚨 POSSIBLE DUPLICATE ORDER DETECTED!` with matching criteria badges (`Valid Phone Match`, `Exact Same Date`, `Name / FB Match`, `Delivery Address Overlap`), matching Order #, customer name, date, items, and encoder.
-  - **Exact Same-Day Speedbump:** Submitting an order when Score $\ge 2$ and the target date falls on the exact same day triggers a confirmation speedbump modal requiring staff to explicitly verify and override.
-  - **Score == 1 with Valid Phone Match (Different Date):** Displays ONLY the Gold Pill: `⭐ Repeat Customer • N Past Bookings` (no red banner).
-  - **Score < 2 with Placeholder Phone (`09000000000`):** Completely suppresses the alert banner.
+  - **Exact date + one additional factor:** Displays `🚨 POSSIBLE DUPLICATE ORDER DETECTED!` with matching criteria, Order #, customer, date, items, and encoder, then requires an explicit submission override.
+  - **Different date + valid phone or similar name:** Categorized strictly as `isRepeatCustomerOnly = true` and displays only `⭐ Repeat Customer • Active booking on [Formatted Date]`; it contributes zero date points and never produces a red alert.
+  - **Different date + address alone or placeholder alone:** Produces neither a duplicate nor repeat-customer alert.
 
 ### 16.4 BIR Four-Channel Payment Mapping
 * Every successful initial downpayment and later settlement writes a canonical `PaymentLog.PaymentMethod`: `Cash`, `GCash`, `Maya`, or `Bank Transfer`.

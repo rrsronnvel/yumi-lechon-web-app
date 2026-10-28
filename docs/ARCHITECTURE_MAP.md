@@ -20,7 +20,7 @@
     
 - LechonSystem.Api/Controllers/LogisticsController.cs: Handles HTTP requests for retrieving unassigned ReadyForDelivery items, committing batch rider dispatches, tri-modal counter settlements, and Lalamove pre-release verification.
     
-- LechonSystem.Api/Controllers/OrdersController.cs: Provides endpoints for order ingestion with user attribution (CreatedBy), daily OrderReference generation (`MMDDYY-XXX`), dual-contact numbers (`ContactNumber` max length 45 for primary CP #1 and secondary CP #2), manual lifecycle state transitions, cancellation workflows, Master Ledger directory retrieval, safe order modifications, and retrieving immutable change audit logs.
+- LechonSystem.Api/Controllers/OrdersController.cs: Provides endpoints for order ingestion with user attribution (CreatedBy), daily OrderReference generation (`MMDDYY-XXX`), dual-contact numbers (`ContactNumber` max length 45 for primary CP #1 and secondary CP #2), manual lifecycle state transitions, cancellation workflows, Master Ledger directory retrieval, safe order modifications, Owner-only payment voiding, and immutable change audit logs.
     
 - LechonSystem.Api/Models/SettlementQrSession.cs: Entity tracking one-time cryptographic QR tokens, hop stage (RiderToStaff vs. StaffToOwner), rider digital signature fields, staff validation stamps, owner approval stamps, and token expiration.
     
@@ -30,7 +30,9 @@
     
 - LechonSystem.Api/DTOs/QrSettlementDtos.cs: Request/response contracts for generating QR sessions, polling session state, submitting rider mobile signatures, validating staff drawer custody, and executing owner final sign-off.
     
-- LechonSystem.Api/DTOs/OrderDetailsDto.cs: Heavy dossier projection enriched with `OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, `AssignedRiderName`, `AssignedRiderPhone`, `RoutingStatus`, and `CreatedBy`.
+- LechonSystem.Api/DTOs/OrderDetailsDto.cs: Heavy dossier projection enriched with order/rider/customer telemetry plus complete `PaymentLogDto` history (`ReferenceNumber`, `IsVoided`, `VoidedAt`, `VoidedBy`, `VoidReason`); paid totals and channel summaries include only active logs.
+
+- LechonSystem.Api/DTOs/VoidPaymentRequest.cs: Owner reversal request contract carrying mandatory `Reason` and owner attribution `VoidedBy`.
     
 - LechonSystem.Api/Controllers/PaymentWebhookController.cs: Handles asynchronous callbacks from payment gateways and manual drawer/counter cash payments via /api/internal/payments/manual.
     
@@ -108,7 +110,7 @@
     
 - LechonSystem.Api/Models/PriceHistoryLog.cs: Immutable audit record of base price adjustments with deltas and author attribution.
     
-- LechonSystem.Api/Models/PaymentLog.cs: Financial ledger tracking downpayments, counter cash collections, and GCash transactions.
+- LechonSystem.Api/Models/PaymentLog.cs: Financial ledger tracking downpayments and later collections. Owner reversals are non-destructive and stamp `IsVoided`, `VoidedAt`, `VoidedBy`, and `VoidReason`.
     
 - LechonSystem.Api/DTOs/AuthDtos.cs: Request and response carriers (LoginRequest, AuthResponseDto, UserDto).
     
@@ -217,6 +219,7 @@
 - lechon-system-web/src/hooks/useLogistics.ts: Hooks for unassigned order queues, today's operations, and driver assignment mutations.  
 - lechon-system-web/src/hooks/useManifest.ts: Hooks and mutations for pending settlements across Riders, Store Pickups, and Lalamove couriers, including useRejectRiderSignatureMutation, useRevertCustodyMutation, and counted-amount enforced useOwnerApproveQrMutation.  
 - lechon-system-web/src/hooks/useOrdersDirectory.ts: Hook managing polling, filtering, and retrieval of the Master Order Directory and audit logs.  
+- lechon-system-web/src/hooks/useVoidPayment.ts: Owner-only dossier mutation for the payment void endpoint; invalidates order directory/detail, dashboard, manifest, and audit caches.
 - lechon-system-web/src/hooks/useRiders.ts: Hook and mutation for fetching active riders and registering new freelance drivers.  
 - lechon-system-web/src/hooks/useUsers.ts: TanStack Query hooks and mutations (`useUsersQuery`, `useCreateUserMutation`, `useUpdateUserPasswordMutation`, `useToggleUserStatusMutation`) for staff account governance.  
 - lechon-system-web/src/hooks/useSchedules.ts: Hook fetching print-optimized daily sheets.
@@ -227,14 +230,14 @@
 - lechon-system-mobile/src/services/apiClient.ts: Axios client with persistent `expo-secure-store` JWT Bearer interceptor, 401 unauthorized listener, and live toggle between Cloud API (`https://ronnvel-001-site1.ktempurl.com/api`) and Local Android Emulator API (`http://10.0.2.2:5199/api`).
 - lechon-system-mobile/src/context/AuthContext.tsx: 12-hour shift session provider managing user identity, `isOwner` flag, and API environment state.
 - lechon-system-mobile/src/components/MainShell.tsx: Authenticated 3-tab mobile shell (`📋 Orders`, `➕ New POS`, `👑 Drawer`) with compact top shift HUD.
-- lechon-system-mobile/src/components/orders/OrderDossierModal.tsx: Slide-up customer dossier modal displaying `#OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, dual contact display with 1-tap phone selection action sheet (dial CP #1 vs. CP #2), 1-tap `tel:` calling for rider, Taglish Messenger receipt copier, `[✏️ Edit Order]` modal trigger, quick manual payment modal, mandatory-reason cancellation modal, purple tentative draft inquiry alert banner with date/venue fallbacks, and active physical cash custody warning alerts.
+- lechon-system-mobile/src/components/orders/OrderDossierModal.tsx: Slide-up customer dossier with customer/rider telemetry, Messenger receipt copier, editing/manual-payment/cancellation controls, full active-and-voided payment history, and an Owner-only mandatory-reason payment void confirmation overlay.
 - lechon-system-mobile/src/components/orders/EditOrderModal.tsx: Mobile editor with two-tier Draft/Time-TBD semantics, Lechon vs. zero-weight extras-only mode, and 12-hour `hh:mm` + AM/PM target/rider controls with 9:00 AM, 10:30 AM, 11:30 AM, 12:00 PM, and 3:00 PM presets.
 - lechon-system-mobile/src/components/orders/FloorActionView.tsx: Mobile Floor Action Hub displaying Section A (Action Required: Downpayment Radar with countdown badges, 1-tap Messenger reminder copier, multi-contact dialing selection alert for CP #1 / CP #2, and direct deposit logger) and Section B (Tonight's Defrost & Kitchen Prep Roster with Defrost Roster Carcass Bouncer strictly filtering out non-carcass add-ons and negative/zero weights, `[ 📋 Copy Defrost List ]` 1-tap clipboard generator, rush badges, carcass quantities, and bold monospace Tahi prep deadlines).
 - lechon-system-mobile/src/screens/LoginScreen.tsx: Mobile shift login screen with API environment switcher pill and 1-tap Owner/Cashier demo credential buttons.
 - lechon-system-mobile/src/screens/OrdersScreen.tsx: Master Order Hub with debounced search, compact previous/next/Today/Tomorrow/Clear date bar, server-side date queries, Tier-1 dateless draft isolation, and amber Tier-2 dated incomplete cards with Time/Venue/Size TBD tags, alongside existing balance-custody filters and Floor Action workflows.
 - lechon-system-mobile/src/screens/PosScreen.tsx: Single-column touch POS with Draft and Time-TBD controls, Lechon vs. Non-Lechon extras-only intake modes, and 12-hour `hh:mm` + AM/PM selectors for target and rider departure times. Five one-tap presets update both time and meridiem; non-lechon mode restricts the catalog to `MinimumWeightKg === 0` and hides event/rider/freebie controls while retaining routing and payment fields.
 - lechon-system-mobile/src/screens/DrawerScreen.tsx: 2-Hop Cash Custody & Tri-Modal Settlement Center supporting Hop 2 Owner Envelope Verification ("The Speed Bump"), Hop 1 Rider Settlement (2s QR polling + Safeguard 1 discrepancy rejection + Manual Override + Direct Store GCash), Walk-in Pickup Counter Collection, Safeguard 3 Custody Reversion ("Undo"), and Lalamove Pre-Release Gate.
-- lechon-system-mobile/src/hooks/useOrders.ts: Hooks and mutations for mobile order directory, customer dossier, audit logs, manual payment logging, and order cancellation.
+- lechon-system-mobile/src/hooks/useOrders.ts: Hooks and mutations for mobile order directory, customer dossier, audit logs, manual payment logging, Owner-only payment voiding, and order cancellation.
 - lechon-system-mobile/src/hooks/useFloorAction.ts: TanStack Query hooks fetching tomorrow's defrost roster (`useDefrostRosterQuery`, `GET /dashboard/roster`) and 4-day pending downpayment confirmations (`usePendingConfirmationsQuery`, `GET /dashboard/pending-confirmations`).
 - lechon-system-mobile/src/hooks/usePos.ts: Hooks and mutations for catalog categories, inventory balances, CMS pricing (`useDeliveryPricingQuery` carrying `baseFare`, `ratePerKm`, and `noFreebiesDiscountPerPig`), multipart screenshot parsing, POS order creation, and order editing (`useUpdateOrderMutation`).
 - lechon-system-mobile/src/hooks/useManifest.ts: Hooks and mutations for Rider, Pickup, and Lalamove settlements and 2-hop QR custody handshakes.
@@ -255,6 +258,7 @@
 - PATCH /api/orders/{id}/cancel | Payload: { Reason: string } | Returns: 200 OK (Releases inventory, cancels order, logs audit trail with User.Identity.Name)  
 - GET /api/orders/{id}/audit-logs | Payload: None | Returns: OrderAuditLog[]
 - GET /api/orders/{id} | Returns: OrderDetailsDto (Enriched with `OrderReference`, `FacebookName`, `Source`, `EventType`, `Landmark`, `RiderDepartureTime`, `CustomerProfileId`, `CustomerTotalOrdersCount`, `CustomerPreferences`, `CustomerComplaintHistory`, assigned rider full name, rider phone, and routing status)  
+- POST /api/orders/{orderId}/payments/{paymentLogId}/void | Headers: Authorization Bearer (`Owner` required; Cashier receives 403) | Payload: `VoidPaymentRequest { Reason: string, VoidedBy?: string }` | Returns: updated `OrderDetailsDto`; stamps void metadata, recomputes `Downpayment`/`BalanceDue` from non-voided successful logs, and appends `Payment Voided` to `OrderAuditLogs`.
 
 #### Customer Intelligence Domain (CustomersController.cs)
 
@@ -360,6 +364,7 @@
 - useOrdersDirectory(searchTerm, filterTab) -> Query Key: ['orders', 'directory', { searchTerm, filterTab }]  
 - useOrderAuditLogs -> Query Key: ['orders', 'audit-logs', orderId]  
 - useEditOrder -> Success Invalidates: ['orders'], ['order'], ['roster'], ['dashboard'], ['schedules'], ['inventory', 'balances']  
+- useVoidPaymentMutation -> Success Invalidates: `['orders']`, `['order', orderId]`, `['dashboard']`, `['manifest']`, and the selected order audit-log key. Web owns the dedicated `useVoidPayment.ts`; Mobile exposes the parity mutation from `useOrders.ts`.
 
 #### Kitchen Scope (useKitchen.ts):
 
@@ -441,7 +446,7 @@
 #### Administrative Flow (Wrapped with and maintains global navigation sidebar):
 
 - GET / -> renders (Command center: KPI cards, collapsible alert feeds, defrost & dispatch roster)  
-- GET /orders -> renders (Master Order Directory with search, filters, state tabs, and drawer)  
+- GET /orders -> renders (Master Order Directory with search, filters, state tabs, and dossier drawer; Financial Splits lists active/voided transactions and exposes mandatory-reason `[🗑️ Void]` only to Owners)
 - GET /logistics -> renders <LogisticsPage /> (Dedicated single-view Live Operations command center with primary launcher for the 13-column Daily Dispatch Planner)  
 - GET /manifest -> renders (Tri-tab daily settlement center: Freelance Riders, Store Pickups, Lalamove Gate)  
 - GET /inventory -> renders (Dual-stock live ledger, chronological audit log, direct intake trigger)  

@@ -18,9 +18,11 @@ import {
   useOrderDetails,
   useOrderAuditLogs,
   useRecordManualPaymentMutation,
+  useVoidPaymentMutation,
   useCancelOrderMutation,
   useConfirmOwnerOrderMutation,
   OrderDirectoryDto,
+  PaymentLogDto,
 } from '../../hooks/useOrders';
 import { useUpdateCustomerNotesMutation } from '../../hooks/usePos';
 import { generateBookingConfirmation } from '../../utils/messengerTemplates';
@@ -54,7 +56,7 @@ export default function OrderDossierModal({
   fallbackOrder,
   onClose,
 }: OrderDossierModalProps) {
-  const { isOwner } = useAuth();
+  const { isOwner, user } = useAuth();
   const {
     data: orderDetails,
     isLoading: isDetailsLoading,
@@ -65,6 +67,7 @@ export default function OrderDossierModal({
   const { data: auditLogs, isLoading: isAuditLoading } = useOrderAuditLogs(orderId);
 
   const paymentMutation = useRecordManualPaymentMutation();
+  const voidPaymentMutation = useVoidPaymentMutation();
   const cancelMutation = useCancelOrderMutation();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
@@ -89,6 +92,9 @@ export default function OrderDossierModal({
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [paymentToVoid, setPaymentToVoid] = useState<PaymentLogDto | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   // Cancellation gate state
   const [isCancelExpanded, setIsCancelExpanded] = useState(false);
@@ -106,6 +112,9 @@ export default function OrderDossierModal({
     setPaymentMethod('GCash');
     setReferenceNumber('');
     setPaymentFeedback(null);
+    setPaymentToVoid(null);
+    setVoidReason('');
+    setVoidError(null);
     setIsCancelExpanded(false);
     setCancelReason('');
     setCancelError(null);
@@ -261,6 +270,41 @@ export default function OrderDossierModal({
         type: 'error',
         message: msg,
       });
+    }
+  };
+
+  const handleVoidPayment = async () => {
+    if (!orderId || !paymentToVoid || !isOwner) return;
+    const trimmedReason = voidReason.trim();
+    if (!trimmedReason) {
+      setVoidError('A reason is required before voiding this payment.');
+      return;
+    }
+
+    setVoidError(null);
+    try {
+      await voidPaymentMutation.mutateAsync({
+        orderId,
+        paymentLogId: paymentToVoid.id,
+        reason: trimmedReason,
+        voidedBy: user?.username || user?.fullName,
+      });
+      setPaymentFeedback({
+        type: 'success',
+        message: `₱${Number(paymentToVoid.amount).toLocaleString()} payment voided. Balance due restored.`,
+      });
+      setPaymentToVoid(null);
+      setVoidReason('');
+    } catch (err: unknown) {
+      const axiosErr = err as {
+        response?: { data?: { message?: string } | string };
+      };
+      const message =
+        typeof axiosErr.response?.data === 'string'
+          ? axiosErr.response.data
+          : axiosErr.response?.data?.message ||
+            'Failed to void payment. Owner authorization is required.';
+      setVoidError(message);
     }
   };
 
@@ -1073,22 +1117,79 @@ export default function OrderDossierModal({
 
                 {orderDetails?.paymentLogs?.length ? (
                   <View style={styles.paymentHistoryBox}>
-                    <Text style={styles.paymentHistoryTitle}>BIR PAYMENT CHANNELS</Text>
+                    <Text style={styles.paymentHistoryTitle}>PAYMENT TRANSACTION HISTORY</Text>
                     {orderDetails.paymentLogs.map((payment) => (
-                      <View key={payment.id} style={styles.paymentHistoryRow}>
-                        <Text style={styles.paymentHistoryMethod}>
-                          {payment.paymentMethod === 'Cash'
-                            ? '💵'
-                            : payment.paymentMethod === 'Maya'
-                              ? '💚'
-                              : payment.paymentMethod === 'Bank Transfer'
-                                ? '🏦'
-                                : '📱'}{' '}
-                          {payment.paymentMethod}
-                        </Text>
-                        <Text style={styles.paymentHistoryAmount}>
-                          ₱{Number(payment.amount).toLocaleString()}
-                        </Text>
+                      <View
+                        key={payment.id}
+                        style={[
+                          styles.paymentHistoryRow,
+                          payment.isVoided && styles.paymentHistoryRowVoided,
+                        ]}
+                      >
+                        <View style={styles.paymentHistoryCopy}>
+                          <Text
+                            style={[
+                              styles.paymentHistoryMethod,
+                              payment.isVoided && styles.voidedPaymentText,
+                            ]}
+                          >
+                            {payment.paymentMethod === 'Cash'
+                              ? '💵'
+                              : payment.paymentMethod === 'Maya'
+                                ? '💚'
+                                : payment.paymentMethod === 'Bank Transfer'
+                                  ? '🏦'
+                                  : '📱'}{' '}
+                            {payment.paymentMethod} • ₱
+                            {Number(payment.amount).toLocaleString()}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.paymentHistoryMeta,
+                              payment.isVoided && styles.voidedPaymentText,
+                            ]}
+                          >
+                            {new Date(payment.createdAt).toLocaleString('en-PH')}
+                          </Text>
+                          {(payment.referenceNumber || payment.gatewayReferenceId) && (
+                            <Text
+                              style={[
+                                styles.paymentHistoryMeta,
+                                payment.isVoided && styles.voidedPaymentText,
+                              ]}
+                            >
+                              Ref: {payment.referenceNumber || payment.gatewayReferenceId}
+                            </Text>
+                          )}
+                          {payment.isVoided && (
+                            <>
+                              <Text style={styles.voidedPaymentBadge}>
+                                🚫 Voided by {payment.voidedBy || 'owner'}
+                              </Text>
+                              {payment.voidReason ? (
+                                <Text style={styles.voidedPaymentReason}>
+                                  Reason: {payment.voidReason}
+                                </Text>
+                              ) : null}
+                            </>
+                          )}
+                        </View>
+
+                        {!payment.isVoided && isOwner && (
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.voidPaymentButton,
+                              pressed && styles.buttonPressed,
+                            ]}
+                            onPress={() => {
+                              setPaymentToVoid(payment);
+                              setVoidReason('');
+                              setVoidError(null);
+                            }}
+                          >
+                            <Text style={styles.voidPaymentButtonText}>🗑️ Void</Text>
+                          </Pressable>
+                        )}
                       </View>
                     ))}
                   </View>
@@ -1365,6 +1466,62 @@ export default function OrderDossierModal({
           </ScrollView>
         )}
 
+        {paymentToVoid && (
+          <View style={styles.voidDialogOverlay}>
+            <View style={styles.voidDialogCard}>
+              <Text style={styles.voidDialogTitle}>
+                Void ₱{Number(paymentToVoid.amount).toLocaleString()} payment?
+              </Text>
+              <Text style={styles.voidDialogDescription}>
+                Pa-void po: the transaction stays in the permanent audit history,
+                while the paid total is reversed and the balance due is restored.
+              </Text>
+              <Text style={styles.fieldLabel}>Reason for voiding *</Text>
+              <TextInput
+                style={[styles.formTextInput, styles.cancelTextInput]}
+                placeholder="Typo: meant ₱1,000 instead of ₱10,000"
+                placeholderTextColor="#A8A29E"
+                multiline
+                numberOfLines={3}
+                value={voidReason}
+                onChangeText={(value) => {
+                  setVoidReason(value);
+                  setVoidError(null);
+                }}
+              />
+              {voidError ? <Text style={styles.voidDialogError}>{voidError}</Text> : null}
+              <View style={styles.voidDialogActions}>
+                <Pressable
+                  style={styles.voidDialogCancelButton}
+                  disabled={voidPaymentMutation.isPending}
+                  onPress={() => {
+                    setPaymentToVoid(null);
+                    setVoidReason('');
+                    setVoidError(null);
+                  }}
+                >
+                  <Text style={styles.voidDialogCancelText}>Keep Payment</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.voidDialogConfirmButton,
+                    (voidPaymentMutation.isPending || !voidReason.trim()) &&
+                      styles.disabledBtn,
+                  ]}
+                  disabled={voidPaymentMutation.isPending || !voidReason.trim()}
+                  onPress={handleVoidPayment}
+                >
+                  {voidPaymentMutation.isPending ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.voidDialogConfirmText}>Confirm Void</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Edit Order Modal */}
         <EditOrderModal
           visible={isEditModalOpen}
@@ -1446,9 +1603,76 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    borderRadius: 8,
+    padding: 8,
   },
+  paymentHistoryRowVoided: { backgroundColor: '#FFF1F2', borderColor: '#FECDD3' },
+  paymentHistoryCopy: { flex: 1, gap: 2 },
   paymentHistoryMethod: { color: '#44403C', fontSize: 11, fontWeight: '700' },
   paymentHistoryAmount: { color: '#1C1917', fontSize: 11, fontWeight: '900' },
+  paymentHistoryMeta: { color: '#78716C', fontSize: 9, fontWeight: '600' },
+  voidedPaymentText: { textDecorationLine: 'line-through', opacity: 0.65 },
+  voidedPaymentBadge: { color: '#9F1239', fontSize: 10, fontWeight: '900', marginTop: 3 },
+  voidedPaymentReason: { color: '#BE123C', fontSize: 9, fontWeight: '700' },
+  voidPaymentButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FDA4AF',
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  voidPaymentButtonText: { color: '#BE123C', fontSize: 10, fontWeight: '900' },
+  voidDialogOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 100,
+    elevation: 20,
+    backgroundColor: 'rgba(28, 25, 23, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  voidDialogCard: {
+    width: '100%',
+    maxWidth: 430,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    gap: 10,
+  },
+  voidDialogTitle: { color: '#1C1917', fontSize: 18, fontWeight: '900' },
+  voidDialogDescription: { color: '#57534E', fontSize: 12, lineHeight: 18 },
+  voidDialogError: { color: '#BE123C', fontSize: 11, fontWeight: '700' },
+  voidDialogActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 4,
+  },
+  voidDialogCancelButton: {
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  voidDialogCancelText: { color: '#44403C', fontSize: 12, fontWeight: '800' },
+  voidDialogConfirmButton: {
+    minWidth: 110,
+    alignItems: 'center',
+    backgroundColor: '#E11D48',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  voidDialogConfirmText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
   safeArea: {
     flex: 1,
     backgroundColor: '#FAF6F4',

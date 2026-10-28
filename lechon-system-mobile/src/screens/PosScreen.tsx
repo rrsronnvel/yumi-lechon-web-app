@@ -34,7 +34,7 @@ import {
   TemplateOrderData,
 } from '../utils/messengerTemplates';
 import FreebiesSelector from '../components/orders/FreebiesSelector';
-import { evaluateDuplicateOrders, isPlaceholderPhone } from '../utils/similarityHelper';
+import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from '../utils/similarityHelper';
 import PaymentChannelPills from '../components/orders/PaymentChannelPills';
 import {
   FreebiesConfig,
@@ -209,6 +209,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
   const activeDuplicateOrders = duplicateEvaluation.duplicates;
 
+  const repeatCustomerBooking = duplicateEvaluation.repeatCustomerMatches[0];
+
   useEffect(() => {
     if (isTimeTbd || isNonLechonMode) return;
     const targetTime24 = to24HourTime(targetTime, targetPeriod);
@@ -1232,6 +1234,18 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           </View>
         )}
 
+        {repeatCustomerBooking && (
+          <View style={styles.activeRepeatCustomerPill}>
+            <Text style={styles.activeRepeatCustomerPillText}>
+              ⭐ Repeat Customer • Active booking on{' '}
+              {formatCalendarDateLabel(
+                repeatCustomerBooking.order.targetDeliveryDate ??
+                  repeatCustomerBooking.order.targetDeliveryTime,
+              )}
+            </Text>
+          </View>
+        )}
+
         {/* 2. Customer & Tri-Modal Fulfillment Card */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>
@@ -2400,6 +2414,21 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  activeRepeatCustomerPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FCD34D',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  activeRepeatCustomerPillText: {
+    color: '#92400E',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   duplicateWarningBanner: {
     backgroundColor: '#FFF1F2',
     borderWidth: 2,

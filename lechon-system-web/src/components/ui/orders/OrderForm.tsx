@@ -9,7 +9,7 @@ import {
   ItemCategory,
 } from "@/hooks/useCms";
 import { useCustomerLookup } from "@/hooks/useCustomers";
-import { evaluateDuplicateOrders, isPlaceholderPhone } from "@/utils/similarityHelper";
+import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from "@/utils/similarityHelper";
 import apiClient from "@/services/apiClient";
 import {
   OrderFormData,
@@ -533,6 +533,11 @@ export default function OrderForm({
       ? []
       : duplicateEvaluation.duplicates;
 
+  const repeatCustomerBooking =
+    createOrderMutation.isSuccess || isSuccessModalOpen
+      ? undefined
+      : duplicateEvaluation.repeatCustomerMatches[0];
+
   function onSubmit(data: OrderFormData) {
     if (data.isTimeTbd && !data.targetDeliveryTime?.trim()) {
       toast.error("Event date required", {
@@ -942,6 +947,16 @@ export default function OrderForm({
             </div>
           )}
 
+          {repeatCustomerBooking && (
+            <div className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-xs">
+              ⭐ Repeat Customer • Active booking on{" "}
+              {formatCalendarDateLabel(
+                repeatCustomerBooking.order.targetDeliveryDate ??
+                  repeatCustomerBooking.order.targetDeliveryTime,
+              )}
+            </div>
+          )}
+
           {/* Draft Inquiry Mode Toggle Banner */}
           <div className="bg-purple-50/80 border border-purple-200 rounded-lg p-3 space-y-2">
             <div className="flex items-center justify-between">

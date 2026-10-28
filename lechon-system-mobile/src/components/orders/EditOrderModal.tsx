@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect, useRef } from 'react';
+﻿import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Modal,
@@ -29,7 +29,7 @@ import {
   RIDER_DEPARTURE_NUDGE_PILLS,
 } from '../../utils/messengerTemplates';
 import FreebiesSelector from './FreebiesSelector';
-import { evaluateDuplicateOrders, isPlaceholderPhone } from '../../utils/similarityHelper';
+import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from '../../utils/similarityHelper';
 import PaymentChannelPills from './PaymentChannelPills';
 import {
   FreebiesConfig,
@@ -197,6 +197,8 @@ export default function EditOrderModal({
 
   const activeDuplicateOrders = duplicateEvaluation.duplicates;
 
+  const repeatCustomerBooking = duplicateEvaluation.repeatCustomerMatches[0];
+
   // Hydrate state from order when modal opens
   useEffect(() => {
     if (!visible || !order) return;
@@ -900,6 +902,18 @@ export default function EditOrderModal({
           keyboardShouldPersistTaps="handled"
         >
           {/* Draft Mode Toggle Card */}
+          {repeatCustomerBooking && (
+            <View style={styles.activeRepeatCustomerPill}>
+              <Text style={styles.activeRepeatCustomerPillText}>
+                ⭐ Repeat Customer • Active booking on{' '}
+                {formatCalendarDateLabel(
+                  repeatCustomerBooking.order.targetDeliveryDate ??
+                    repeatCustomerBooking.order.targetDeliveryTime,
+                )}
+              </Text>
+            </View>
+          )}
+
           <View style={[styles.draftCard, isEffectiveDraft && styles.draftCardActive]}>
             <View style={styles.draftCardHeader}>
               <View style={{ flex: 1, paddingRight: 10 }}>
@@ -1625,6 +1639,21 @@ export default function EditOrderModal({
 }
 
 const styles = StyleSheet.create({
+  activeRepeatCustomerPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FCD34D',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  activeRepeatCustomerPillText: {
+    color: '#92400E',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   duplicateWarningBanner: {
     backgroundColor: '#FFF1F2',
     borderWidth: 2,
