@@ -3,6 +3,8 @@ import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
 import { Pencil } from "lucide-react";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import { WalkInBadge } from "@/components/WalkInBadge";
+import { isWalkInOrder } from "@/utils/walkIn";
 
 interface KitchenViewTabProps {
   mode?: "edit" | "clean";
@@ -86,8 +88,8 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
   return (
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
-      <div className="w-full rounded-md border-2 border-black overflow-x-auto print:overflow-visible bg-white shadow-xs">
-        <table className="w-full table-fixed border-collapse text-left text-xs min-w-[1100px] xl:min-w-full">
+      <div className={`w-full rounded-md border-2 border-black ${mode === "clean" ? "overflow-visible no-scrollbar" : "overflow-x-auto"} print:overflow-visible bg-white shadow-xs`}>
+        <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
             <col className="w-[8%] min-w-[115px]" />  {/* 1. No. */}
@@ -134,11 +136,12 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
               const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
               const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
               const displayWeight = hasTahi && minW > 0 ? formatWeightDisplay(item.weight) : "-";
+              const isWalkIn = isWalkInOrder(item);
 
               return (
                 <tr
                   key={item.id}
-                  className="even:bg-slate-50 odd:bg-white text-slate-900 hover:bg-amber-50/40"
+                  className={`${isWalkIn && isEdit ? "bg-indigo-50/40" : "even:bg-slate-50 odd:bg-white"} text-slate-900 hover:bg-amber-50/40`}
                 >
                   {/* 1. No. */}
                   <td className="px-2 py-2 text-center text-slate-800 border-r border-slate-300 text-xs min-w-[115px] whitespace-nowrap font-mono font-bold">
@@ -222,7 +225,15 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
 
                   {/* 8. Customer Name */}
                   <td className="px-1.5 py-2 font-bold text-slate-900 border-r border-slate-300 break-words leading-tight">
-                    <div>{item.customerName || "-"}</div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span>{item.customerName || "-"}</span>
+                      <WalkInBadge
+                        source={item.source}
+                        customerName={item.customerName}
+                        facebookName={item.facebookName}
+                        clean={!isEdit}
+                      />
+                    </div>
                     {item.facebookName &&
                       item.facebookName.toLocaleLowerCase() !== item.customerName?.toLocaleLowerCase() && (
                         <div className="mt-0.5 text-[9px] font-semibold text-slate-500">
@@ -313,15 +324,15 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
           {/* Clean High-Contrast Footer Summary */}
           <tfoot className="bg-slate-100 border-t-2 border-black font-semibold text-slate-900 text-[11px]">
             <tr>
-              <td colSpan={4} className="px-3 py-2 text-left font-black uppercase tracking-wider border-r border-slate-300">
+              <td colSpan={4} className="px-3 py-2.5 text-left font-black uppercase tracking-wider border-r border-slate-300">
                 Total Orders: {sortedRoster.length}
               </td>
-              <td colSpan={6} className="px-3 py-2 text-left font-bold border-r border-slate-300">
+              <td colSpan={6} className="px-3 py-2.5 text-left font-bold border-r border-slate-300">
                 First Tahi: <span className="text-red-700 font-black">{formatTime(sortedRoster.find((r) => !!r.tahiStartTime)?.tahiStartTime)}</span>
                 <span className="mx-2 text-slate-400">|</span>
                 First Salang: <span className="text-black font-black">{formatTime(sortedRoster.find((r) => !!r.salangStartTime)?.salangStartTime)}</span>
               </td>
-              <td colSpan={3} className="px-3 py-2 text-right font-black uppercase text-slate-700">
+              <td colSpan={3} className="px-3 py-2.5 text-right font-black uppercase text-slate-700">
                 YUMI LECHON KITCHEN
               </td>
             </tr>

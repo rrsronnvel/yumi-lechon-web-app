@@ -119,6 +119,10 @@ namespace LechonSystem.Api.Services
 
                     // Financials & Fulfillment for Rider View
                     price = s.OrderItem.Order.Price,
+                    discount = s.OrderItem.Order.Discount,
+                    addOnsTotal = s.OrderItem.Order.OrderItems
+                        .Where(item => item.ItemCategory != null && item.ItemCategory.MinimumWeightKg <= 0)
+                        .Sum(item => item.TotalPrice),
                     deliveryFee = s.OrderItem.Order.DeliveryFee,
                     downpayment = s.OrderItem.Order.Downpayment,
                     downpaymentMethod = s.OrderItem.Order.DownpaymentMethod,
@@ -178,10 +182,15 @@ namespace LechonSystem.Api.Services
                     FreebiesConfigJson = s.freebiesConfigJson,
                     AddOns = s.addOns,
                     Price = s.price,
+                    LechonPrice = Math.Max(0, s.price - s.discount),
+                    AddOnsTotal = s.addOnsTotal,
                     DeliveryFee = s.deliveryFee,
                     Downpayment = s.downpayment,
                     DownpaymentMethod = s.downpaymentMethod,
                     GrandTotal = s.grandTotal,
+                    TotalToCollect = Math.Max(
+                        0,
+                        Math.Max(0, s.price - s.discount) + s.addOnsTotal + s.deliveryFee - s.downpayment),
                     IsOwnerConfirmed = s.isOwnerConfirmed,
                     OwnerConfirmedAt = s.ownerConfirmedAt,
                     OwnerConfirmedBy = s.ownerConfirmedBy,
@@ -211,6 +220,13 @@ namespace LechonSystem.Api.Services
             foreach (var order in nonLechonOrders)
             {
                 var nonLechonItems = order.OrderItems.Where(oi => oi.ItemCategory == null || oi.ItemCategory.MinimumWeightKg == 0).ToList();
+                var addOnsTotal = nonLechonItems.Sum(item => item.TotalPrice);
+                if (addOnsTotal <= 0 && order.Price > 0)
+                {
+                    addOnsTotal = order.Price;
+                }
+
+                var totalToCollect = Math.Max(0, addOnsTotal + order.DeliveryFee - order.Downpayment);
                 if (nonLechonItems.Count == 0)
                 {
                     result.Add(new DailySheetItemDto
@@ -245,10 +261,13 @@ namespace LechonSystem.Api.Services
                         FreebiesConfigJson = order.FreebiesConfigJson,
                         AddOns = order.AddOns ?? "-",
                         Price = order.Price,
+                        LechonPrice = 0,
+                        AddOnsTotal = addOnsTotal,
                         DeliveryFee = order.DeliveryFee,
                         Downpayment = order.Downpayment,
                         DownpaymentMethod = order.DownpaymentMethod,
                         GrandTotal = order.GrandTotal,
+                        TotalToCollect = totalToCollect,
                         IsOwnerConfirmed = order.IsOwnerConfirmed,
                         OwnerConfirmedAt = order.OwnerConfirmedAt,
                         OwnerConfirmedBy = order.OwnerConfirmedBy,
@@ -296,10 +315,13 @@ namespace LechonSystem.Api.Services
                             FreebiesConfigJson = order.FreebiesConfigJson,
                             AddOns = order.AddOns ?? "-",
                             Price = order.Price,
+                            LechonPrice = 0,
+                            AddOnsTotal = addOnsTotal,
                             DeliveryFee = order.DeliveryFee,
                             Downpayment = order.Downpayment,
                             DownpaymentMethod = order.DownpaymentMethod,
                             GrandTotal = order.GrandTotal,
+                            TotalToCollect = totalToCollect,
                             IsOwnerConfirmed = order.IsOwnerConfirmed,
                             OwnerConfirmedAt = order.OwnerConfirmedAt,
                             OwnerConfirmedBy = order.OwnerConfirmedBy,

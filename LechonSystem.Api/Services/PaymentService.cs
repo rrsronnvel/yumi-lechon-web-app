@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
+using LechonSystem.Api.Common;
 
 using Microsoft.AspNetCore.Http;
 
@@ -14,7 +15,7 @@ namespace LechonSystem.Api.Services
         private readonly IOrderService _orderService;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        private string CurrentUser => _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "System";
+        private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor.HttpContext?.User);
 
         public PaymentService(LechonDbContext context, IOrderService orderService, IHttpContextAccessor httpContextAccessor)
         {

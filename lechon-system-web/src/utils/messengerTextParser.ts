@@ -43,7 +43,7 @@ const BOILERPLATE_PATTERN =
   /to confirm your order|with\s+7\s+freebies|spaghetti,\s*palabok.*consumed|delivery suggestion\s*:|kung gusto nyo po ng mas masarap|total balance\s*:/i;
 
 const FIELD_LINE_PATTERN =
-  /^(?:name|customer|fb|facebook|messenger|pickup\s*or\s*deliver|fulfillment|del\s*add|address|location|landmark|cp\s*#?\s*[12]|contact|mobile|date(?:\s*&\s*time)?|time|type\s*of\s*event|event|occasion|order\s*\/\s*size|order|size|freebies?\s*or|add-ons?|additional\s+.+|special\s*request|remarks?|notes?|distance|dp(?:\s*&\s*mode)?|downpayment|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|discount|price)\s*[:\-]/i;
+  /^(?:name|customer|fb|facebook|messenger|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?|phone|mobile|date(?:\s*(?:&|and)\s*time)?|time|type\s*of\s*event|event|occasion|order\s*\/\s*size|order|size|freebies?\s*or|add-ons?|additional\s+.+|special\s*request|remarks?|notes?|distance|dp(?:\s*&\s*mode)?|downpayment|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|discount|price)\s*(?:[:#\-]|(?=0?9\d))/i;
 
 const parsePesoNumber = (raw: string): number => {
   const cleaned = raw.replace(/,/g, "").replace(/[^0-9.\-]/g, "");
@@ -278,13 +278,13 @@ export function parseMessengerTextToDraft(
       continue;
     }
 
-    match = line.match(/^cp\s*#?\s*2\s*[:\-]\s*(.*)$/i);
+    match = line.match(/^cp\s*#?\s*2\s*(?:[:\-]\s*)?(.*)$/i);
     if (match) {
       contactNumber2 = normalizePhone(match[1]) || null;
       continue;
     }
 
-    match = line.match(/^(?:cp\s*#?\s*1|contact(?:\s*number)?|mobile(?:\s*number)?|cellphone)\s*[:\-]\s*(.*)$/i);
+    match = line.match(/^(?:cp\s*#?\s*(?:1\s*)?|contact(?:\s*number)?\s*#?|phone|mobile(?:\s*number)?|cellphone)\s*(?:[:\-]\s*)?(.*)$/i);
     if (match) {
       contactNumber ||= normalizePhone(match[1]);
       continue;
@@ -299,7 +299,7 @@ export function parseMessengerTextToDraft(
       continue;
     }
 
-    match = line.match(/^(?:del\s*add|address|location|delivery\s*address|drop[\s-]*off|venue)\s*[:\-]\s*(.*)$/i);
+    match = line.match(/^(?:del\s*add|deliver|delivery|address|location|delivery\s*address|drop[\s-]*off|venue)\s*[:\-]\s*(.*)$/i);
     if (match) {
       deliveryAddress ||= match[1].trim();
       continue;
@@ -317,7 +317,7 @@ export function parseMessengerTextToDraft(
       continue;
     }
 
-    match = line.match(/^date\s*&\s*time\s*[:\-]\s*(.*)$/i);
+    match = line.match(/^date\s*(?:&|and)\s*time\s*[:\-]\s*(.*)$/i);
     if (match) {
       let value = match[1].trim();
       const nextLine = lines[index + 1];
@@ -466,6 +466,9 @@ export function parseMessengerTextToDraft(
     const selection = createOptOutFreebiesText(value);
     if (selection !== null) freebiesOptOut = selection;
   }
+  if (/\bwith\s+7\s+(?:freebies|frebbies)\b/i.test(rawText)) {
+    freebiesOptOut = false;
+  }
   const standaloneOptOut = lines.some(
     (line) =>
       /\b(?:price|discount)\s*[:\-]/i.test(line) &&
@@ -493,14 +496,14 @@ export function parseMessengerTextToDraft(
     minimumWeightKg: number;
   }> = [
     { pattern: "(?:super\\s*jumbo|s\\.?\\s*jumbo)", names: ["s jumbo", "super jumbo"], minimumWeightKg: 41 },
-    { pattern: "xxl", names: ["xxl"], minimumWeightKg: 32 },
-    { pattern: "xxs", names: ["xxs"], minimumWeightKg: 13 },
-    { pattern: "xl|extra\\s+large", names: ["xl", "extra large"], minimumWeightKg: 28 },
-    { pattern: "xs|extra\\s+small", names: ["xs", "extra small"], minimumWeightKg: 16 },
     { pattern: "jumbo", names: ["jumbo"], minimumWeightKg: 37 },
-    { pattern: "large|l", names: ["l", "large"], minimumWeightKg: 25 },
-    { pattern: "medium|m", names: ["m", "medium"], minimumWeightKg: 22 },
-    { pattern: "small|s", names: ["s", "small"], minimumWeightKg: 20 },
+    { pattern: "(?:xxl|2xl|xx[-\\s]?large|double\\s+(?:extra\\s+large|xl))", names: ["xxl", "2xl", "xx large", "double extra large", "double xl"], minimumWeightKg: 32 },
+    { pattern: "(?:xl|1xl|x[-\\s]?large|extra[-\\s]+large)", names: ["xl", "1xl", "x large", "extra large"], minimumWeightKg: 28 },
+    { pattern: "(?:xxs|2xs|xx[-\\s]?small|double\\s+extra\\s+small)", names: ["xxs", "2xs", "xx small", "double extra small"], minimumWeightKg: 13 },
+    { pattern: "(?:xs|x[-\\s]?small|extra[-\\s]+small)", names: ["xs", "x small", "extra small"], minimumWeightKg: 16 },
+    { pattern: "(?<!x[-\\s])(?<!xx[-\\s])(?<!extra[-\\s])(?:large|l)", names: ["l", "large"], minimumWeightKg: 25 },
+    { pattern: "(?:medium|med|m)", names: ["m", "med", "medium"], minimumWeightKg: 22 },
+    { pattern: "(?<!x[-\\s])(?<!xx[-\\s])(?<!extra[-\\s])(?:small|s)", names: ["s", "small"], minimumWeightKg: 20 },
   ];
 
   for (const source of orderSources) {

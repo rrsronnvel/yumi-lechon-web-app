@@ -4,6 +4,8 @@ import apiClient from "../services/apiClient";
 export interface TodayDispatchOrder {
   id: number;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   deliveryAddress: string;
   targetDeliveryTime: string;
   riderName?: string;
@@ -16,6 +18,8 @@ export interface TodayDispatchOrder {
 export interface UnassignedOrder {
   id: number;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   deliveryAddress: string;
   targetDeliveryTime: string;
   fulfillment?: number;

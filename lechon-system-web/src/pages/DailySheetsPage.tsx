@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { toPng } from "html-to-image";
+import { toast } from "sonner";
 import PrintLayout from "@/components/daily-sheets/PrintLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KitchenViewTab } from "@/components/daily-sheets/KitchenViewTab";
@@ -62,6 +64,8 @@ function formatIsoDate(isoDate: string): string {
 export default function DailySheetsPage() {
   const [mode, setMode] = useState<"edit" | "clean">("edit");
   const [activeTab, setActiveTab] = useState<string>("kitchen");
+  const [isSavingImage, setIsSavingImage] = useState(false);
+  const exportSheetRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const philippineToday = useMemo(() => getPhilippineDate(), []);
   const requestedDate = searchParams.get("date");
@@ -91,6 +95,64 @@ export default function DailySheetsPage() {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleSaveAsImage = async () => {
+    const exportNode = exportSheetRef.current;
+    if (!exportNode || isSavingImage) return;
+
+    const fileName = `Yumi-${activeTab === "kitchen" ? "Kitchen-Roster" : "Rider-Manifest"}-${selectedDate}.png`;
+    setIsSavingImage(true);
+
+    try {
+      await document.fonts?.ready;
+      const dataUrl = await toPng(exportNode, {
+        width: 1920,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+        style: {
+          width: "1920px",
+          minWidth: "1920px",
+          maxWidth: "none",
+          height: "auto",
+          maxHeight: "none",
+          overflow: "visible",
+          padding: "32px",
+          paddingBottom: "48px",
+          backgroundColor: "#ffffff",
+        },
+      });
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: fileName,
+            text: `Yumi Lechon ${activeTab === "kitchen" ? "Kitchen" : "Rider"} Sheet for ${selectedDate}`,
+          });
+          return;
+        } catch (shareError) {
+          if (shareError instanceof DOMException && shareError.name === "AbortError") {
+            return;
+          }
+        }
+      }
+
+      const link = document.createElement("a");
+      link.download = fileName;
+      link.href = dataUrl;
+      link.click();
+      toast.success("Daily sheet PNG saved.");
+    } catch (error) {
+      toast.error("Could not save the daily sheet image.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingImage(false);
+    }
   };
 
   return (
@@ -166,6 +228,18 @@ export default function DailySheetsPage() {
               title="Print or Save as PDF"
             >
               <Printer className="mr-1 h-3.5 w-3.5" /> Print / PDF
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleSaveAsImage}
+              disabled={isSavingImage}
+              className="h-8 border-indigo-300 bg-indigo-50 px-2.5 text-xs font-bold text-indigo-900 hover:bg-indigo-100"
+              title="Save the full clean sheet as a high-resolution PNG"
+            >
+              {isSavingImage ? "Preparing PNG…" : "📸 Save as Image"}
             </Button>
 
             <div className="inline-flex rounded-lg border border-stone-300 bg-stone-100 p-0.5 shadow-xs">
@@ -321,6 +395,44 @@ export default function DailySheetsPage() {
             <RiderViewTab mode={mode} selectedDate={selectedDate} />
           </TabsContent>
         </Tabs>
+      </div>
+
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] bg-white overflow-visible"
+        style={{ width: 1920, minWidth: 1920, maxWidth: 1920, height: "auto", maxHeight: "none", overflow: "visible" }}
+      >
+        <div
+          ref={exportSheetRef}
+          className="bg-white p-8 pb-12 text-black no-scrollbar"
+          style={{ width: 1920, minWidth: 1920, maxWidth: 1920, height: "auto", maxHeight: "none", overflow: "visible" }}
+        >
+          <div className="mb-4 flex items-end justify-between gap-2 border-b-2 border-black pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-xs bg-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">
+                  YUMI LECHON
+                </span>
+                <h1 className="text-2xl font-black uppercase tracking-tight text-black">
+                  {activeTab === "kitchen"
+                    ? "Kitchen Production Roster"
+                    : "Rider Logistics & Settlement Manifest"}
+                </h1>
+              </div>
+              <p className="mt-1 text-xs font-bold text-slate-700">
+                Target Operations: <span className="font-extrabold text-black">{formattedDate}</span> • Generated: {formatIsoDate(philippineToday)}
+              </p>
+            </div>
+            <span className="inline-block border-2 border-black bg-slate-50 px-2.5 py-1 text-xs font-black uppercase tracking-wide text-black">
+              {activeTab === "kitchen" ? "Roasting Pit Copy" : "Logistics Settlement Copy"}
+            </span>
+          </div>
+          {activeTab === "kitchen" ? (
+            <KitchenViewTab mode="clean" selectedDate={selectedDate} />
+          ) : (
+            <RiderViewTab mode="clean" selectedDate={selectedDate} />
+          )}
+        </div>
       </div>
     </PrintLayout>
   );

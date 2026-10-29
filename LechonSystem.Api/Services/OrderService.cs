@@ -9,6 +9,7 @@ using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Interfaces;
 using LechonSystem.Api.Models.DTOs;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Services
 {
@@ -20,7 +21,7 @@ namespace LechonSystem.Api.Services
         private readonly INotificationSender _notificationSender;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        private string CurrentUser => _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "System";
+        private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor.HttpContext?.User);
 
         public OrderService(
             LechonDbContext context,
@@ -293,7 +294,7 @@ namespace LechonSystem.Api.Services
             var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
             if (order == null || order.IsCancelled) return false;
 
-            var confirmedBy = string.IsNullOrWhiteSpace(ownerUsername) ? CurrentUser : ownerUsername.Trim();
+            var confirmedBy = await UserIdentityHelper.ResolveDisplayNameAsync(_httpContextAccessor.HttpContext?.User, _context, ownerUsername);
             order.IsOwnerConfirmed = true;
             order.OwnerConfirmedAt = DateTime.UtcNow;
             order.OwnerConfirmedBy = confirmedBy;
@@ -522,6 +523,8 @@ namespace LechonSystem.Api.Services
             bool requestedDraft = request.IsDraft || request.IsTimeTbd;
             bool isFinalizing = wasDraft && !requestedDraft;
             bool staysDraft = wasDraft && requestedDraft;
+            var isOwner = _httpContextAccessor.HttpContext?.User.IsInRole("Owner") ?? false;
+            var isCashier = _httpContextAccessor.HttpContext?.User.IsInRole("Cashier") ?? false;
             var previousDownpayment = order.Downpayment;
             var requestedCategoryIds = request.Items.Select(item => item.ItemCategoryId).Distinct().ToList();
             var requestedCategories = await _context.ItemCategories
@@ -532,6 +535,15 @@ namespace LechonSystem.Api.Services
             var effectiveTargetDeliveryTime = request.IsTimeTbd && request.TargetDeliveryTime.HasValue
                 ? request.TargetDeliveryTime.Value.Date.AddHours(12)
                 : request.TargetDeliveryTime;
+            var targetDeliveryTimeChanged = order.TargetDeliveryTime != effectiveTargetDeliveryTime;
+
+            if (isCashier && !isOwner && targetDeliveryTimeChanged &&
+                effectiveTargetDeliveryTime.HasValue &&
+                effectiveTargetDeliveryTime.Value < PhilippineTime.Now)
+            {
+                throw new ArgumentException(
+                    "Cashiers cannot reschedule an order to a delivery time in the past. Choose a future date/time or ask an Owner to apply the override.");
+            }
 
             if (isFinalizing)
             {
@@ -549,7 +561,6 @@ namespace LechonSystem.Api.Services
                 }
 
                 order.IsDraft = false;
-                var isOwner = _httpContextAccessor.HttpContext?.User.IsInRole("Owner") ?? false;
                 order.IsOwnerConfirmed = isOwner;
                 order.OwnerConfirmedAt = isOwner ? DateTime.UtcNow : null;
                 order.OwnerConfirmedBy = isOwner ? CurrentUser : null;
@@ -571,6 +582,29 @@ namespace LechonSystem.Api.Services
                     ? effectiveTargetDeliveryTime
                     : (request.RiderDepartureTime ?? order.RiderDepartureTime ?? effectiveTargetDeliveryTime))
                 : (request.RiderDepartureTime ?? order.RiderDepartureTime);
+
+            if (targetDeliveryTimeChanged &&
+                effectiveTargetDeliveryTime.HasValue &&
+                effectiveRiderDepartureTime.HasValue &&
+                request.Fulfillment != FulfillmentType.Pickup &&
+                (effectiveRiderDepartureTime.Value.Date != effectiveTargetDeliveryTime.Value.Date ||
+                 effectiveRiderDepartureTime.Value > effectiveTargetDeliveryTime.Value))
+            {
+                var previousLeadTime = order.TargetDeliveryTime.HasValue &&
+                                       order.RiderDepartureTime.HasValue &&
+                                       order.RiderDepartureTime.Value <= order.TargetDeliveryTime.Value
+                    ? order.TargetDeliveryTime.Value - order.RiderDepartureTime.Value
+                    : TimeSpan.Zero;
+
+                effectiveRiderDepartureTime = effectiveTargetDeliveryTime.Value - previousLeadTime;
+            }
+
+            if (effectiveTargetDeliveryTime.HasValue &&
+                effectiveRiderDepartureTime.HasValue &&
+                effectiveRiderDepartureTime.Value > effectiveTargetDeliveryTime.Value)
+            {
+                effectiveRiderDepartureTime = effectiveTargetDeliveryTime;
+            }
 
             // --- Tracking ALL Master Order Fields ---
             if (order.CustomerName != request.CustomerName)

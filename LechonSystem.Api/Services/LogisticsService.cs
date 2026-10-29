@@ -147,8 +147,11 @@ namespace LechonSystem.Api.Services
                 {
                     id = o.Id,
                     customerName = o.CustomerName,
+                    facebookName = o.FacebookName,
+                    source = o.Source,
                     deliveryAddress = o.DeliveryAddress,
                     targetDeliveryTime = o.TargetDeliveryTime,
+                    riderDepartureTime = o.RiderDepartureTime,
                     riderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : null,
                     vehicleType = o.DeliveryTrip != null ? o.DeliveryTrip.VehicleType : null,
                     isDeliveryDetailsConfirmed = o.IsDeliveryDetailsConfirmed,
@@ -161,6 +164,7 @@ namespace LechonSystem.Api.Services
         // Tab 1: Freelance Rider Settlements (Remains visible while SettlementCustodyStatus != "Settled")
         public async Task<IEnumerable<PendingSettlementDropDto>> GetPendingSettlementDropsAsync()
         {
+            var today = PhilippineTime.Today;
             return await _context.Orders
                 .AsNoTracking()
                 .Include(o => o.DeliveryTrip)
@@ -168,6 +172,7 @@ namespace LechonSystem.Api.Services
                          && o.Fulfillment == FulfillmentType.Delivery
                          && !o.IsDraft && !o.IsCancelled
                          && o.SettlementCustodyStatus != "Settled"
+                         && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
                          && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0)
                 .OrderByDescending(o => o.CreatedAt)
                 .Select(o => new PendingSettlementDropDto
@@ -176,11 +181,15 @@ namespace LechonSystem.Api.Services
                     OrderId = o.Id,
                     RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : (o.RiderSignedBy ?? "Unassigned"),
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
+                    Source = o.Source,
                     IsTrustedCustomer = o.IsTrustedCustomer,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
+                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    RiderDepartureTime = o.RiderDepartureTime,
                     TotalCollected = o.GrandTotal - o.Downpayment,
                     RiderDeliveryFee = o.DeliveryFee,
-                    NetRemittance = (o.GrandTotal - o.Downpayment) - o.DeliveryFee,
+                    NetRemittance = o.RiderRemittedAmount ?? ((o.GrandTotal - o.Downpayment) - o.DeliveryFee),
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
@@ -193,19 +202,24 @@ namespace LechonSystem.Api.Services
         // Remains visible while SettlementCustodyStatus != "Settled" and balance > 0
         public async Task<IEnumerable<PendingPickupSettlementDto>> GetPendingPickupSettlementsAsync()
         {
+            var today = PhilippineTime.Today;
             return await _context.Orders
                 .AsNoTracking()
                 .Where(o => o.Fulfillment == FulfillmentType.Pickup
                          && !o.IsDraft && !o.IsCancelled
                          && o.SettlementCustodyStatus != "Settled"
+                         && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
                          && ((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0)
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .Select(o => new PendingPickupSettlementDto
                 {
                     OrderId = o.Id,
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
+                    Source = o.Source,
                     ContactNumber = o.ContactNumber ?? string.Empty,
                     TargetDeliveryTime = o.TargetDeliveryTime,
+                    RiderDepartureTime = o.RiderDepartureTime,
                     GrandTotal = o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount),
                     Downpayment = o.Downpayment,
                     IsTrustedCustomer = o.IsTrustedCustomer,
@@ -223,21 +237,25 @@ namespace LechonSystem.Api.Services
         // Tab 3: Lalamove Pre-Release Gate (Anti-Loss Courier Verification)
         public async Task<IEnumerable<PendingLalamoveSettlementDto>> GetPendingLalamoveSettlementsAsync()
         {
-            var cutoffDate = DateTime.Today.AddDays(-1);
+            var today = PhilippineTime.Today;
             return await _context.Orders
                 .AsNoTracking()
                 .Where(o => o.Fulfillment == FulfillmentType.Lalamove
                          && !o.IsDraft && !o.IsCancelled
-                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value >= cutoffDate
+                         && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
                          && o.RoutingStatus != DeliveryStatus.Delivered)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .Select(o => new PendingLalamoveSettlementDto
                 {
                     OrderId = o.Id,
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
+                    Source = o.Source,
+                    IsTrustedCustomer = o.IsTrustedCustomer,
                     ContactNumber = o.ContactNumber ?? string.Empty,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
                     TargetDeliveryTime = o.TargetDeliveryTime,
+                    RiderDepartureTime = o.RiderDepartureTime,
                     GrandTotal = o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount),
                     Downpayment = o.Downpayment,
                     IsReleased = o.RoutingStatus == DeliveryStatus.Delivered,

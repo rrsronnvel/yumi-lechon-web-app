@@ -7,6 +7,8 @@ export interface PendingSettlementDrop {
   orderId: number;
   riderName: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   isTrustedCustomer: boolean;
   deliveryAddress: string;
   totalCollected: number;
@@ -19,6 +21,7 @@ export interface PendingSettlementDrop {
   heldPaymentMethod?: string | null;
   createdAt?: string;
   targetDeliveryTime?: string;
+  riderDepartureTime?: string | null;
   dispatchTime?: string | null;
 }
 
@@ -38,8 +41,11 @@ export interface SettlePaymentPayload {
 export interface PendingPickupSettlement {
   orderId: number;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   contactNumber: string;
   targetDeliveryTime: string;
+  riderDepartureTime?: string | null;
   grandTotal: number;
   downpayment: number;
   balanceDue: number;
@@ -59,9 +65,13 @@ export interface PendingLalamoveSettlement {
   id?: number;
   orderId: number;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
+  isTrustedCustomer: boolean;
   contactNumber: string;
   deliveryAddress: string;
   targetDeliveryTime: string;
+  riderDepartureTime?: string | null;
   grandTotal: number;
   downpayment: number;
   balanceDue: number;
@@ -113,6 +123,7 @@ export interface StaffValidatePayload {
   token: string;
   manualOverrideRiderName?: string;
   manualOverrideAmount?: number;
+  staffName?: string;
 }
 
 export interface OwnerApprovePayload {
@@ -127,6 +138,7 @@ export interface CounterCollectPickupPayload {
   paymentMethod: string;
   amount?: number;
   referenceNumber?: string;
+  staffName?: string;
 }
 
 export interface DirectGcashPayload {
@@ -328,6 +340,7 @@ export const useStaffValidateQrMutation = () => {
         {
           manualOverrideRiderName: payload.manualOverrideRiderName,
           manualOverrideAmount: payload.manualOverrideAmount,
+          staffName: payload.staffName,
         }
       );
       return response.data;

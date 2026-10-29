@@ -29,11 +29,14 @@ export interface RoastingScheduleItem {
   freebiesConfigJson?: string | null;
   addOns?: string;
   price?: number;
+  lechonPrice?: number;
+  addOnsTotal?: number;
   deliveryFee?: number;
   lechonFee?: number;
   downpayment?: number;
   downpaymentMethod?: string;
   grandTotal?: number;
+  totalToCollect?: number;
   fulfillment?: number;
   quantity?: number;
   riderName?: string;

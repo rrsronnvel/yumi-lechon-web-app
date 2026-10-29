@@ -41,6 +41,7 @@ import { useLogPayment } from "@/hooks/useLogPayment";
 import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
 import { useUpdateCustomerNotesMutation } from "@/hooks/useCustomers";
 import { toast } from "sonner";
+import { WalkInBadge } from "@/components/WalkInBadge";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { useAuth } from "@/context/AuthContext";
@@ -706,6 +707,11 @@ export default function OrdersPage() {
                         <span className="font-medium text-stone-900">
                           {order.customerName}
                         </span>
+                        <WalkInBadge
+                          source={order.source}
+                          customerName={order.customerName}
+                          facebookName={order.facebookName}
+                        />
                         {order.isTrustedCustomer && (
                           <Badge
                             variant="outline"
@@ -1053,6 +1059,11 @@ export default function OrdersPage() {
                   <SheetTitle className="text-2xl font-bold font-mono text-stone-900">
                     #{orderDetails?.orderReference || selectedOrder?.orderReference || orderDetails?.id || selectedOrder?.id}
                   </SheetTitle>
+                  <WalkInBadge
+                    source={orderDetails?.source ?? selectedOrder?.source}
+                    customerName={orderDetails?.customerName ?? selectedOrder?.customerName}
+                    facebookName={orderDetails?.facebookName ?? selectedOrder?.facebookName}
+                  />
                   {/* Semantic Status Pill */}
                   {orderDetails?.isDraft || selectedOrder?.isDraft ? (
                     <Badge
@@ -1221,6 +1232,11 @@ export default function OrdersPage() {
                         <p className="text-stone-500">Name</p>
                         <div className="font-medium text-base text-stone-900 flex items-center gap-2 flex-wrap">
                           {orderDetails.customerName}
+                          <WalkInBadge
+                            source={orderDetails.source}
+                            customerName={orderDetails.customerName}
+                            facebookName={orderDetails.facebookName}
+                          />
                           {orderDetails.isTrustedCustomer && (
                             <Badge
                               variant="outline"
@@ -2064,7 +2080,7 @@ export default function OrdersPage() {
                     orderId: targetOrderId,
                     paymentLogId: paymentToVoid.id,
                     reason: voidReason,
-                    voidedBy: user?.username || user?.fullName,
+                    voidedBy: user ? (user.fullName ? `${user.fullName} (@${user.username})` : user.username) : undefined,
                   });
                   toast.success("Payment voided and balance due restored.");
                   setPaymentToVoid(null);

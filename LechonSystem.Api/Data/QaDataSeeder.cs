@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.Services;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Data;
 
@@ -21,24 +22,39 @@ public static class QaDataSeeder
         // 1. Seed Customer Profiles (always ensure intelligence records are populated/updated)
         await SeedCustomerProfilesAsync(context);
 
-        var refPrefix = DateTime.UtcNow.ToString("MMddyy");
-        var refA = $"{refPrefix}-901";
-        var refB = $"{refPrefix}-902";
-        var refC = $"{refPrefix}-903";
+        // 1b. Ensure local test owner account 'cholo' is provisioned
+        var existingCholo = await context.Users.FirstOrDefaultAsync(u => u.Username == "cholo");
+        if (existingCholo == null)
+        {
+            context.Users.Add(new User
+            {
+                Username = "cholo",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("cholo123"),
+                FullName = "Cholo",
+                Role = "Owner",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+            logger?.LogInformation("QA Test Data: Local test owner account 'cholo' provisioned.");
+        }
 
-        // 2. Clean up old test orders with references starting with "QA-" or matching previous test batch
+        // 2. Clean up old test orders matching references -901 to -905
         var oldOrders = await context.Orders
             .Include(o => o.OrderItems)
             .Where(o => o.OrderReference.StartsWith("QA-") ||
                         o.OrderReference.EndsWith("-901") ||
                         o.OrderReference.EndsWith("-902") ||
                         o.OrderReference.EndsWith("-903") ||
-                        o.OrderReference == "102126-001" ||
-                        o.OrderReference == "102126-002" ||
-                        o.OrderReference == "102126-003" ||
+                        o.OrderReference.EndsWith("-904") ||
+                        o.OrderReference.EndsWith("-905") ||
                         o.CustomerName.Contains("(Finding 3 Test)") ||
                         o.CustomerName.Contains("(38km Long Haul)") ||
-                        o.CustomerName.Contains("(Pickup Anchor)"))
+                        o.CustomerName.Contains("(Pickup Anchor)") ||
+                        o.CustomerName.StartsWith("Carding Dalisay") ||
+                        o.CustomerName.StartsWith("Maricel Soriano") ||
+                        o.CustomerName.StartsWith("Vic Sotto"))
             .ToListAsync();
 
         if (oldOrders.Count > 0)
@@ -76,49 +92,48 @@ public static class QaDataSeeder
             await context.SaveChangesAsync();
         }
 
-        logger?.LogInformation("QA Test Data: Seeding dynamic clock test orders ({RefA}, {RefB}, {RefC})...", refA, refB, refC);
-
-        var today = DateTime.Today;
-        var tomorrow = today.AddDays(1);
+        var todayPht = PhilippineTime.Today; // 2026-10-29
+        logger?.LogInformation("QA Test Data: Seeding 3 targeted test orders for today {Today}...", todayPht.ToString("yyyy-MM-dd"));
 
         // =========================================================================
-        // Order A (Today's Afternoon Delivery - 12 KM / 1hr Departure Lead Time)
+        // Scenario A — Store Pickup Pending Counter Settlement (Tests Store Pickups Tab, VIP & WI Badges)
+        // Order Reference: #102926-903
         // =========================================================================
         var orderA = new Order
         {
-            OrderReference = refA,
-            CustomerName = "Elena Gomez (Finding 3 Test)",
-            FacebookName = "Elena Gomez-Reyes",
-            ContactNumber = "09171112222",
-            Source = "Business FB Page",
-            EventType = "Birthday",
-            Fulfillment = FulfillmentType.Delivery,
-            TargetDeliveryTime = today.AddHours(17), // Today at 5:00 PM
-            RiderDepartureTime = today.AddHours(16), // Today at 4:00 PM (1 hr lead time)
-            DeliveryAddress = "Blk 4 Lot 12 Phase 2, Golden City, Imus, Cavite",
-            Landmark = "Tapat ng St. Jude Chapel, green gate",
-            Remarks = "Walang dinuguan, print shoutout: Happy Birthday!",
-            DeliveryFee = 280.00m, // 100 base + 12km * 15
-            Downpayment = 3000.00m,
+            OrderReference = "102926-903",
+            CustomerName = "Carding Dalisay (WI)",
+            FacebookName = "Carding Dalisay",
+            ContactNumber = "09182223333",
+            Source = "Walk-in",
+            EventType = "Walk-in Pickup",
+            Fulfillment = FulfillmentType.Pickup,
+            TargetDeliveryTime = todayPht.AddHours(15), // 2026-10-29 15:00:00 (Today 3:00 PM)
+            RiderDepartureTime = todayPht.AddHours(15),
+            DeliveryAddress = "Walk-in Store Counter",
+            Landmark = "Near Imus Cathedral",
+            Remarks = "Walk-in Store Pickup • 👑 VIP Customer",
+            DeliveryFee = 0.00m,
+            Downpayment = 2000.00m,
             DownpaymentMethod = "GCash",
             Discount = 0.00m,
-            Price = 12700.00m,
-            GrandTotal = 12980.00m,
-            IsTrustedCustomer = true,
-            IsDeliveryDetailsConfirmed = false,
+            Price = 12000.00m,
+            GrandTotal = 12000.00m,
+            IsTrustedCustomer = true, // 👑 VIP
+            IsDeliveryDetailsConfirmed = true,
             SettlementCustodyStatus = "Uncollected",
             RoutingStatus = DeliveryStatus.Unassigned,
-            CreatedBy = "QA Seeder",
-            CreatedAt = DateTime.UtcNow
+            CreatedBy = "Store Cashier (@cashier)",
+            CreatedAt = todayPht.AddHours(9)
         };
 
         var orderAItem = new OrderItem
         {
-            ItemCategoryId = 4, // Medium Whole Lechon (12,700)
+            ItemCategoryId = 3, // S (Whole Lechon 20-21kg) (12,000)
             Quantity = 1,
-            Price = 12700.00m,
-            TotalPrice = 12700.00m,
-            CreatedAt = DateTime.UtcNow
+            Price = 12000.00m,
+            TotalPrice = 12000.00m,
+            CreatedAt = todayPht.AddHours(9)
         };
         orderA.OrderItems.Add(orderAItem);
         context.Orders.Add(orderA);
@@ -148,7 +163,7 @@ public static class QaDataSeeder
             PaymentMethod = "GCash",
             Amount = orderA.Downpayment,
             Status = PaymentStatus.Success,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = todayPht.AddHours(9)
         });
 
         context.OrderAuditLogs.Add(new OrderAuditLog
@@ -156,49 +171,73 @@ public static class QaDataSeeder
             OrderId = orderA.Id,
             ActionType = "Order Created",
             Changes = $"Order #{orderA.OrderReference} created for {orderA.CustomerName} (Total: ₱{orderA.GrandTotal:N2})",
-            ChangedBy = "QA Seeder",
-            Timestamp = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow
+            ChangedBy = "Store Cashier (@cashier)",
+            Timestamp = todayPht.AddHours(9),
+            CreatedAt = todayPht.AddHours(9)
         });
 
         // =========================================================================
-        // Order B (Tomorrow's Long Distance - 38 KM / 2hr Departure Lead Time)
+        // Scenario B — Delivery in Drawer Held by Cashier (Tests Custody Breakdown Pill 1)
+        // Order Reference: #102926-904
         // =========================================================================
+        var deliveryTrip = await context.DeliveryTrips.FirstOrDefaultAsync(t => t.RiderName == "AL");
+        if (deliveryTrip == null)
+        {
+            deliveryTrip = new DeliveryTrip
+            {
+                RiderName = "AL",
+                VehicleType = "Motorcycle",
+                Status = DeliveryStatus.Delivered,
+                DispatchTime = todayPht.AddHours(10).AddMinutes(30),
+                ActualReturnTime = todayPht.AddHours(12),
+                CreatedAt = todayPht.AddHours(10)
+            };
+            context.DeliveryTrips.Add(deliveryTrip);
+            await context.SaveChangesAsync();
+        }
+
         var orderB = new Order
         {
-            OrderReference = refB,
-            CustomerName = "Marco Polo (38km Long Haul)",
-            FacebookName = "Marco Polo Tagaytay",
-            ContactNumber = "09193334444",
+            OrderReference = "102926-904",
+            CustomerName = "Maricel Soriano",
+            FacebookName = "Maricel Soriano Official",
+            ContactNumber = "09175551122",
             Source = "Business FB Page",
-            EventType = "Anniversary",
+            EventType = "Birthday Delivery",
             Fulfillment = FulfillmentType.Delivery,
-            TargetDeliveryTime = tomorrow.AddHours(13), // Tomorrow at 1:00 PM
-            RiderDepartureTime = tomorrow.AddHours(11), // Tomorrow at 11:00 AM (2 hrs lead time)
-            DeliveryAddress = "Mahogany Ave, Tagaytay City, Cavite",
-            Landmark = "Beside Tagaytay Rotonda 7-Eleven",
-            Remarks = "Extra crispy skin, call 30 mins before arrival",
-            DeliveryFee = 670.00m, // 100 base + 38km * 15
-            Downpayment = 5000.00m,
+            TargetDeliveryTime = todayPht.AddHours(11).AddMinutes(30), // 2026-10-29 11:30:00
+            RiderDepartureTime = todayPht.AddHours(10).AddMinutes(30),
+            DeliveryAddress = "Diamond St, Golden City, Imus, Cavite",
+            Landmark = "Yellow Gate with CCTV",
+            Remarks = "Standard 7 freebies included",
+            DeliveryFee = 400.00m,
+            Downpayment = 1000.00m,
             DownpaymentMethod = "GCash",
             Discount = 0.00m,
-            Price = 11000.00m,
-            GrandTotal = 11670.00m,
+            Price = 12700.00m,
+            GrandTotal = 13100.00m,
             IsTrustedCustomer = false,
-            IsDeliveryDetailsConfirmed = false,
-            SettlementCustodyStatus = "Uncollected",
-            RoutingStatus = DeliveryStatus.Unassigned,
-            CreatedBy = "QA Seeder",
-            CreatedAt = DateTime.UtcNow
+            IsDeliveryDetailsConfirmed = true,
+            SettlementCustodyStatus = "InStaffDrawer",
+            HeldByStaffMethod = "Cash",
+            StaffValidatedBy = "Store Cashier (@cashier)",
+            StaffValidatedAt = todayPht.AddHours(12), // 2026-10-29 12:00:00
+            RiderSignedBy = "AL",
+            RiderRemittedAmount = 12100.00m,
+            RiderSignedAt = todayPht.AddHours(12),
+            DeliveryTripId = deliveryTrip.Id,
+            RoutingStatus = DeliveryStatus.Delivered,
+            CreatedBy = "Store Cashier (@cashier)",
+            CreatedAt = todayPht.AddHours(8)
         };
 
         var orderBItem = new OrderItem
         {
-            ItemCategoryId = 2, // Extra Small Whole Lechon (11,000)
+            ItemCategoryId = 4, // M (Whole Lechon 22-24kg) (12,700)
             Quantity = 1,
-            Price = 11000.00m,
-            TotalPrice = 11000.00m,
-            CreatedAt = DateTime.UtcNow
+            Price = 12700.00m,
+            TotalPrice = 12700.00m,
+            CreatedAt = todayPht.AddHours(8)
         };
         orderB.OrderItems.Add(orderBItem);
         context.Orders.Add(orderB);
@@ -210,11 +249,6 @@ public static class QaDataSeeder
             orderBItem.ItemCategoryId,
             orderB.RiderDepartureTime
         );
-        // Explicitly align with QA Finding 3 Anchor Verification specifications:
-        // Anchored to RiderDepartureTime (11:00 AM) -> Packaging: 10:30 AM, Salang: 08:30 AM, Tahi: 07:30 AM
-        scheduleB.PackagingStartTime = tomorrow.AddHours(10).AddMinutes(30);
-        scheduleB.SalangStartTime = tomorrow.AddHours(8).AddMinutes(30);
-        scheduleB.TahiStartTime = tomorrow.AddHours(7).AddMinutes(30);
         context.OrderItemSchedules.Add(scheduleB);
 
         await inventoryService.CreatePendingReservationAsync(
@@ -233,57 +267,62 @@ public static class QaDataSeeder
             PaymentMethod = "GCash",
             Amount = orderB.Downpayment,
             Status = PaymentStatus.Success,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = todayPht.AddHours(8)
         });
 
         context.OrderAuditLogs.Add(new OrderAuditLog
         {
             OrderId = orderB.Id,
-            ActionType = "Order Created",
-            Changes = $"Order #{orderB.OrderReference} created for {orderB.CustomerName} (Total: ₱{orderB.GrandTotal:N2})",
-            ChangedBy = "QA Seeder",
-            Timestamp = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow
+            ActionType = "Custody: In Staff Drawer",
+            Changes = $"Rider AL remitted ₱12,100.00 via Cash. Validated into drawer by Store Cashier (@cashier).",
+            ChangedBy = "Store Cashier (@cashier)",
+            Timestamp = todayPht.AddHours(12),
+            CreatedAt = todayPht.AddHours(12)
         });
 
         // =========================================================================
-        // Order C (Tomorrow's Store Pickup - Departure Locked to Pickup Time)
+        // Scenario C — Store Pickup in Drawer Held by Cholo (Tests Custody Breakdown Pill 2)
+        // Order Reference: #102926-905
         // =========================================================================
         var orderC = new Order
         {
-            OrderReference = refC,
-            CustomerName = "Carding Dalisay (Pickup Anchor)",
-            FacebookName = "Ricardo Dalisay Official",
-            ContactNumber = "09182223333",
-            Source = "Personal FB Account",
-            EventType = "Binyag",
+            OrderReference = "102926-905",
+            CustomerName = "Vic Sotto (WI)",
+            FacebookName = "Vic Sotto",
+            ContactNumber = "09183334455",
+            Source = "Walk-in",
+            EventType = "Family Lunch",
             Fulfillment = FulfillmentType.Pickup,
-            TargetDeliveryTime = tomorrow.AddHours(15), // Tomorrow at 3:00 PM
-            RiderDepartureTime = tomorrow.AddHours(15), // Tomorrow at 3:00 PM (Locked to TargetDeliveryTime)
-            DeliveryAddress = "Poblacion 1-A, Imus, Cavite",
-            Landmark = "Near Imus Cathedral (Walk-in Store Pickup)",
-            Remarks = "Chop belly separately in foil tray",
+            TargetDeliveryTime = todayPht.AddHours(13), // 2026-10-29 13:00:00 (Today 1:00 PM)
+            RiderDepartureTime = todayPht.AddHours(13),
+            DeliveryAddress = "Counter Pickup",
+            Landmark = "Walk-in Store Pickup",
+            Remarks = "1x Belly 3kg hot and crispy",
             DeliveryFee = 0.00m,
-            Downpayment = 2000.00m,
-            DownpaymentMethod = "Cash",
+            Downpayment = 1000.00m,
+            DownpaymentMethod = "GCash",
             Discount = 0.00m,
-            Price = 12000.00m,
-            GrandTotal = 12000.00m,
-            IsTrustedCustomer = true,
-            IsDeliveryDetailsConfirmed = false,
-            SettlementCustodyStatus = "Uncollected",
-            RoutingStatus = DeliveryStatus.Unassigned,
-            CreatedBy = "QA Seeder",
-            CreatedAt = DateTime.UtcNow
+            Price = 2500.00m,
+            GrandTotal = 2500.00m,
+            IsTrustedCustomer = false,
+            IsDeliveryDetailsConfirmed = true,
+            SettlementCustodyStatus = "InStaffDrawer",
+            HeldByStaffMethod = "Cash",
+            StaffValidatedBy = "Cholo (@cholo)",
+            StaffValidatedAt = todayPht.AddHours(13).AddMinutes(30), // 2026-10-29 13:30:00
+            RiderSignedBy = "Vic Sotto",
+            RoutingStatus = DeliveryStatus.Delivered,
+            CreatedBy = "Cholo (@cholo)",
+            CreatedAt = todayPht.AddHours(9)
         };
 
         var orderCItem = new OrderItem
         {
-            ItemCategoryId = 3, // Small Whole Lechon (12,000)
+            ItemCategoryId = 11, // Belly 3kg (2,500)
             Quantity = 1,
-            Price = 12000.00m,
-            TotalPrice = 12000.00m,
-            CreatedAt = DateTime.UtcNow
+            Price = 2500.00m,
+            TotalPrice = 2500.00m,
+            CreatedAt = todayPht.AddHours(9)
         };
         orderC.OrderItems.Add(orderCItem);
         context.Orders.Add(orderC);
@@ -309,25 +348,25 @@ public static class QaDataSeeder
         {
             OrderId = orderC.Id,
             GatewayReferenceId = $"QA-{orderC.OrderReference}-DP",
-            Provider = PaymentProvider.Cash,
-            PaymentMethod = "Cash",
+            Provider = PaymentProvider.ManualGCash,
+            PaymentMethod = "GCash",
             Amount = orderC.Downpayment,
             Status = PaymentStatus.Success,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = todayPht.AddHours(9)
         });
 
         context.OrderAuditLogs.Add(new OrderAuditLog
         {
             OrderId = orderC.Id,
-            ActionType = "Order Created",
-            Changes = $"Order #{orderC.OrderReference} created for {orderC.CustomerName} (Total: ₱{orderC.GrandTotal:N2})",
-            ChangedBy = "QA Seeder",
-            Timestamp = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow
+            ActionType = "Custody: In Staff Drawer",
+            Changes = $"Counter pickup balance ₱1,500.00 collected via Cash. Validated into drawer by Cholo (@cholo).",
+            ChangedBy = "Cholo (@cholo)",
+            Timestamp = todayPht.AddHours(13).AddMinutes(30),
+            CreatedAt = todayPht.AddHours(13).AddMinutes(30)
         });
 
         await context.SaveChangesAsync();
-        logger?.LogInformation("QA Test Data: Successfully seeded Finding 3 dynamic orders ({RefA}, {RefB}, {RefC}).", refA, refB, refC);
+        logger?.LogInformation("QA Test Data: Successfully seeded 3 targeted test orders (#102926-903, #102926-904, #102926-905).");
     }
 
     private static async Task SeedCustomerProfilesAsync(LechonDbContext context)

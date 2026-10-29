@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Services;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Controllers;
 
@@ -37,7 +38,7 @@ public class UsersController : ControllerBase
 
         try
         {
-            var currentUsername = User.Identity?.Name ?? "owner";
+            var currentUsername = UserIdentityHelper.ResolveDisplayName(User, "owner");
             var created = await _userService.CreateUserAsync(request, currentUsername);
             return StatusCode(201, created);
         }
@@ -80,7 +81,7 @@ public class UsersController : ControllerBase
 
         try
         {
-            var currentUsername = User.Identity?.Name ?? "owner";
+            var currentUsername = UserIdentityHelper.ResolveDisplayName(User, "owner");
             var updated = await _userService.ToggleUserStatusAsync(id, request.IsActive, currentUsername);
             return Ok(updated);
         }

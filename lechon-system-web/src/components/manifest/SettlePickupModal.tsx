@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useCounterCollectPickupMutation } from "@/hooks/useManifest";
+import { useAuth } from "@/context/AuthContext";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +49,18 @@ export function SettlePickupModal({
   const [referenceNumber, setReferenceNumber] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const { user } = useAuth();
+  const defaultStaffLabel = user?.fullName
+    ? `${user.fullName} (@${user.username})`
+    : (user?.username || "");
+  const [receivedByStaff, setReceivedByStaff] = useState<string>(defaultStaffLabel);
+
+  useEffect(() => {
+    if (open) {
+      setReceivedByStaff(defaultStaffLabel);
+    }
+  }, [open, defaultStaffLabel]);
+
   const collectMutation = useCounterCollectPickupMutation();
 
   const handleClose = () => {
@@ -73,6 +86,7 @@ export function SettlePickupModal({
         amount: order.balanceDue,
         paymentMethod,
         referenceNumber: referenceNumber.trim() || undefined,
+        staffName: receivedByStaff.trim() || undefined,
       },
       {
         onSuccess: () => {

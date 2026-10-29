@@ -3,6 +3,8 @@ public class RenegotiationTaskDto
     public int OrderId { get; set; }
     public string OrderReference { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
+    public string? FacebookName { get; set; }
+    public string Source { get; set; } = string.Empty;
     public DateTime TargetDeliveryTime { get; set; }
     
     // We can just calculate the total gap so the admin knows exactly how much they are losing

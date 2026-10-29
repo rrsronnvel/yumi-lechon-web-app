@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Services
 {
@@ -16,7 +17,7 @@ namespace LechonSystem.Api.Services
         private readonly ISchedulingService _schedulingService;
         private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
 
-        private string CurrentUser => _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "System";
+        private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor.HttpContext?.User);
 
         public CmsService(
             LechonDbContext context,

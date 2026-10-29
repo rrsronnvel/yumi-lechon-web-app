@@ -42,6 +42,7 @@ public class StaffValidateRequest
 {
     public string? ManualOverrideRiderName { get; set; }
     public decimal? ManualOverrideAmount { get; set; }
+    public string? StaffName { get; set; }
 }
 
 public class OwnerApproveRequest
@@ -57,6 +58,7 @@ public class CounterCollectRequest
     public string PaymentMethod { get; set; } = "Cash";
     public decimal? Amount { get; set; }
     public string? ReferenceNumber { get; set; }
+    public string? StaffName { get; set; }
 }
 
 public class SettleDirectGcashRequest

@@ -22,6 +22,7 @@ namespace LechonSystem.Api.DTOs
         public string? DeliveryAddress { get; set; }
         public string? Landmark { get; set; }
         public string? Remarks { get; set; }
+        public string? CreatedBy { get; set; }
         public decimal Price { get; set; }
         public string? AddOns { get; set; }
         public decimal DeliveryFee { get; set; }

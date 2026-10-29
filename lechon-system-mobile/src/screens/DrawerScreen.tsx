@@ -30,6 +30,7 @@ import {
   useSettleManualPaymentMutation,
   PendingLalamoveSettlement,
 } from '../hooks/useManifest';
+import WalkInBadge from '../components/orders/WalkInBadge';
 
 type DrawerTabKey = 'hop2' | 'riders' | 'pickups' | 'lalamove';
 
@@ -84,7 +85,17 @@ export default function DrawerScreen() {
   const manualPaymentMutation = useSettleManualPaymentMutation();
 
   // Modal State
+  const defaultStaffLabel = user?.fullName
+    ? `${user.fullName} (@${user.username})`
+    : (user?.username || '');
+  const [receivedByStaff, setReceivedByStaff] = useState<string>(defaultStaffLabel);
+  const [selectedCustodian, setSelectedCustodian] = useState<string | null>(null);
+
   const [modalState, setModalState] = useState<ActiveModalState | null>(null);
+
+  useEffect(() => {
+    if (modalState) setReceivedByStaff(defaultStaffLabel);
+  }, [modalState, defaultStaffLabel]);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
@@ -133,6 +144,8 @@ export default function DrawerScreen() {
       sourceType: 'Rider Delivery' | 'Walk-in Pickup';
       orderId: number;
       customerName: string;
+      facebookName?: string | null;
+      source?: string;
       isTrustedCustomer: boolean;
       amount: number;
       riderName: string;
@@ -151,6 +164,8 @@ export default function DrawerScreen() {
           sourceType: 'Rider Delivery',
           orderId: r.orderId || r.id,
           customerName: r.customerName,
+          facebookName: r.facebookName,
+          source: r.source,
           isTrustedCustomer: r.isTrustedCustomer,
           amount: amt,
           riderName: r.riderName || 'Freelance Rider',
@@ -174,6 +189,8 @@ export default function DrawerScreen() {
           sourceType: 'Walk-in Pickup',
           orderId: p.orderId,
           customerName: p.customerName,
+          facebookName: p.facebookName,
+          source: p.source,
           isTrustedCustomer: p.isTrustedCustomer,
           amount: amt,
           riderName: 'Walk-in Store Pickup',
@@ -195,6 +212,39 @@ export default function DrawerScreen() {
       hop2CombinedItems: combined,
     };
   }, [riderDrops, pickupDrops]);
+
+  const custodianBreakdown = useMemo(() => {
+    const map = new Map<string, { name: string; amount: number; count: number }>();
+    for (const item of hop2CombinedItems) {
+      const name = item.heldByStaffName || 'Cashier';
+      const existing = map.get(name) || { name, amount: 0, count: 0 };
+      existing.amount += item.amount;
+      existing.count += 1;
+      map.set(name, existing);
+    }
+    return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
+  }, [hop2CombinedItems]);
+
+  const visibleHop2Items = useMemo(() => {
+    if (!selectedCustodian) return hop2CombinedItems;
+    return hop2CombinedItems.filter(
+      (item) => (item.heldByStaffName || 'Cashier') === selectedCustodian
+    );
+  }, [hop2CombinedItems, selectedCustodian]);
+
+  const visibleRiderDrops = useMemo(() => {
+    if (!selectedCustodian) return riderDrops;
+    return riderDrops.filter(
+      (d) => d.custodyStatus === 'InStaffDrawer' && (d.heldByStaffName || 'Cashier') === selectedCustodian
+    );
+  }, [riderDrops, selectedCustodian]);
+
+  const visiblePickupDrops = useMemo(() => {
+    if (!selectedCustodian) return pickupDrops;
+    return pickupDrops.filter(
+      (p) => p.custodyStatus === 'InStaffDrawer' && (p.heldByStaffName || 'Cashier') === selectedCustodian
+    );
+  }, [pickupDrops, selectedCustodian]);
 
   // Mint or Resume QR Session when Hop 1 or Hop 2 modal opens
   useEffect(() => {
@@ -380,6 +430,7 @@ export default function DrawerScreen() {
         token: sessionToken,
         manualOverrideRiderName: useOverride ? overrideRiderName.trim() : undefined,
         manualOverrideAmount: useOverride ? parseFloat(overrideAmount) : undefined,
+        staffName: receivedByStaff.trim() || undefined,
       });
       const id = modalState.orderId;
       closeActiveModal();
@@ -445,6 +496,7 @@ export default function DrawerScreen() {
         amount: modalState.expectedAmount,
         paymentMethod: counterMethod,
         referenceNumber: counterRef.trim() || undefined,
+        staffName: receivedByStaff.trim() || undefined,
       });
       const id = modalState.orderId;
       closeActiveModal();
@@ -557,6 +609,45 @@ export default function DrawerScreen() {
             ₱{inStaffDrawerTotal.toLocaleString()}
           </Text>
           <Text style={styles.summaryCaption}>Awaiting Owner Turnover (Hop 2)</Text>
+          {custodianBreakdown.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.custodianScrollRow}>
+              <Pressable
+                style={[
+                  styles.custodianPill,
+                  selectedCustodian === null && styles.custodianPillActive,
+                ]}
+                onPress={() => setSelectedCustodian(null)}
+              >
+                <Text
+                  style={[
+                    styles.custodianPillText,
+                    selectedCustodian === null && styles.custodianPillTextActive,
+                  ]}
+                >
+                  All Custodians ({inStaffDrawerCount})
+                </Text>
+              </Pressable>
+              {custodianBreakdown.map((cust) => (
+                <Pressable
+                  key={cust.name}
+                  style={[
+                    styles.custodianPill,
+                    selectedCustodian === cust.name && styles.custodianPillActive,
+                  ]}
+                  onPress={() => setSelectedCustodian(selectedCustodian === cust.name ? null : cust.name)}
+                >
+                  <Text
+                    style={[
+                      styles.custodianPillText,
+                      selectedCustodian === cust.name && styles.custodianPillTextActive,
+                    ]}
+                  >
+                    👤 {cust.name}: ₱{cust.amount.toLocaleString()} ({cust.count})
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </Pressable>
 
         <Pressable
@@ -682,16 +773,20 @@ export default function DrawerScreen() {
                 <ActivityIndicator size="large" color="#C81E1E" />
                 <Text style={styles.loadingText}>Loading drawer custody items...</Text>
               </View>
-            ) : hop2CombinedItems.length === 0 ? (
+            ) : visibleHop2Items.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>✨</Text>
-                <Text style={styles.emptyTitle}>Staff Drawer is Clear!</Text>
+                <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '✨'}</Text>
+                <Text style={styles.emptyTitle}>
+                  {selectedCustodian ? 'No Matches for Custodian' : 'Staff Drawer is Clear!'}
+                </Text>
                 <Text style={styles.emptySub}>
-                  No cash envelopes are currently waiting in staff drawer custody.
+                  {selectedCustodian
+                    ? `No cash envelopes in drawer held by ${selectedCustodian}.`
+                    : 'No cash envelopes are currently waiting in staff drawer custody.'}
                 </Text>
               </View>
             ) : (
-              hop2CombinedItems.map((item) => (
+              visibleHop2Items.map((item) => (
                 <View key={item.key} style={styles.itemCardDrawer}>
                   <View style={styles.cardHeaderRow}>
                     <View style={styles.rowCenterWrap}>
@@ -711,6 +806,7 @@ export default function DrawerScreen() {
                   </View>
 
                   <Text style={styles.customerNameText}>{item.customerName}</Text>
+                  <WalkInBadge {...item} />
 
                   <View style={styles.custodyMetaBox}>
                     <Text style={styles.custodyMetaLine}>
@@ -796,16 +892,20 @@ export default function DrawerScreen() {
                 <ActivityIndicator size="large" color="#C81E1E" />
                 <Text style={styles.loadingText}>Loading rider drops...</Text>
               </View>
-            ) : riderDrops.length === 0 ? (
+            ) : visibleRiderDrops.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>🎉</Text>
-                <Text style={styles.emptyTitle}>All Rider Trips Settled!</Text>
+                <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '🎉'}</Text>
+                <Text style={styles.emptyTitle}>
+                  {selectedCustodian ? 'No Matches for Custodian' : 'All Rider Trips Settled!'}
+                </Text>
                 <Text style={styles.emptySub}>
-                  No pending freelance rider remittances at the moment.
+                  {selectedCustodian
+                    ? `No rider remittances in drawer held by ${selectedCustodian}.`
+                    : 'No pending freelance rider remittances at the moment.'}
                 </Text>
               </View>
             ) : (
-              riderDrops.map((drop) => {
+              visibleRiderDrops.map((drop) => {
                 const isInDrawer = drop.custodyStatus === 'InStaffDrawer';
                 const targetOrderId = drop.orderId || drop.id;
 
@@ -833,7 +933,7 @@ export default function DrawerScreen() {
                       {isInDrawer ? (
                         <View style={styles.custodyPillDrawer}>
                           <Text style={styles.custodyPillDrawerText}>
-                            🟡 Held by {drop.heldByStaffName || 'Cashier'}
+                            🟡 In Drawer • Held by {drop.heldByStaffName || 'Cashier'}
                           </Text>
                         </View>
                       ) : (
@@ -846,6 +946,7 @@ export default function DrawerScreen() {
                     </View>
 
                     <Text style={styles.customerNameText}>{drop.customerName}</Text>
+                    <WalkInBadge {...drop} />
                     <Text style={styles.addressSubText} numberOfLines={1}>
                       📍 {drop.deliveryAddress || 'Store Delivery'}
                     </Text>
@@ -973,16 +1074,20 @@ export default function DrawerScreen() {
                 <ActivityIndicator size="large" color="#C81E1E" />
                 <Text style={styles.loadingText}>Loading store pickups...</Text>
               </View>
-            ) : pickupDrops.length === 0 ? (
+            ) : visiblePickupDrops.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>🎉</Text>
-                <Text style={styles.emptyTitle}>No Pending Pickup Balances!</Text>
+                <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '🎉'}</Text>
+                <Text style={styles.emptyTitle}>
+                  {selectedCustodian ? 'No Matches for Custodian' : 'No Pending Pickup Balances!'}
+                </Text>
                 <Text style={styles.emptySub}>
-                  All walk-in store pickup orders have been settled.
+                  {selectedCustodian
+                    ? `No walk-in pickup orders in drawer held by ${selectedCustodian}.`
+                    : 'All walk-in store pickup orders have been settled.'}
                 </Text>
               </View>
             ) : (
-              pickupDrops.map((pickup) => {
+              visiblePickupDrops.map((pickup) => {
                 const isInDrawer = pickup.custodyStatus === 'InStaffDrawer';
 
                 return (
@@ -1006,7 +1111,7 @@ export default function DrawerScreen() {
                       {isInDrawer ? (
                         <View style={styles.custodyPillDrawer}>
                           <Text style={styles.custodyPillDrawerText}>
-                            🟡 Held by {pickup.heldByStaffName || 'Cashier'}
+                            🟡 In Drawer • Held by {pickup.heldByStaffName || 'Cashier'}
                           </Text>
                         </View>
                       ) : (
@@ -1021,6 +1126,7 @@ export default function DrawerScreen() {
                     <Text style={styles.customerNameText}>
                       {pickup.customerName}
                     </Text>
+                    <WalkInBadge {...pickup} />
                     <Text style={styles.addressSubText}>
                       📞 {pickup.contactNumber || 'N/A'} • 🏪{' '}
                       {pickup.address || pickup.remarks || 'Counter Pickup'}
@@ -1176,6 +1282,12 @@ export default function DrawerScreen() {
                     </View>
 
                     <Text style={styles.customerNameText}>{item.customerName}</Text>
+                    {item.isTrustedCustomer && (
+                      <View style={styles.vipBadge}>
+                        <Text style={styles.vipBadgeText}>👑 VIP</Text>
+                      </View>
+                    )}
+                    <WalkInBadge {...item} />
                     <Text style={styles.addressSubText}>
                       📍 {item.deliveryAddress || 'Customer-booked pin'}
                     </Text>
@@ -1825,6 +1937,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#A8A29E',
     marginTop: 2,
+  },
+  custodianScrollRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+  },
+  custodianPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#382A24',
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#78350F',
+  },
+  custodianPillActive: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#FBBF24',
+  },
+  custodianPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FDE68A',
+  },
+  custodianPillTextActive: {
+    color: '#1C1917',
+    fontWeight: '800',
   },
   tabsWrapper: {
     backgroundColor: '#FFFFFF',

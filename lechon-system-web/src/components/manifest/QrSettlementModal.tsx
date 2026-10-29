@@ -89,6 +89,17 @@ export function QrSettlementModal({
     expectedAmount
   );
 
+  const defaultStaffLabel = user?.fullName
+    ? `${user.fullName} (@${user.username})`
+    : (user?.username || "");
+  const [receivedByStaff, setReceivedByStaff] = useState<string>(defaultStaffLabel);
+
+  useEffect(() => {
+    if (open) {
+      setReceivedByStaff(defaultStaffLabel);
+    }
+  }, [open, defaultStaffLabel]);
+
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -175,6 +186,7 @@ export function QrSettlementModal({
         manualOverrideAmount: isManualOverride
           ? Number(overrideAmount)
           : undefined,
+        staffName: receivedByStaff.trim() || undefined,
       },
       {
         onSuccess: (res) => {
@@ -494,6 +506,19 @@ export function QrSettlementModal({
                     <span>Waiting for rider to scan and submit signature...</span>
                   </div>
                 )}
+
+                <div className="space-y-1.5 w-full text-left pt-2 pb-1">
+                  <label className="text-xs font-semibold text-stone-700">
+                    Received by Cashier
+                  </label>
+                  <Input
+                    type="text"
+                    value={receivedByStaff}
+                    onChange={(e) => setReceivedByStaff(e.target.value)}
+                    placeholder="Cashier display name"
+                    className="h-9 text-xs"
+                  />
+                </div>
 
                 {/* Symmetrical Action Row in Hop 1 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 w-full">

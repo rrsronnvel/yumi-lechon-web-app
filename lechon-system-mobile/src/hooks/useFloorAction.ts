@@ -17,6 +17,7 @@ export interface DefrostRosterItemDto {
   riderDepartureTime?: string | null;
   customerName: string;
   facebookName?: string | null;
+  source?: string;
   eventType?: string | null;
   landmark?: string | null;
   deliveryAddress: string;
@@ -34,6 +35,7 @@ export interface PendingConfirmationItemDto {
   orderReference: string;
   customerName: string;
   facebookName?: string | null;
+  source?: string;
   contactNumber: string;
   phoneNumber?: string;
   targetDeliveryTime: string;
@@ -48,6 +50,8 @@ export interface PendingOwnerConfirmationDto {
   orderId: number;
   orderReference: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   targetDeliveryTime?: string | null;
   itemsSummary: string;
   freebiesSummary?: string | null;

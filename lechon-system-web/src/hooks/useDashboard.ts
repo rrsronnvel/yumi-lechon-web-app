@@ -7,6 +7,7 @@ export interface PendingConfirmationDto {
   orderReference?: string;
   customerName: string;
   facebookName?: string | null;
+  source?: string;
   targetDeliveryTime: string;
   phoneNumber: string;
   totalAmount: number;
@@ -16,6 +17,8 @@ export interface DeliveryVerificationDto {
   id: number;
   orderReference?: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   deliveryAddress: string;
   landmark?: string | null;
   phoneNumber: string;
@@ -34,6 +37,8 @@ export interface DefrostRosterDto {
   quantity: number;
   tahiStartTime: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   targetDeliveryTime: string;
   riderDepartureTime?: string | null;
   isTrustedCustomer: boolean;
@@ -50,6 +55,8 @@ export interface PendingOwnerConfirmationDto {
   orderId: number;
   orderReference: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   targetDeliveryTime?: string | null;
   itemsSummary: string;
   freebiesSummary?: string | null;
@@ -130,6 +137,8 @@ export interface RenegotiationTask {
   orderId: number;
   orderReference?: string;
   customerName: string;
+  facebookName?: string | null;
+  source?: string;
   targetDeliveryTime: string;
   priceGap: number;
 }

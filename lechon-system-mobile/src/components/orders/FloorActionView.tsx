@@ -25,6 +25,7 @@ import {
   generateDefrostRosterMessage,
 } from '../../utils/messengerTemplates';
 import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
+import WalkInBadge from './WalkInBadge';
 
 interface FloorActionViewProps {
   onSelectOrderForDeposit: (orderId: number) => void;
@@ -285,6 +286,7 @@ export default function FloorActionView({
             <View key={item.orderId} style={styles.ownerCard}>
               <Text style={styles.ownerOrderReference}>{item.orderReference}</Text>
               <Text style={styles.ownerCustomer}>{item.customerName}</Text>
+              <WalkInBadge {...item} />
               <Text style={styles.ownerMeta} numberOfLines={2}>
                 {item.itemsSummary} • encoded by {item.createdBy}
               </Text>
@@ -389,6 +391,7 @@ export default function FloorActionView({
                 {/* Customer Info */}
                 <View style={styles.customerRow}>
                   <Text style={styles.customerNameText}>{item.customerName}</Text>
+                  <WalkInBadge {...item} />
                   {Boolean(item.facebookName) && (
                     <Text style={styles.facebookNameText}>
                       💬 {item.facebookName}
@@ -516,6 +519,7 @@ export default function FloorActionView({
                 <View style={styles.rosterMiddleRow}>
                   <View style={styles.rosterCustomerLine}>
                     <Text style={styles.rosterCustomerName}>{item.customerName}</Text>
+                    <WalkInBadge {...item} />
                     {item.isTrustedCustomer && (
                       <View style={styles.vipBadge}>
                         <Text style={styles.vipBadgeText}>👑 VIP</Text>

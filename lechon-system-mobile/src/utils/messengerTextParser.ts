@@ -43,7 +43,7 @@ const BOILERPLATE_LINE_PATTERN =
   /to confirm your order|^\s*with\s+7\s+fre+bb?ies\b|spaghetti,\s*palabok.*consumed|delivery suggestion\s*:|kung gusto nyo po ng mas masarap|total balance\s*:/i;
 
 const FIELD_LINE_PATTERN =
-  /^(?:name|customer(?:\s*name)?|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|pickup\s*or\s*deliver|del(?:ivery)?\s*add(?:ress)?|address|location|landmark|cp\s*#?\s*[12]|contact(?:\s*number)?|mobile|date\s*(?:&|and)\s*time|date|time|type\s*of\s*event|event(?:\s*type)?|occasion|order\s*\/\s*size|order|size|freebies?\s*or|add[\s-]*ons?|additional\s+.+|special\s*requests?|remarks?|notes?|distance|dp\s*(?:&|and)\s*mode|dp|down\s*payment|downpayment|deposit|delivery\s*(?:fee|charge)|deliver\s*charge|discount|price)\s*[:\-]/i;
+  /^(?:name|customer(?:\s*name)?|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|pickup\s*or\s*deliver|del(?:ivery)?\s*add(?:ress)?|deliver(?:y\s*address)?|delivery|address|location|landmark|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?|phone|mobile|date\s*(?:&|and)\s*time|date|time|type\s*of\s*event|event(?:\s*type)?|occasion|order\s*\/\s*size|order|size|freebies?\s*or|add[\s-]*ons?|additional\s+.+|special\s*requests?|remarks?|notes?|distance|dp\s*(?:&|and)\s*mode|dp|down\s*payment|downpayment|deposit|delivery\s*(?:fee|charge)|deliver\s*charge|discount|price)\s*(?:[:#\-]|(?=0?9\d))/i;
 
 const parsePesoNumber = (raw: string): number => {
   const cleaned = raw.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
@@ -212,24 +212,36 @@ const resolveWholeLechonCategory = (
   source: string,
   categories: ItemCategory[]
 ): ItemCategory | undefined => {
-  const aliases: { source: RegExp; category: RegExp }[] = [
-    { source: /\bsuper\s*jumbo\b|\bs\.?\s*jumbo\b/i, category: /super\s*jumbo|s\.?\s*jumbo/i },
-    { source: /\bxxl\b/i, category: /\bxxl\b/i },
-    { source: /\bxxs\b/i, category: /\bxxs\b/i },
-    { source: /\bjumbo\b/i, category: /\bjumbo\b/i },
-    { source: /\bextra\s*large\b|\bxl\b/i, category: /extra\s*large|\bxl\b/i },
-    { source: /\bxs\b/i, category: /\bxs\b/i },
-    { source: /\blarge\b|(?:^|\W)l(?:$|\W)/i, category: /\blarge\b|(?:^|\W)l(?:$|\W)/i },
-    { source: /\bmedium\b|(?:^|\W)m(?:$|\W)/i, category: /\bmedium\b|(?:^|\W)m(?:$|\W)/i },
-    { source: /\bsmall\b|(?:^|\W)s(?:$|\W)/i, category: /\bsmall\b|(?:^|\W)s(?:$|\W)/i },
-    { source: /\bde\s*leche\b/i, category: /\bde\s*leche\b/i },
+  const aliases: {
+    source: RegExp;
+    categoryNames: string[];
+    minimumWeightKg?: number;
+  }[] = [
+    { source: /\bsuper\s*jumbo\b|\bs\.?\s*jumbo\b/i, categoryNames: ['s jumbo', 'super jumbo'], minimumWeightKg: 41 },
+    { source: /\bjumbo\b/i, categoryNames: ['jumbo'], minimumWeightKg: 37 },
+    { source: /\b(?:xxl|2xl|xx[-\s]?large|double\s+(?:extra\s+large|xl))\b/i, categoryNames: ['xxl', '2xl', 'xx large', 'double extra large', 'double xl'], minimumWeightKg: 32 },
+    { source: /\b(?:xl|1xl|x[-\s]?large|extra[-\s]+large)\b/i, categoryNames: ['xl', '1xl', 'x large', 'extra large'], minimumWeightKg: 28 },
+    { source: /\b(?:xxs|2xs|xx[-\s]?small|double\s+extra\s+small)\b/i, categoryNames: ['xxs', '2xs', 'xx small', 'double extra small'], minimumWeightKg: 13 },
+    { source: /\b(?:xs|x[-\s]?small|extra[-\s]+small)\b/i, categoryNames: ['xs', 'x small', 'extra small'], minimumWeightKg: 16 },
+    { source: /(?<!x[-\s])(?<!xx[-\s])(?<!extra[-\s])\blarge\b|(?:^|\W)l(?:$|\W)/i, categoryNames: ['l', 'large'], minimumWeightKg: 25 },
+    { source: /\b(?:medium|med)\b|(?:^|\W)m(?:$|\W)/i, categoryNames: ['m', 'med', 'medium'], minimumWeightKg: 22 },
+    { source: /(?<!x[-\s])(?<!xx[-\s])(?<!extra[-\s])\bsmall\b|(?:^|\W)s(?:$|\W)/i, categoryNames: ['s', 'small'], minimumWeightKg: 20 },
+    { source: /\bde\s*leche\b/i, categoryNames: ['de leche'] },
   ];
   const match = aliases.find((entry) => entry.source.test(source));
   if (!match) return undefined;
-  return categories.find(
-    (category) =>
-      category.minimumWeightKg >= 13 && match.category.test(category.name)
-  );
+  return categories.find((category) => {
+    if (category.minimumWeightKg < 13) return false;
+    const normalizedName = category.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    return (
+      match.categoryNames.includes(normalizedName) ||
+      (match.minimumWeightKg !== undefined &&
+        Number(category.minimumWeightKg) === match.minimumWeightKg)
+    );
+  });
 };
 
 const resolveBellyCategory = (
@@ -341,7 +353,7 @@ export function parseMessengerTextToDraft(
 
     value = valueAfterLabel(
       line,
-      /^(?:del(?:ivery)?\s*add(?:ress)?|address|location|drop[\s-]*off|venue)\s*[:\-]\s*(.*)$/i
+      /^(?:del(?:ivery)?\s*add(?:ress)?|deliver|delivery|address|location|drop[\s-]*off|venue)\s*[:\-]\s*(.*)$/i
     );
     if (value !== null) {
       deliveryAddress = value;
@@ -354,13 +366,16 @@ export function parseMessengerTextToDraft(
       continue;
     }
 
-    value = valueAfterLabel(line, /^cp\s*#?\s*1\s*[:\-]\s*(.*)$/i);
+    value = valueAfterLabel(
+      line,
+      /^cp\s*#?\s*(?!2(?:\s*[:\-]|\s+0?9))(?:1\s*)?(?:[:\-]\s*)?(.*)$/i
+    );
     if (value !== null) {
       contactNumber = normalizePhone(value);
       continue;
     }
 
-    value = valueAfterLabel(line, /^cp\s*#?\s*2\s*[:\-]\s*(.*)$/i);
+    value = valueAfterLabel(line, /^cp\s*#?\s*2\s*(?:[:\-]\s*)?(.*)$/i);
     if (value !== null) {
       contactNumber2 = value ? normalizePhone(value) : null;
       continue;
@@ -368,7 +383,7 @@ export function parseMessengerTextToDraft(
 
     value = valueAfterLabel(
       line,
-      /^(?:contact(?:\s*number)?|mobile|phone)\s*[:\-]\s*(.*)$/i
+      /^(?:contact(?:\s*number)?\s*#?|mobile|phone)\s*(?:[:\-]\s*)?(.*)$/i
     );
     if (value !== null) {
       contactNumber = normalizePhone(value);
@@ -565,6 +580,9 @@ export function parseMessengerTextToDraft(
   if (/less\s*2\s*k|less\s*2,?000|cash\s*discount|no\s*freebies?|walang\s*freebies?/i.test(freebiesText)) {
     freebiesOptOut = true;
   } else if (/\b(?:freebies?|frebbies?)\b/i.test(freebiesText)) {
+    freebiesOptOut = false;
+  }
+  if (/\bwith\s+7\s+(?:freebies|frebbies)\b/i.test(rawText)) {
     freebiesOptOut = false;
   }
 

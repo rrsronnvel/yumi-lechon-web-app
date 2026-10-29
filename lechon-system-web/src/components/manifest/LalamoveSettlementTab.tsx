@@ -21,6 +21,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SettlePickupModal } from "./SettlePickupModal";
+import { WalkInBadge } from "@/components/WalkInBadge";
+import { isWalkInOrder } from "@/utils/walkIn";
 
 export function LalamoveSettlementTab() {
   const { data: lalamoveOrders = [], isLoading } = usePendingLalamoveQuery();
@@ -82,16 +84,16 @@ export function LalamoveSettlementTab() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto xl:overflow-x-hidden w-full">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-stone-200 bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs">
-                <th className="px-3 py-3">Order # & Customer</th>
-                <th className="px-3 py-3">Drop-off Destination</th>
-                <th className="px-3 py-3">Target Time</th>
-                <th className="px-3 py-3 text-right">Balance Due</th>
-                <th className="px-3 py-3 text-center">Gate Status</th>
-                <th className="px-3 py-3 text-center w-[140px]">Action</th>
+                <th className="px-3 py-2.5">Order # & Customer</th>
+                <th className="px-3 py-2.5 whitespace-nowrap">Date</th>
+                <th className="px-3 py-2.5">Drop-off Destination</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap border-l border-stone-200/80">Balance Due</th>
+                <th className="px-3 py-2.5 text-center whitespace-nowrap border-l border-stone-200/80">Gate Status</th>
+                <th className="px-3 py-2.5 text-center whitespace-nowrap">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-sm">
@@ -106,11 +108,13 @@ export function LalamoveSettlementTab() {
                 </tr>
               ) : (
                 lalamoveOrders.map((order: PendingLalamoveSettlement) => {
-                  const formattedTime = new Date(
-                    order.targetDeliveryTime
-                  ).toLocaleString("en-PH", {
+                  const targetDate = new Date(order.targetDeliveryTime);
+                  const formattedDate = targetDate.toLocaleDateString("en-PH", {
                     month: "short",
                     day: "numeric",
+                    year: "numeric",
+                  });
+                  const formattedTime = targetDate.toLocaleTimeString("en-PH", {
                     hour: "numeric",
                     minute: "2-digit",
                     hour12: true,
@@ -118,24 +122,34 @@ export function LalamoveSettlementTab() {
 
                   const isCleared = order.isClearedForRelease || order.balanceDue <= 0;
                   const isReleasing = releasingOrderId === order.orderId;
+                  const isWalkIn = isWalkInOrder(order);
 
                   return (
                     <tr
                       key={order.orderId}
-                      className="hover:bg-stone-50/70 transition-colors"
+                      className={`${isWalkIn ? "bg-indigo-50/40" : ""} hover:bg-stone-50/70 transition-colors`}
                     >
                       {/* Order # & Customer */}
-                      <td className="px-3 py-2.5 min-w-[140px] max-w-[200px]">
-                        <div className="flex flex-col gap-0.5">
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-col gap-0.5 max-w-[180px]">
                           <span className="font-mono text-xs font-semibold text-stone-500">
                             #{order.orderId}
                           </span>
                           <span
-                            className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
+                            className="font-medium text-stone-900 text-xs leading-snug break-words line-clamp-1"
                             title={order.customerName}
                           >
                             {order.customerName}
                           </span>
+                          {order.isTrustedCustomer && (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0 font-bold shrink-0"
+                            >
+                              👑 VIP
+                            </Badge>
+                          )}
+                          <WalkInBadge {...order} />
                           {order.contactNumber && (
                             <div className="text-xs font-mono text-stone-500 truncate">
                               {order.contactNumber}
@@ -144,18 +158,24 @@ export function LalamoveSettlementTab() {
                         </div>
                       </td>
 
-                      {/* Drop-off Destination */}
-                      <td className="px-3 py-3 text-stone-700 max-w-[180px] lg:max-w-[220px] truncate" title={order.deliveryAddress || "Customer booked pin"}>
-                        {order.deliveryAddress || "Customer booked pin"}
+                      {/* Date / Schedule */}
+                      <td className="px-3 py-2.5 whitespace-nowrap text-xs text-stone-700">
+                        <div className="font-semibold text-xs text-stone-800 leading-tight">{formattedDate}</div>
+                        <div className="font-mono text-[11px] text-stone-500 leading-tight">{formattedTime}</div>
                       </td>
 
-                      {/* Target Time */}
-                      <td className="px-3 py-3 text-stone-700 whitespace-nowrap">
-                        {formattedTime}
+                      {/* Drop-off Destination */}
+                      <td className="px-3 py-2.5 text-stone-700 text-xs">
+                        <div
+                          className="whitespace-normal break-words max-w-[200px] line-clamp-2 leading-tight"
+                          title={order.deliveryAddress || "Customer booked pin"}
+                        >
+                          {order.deliveryAddress || "Customer booked pin"}
+                        </div>
                       </td>
 
                       {/* Balance Due */}
-                      <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap text-xs tabular-nums border-l border-stone-200/80">
                         {order.balanceDue > 0 ? (
                           <span className="text-rose-600">
                             ₱{order.balanceDue.toLocaleString()}
@@ -166,23 +186,23 @@ export function LalamoveSettlementTab() {
                       </td>
 
                       {/* Gate Status Badge */}
-                      <td className="px-3 py-3 text-center whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap text-xs border-l border-stone-200/80">
                         {isCleared ? (
-                          <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-300 font-semibold text-xs">
-                            🟢 PAID IN FULL — CLEAR TO RELEASE
+                          <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-300 font-semibold text-xs py-0.5 px-2">
+                            🟢 CLEAR TO RELEASE
                           </Badge>
                         ) : (
                           <Badge
                             variant="destructive"
-                            className="bg-rose-100 text-rose-800 hover:bg-rose-100 border-rose-300 font-semibold text-xs"
+                            className="bg-rose-100 text-rose-800 hover:bg-rose-100 border-rose-300 font-semibold text-xs py-0.5 px-2"
                           >
-                            🛑 HOLD RELEASE: UNPAID BALANCE
+                            🛑 UNPAID BALANCE
                           </Badge>
                         )}
                       </td>
 
                       {/* Action Button */}
-                      <td className="px-3 py-3 text-center whitespace-nowrap w-[140px]">
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap text-xs">
                         {isCleared ? (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

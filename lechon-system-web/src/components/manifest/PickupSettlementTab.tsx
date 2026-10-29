@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   usePendingPickupsQuery,
   useRevertCustodyMutation,
@@ -11,10 +11,21 @@ import { Badge } from "@/components/ui/badge";
 import { SettlePickupModal } from "./SettlePickupModal";
 import { QrSettlementModal } from "./QrSettlementModal";
 import { toast } from "sonner";
+import { WalkInBadge } from "@/components/WalkInBadge";
+import { isWalkInOrder } from "@/utils/walkIn";
 
-export function PickupSettlementTab() {
+export function PickupSettlementTab({ selectedCustodian }: { selectedCustodian?: string | null } = {}) {
   const { user, isOwner } = useAuth();
   const { data: pickups = [], isLoading } = usePendingPickupsQuery();
+  const visiblePickups = useMemo(() => {
+    if (!selectedCustodian) return pickups;
+    return pickups.filter((p) => {
+      const isDrawer = (p.settlementCustodyStatus || p.custodyStatus) === "InStaffDrawer";
+      const custodian = p.heldByStaffName?.trim() || "Staff";
+      return isDrawer && custodian === selectedCustodian;
+    });
+  }, [pickups, selectedCustodian]);
+
   const revertCustodyMutation = useRevertCustodyMutation();
 
   const handleRevertCustody = (orderId: number) => {
@@ -79,25 +90,24 @@ export function PickupSettlementTab() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto xl:overflow-x-hidden w-full">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-stone-200 bg-stone-100/70 text-stone-600 font-semibold uppercase tracking-wider text-xs">
-                <th className="px-3 py-3">Customer</th>
-
-                <th className="px-3 py-3">Pickup Time</th>
-                <th className="px-3 py-3">Address / Landmark</th>
-                <th className="px-3 py-3">Custody Status</th>
-                <th className="px-3 py-3 text-right">Grand Total</th>
-                <th className="px-3 py-3 text-right">Downpayment</th>
-                <th className="px-3 py-3 text-right text-emerald-700 bg-emerald-50/30">
+                <th className="px-3 py-2.5">Customer</th>
+                <th className="px-3 py-2.5 whitespace-nowrap">Date</th>
+                <th className="px-3 py-2.5">Address / Landmark</th>
+                <th className="px-3 py-2.5">Custody Status</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap">Grand Total</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap border-l border-stone-200/80">Downpayment</th>
+                <th className="px-3 py-2.5 text-right text-emerald-700 bg-emerald-50/40 whitespace-nowrap border-l border-stone-200/80">
                   Balance to Collect
                 </th>
-                <th className="px-3 py-3 text-center w-[140px]">Actions</th>
+                <th className="px-3 py-2.5 text-center whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-sm">
-              {pickups.length === 0 ? (
+              {visiblePickups.length === 0 ? (
                 <tr>
                   <td
                     colSpan={8}
@@ -107,35 +117,42 @@ export function PickupSettlementTab() {
                   </td>
                 </tr>
               ) : (
-                pickups.map((pickup: PendingPickupSettlement) => {
-                  const formattedPickupTime = new Date(
-                    pickup.targetDeliveryTime
-                  ).toLocaleString("en-PH", {
+                visiblePickups.map((pickup: PendingPickupSettlement) => {
+                  const pickupDate = new Date(pickup.targetDeliveryTime);
+                  const formattedPickupDate = pickupDate.toLocaleDateString("en-PH", {
                     month: "short",
                     day: "numeric",
+                    year: "numeric",
+                  });
+                  const formattedPickupTime = pickupDate.toLocaleTimeString("en-PH", {
                     hour: "numeric",
                     minute: "2-digit",
                     hour12: true,
                   });
 
                   const isInDrawer = pickup.custodyStatus === "InStaffDrawer";
+                  const isWalkIn = isWalkInOrder(pickup);
 
                   return (
                     <tr
                       key={pickup.orderId}
                       className={`hover:bg-stone-50/70 transition-colors ${
-                        isInDrawer ? "bg-amber-50/20" : ""
+                        isWalkIn
+                          ? "bg-indigo-50/40"
+                          : isInDrawer
+                            ? "bg-amber-50/20"
+                            : ""
                       }`}
                     >
                       {/* Customer Column */}
-                      <td className="px-3 py-2.5 min-w-[150px] max-w-[220px]">
-                        <div className="flex flex-col gap-0.5">
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-col gap-0.5 max-w-[170px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono text-xs font-semibold text-stone-500">
                               #{pickup.orderId}
                             </span>
                             <span
-                              className="font-medium text-stone-900 text-xs sm:text-sm leading-snug break-words"
+                              className="font-medium text-stone-900 text-xs leading-snug break-words line-clamp-1"
                               title={pickup.customerName}
                             >
                               {pickup.customerName}
@@ -148,6 +165,7 @@ export function PickupSettlementTab() {
                                 👑 VIP
                               </Badge>
                             )}
+                            <WalkInBadge {...pickup} />
                           </div>
                           <span className="text-xs text-stone-500 font-mono">
                             {pickup.contactNumber || "—"}
@@ -156,75 +174,78 @@ export function PickupSettlementTab() {
                       </td>
 
                       {/* Pickup Time */}
-                      <td className="px-3 py-3 text-stone-700 whitespace-nowrap text-xs">
-                        {formattedPickupTime}
+                      <td className="px-3 py-2.5 whitespace-nowrap text-xs text-stone-700">
+                        <div className="font-semibold text-xs text-stone-800 leading-tight">{formattedPickupDate}</div>
+                        <div className="font-mono text-[11px] text-stone-500 leading-tight">{formattedPickupTime}</div>
                       </td>
 
                       {/* Address / Landmark */}
-                      <td className="px-3 py-3 max-w-[220px] break-words text-xs">
-                        <div className="text-stone-700 font-medium">
-                          {pickup.address || "Store Counter"}
+                      <td className="px-3 py-2.5 text-xs">
+                        <div className="whitespace-normal break-words max-w-[180px] lg:max-w-[200px] line-clamp-2 leading-tight">
+                          <span className="text-stone-700 font-medium">
+                            {pickup.address || "Store Counter"}
+                          </span>
+                          {pickup.landmark && (
+                            <span className="text-stone-400 text-[11px] italic block">
+                              📍 {pickup.landmark}
+                            </span>
+                          )}
+                          {!pickup.address && pickup.remarks && (
+                            <span className="text-stone-400 text-[11px] italic block">
+                              {pickup.remarks}
+                            </span>
+                          )}
                         </div>
-                        {pickup.landmark && (
-                          <div className="text-stone-400 text-[11px] italic mt-0.5">
-                            📍 {pickup.landmark}
-                          </div>
-                        )}
-                        {!pickup.address && pickup.remarks && (
-                          <div className="text-stone-400 text-[11px] italic mt-0.5">
-                            {pickup.remarks}
-                          </div>
-                        )}
                       </td>
 
-                      {/* Custody Status Badge */}
-                      <td className="px-3 py-3 whitespace-nowrap">
+                      {/* Custody Status Badge - Stacked */}
+                      <td className="px-3 py-2.5 text-xs">
                         {isInDrawer ? (
-                          <Badge
-                            variant="outline"
-                            className="bg-amber-50 text-amber-900 border-amber-300 text-xs font-semibold py-1 px-2.5 flex items-center gap-1.5 w-fit shadow-xs"
-                          >
-                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                            <span>
-                              🟡 In Staff Drawer: Held by {pickup.heldByStaffName || "Cashier"}
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                              🟡 In Drawer
                             </span>
-                          </Badge>
+                            <span
+                              className="text-[11px] font-medium text-stone-600 pl-1 block truncate max-w-[140px]"
+                              title={`Held by ${pickup.heldByStaffName || "Cashier"}`}
+                            >
+                              Held by {pickup.heldByStaffName || "Cashier"}
+                            </span>
+                          </div>
                         ) : (
-                          <Badge
-                            variant="outline"
-                            className="bg-stone-50 text-stone-600 border-stone-300 text-xs py-1 px-2 flex items-center gap-1.5 w-fit"
-                          >
-                            <span className="w-2 h-2 rounded-full bg-stone-400" />
-                            <span>⚪ Uncollected</span>
-                          </Badge>
+                          <span className="text-xs font-medium text-stone-600 bg-stone-100 border border-stone-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-stone-400 shrink-0" />
+                            ⚪ Uncollected
+                          </span>
                         )}
                       </td>
 
                       {/* Grand Total */}
-                      <td className="px-3 py-3 text-right font-mono text-stone-700">
+                      <td className="px-3 py-2.5 text-right font-mono text-stone-800 text-xs tabular-nums whitespace-nowrap font-medium">
                         ₱{pickup.grandTotal.toLocaleString()}
                       </td>
 
                       {/* Downpayment */}
-                      <td className="px-3 py-3 text-right font-mono text-stone-500">
+                      <td className="px-3 py-2.5 text-right font-mono text-stone-600 text-xs tabular-nums whitespace-nowrap border-l border-stone-200/80">
                         ₱{pickup.downpayment.toLocaleString()}
                       </td>
 
                       {/* Balance to Collect */}
-                      <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600 bg-emerald-50/20 whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/20 text-xs tabular-nums whitespace-nowrap border-l border-stone-200/80">
                         ₱{pickup.balanceDue.toLocaleString()}
                       </td>
 
                       {/* Action */}
-                      <td className="px-3 py-3 w-[140px] text-center whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap text-xs">
                         {isInDrawer ? (
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-1">
                             <Button
                               size="sm"
-                              className="bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold shadow-xs"
+                              className="bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold shadow-xs h-8 px-2.5"
                               onClick={() => handleOpenOwnerRemit(pickup)}
                             >
-                              👑 Remit to Owner
+                              👑 Remit
                             </Button>
                             {(isOwner ||
                               (Boolean(user?.username) &&
@@ -246,7 +267,7 @@ export function PickupSettlementTab() {
                         ) : (
                           <Button
                             size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-xs"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-xs h-8 px-2.5"
                             onClick={() => handleOpenCounterCollect(pickup)}
                           >
                             Collect at Counter

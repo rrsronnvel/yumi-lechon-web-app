@@ -18,6 +18,7 @@ import { useLogPayment } from "@/hooks/useLogPayment";
 import { useInventoryBalances } from "@/hooks/useInventory";
 import { useMenuCategories } from "@/hooks/useCms";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import { WalkInBadge } from "@/components/WalkInBadge";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -470,6 +471,7 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-semibold text-stone-900">
                       Order #{task.orderReference || task.orderId} - {task.customerName}
+                      <span className="ml-1.5 inline-flex align-middle"><WalkInBadge {...task} /></span>
                     </p>
                     <p className="text-xs text-stone-500">
                       Delivery: {new Date(task.targetDeliveryTime).toLocaleDateString()}
@@ -621,6 +623,7 @@ export default function DashboardPage() {
                     <div>
                       <div className="font-bold text-stone-900">
                         #{item.orderReference} • {item.customerName}
+                        <span className="ml-1.5 inline-flex align-middle"><WalkInBadge {...item} /></span>
                       </div>
                       <div className="text-[11px] text-stone-500">
                         Encoded by {item.createdBy}
@@ -727,6 +730,7 @@ export default function DashboardPage() {
                           </TableCell>
                           <TableCell className="font-semibold text-stone-900">
                             {item.customerName}
+                            <span className="ml-1.5 inline-flex align-middle"><WalkInBadge {...item} /></span>
                           </TableCell>
                           <TableCell className="font-mono text-xs text-stone-700">
                             {new Date(item.targetDeliveryTime).toLocaleString()}
@@ -851,6 +855,7 @@ export default function DashboardPage() {
                           <TableCell>
                             <div className="font-semibold text-stone-900 flex items-center gap-2">
                               {item.customerName}
+                              <WalkInBadge {...item} />
                               {item.isTrustedCustomer && (
                                 <Badge
                                   variant="outline"

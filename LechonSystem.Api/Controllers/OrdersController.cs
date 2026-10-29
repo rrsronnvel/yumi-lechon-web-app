@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using LechonSystem.Api.DTOs;
+using LechonSystem.Api.Common;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.Models.DTOs;
 
@@ -81,7 +82,7 @@ namespace LechonSystem.Api.Controllers
         [Authorize(Roles = "Owner")]
         public async Task<IActionResult> ConfirmOrderByOwner(int id)
         {
-            var ownerUsername = User.Identity?.Name ?? "Owner";
+            var ownerUsername = UserIdentityHelper.ResolveDisplayName(User, "Owner");
             var success = await _orderService.ConfirmOrderByOwnerAsync(id, ownerUsername);
 
             if (!success)
@@ -138,12 +139,12 @@ namespace LechonSystem.Api.Controllers
             catch (KeyNotFoundException ex)
             {
                 // If the service can't find the order in the database, return a 404
-                return NotFound(ex.Message);
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
                 // Catch any other business logic errors
-                return BadRequest(ex.Message);
+                return BadRequest(new { message = ex.Message });
             }
         }
 

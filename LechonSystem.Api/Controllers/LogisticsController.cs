@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.DTOs;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Controllers
 {
@@ -225,7 +226,7 @@ namespace LechonSystem.Api.Controllers
         {
             try
             {
-                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var staffUsername = (request != null && !string.IsNullOrWhiteSpace(request.StaffName)) ? request.StaffName.Trim() : UserIdentityHelper.ResolveDisplayName(User);
                 var session = await _logisticsService.StaffValidateQrSessionAsync(token, request, staffUsername);
                 return Ok(session);
             }
@@ -250,7 +251,7 @@ namespace LechonSystem.Api.Controllers
         {
             try
             {
-                var currentUser = User.Identity?.Name ?? "System";
+                var currentUser = UserIdentityHelper.ResolveDisplayName(User);
                 var isOwner = User.IsInRole("Owner");
                 await _logisticsService.RevertCustodyAsync(orderId, currentUser, isOwner);
                 return Ok(new { success = true, message = $"Custody for Order #{orderId} reverted to Uncollected." });
@@ -283,7 +284,7 @@ namespace LechonSystem.Api.Controllers
         {
             try
             {
-                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var staffUsername = UserIdentityHelper.ResolveDisplayName(User);
                 var session = await _logisticsService.CounterCollectQrSessionAsync(token, staffUsername);
                 return Ok(session);
             }
@@ -298,11 +299,12 @@ namespace LechonSystem.Api.Controllers
         }
 
         [HttpPost("settlements/counter-collect")]
-        public async Task<IActionResult> CounterCollectPickup([FromBody] CounterCollectRequest request)
+        public async Task<IActionResult> CounterCollectPickup([FromBody] CounterCollectRequest? request)
         {
+            if (request == null) return BadRequest(new { message = "Request body is required." });
             try
             {
-                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var staffUsername = !string.IsNullOrWhiteSpace(request.StaffName) ? request.StaffName.Trim() : UserIdentityHelper.ResolveDisplayName(User);
                 var result = await _logisticsService.CounterCollectPickupAsync(
                     request.OrderId,
                     request.PaymentMethod,
@@ -330,7 +332,7 @@ namespace LechonSystem.Api.Controllers
             {
                 var isAuthenticated = User.Identity?.IsAuthenticated == true;
                 var isOwnerRole = isAuthenticated && User.IsInRole("Owner");
-                var currentUsername = User.Identity?.Name;
+                var currentUsername = UserIdentityHelper.ResolveDisplayName(User);
 
                 var session = await _logisticsService.OwnerApproveQrSessionAsync(token, request, currentUsername, isOwnerRole);
                 return Ok(session);
@@ -363,7 +365,7 @@ namespace LechonSystem.Api.Controllers
         {
             try
             {
-                var staffUsername = User.Identity?.Name ?? "Cashier";
+                var staffUsername = UserIdentityHelper.ResolveDisplayName(User);
                 var result = await _logisticsService.SettleDirectStoreGcashAsync(
                     request.OrderId,
                     request.Amount,

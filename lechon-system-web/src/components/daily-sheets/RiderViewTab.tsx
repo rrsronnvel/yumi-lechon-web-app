@@ -9,6 +9,8 @@ import {
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import { WalkInBadge } from "@/components/WalkInBadge";
+import { isWalkInOrder } from "@/utils/walkIn";
 
 interface RiderViewTabProps {
   mode?: "edit" | "clean";
@@ -92,14 +94,10 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
       (r) => r.fullName.toLowerCase() === item.riderName?.trim().toLowerCase()
     );
 
-    const price = Number(item.price) || 0;
-    const addOns = Number(item.addOns) || 0;
+    const price = Number(item.lechonPrice ?? item.price) || 0;
+    const addOns = Number(item.addOnsTotal) || 0;
     const deliveryFee = Number(item.deliveryFee) || 0;
-    const lechonFee =
-      item.lechonFee !== undefined && item.lechonFee !== null
-        ? Number(item.lechonFee)
-        : price + addOns;
-    const amountToCollect = lechonFee + deliveryFee;
+    const amountToCollect = Number(item.totalToCollect) || 0;
 
     const orderData: TemplateOrderData = {
       orderNumber: item.orderId || item.id,
@@ -139,18 +137,14 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
 
   // Financial summary calculations
   const totalAmountToCollect = sortedByDelivery.reduce((acc, item) => {
-    const price = Number(item.price) || 0;
-    const addOns = Number(item.addOns) || 0;
-    const deliveryFee = Number(item.deliveryFee) || 0;
-    const lechonFee = item.lechonFee !== undefined && item.lechonFee !== null ? Number(item.lechonFee) : price + addOns;
-    return acc + (lechonFee + deliveryFee);
+    return acc + (Number(item.totalToCollect) || 0);
   }, 0);
 
   return (
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
-      <div className="w-full rounded-md border-2 border-black overflow-x-auto print:overflow-visible bg-white shadow-xs">
-        <table className="w-full table-fixed border-collapse text-left text-xs min-w-[1100px] xl:min-w-full">
+      <div className={`w-full rounded-md border-2 border-black ${mode === "clean" ? "overflow-visible no-scrollbar" : "overflow-x-auto"} print:overflow-visible bg-white shadow-xs`}>
+        <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
             <col className="w-[8%] min-w-[120px]" />  {/* 1. No. */}
@@ -164,7 +158,7 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
             <col className="w-[4.5%]" />              {/* 9. Price */}
             <col className="w-[3.5%]" />              {/* 10. Add-ons */}
             <col className="w-[4%]" />                {/* 11. Delivery Fee */}
-            <col className="w-[4.5%]" />              {/* 12. Lechon Fee */}
+            <col className="w-[4.5%]" />              {/* 12. Down Payment */}
             <col className="w-[7.5%]" />              {/* 13. Amount to Collect */}
           </colgroup>
 
@@ -182,7 +176,7 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
               <th className="px-1.5 py-2.5 text-right font-black uppercase text-[11px] border-r border-slate-700">Price</th>
               <th className="px-1.5 py-2.5 text-right font-black uppercase text-[11px] border-r border-slate-700">Add-ons</th>
               <th className="px-1.5 py-2.5 text-right font-black uppercase text-[11px] border-r border-slate-700">Del Fee</th>
-              <th className="px-1.5 py-2.5 text-right font-black uppercase text-[11px] border-r border-slate-700">Lechon</th>
+              <th className="px-1.5 py-2.5 text-right font-black uppercase text-[11px] border-r border-slate-700">Down Payment</th>
               <th className="px-1.5 py-2.5 text-right font-black uppercase text-[11px] bg-slate-900 text-green-300">
                 To Collect
               </th>
@@ -193,16 +187,12 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
           <tbody className="divide-y divide-slate-300 bg-white">
             {sortedByDelivery.map((item) => {
               const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
-              const price = Number(item.price) || 0;
-              const addOns = Number(item.addOns) || 0;
+              const price = Number(item.lechonPrice ?? item.price) || 0;
+              const addOns = Number(item.addOnsTotal) || 0;
               const deliveryFee = Number(item.deliveryFee) || 0;
-
-              const lechonFee =
-                item.lechonFee !== undefined && item.lechonFee !== null
-                  ? Number(item.lechonFee)
-                  : price + addOns;
-
-              const amountToCollect = lechonFee + deliveryFee;
+              const downpayment = Number(item.downpayment) || 0;
+              const amountToCollect = Number(item.totalToCollect) || 0;
+              const isWalkIn = isWalkInOrder(item);
 
               const editableCellClass = isEdit
                 ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
@@ -211,7 +201,7 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
               return (
                 <tr
                   key={item.id}
-                  className="even:bg-slate-50 odd:bg-white text-slate-900 hover:bg-amber-50/40"
+                  className={`${isWalkIn && isEdit ? "bg-indigo-50/40" : "even:bg-slate-50 odd:bg-white"} text-slate-900 hover:bg-amber-50/40`}
                 >
                   {/* 1. No. */}
                   <td className="px-2 py-2 text-center text-slate-800 border-r border-slate-300 text-xs min-w-[120px] whitespace-nowrap font-mono font-bold">
@@ -235,7 +225,15 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
 
                   {/* 5. Customer Name */}
                   <td className="px-1.5 py-2 font-bold text-slate-900 border-r border-slate-300 break-words leading-tight">
-                    <div>{item.customerName || "-"}</div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span>{item.customerName || "-"}</span>
+                      <WalkInBadge
+                        source={item.source}
+                        customerName={item.customerName}
+                        facebookName={item.facebookName}
+                        clean={isCleanView}
+                      />
+                    </div>
                     {item.facebookName &&
                       item.facebookName.toLocaleLowerCase() !== item.customerName?.toLocaleLowerCase() && (
                         <div className="mt-0.5 text-[9px] font-semibold text-slate-500">
@@ -377,9 +375,9 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
                     {formatPHP(deliveryFee)}
                   </td>
 
-                  {/* 12. Lechon Fee */}
-                  <td className="px-1.5 py-2 text-right font-bold text-slate-900 border-r border-slate-300 whitespace-nowrap text-[11px]">
-                    {formatPHP(lechonFee)}
+                  {/* 12. Down Payment */}
+                  <td className={`px-1.5 py-2 text-right font-bold border-r border-slate-300 whitespace-nowrap text-[11px] ${downpayment > 0 ? "text-amber-700 bg-amber-50/50" : "text-slate-700"}`}>
+                    {downpayment > 0 ? `-${formatPHP(downpayment)}` : formatPHP(0)}
                   </td>
 
                   {/* 13. Amount to Collect */}
@@ -394,13 +392,13 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
           {/* Clean High-Contrast Footer Summary */}
           <tfoot className="bg-slate-100 border-t-2 border-black font-semibold text-slate-900 text-[11px]">
             <tr>
-              <td colSpan={5} className="px-3 py-2 text-left font-black uppercase tracking-wider border-r border-slate-300">
+              <td colSpan={5} className="px-3 py-2.5 text-left font-black uppercase tracking-wider border-r border-slate-300">
                 Total Deliveries: {sortedByDelivery.length}
               </td>
-              <td colSpan={4} className="px-3 py-2 text-left font-bold border-r border-slate-300">
+              <td colSpan={4} className="px-3 py-2.5 text-left font-bold border-r border-slate-300">
                 Logistics Dispatch Manifest
               </td>
-              <td colSpan={4} className="px-3 py-2 text-right font-black text-green-800 text-xs sm:text-[13px] uppercase">
+              <td colSpan={4} className="px-3 py-2.5 text-right font-black text-green-800 text-xs sm:text-[13px] uppercase">
                 Total Cash to Collect: {formatPHP(totalAmountToCollect)}
               </td>
             </tr>

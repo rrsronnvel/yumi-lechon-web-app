@@ -36,11 +36,17 @@ export function useEditOrder() {
         if (data.errors) {
           // Extracts all the specific validation errors and joins them into a readable sentence
           errorMessage = Object.values(data.errors).flat().join(" | ");
+        } else if (data.message || data.Message) {
+          errorMessage = data.message || data.Message;
         } else if (data.title) {
           errorMessage = data.title;
         } else if (typeof data === "string") {
           errorMessage = data;
         }
+      }
+
+      if (errorMessage === "Could not safely modify the order." && error.message) {
+        errorMessage = error.message;
       }
 
       // 3. Safely print the string (no more crashing!)

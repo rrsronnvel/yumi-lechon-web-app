@@ -6,6 +6,22 @@
 
 ---
 
+## October 29, 2026 Operational Invariants
+
+- Order editing is role-aware: Owners may edit/reschedule past orders; Cashiers are rejected only when assigning a changed `TargetDeliveryTime` in the past. A target change must never leave `RiderDepartureTime > TargetDeliveryTime`; shift the old lead time or clamp safely.
+- Normalize flexible dates before validation or ISO assembly on Web and Mobile: `YYYY-M-D` becomes `YYYY-MM-DD`. Edit target changes synchronize the rider departure date. Axios 400 UI must prefer `response.data.message`, then `response.data.title`, then `error.message`.
+- Messenger size parsing is specificity ordered. `X-Large`, `X Large`, `Extra-Large`, `Extra Large`, `XL`, and `1XL` must resolve to `XL` before standalone `Large`/`L`; analogous XXL/XS/XXS aliases follow the documented order. Accept Deliver/Delivery/Address/Location, compact Cp#/Contact#/Phone/Mobile, combined `Date and Time`, paid-DP suffixes, and 7-freebies text.
+- Rider Sheet financial truth is `LechonPrice = lechonSubtotal - Discount`, numeric paid add-ons, Delivery Fee, Downpayment, and `TotalToCollect = max(0, LechonPrice + AddOnsTotal + DeliveryFee - Downpayment)`. Never derive money from the descriptive `AddOns` string.
+- Walk-In detection is global and reusable: `Source` case-insensitively equals `Walk-in`, or Customer/FB Name contains `(WI)`. Render `🚶 WALK-IN (WI)` on screen and `[WI • WALK-IN]` in clean/print sheets across Daily Sheets, Manifest, Orders/dossier, Logistics, Dashboard, and Mobile owner/remittance surfaces.
+- Manifest settlement DTOs must carry `Source`, `TargetDeliveryTime`, and `RiderDepartureTime`; all three Manifest tabs show `DATE / SCHEDULE` immediately after Customer.
+- Daily Sheets PNG export uses `html-to-image` against the hidden Clean View at fixed 1280px width, white background, visible overflow, and pixel ratio 2. Prefer Web Share Level 2 for file-capable mobile browsers and fall back to download using `Yumi-{Kitchen|Rider}-Sheet-{date}.png`.
+- Edit order initialization strictly preserves saved custom discounts (`order.discount`); freebies mode hydration never passively overwrites manual discounts, recalculating only upon explicit clicks of `[ 🚫 No Freebies ]` / `[ 🎁 Standard 7 Freebies ]`.
+- Real user name attribution: All audit logs, `CreatedBy`, `OwnerConfirmedBy`, void logs, and `StaffValidatedBy` record `FullName (@username)` via `UserIdentityHelper` rather than generic role labels. Empty string diff comparisons for Add-Ons and Remarks are normalized to prevent false-positive logs.
+- Daily Manifest upper date ceiling: Settlements for freelance riders, store pickups, and Lalamove releases enforce `o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= PhilippineTime.Today`, hiding future bookings until their delivery date while preserving past unsettled balances (Notebook Rule).
+- In Staff Drawer multi-cashier custody breakdown: Items in `InStaffDrawer` stamp `StaffValidatedBy`. Scoreboard cards render interactive custodian pills (`[ All Custodians ]`, `[ 👤 {Name}: ₱{Amount} ({Count}) ]`) for 1-click filtering, and table custody badges render `🟡 In Drawer • Held by {heldByStaffName}`.
+
+---
+
 ## 1. 🏗️ Tech Stack, Protocols & Environment Ports
 
 ### Backend (`LechonSystem.Api`)

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.DTOs;
+using LechonSystem.Api.Common;
 
 namespace LechonSystem.Api.Controllers
 {
@@ -60,7 +61,7 @@ namespace LechonSystem.Api.Controllers
                 return BadRequest(ModelState);
             }
 
-            string adminName = User.Identity?.Name ?? request.AdminName ?? "System";
+            string adminName = UserIdentityHelper.ResolveDisplayName(User, request.AdminName);
             bool success = await _cmsService.UpdateCategoryPriceAsync(id, request.NewPrice, adminName);
 
             if (!success)

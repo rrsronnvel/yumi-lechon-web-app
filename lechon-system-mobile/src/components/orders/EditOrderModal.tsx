@@ -21,7 +21,8 @@ import {
   useCustomerLookupQuery,
   ItemCategory,
 } from '../../hooks/usePos';
-import { OrderDetailsDto } from '../../hooks/useOrders';
+import { OrderDetailsDto } from '../../hooks/useOrders';
+import { useAuth } from '../../context/AuthContext';
 import {
   calculateRiderDepartureTime,
   SOURCE_PILLS,
@@ -29,7 +30,8 @@ import {
   RIDER_DEPARTURE_NUDGE_PILLS,
 } from '../../utils/messengerTemplates';
 import FreebiesSelector from './FreebiesSelector';
-import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from '../../utils/similarityHelper';
+import { evaluateDuplicateOrders, formatCalendarDateLabel } from '../../utils/similarityHelper';
+import { normalizeDateInput } from '../../utils/dateNormalizer';
 import PaymentChannelPills from './PaymentChannelPills';
 import {
   FreebiesConfig,
@@ -97,12 +99,15 @@ const formatLocalHM = (d: Date): string => {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-export default function EditOrderModal({
+export default function EditOrderModal({
+  // auth
+
   visible,
   order,
   onClose,
   onSaved,
-}: EditOrderModalProps) {
+}: EditOrderModalProps) {
+  const { user } = useAuth();
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
   const { data: balances = [] } = useInventoryBalances();
   const { data: deliveryPricing } = useDeliveryPricingQuery();
@@ -659,7 +664,7 @@ export default function EditOrderModal({
     }
     const cleanTime = to24HourTime(riderDepartureTimeStr, riderDeparturePeriod);
     if (!cleanTime) return isoTargetTime;
-    const candidateIso = `${targetDate.trim()}T${cleanTime}:00`;
+    const candidateIso = `${normalizeDateInput(targetDate)}T${cleanTime}:00`;
     const parsedCandidate = new Date(candidateIso);
     const parsedTarget = new Date(isoTargetTime);
 
@@ -739,8 +744,9 @@ export default function EditOrderModal({
     const targetTime24 = isTimeTbd
       ? '12:00'
       : to24HourTime(targetTime, targetPeriod);
-    if (targetDate.trim() && targetTime24) {
-      const candidateIso = `${targetDate.trim()}T${targetTime24}:00`;
+    const normalizedTargetDate = normalizeDateInput(targetDate);
+    if (normalizedTargetDate && targetTime24) {
+      const candidateIso = `${normalizedTargetDate}T${targetTime24}:00`;
       const parsedTarget = new Date(candidateIso);
       if (!isNaN(parsedTarget.getTime())) {
         isoTargetTime = candidateIso;
@@ -828,13 +834,14 @@ export default function EditOrderModal({
       onClose();
     } catch (err: unknown) {
       const axiosErr = err as {
-        response?: { data?: { message?: string } | string };
+        response?: { data?: { message?: string; title?: string } | string };
         message?: string;
       };
       const msg =
         typeof axiosErr.response?.data === 'string'
           ? axiosErr.response.data
           : axiosErr.response?.data?.message ||
+            axiosErr.response?.data?.title ||
             axiosErr.message ||
             'Failed to update order.';
       setValidationError(msg);
@@ -1205,6 +1212,7 @@ export default function EditOrderModal({
                   style={styles.textInput}
                   value={targetDate}
                   onChangeText={setTargetDate}
+                  onEndEditing={() => setTargetDate(normalizeDateInput(targetDate))}
                   placeholder="2026-10-25"
                   placeholderTextColor="#A8A29E"
                 />

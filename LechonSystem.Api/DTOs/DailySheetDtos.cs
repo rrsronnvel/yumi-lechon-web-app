@@ -42,10 +42,13 @@ public class DailySheetItemDto
     public string? FreebiesConfigJson { get; set; }
     public string AddOns { get; set; } = "-";
     public decimal Price { get; set; }
+    public decimal LechonPrice { get; set; }
+    public decimal AddOnsTotal { get; set; }
     public decimal DeliveryFee { get; set; }
     public decimal Downpayment { get; set; }
     public string DownpaymentMethod { get; set; } = "None";
     public decimal GrandTotal { get; set; }
+    public decimal TotalToCollect { get; set; }
     public bool IsOwnerConfirmed { get; set; }
     public DateTime? OwnerConfirmedAt { get; set; }
     public string? OwnerConfirmedBy { get; set; }

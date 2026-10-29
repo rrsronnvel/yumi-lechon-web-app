@@ -19,6 +19,7 @@ import {
   usePendingOwnerConfirmationsQuery,
 } from '../hooks/useFloorAction';
 import FloorActionView from '../components/orders/FloorActionView';
+import WalkInBadge from '../components/orders/WalkInBadge';
 
 type SmartPillKey =
   | 'upcoming'
@@ -389,6 +390,11 @@ export default function OrdersScreen({
             <Text style={styles.customerName} numberOfLines={1}>
               {item.customerName}
             </Text>
+            <WalkInBadge
+              source={item.source}
+              customerName={item.customerName}
+              facebookName={item.facebookName}
+            />
             {item.isTrustedCustomer && (
               <View style={styles.vipBadge}>
                 <Text style={styles.vipBadgeText}>👑 VIP</Text>

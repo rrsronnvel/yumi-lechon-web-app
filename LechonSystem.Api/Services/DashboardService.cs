@@ -17,6 +17,7 @@ namespace LechonSystem.Api.Services
         public string OrderReference { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public string? FacebookName { get; set; }
+        public string Source { get; set; } = string.Empty;
         public string ContactNumber { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
         public DateTime TargetDeliveryTime { get; set; }
@@ -31,6 +32,8 @@ namespace LechonSystem.Api.Services
         public int Id { get; set; }
         public string OrderReference { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
+        public string? FacebookName { get; set; }
+        public string Source { get; set; } = string.Empty;
         public string DeliveryAddress { get; set; } = string.Empty;
         public string? Landmark { get; set; }
         public string PhoneNumber { get; set; } = string.Empty;
@@ -44,6 +47,8 @@ namespace LechonSystem.Api.Services
         public int OrderId { get; set; }
         public string OrderReference { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
+        public string? FacebookName { get; set; }
+        public string Source { get; set; } = string.Empty;
         public DateTime? TargetDeliveryTime { get; set; }
         public string ItemsSummary { get; set; } = string.Empty;
         public string? FreebiesSummary { get; set; }
@@ -75,6 +80,7 @@ namespace LechonSystem.Api.Services
 
         public string CustomerName { get; set; } = string.Empty;
         public string? FacebookName { get; set; }
+        public string Source { get; set; } = string.Empty;
         public string? EventType { get; set; }
         public string? Landmark { get; set; }
         public DateTime TargetDeliveryTime { get; set; }
@@ -151,6 +157,7 @@ namespace LechonSystem.Api.Services
                     OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
+                    Source = o.Source,
                     ContactNumber = contact,
                     PhoneNumber = contact,
                     TargetDeliveryTime = o.TargetDeliveryTime!.Value,
@@ -185,6 +192,8 @@ namespace LechonSystem.Api.Services
                     OrderId = o.Id,
                     OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
+                    Source = o.Source,
                     TargetDeliveryTime = o.TargetDeliveryTime,
                     ItemsSummary = itemParts.Count > 0 ? string.Join(", ", itemParts) : "Lechon Reservation",
                     FreebiesSummary = o.FreebiesSummary,
@@ -219,6 +228,8 @@ namespace LechonSystem.Api.Services
                     Id = o.Id,
                     OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
+                    FacebookName = o.FacebookName,
+                    Source = o.Source,
                     TargetDeliveryTime = o.TargetDeliveryTime!.Value,
                     RiderDepartureTime = o.RiderDepartureTime,
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
@@ -283,6 +294,7 @@ namespace LechonSystem.Api.Services
                     TahiStartTime = s.TahiStartTime,
                     CustomerName = order.CustomerName,
                     FacebookName = order.FacebookName,
+                    Source = order.Source,
                     EventType = order.EventType,
                     Landmark = order.Landmark,
                     TargetDeliveryTime = order.TargetDeliveryTime ?? DateTime.MinValue,
@@ -315,6 +327,8 @@ namespace LechonSystem.Api.Services
                     item.OrderId,
                     OrderReference = item.Order!.OrderReference,
                     CustomerName = item.Order!.CustomerName,
+                    FacebookName = item.Order.FacebookName,
+                    Source = item.Order.Source,
                     TargetDeliveryTime = item.Order.TargetDeliveryTime!.Value
                 })
                 .Select(g => new RenegotiationTaskDto
@@ -322,6 +336,8 @@ namespace LechonSystem.Api.Services
                     OrderId = g.Key.OrderId,
                     OrderReference = g.Key.OrderReference,
                     CustomerName = g.Key.CustomerName,
+                    FacebookName = g.Key.FacebookName,
+                    Source = g.Key.Source,
                     TargetDeliveryTime = g.Key.TargetDeliveryTime,
                     PriceGap = g.Sum(item => item.ItemCategory!.BasePrice - item.Price)
                 })

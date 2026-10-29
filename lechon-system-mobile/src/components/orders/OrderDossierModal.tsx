@@ -29,6 +29,7 @@ import { generateBookingConfirmation } from '../../utils/messengerTemplates';
 import EditOrderModal from './EditOrderModal';
 import { useAuth } from '../../context/AuthContext';
 import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
+import WalkInBadge from './WalkInBadge';
 
 interface OrderDossierModalProps {
   orderId: number | null;
@@ -287,7 +288,7 @@ export default function OrderDossierModal({
         orderId,
         paymentLogId: paymentToVoid.id,
         reason: trimmedReason,
-        voidedBy: user?.username || user?.fullName,
+        voidedBy: user ? (user.fullName ? `${user.fullName} (@${user.username})` : user.username) : undefined,
       });
       setPaymentFeedback({
         type: 'success',
@@ -473,6 +474,11 @@ export default function OrderDossierModal({
             <Text style={styles.customerNameTitle} numberOfLines={1}>
               {activeOrder?.customerName || 'Customer Dossier'}
             </Text>
+            <WalkInBadge
+              source={activeOrder?.source}
+              customerName={activeOrder?.customerName}
+              facebookName={activeOrder?.facebookName}
+            />
             {contactPhones.map((phone, index) => (
               <Text
                 key={`${phone}-${index}`}

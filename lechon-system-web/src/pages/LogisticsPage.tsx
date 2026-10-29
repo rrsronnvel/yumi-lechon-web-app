@@ -20,6 +20,8 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Printer, CheckCircle2, UserCog, Truck } from "lucide-react";
 import { toast } from "sonner";
+import { WalkInBadge } from "@/components/WalkInBadge";
+import { isWalkInOrder } from "@/utils/walkIn";
 
 export default function LogisticsPage() {
   // Today's Operations Data & Mutations
@@ -153,9 +155,14 @@ export default function LogisticsPage() {
                 </thead>
                 <tbody className="divide-y divide-stone-200/70 text-stone-900">
                   {todayOrders.map((order) => (
-                    <tr key={order.id} className="hover:bg-stone-50/80 transition-colors">
+                    <tr key={order.id} className={`${isWalkInOrder(order) ? "bg-indigo-50/40" : ""} hover:bg-stone-50/80 transition-colors`}>
                       <td className="p-4 font-mono font-bold text-stone-900">#{order.id}</td>
-                      <td className="p-4 font-medium text-stone-900">{order.customerName}</td>
+                      <td className="p-4 font-medium text-stone-900">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{order.customerName}</span>
+                          <WalkInBadge {...order} />
+                        </div>
+                      </td>
                       <td className="p-4 max-w-xs truncate text-stone-600">{order.deliveryAddress || "Store Pickup"}</td>
                       <td className="p-4 font-semibold text-amber-800">
                         {new Date(order.targetDeliveryTime).toLocaleTimeString([], {
