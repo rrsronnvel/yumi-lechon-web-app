@@ -40,6 +40,7 @@ export interface CreateOrderPayload {
   eventType?: string;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  assignedRiderName?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   address?: string | null;
   deliveryAddress?: string | null;
@@ -81,6 +82,7 @@ export interface UpdateOrderPayload {
   updatedBy?: string;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  assignedRiderName?: string | null;
   fulfillment: number;
   price: number;
   addOns?: string;
@@ -317,6 +319,7 @@ export const useCreateOrderMutation = () => {
         queryClient.invalidateQueries({ queryKey: ['manifest'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['schedules'] }),
+        queryClient.invalidateQueries({ queryKey: ['daily-sheets'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
       ]);
     },

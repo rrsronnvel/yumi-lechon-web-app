@@ -37,11 +37,13 @@ export interface RoastingScheduleItem {
   downpaymentMethod?: string;
   grandTotal?: number;
   totalToCollect?: number;
+  isTrustedCustomer?: boolean;
   fulfillment?: number;
   quantity?: number;
   riderName?: string;
   status?: string;
   isManualOverride?: boolean;
+  isTimeTbd?: boolean;
   [key: string]: any;
 }
 
@@ -100,6 +102,9 @@ export const useOverrideScheduleMutation = () => {
       queryClient.invalidateQueries({ queryKey: ["logistics", "unassigned-orders"] });
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
       queryClient.invalidateQueries({ queryKey: ["logistics"] });
+      queryClient.invalidateQueries({ queryKey: ["order"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-sheets"] });
     },
   });
 };

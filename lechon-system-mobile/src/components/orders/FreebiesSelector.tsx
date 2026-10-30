@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   FREEBIE_ITEMS,
@@ -24,8 +24,6 @@ export default function FreebiesSelector({
   onChange,
 }: FreebiesSelectorProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  if (wholePigCount <= 0) return null;
-
   const normalized = normalizeFreebiesConfig(config, wholePigCount);
   const currentSum = Object.values(normalized.counts).reduce(
     (sum, quantity) => sum + quantity,
@@ -38,6 +36,17 @@ export default function FreebiesSelector({
     wholePigCount,
     noFreebiesDiscountPerPig
   );
+  const isCustomized = Boolean(normalized.customizationNote) || FREEBIE_ITEMS.some(
+    (item) =>
+      normalized.counts[item] !==
+      (normalized.rawInnards && item === 'Dinuguan' ? 0 : pigsWithFreebies)
+  );
+
+  useEffect(() => {
+    if (isCustomized) setIsExpanded(true);
+  }, [isCustomized]);
+
+  if (wholePigCount <= 0) return null;
 
   const selectStandard = () => {
     onChange({
@@ -47,6 +56,7 @@ export default function FreebiesSelector({
       counts: Object.fromEntries(
         FREEBIE_ITEMS.map((item) => [item, wholePigCount])
       ),
+      customizationNote: '',
     });
   };
 
@@ -56,6 +66,7 @@ export default function FreebiesSelector({
       pigsWithFreebies: 0,
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
+      customizationNote: '',
     });
     setIsExpanded(false);
   };

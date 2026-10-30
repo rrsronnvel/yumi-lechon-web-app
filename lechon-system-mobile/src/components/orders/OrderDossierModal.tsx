@@ -30,6 +30,7 @@ import EditOrderModal from './EditOrderModal';
 import { useAuth } from '../../context/AuthContext';
 import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
 import WalkInBadge from './WalkInBadge';
+import { useAssignRiderMutation, useRiders } from '../../hooks/useRiders';
 
 interface OrderDossierModalProps {
   orderId: number | null;
@@ -72,12 +73,16 @@ export default function OrderDossierModal({
   const cancelMutation = useCancelOrderMutation();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
+  const { data: registeredRiders = [] } = useRiders();
+  const assignRiderMutation = useAssignRiderMutation();
 
   // Clipboard banner state
   const [copiedBannerVisible, setCopiedBannerVisible] = useState(false);
 
   // Edit Order Modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isRiderAssignmentOpen, setIsRiderAssignmentOpen] = useState(false);
+  const [assignedRiderInput, setAssignedRiderInput] = useState('');
 
   // Customer Notes Editor state
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
@@ -105,6 +110,8 @@ export default function OrderDossierModal({
   useEffect(() => {
     setCopiedBannerVisible(false);
     setIsEditModalOpen(false);
+    setIsRiderAssignmentOpen(false);
+    setAssignedRiderInput('');
     setIsNotesExpanded(false);
     setDraftPreferences('');
     setDraftComplaints('');
@@ -157,7 +164,27 @@ export default function OrderDossierModal({
     'Uncollected'
   ).trim();
   const isPhysicalCustodyActive =
-    custodyStatus === 'InStaffDrawer' || routingStatus === 'Assigned';
+    computedBalanceDue > 0 &&
+    (custodyStatus === 'InStaffDrawer' || custodyStatus === 'Uncollected');
+
+  const handleAssignRider = async () => {
+    if (!orderId || !assignedRiderInput.trim()) {
+      Alert.alert('Rider Required', 'Select a registered rider or enter a custom rider name.');
+      return;
+    }
+    try {
+      await assignRiderMutation.mutateAsync({
+        orderIds: [orderId],
+        riderName: assignedRiderInput.trim(),
+        vehicleType: 'Motorcycle',
+      });
+      await refetchDetails();
+      setIsRiderAssignmentOpen(false);
+      Alert.alert('Rider Assigned', `${assignedRiderInput.trim()} is now assigned to this order.`);
+    } catch {
+      Alert.alert('Assignment Failed', 'Could not assign this rider. Please try again.');
+    }
+  };
 
   const dialNumber = async (phone: string) => {
     const cleanPhone = phone.replace(/[^\d+]/g, '');
@@ -654,7 +681,9 @@ export default function OrderDossierModal({
                 <Text style={styles.physicalCustodyBannerIcon}>🟡</Text>
                 <View style={styles.physicalCustodyBannerContent}>
                   <Text style={styles.physicalCustodyBannerTitle}>
-                    Physical Cash Custody Active
+                    {custodyStatus === 'InStaffDrawer'
+                      ? 'In Staff Drawer — Awaiting Owner Turnover'
+                      : 'In Rider Custody'}
                   </Text>
                   <Text style={styles.physicalCustodyBannerSubtitle}>
                     Physical cash custody is active. Settle via Owner Drawer tab.
@@ -754,6 +783,7 @@ export default function OrderDossierModal({
                 <Text style={styles.courierHeading}>COURIER / HANDOVER STATUS</Text>
 
                 {fulfillmentCode === 1 ? (
+                  <>
                   <View style={styles.courierBoxDelivery}>
                     <View style={styles.courierBoxMain}>
                       <Text style={styles.courierPrimaryText}>
@@ -786,6 +816,51 @@ export default function OrderDossierModal({
                       </View>
                     )}
                   </View>
+                  <Pressable
+                    style={styles.assignRiderButton}
+                    onPress={() => {
+                      setAssignedRiderInput(orderDetails?.assignedRiderName || '');
+                      setIsRiderAssignmentOpen((open) => !open);
+                    }}
+                  >
+                    <Text style={styles.assignRiderButtonText}>🛵 Assign / Change Rider</Text>
+                  </Pressable>
+                  {isRiderAssignmentOpen && (
+                    <View style={styles.riderAssignmentPanel}>
+                      <Text style={styles.riderAssignmentLabel}>Registered Riders</Text>
+                      <View style={styles.riderChoiceWrap}>
+                        {registeredRiders.filter((rider) => rider.isActive).map((rider) => (
+                          <Pressable
+                            key={rider.id}
+                            style={[
+                              styles.riderChoice,
+                              assignedRiderInput === rider.fullName && styles.riderChoiceActive,
+                            ]}
+                            onPress={() => setAssignedRiderInput(rider.fullName)}
+                          >
+                            <Text style={styles.riderChoiceText}>{rider.fullName}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <TextInput
+                        style={styles.riderCustomInput}
+                        value={assignedRiderInput}
+                        onChangeText={setAssignedRiderInput}
+                        placeholder="Or enter custom rider name"
+                        placeholderTextColor="#A8A29E"
+                      />
+                      <Pressable
+                        style={[styles.riderSaveButton, assignRiderMutation.isPending && styles.disabledButton]}
+                        disabled={assignRiderMutation.isPending}
+                        onPress={() => void handleAssignRider()}
+                      >
+                        <Text style={styles.riderSaveButtonText}>
+                          {assignRiderMutation.isPending ? 'Assigning…' : 'Save Rider Assignment'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  </>
                 ) : fulfillmentCode === 2 ? (
                   <View style={styles.courierBoxLalamove}>
                     <View style={styles.courierBoxMain}>
@@ -1101,7 +1176,7 @@ export default function OrderDossierModal({
                 </View>
 
                 <View style={styles.ledgerRow}>
-                  <Text style={styles.downpaymentLabel}>Downpayment / Total Paid</Text>
+                  <Text style={styles.downpaymentLabel}>Downpayment / Store Paid</Text>
                   <View style={styles.paymentAmountChannelWrap}>
                     <Text style={styles.downpaymentValue}>
                       - ₱
@@ -1120,6 +1195,15 @@ export default function OrderDossierModal({
                     )}
                   </View>
                 </View>
+
+                {Number(orderDetails?.riderFeeSettledAtDoor || 0) > 0 && (
+                  <View style={styles.ledgerRow}>
+                    <Text style={styles.ledgerLabel}>Rider Fee (Collected by Rider)</Text>
+                    <Text style={styles.ledgerValue}>
+                      - ₱{Number(orderDetails?.riderFeeSettledAtDoor || 0).toLocaleString()}
+                    </Text>
+                  </View>
+                )}
 
                 {orderDetails?.paymentLogs?.length ? (
                   <View style={styles.paymentHistoryBox}>
@@ -2091,6 +2175,54 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
   },
+  assignRiderButton: {
+    marginTop: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 9,
+    paddingVertical: 9,
+  },
+  assignRiderButtonText: { color: '#1E40AF', fontSize: 12, fontWeight: '800' },
+  riderAssignmentPanel: {
+    marginTop: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 10,
+  },
+  riderAssignmentLabel: { color: '#1E3A8A', fontSize: 11, fontWeight: '800' },
+  riderChoiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  riderChoice: {
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  riderChoiceActive: { borderColor: '#2563EB', backgroundColor: '#DBEAFE' },
+  riderChoiceText: { color: '#1E40AF', fontSize: 10, fontWeight: '700' },
+  riderCustomInput: {
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    color: '#1C1917',
+  },
+  riderSaveButton: {
+    alignItems: 'center',
+    backgroundColor: '#1D4ED8',
+    borderRadius: 8,
+    paddingVertical: 10,
+  },
+  riderSaveButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  disabledButton: { opacity: 0.5 },
   courierBoxLalamove: {
     flexDirection: 'row',
     alignItems: 'center',

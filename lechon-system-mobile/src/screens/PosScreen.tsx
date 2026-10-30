@@ -24,7 +24,7 @@ import {
   ItemCategory,
   ParsedOrderDraftDto,
 } from '../hooks/usePos';
-import { parseMessengerTextToDraft } from '../utils/messengerTextParser';
+import { parseChatText } from '../utils/chatParser';
 import {
   generateBookingConfirmation,
   calculateRiderDepartureTime,
@@ -562,7 +562,11 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         .map((phone) => phone.trim())
         .filter(Boolean);
       setContactNumber(hydratedPhones[0] || '');
-      const secondaryPhone = draft.contactNumber2?.trim() || hydratedPhones[1] || '';
+      const secondaryPhone =
+        draft.secondaryContactNumber?.trim() ||
+        draft.contactNumber2?.trim() ||
+        hydratedPhones[1] ||
+        '';
       setContactNumber2(secondaryPhone);
       setShowContactNumber2(Boolean(secondaryPhone));
     } else if (draft.contactNumber2?.trim()) {
@@ -593,6 +597,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         setTargetTime(parts.time);
         setTargetPeriod(parts.period);
       }
+    }
+
+    if (draft.isTimeTbd) {
+      setIsTimeTbd(true);
+      setIsDraft(true);
+      setRiderDepartureTimeStr('');
+    } else if (draft.isTimeTbd === false) {
+      setIsTimeTbd(false);
     }
 
     setRemarks(draft.remarks ?? '');
@@ -672,15 +684,19 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       freebiesDiscountApplied.current = optOutDiscount;
     } else {
       const rawInnards = draft.rawInnards === true;
-      setFreebiesConfig(
-        rawInnards
-          ? {
-              ...hydratedFreebies,
-              rawInnards: true,
-              counts: { ...hydratedFreebies.counts, Dinuguan: 0 },
-            }
-          : hydratedFreebies
-      );
+      const parsedConfig = rawInnards
+        ? {
+            ...hydratedFreebies,
+            rawInnards: true,
+            counts: { ...hydratedFreebies.counts, Dinuguan: 0 },
+          }
+        : hydratedFreebies;
+      parsedConfig.counts = {
+        ...parsedConfig.counts,
+        ...(draft.freebieOverrides || {}),
+      };
+      parsedConfig.customizationNote = draft.freebiesCustomizationNote || '';
+      setFreebiesConfig(parsedConfig);
       freebiesDiscountApplied.current = 0;
       setDiscount(
         String(
@@ -817,7 +833,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         );
         return;
       }
-      const draft = parseMessengerTextToDraft(
+      const draft = parseChatText(
         clipText,
         categories,
         deliveryPricing
@@ -1153,10 +1169,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           <View style={styles.aiCardHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.aiCardTitle}>
-                ⚡ AI Screenshot &amp; Messenger Intake Bridge
+                ⚡ Messenger Order Intake Bridge
               </Text>
               <Text style={styles.aiCardSub}>
-                Auto-fill order fields from Messenger screenshots or copied chat text
+                Instantly auto-fill order fields from copied Messenger chat text
               </Text>
             </View>
             <Pressable style={styles.clearFormBtn} onPress={handleClearForm}>
@@ -1164,40 +1180,16 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             </Pressable>
           </View>
 
-          <View style={styles.aiButtonsRow}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.aiActionBtn,
-                styles.scanScreenshotBtn,
-                parseScreenshotMutation.isPending && styles.disabledBtn,
-                pressed && styles.btnPressed,
-              ]}
-              disabled={parseScreenshotMutation.isPending}
-              onPress={() => setSourceChoiceModalVisible(true)}
-            >
-              {parseScreenshotMutation.isPending ? (
-                <View style={styles.rowCenter}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text style={styles.scanScreenshotBtnText}>Scanning...</Text>
-                </View>
-              ) : (
-                <Text style={styles.scanScreenshotBtnText}>
-                  🖼️ Scan Screenshot
-                </Text>
-              )}
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.aiActionBtn,
-                styles.pasteTextBtn,
-                pressed && styles.btnPressed,
-              ]}
-              onPress={handlePasteChatText}
-            >
-              <Text style={styles.pasteTextBtnText}>📋 Paste Chat Text</Text>
-            </Pressable>
-          </View>
+          {/* Spotlight Instant Text Intake */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.heroPasteBtn,
+              pressed && styles.btnPressed,
+            ]}
+            onPress={handlePasteChatText}
+          >
+            <Text style={styles.heroPasteBtnText}>📋 Paste Clipboard (Messenger Text)</Text>
+          </Pressable>
 
           {hydrationBanner && (
             <View style={styles.hydrationBanner}>
@@ -2560,6 +2552,26 @@ const styles = StyleSheet.create({
   aiButtonsRow: {
     flexDirection: 'row',
     gap: 10,
+  },
+  heroPasteBtn: {
+    backgroundColor: '#D97706',
+    borderColor: '#B45309',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  heroPasteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
   },
   aiActionBtn: {
     flex: 1,

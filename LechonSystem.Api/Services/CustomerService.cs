@@ -1,3 +1,4 @@
+using LechonSystem.Api.Common;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.DTOs;
@@ -68,8 +69,8 @@ public class CustomerService : ICustomerService
             return null;
         }
 
-        var activeFrom = DateTime.Today.AddDays(-1);
-        var activeTo = DateTime.Today.AddDays(60);
+        var activeFrom = PhilippineTime.Today.AddDays(-1);
+        var activeTo = PhilippineTime.Today.AddDays(60);
         var activeOrders = await _context.Orders
             .AsNoTracking()
             .Include(o => o.OrderItems)

@@ -1,3 +1,4 @@
+import { getPhilippineDateString } from "@/utils/dateNormalizer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toPng } from "html-to-image";
@@ -24,31 +25,17 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function isValidIsoDate(value: string | null): value is string {
   if (!value || !ISO_DATE_PATTERN.test(value)) return false;
-
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return getPhilippineDateString(value) === value;
 }
 
 function getPhilippineDate(): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const dateParts: Record<string, string> = {};
-
-  for (const part of parts) {
-    if (part.type !== "literal") dateParts[part.type] = part.value;
-  }
-
-  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+  return getPhilippineDateString();
 }
 
 function addDays(isoDate: string, days: number): string {
-  const date = new Date(`${isoDate}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0));
+  return getPhilippineDateString(date);
 }
 
 function formatIsoDate(isoDate: string): string {

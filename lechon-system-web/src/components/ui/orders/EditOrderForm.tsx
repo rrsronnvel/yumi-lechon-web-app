@@ -26,15 +26,15 @@ import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomers";
+import { useAssignRider } from "@/hooks/useLogistics";
+import { useRidersQuery } from "@/hooks/useRiders";
 import { evaluateDuplicateOrders, formatCalendarDateLabel } from "@/utils/similarityHelper";
 import {
   normalizeLocalDateTimeInput,
   syncDatePart,
 } from "@/utils/dateNormalizer";
 import FreebiesSelector from "./FreebiesSelector";
-import PaymentChannelPills, {
-  PaymentChannel,
-} from "./PaymentChannelPills";
+import type { PaymentChannel } from "./PaymentChannelPills";
 import {
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
@@ -68,6 +68,8 @@ export default function EditOrderForm({
 }) {
   const { user } = useAuth();
   const editMutation = useEditOrder();
+  const assignRiderMutation = useAssignRider();
+  const { data: registeredRiders = [] } = useRidersQuery();
   const { data: deliveryPricing } = useDeliveryPricing();
 
   const baseFare = deliveryPricing?.baseFare ?? 100;
@@ -80,6 +82,9 @@ export default function EditOrderForm({
   const appliedFreebiesDiscount = useRef(0);
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
+  const [assignedRiderName, setAssignedRiderName] = useState(
+    order?.assignedRiderName || order?.riderName || "",
+  );
   const previousWholePigCount = useRef(0);
   const pendingHydratedWholePigCount = useRef<number | null>(null);
 
@@ -186,6 +191,7 @@ export default function EditOrderForm({
 
   useEffect(() => {
     if (order) {
+      setAssignedRiderName(order.assignedRiderName || order.riderName || "");
       const formattedDate = formatLocalDateTimeInput(order.targetDeliveryTime);
       const formattedDeparture = formatLocalDateTimeInput(
         order.riderDepartureTime || order.targetDeliveryTime,
@@ -805,6 +811,7 @@ export default function EditOrderForm({
           ? JSON.stringify(freebiesConfig)
           : null,
       grandTotal: dynamicGrandTotal,
+      assignedRiderName: assignedRiderName.trim(),
       updatedBy: user ? (user.fullName ? `${user.fullName} (@${user.username})` : user.username) : undefined,
       items: validOrderItems,
     };
@@ -816,6 +823,22 @@ export default function EditOrderForm({
 
     editMutation.mutate(payload, {
       onSuccess: () => {
+        const nextRiderName = assignedRiderName.trim();
+        const previousRiderName = (order?.assignedRiderName || order?.riderName || "").trim();
+        if (fulfillmentNum === 1 && nextRiderName && nextRiderName !== previousRiderName) {
+          assignRiderMutation.mutate(
+            {
+              orderIds: [Number(order.id)],
+              riderName: nextRiderName,
+              vehicleType: "Motorcycle",
+            },
+            {
+              onSuccess: onClose,
+              onError: () => toast.error("Order saved, but rider assignment failed."),
+            },
+          );
+          return;
+        }
         onClose();
       },
     });
@@ -930,6 +953,29 @@ export default function EditOrderForm({
                 </FormItem>
               )}
             />
+
+            {Number(fulfillment) === 1 && (
+              <div className="col-span-1 sm:col-span-2 space-y-1.5 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                <label htmlFor="assigned-rider-edit" className="text-xs font-semibold text-blue-950">
+                  Assigned Rider
+                </label>
+                <Input
+                  id="assigned-rider-edit"
+                  list="registered-riders-edit"
+                  value={assignedRiderName}
+                  onChange={(event) => setAssignedRiderName(event.target.value)}
+                  placeholder="Select or type a custom rider name"
+                  className="h-10 border-blue-300 bg-white"
+                />
+                <datalist id="registered-riders-edit">
+                  {registeredRiders.filter((rider) => rider.isActive).map((rider) => (
+                    <option key={rider.id} value={rider.fullName}>
+                      {rider.phoneNumber}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+            )}
 
             <FormField
               control={form.control}
@@ -1198,63 +1244,6 @@ export default function EditOrderForm({
                         }
                       }}
                       className="h-10 bg-stone-50 border-stone-300"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="distanceKm"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs font-semibold text-stone-700">
-                    Distance (KM) — Auto-Calc Fee & Departure
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      step="0.1"
-                      disabled={
-                        Number(fulfillment) === 0 || Number(fulfillment) === 2
-                      }
-                      placeholder={
-                        Number(fulfillment) === 0 || Number(fulfillment) === 2
-                          ? "0"
-                          : "e.g., 8"
-                      }
-                      value={field.value === 0 ? "" : field.value ?? ""}
-                      onChange={(e) => {
-                        const km = Math.max(
-                          0,
-                          parseFloat(e.target.value) || 0,
-                        );
-                        field.onChange(km);
-                        if (Number(fulfillment) === 1 && km > 0) {
-                          const fee = Math.round(km * ratePerKm + baseFare);
-                          form.setValue("deliveryFee", fee, {
-                            shouldValidate: true,
-                            shouldDirty: true,
-                          });
-                        }
-                        if (targetDeliveryTime) {
-                          const dt = new Date(targetDeliveryTime);
-                          if (!isNaN(dt.getTime())) {
-                            const dep = calculateRiderDepartureTime(
-                              dt,
-                              km,
-                              Number(fulfillment),
-                            );
-                            form.setValue(
-                              "riderDepartureTime",
-                              formatLocalDateTimeInput(dep),
-                              { shouldValidate: true, shouldDirty: true },
-                            );
-                          }
-                        }
-                      }}
-                      className="h-10 bg-stone-50 border-stone-300 disabled:bg-stone-100"
                     />
                   </FormControl>
                 </FormItem>
@@ -1597,74 +1586,158 @@ export default function EditOrderForm({
               </div>
             </div>
 
-            {/* Editable Adjustments */}
-            <div className="space-y-1.5">
+            {/* Financial Adjustments */}
+            <div className="space-y-3.5">
               <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
-                Editable Adjustments
+                Financial Adjustments
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="deliveryFee"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-stone-700 font-semibold text-xs flex items-center justify-between h-5">
-                        <span className="truncate">Delivery Fee (₱)</span>
-                        {(Number(fulfillment) === 0 ||
-                          Number(fulfillment) === 2) && (
-                          <span className="text-[10px] text-amber-700 font-normal lowercase shrink-0">
-                            (locked ₱0)
-                          </span>
-                        )}
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          {...field}
-                          disabled={
-                            Number(fulfillment) === 0 ||
-                            Number(fulfillment) === 2
-                          }
-                          value={
-                            Number(fulfillment) === 0 ||
-                            Number(fulfillment) === 2
-                              ? 0
-                              : field.value ?? 0
-                          }
-                          onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
-                          }
-                          className="h-10 border-stone-300 disabled:bg-stone-100 disabled:text-stone-400 font-mono font-medium"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
 
-                <FormField
-                  control={form.control}
-                  name="discount"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-rose-600 font-semibold text-xs flex items-center justify-between h-5">
-                        <span className="truncate">Courtesy Discount (₱)</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          {...field}
-                          value={field.value || 0}
-                          onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
-                          }
-                          className="border-rose-200 focus-visible:ring-rose-400 text-rose-600 h-10 font-mono font-medium"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+              {/* Row 1: Transit Pricing (2 columns, shown when Delivery) */}
+              {Number(fulfillment) === 1 && (
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="distanceKm"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel className="text-stone-700 font-semibold text-xs flex items-center justify-between h-5">
+                            <span className="truncate">Est. Distance (KM)</span>
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              placeholder="e.g., 5"
+                              value={field.value === 0 ? "" : field.value ?? ""}
+                              onChange={(e) => {
+                                const km = Math.max(
+                                  0,
+                                  parseFloat(e.target.value) || 0,
+                                );
+                                field.onChange(km);
+                                if (km > 0) {
+                                  const fee = Math.round(
+                                    km * ratePerKm + baseFare,
+                                  );
+                                  form.setValue("deliveryFee", fee, {
+                                    shouldValidate: true,
+                                    shouldDirty: true,
+                                  });
+                                }
+                                if (targetDeliveryTime) {
+                                  const dt = new Date(targetDeliveryTime);
+                                  if (!isNaN(dt.getTime())) {
+                                    const dep = calculateRiderDepartureTime(
+                                      dt,
+                                      km,
+                                      Number(fulfillment),
+                                    );
+                                    form.setValue(
+                                      "riderDepartureTime",
+                                      formatLocalDateTimeInput(dep),
+                                      {
+                                        shouldValidate: true,
+                                        shouldDirty: true,
+                                      },
+                                    );
+                                  }
+                                }
+                              }}
+                              className="h-10 bg-white border-stone-300 font-mono font-medium"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="deliveryFee"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel className="text-stone-700 font-semibold text-xs flex items-center justify-between h-5">
+                            <span className="truncate">Delivery Fee (₱)</span>
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min="0"
+                              {...field}
+                              value={field.value ?? 0}
+                              onChange={(e) =>
+                                field.onChange(
+                                  parseFloat(e.target.value) || 0,
+                                )
+                              }
+                              className="h-10 border-stone-300 font-mono font-medium"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <p className="text-[11px] text-stone-500">
+                    Rate: ₱{baseFare} base + ₱{ratePerKm}/km
+                  </p>
+                </div>
+              )}
+
+              {/* Row 2: Courtesy Discount (Full width) */}
+              <FormField
+                control={form.control}
+                name="discount"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel className="text-rose-600 font-semibold text-xs flex items-center justify-between h-5">
+                      <span className="truncate">Courtesy Discount (₱)</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="0"
+                        {...field}
+                        value={field.value || 0}
+                        onChange={(e) =>
+                          field.onChange(parseFloat(e.target.value) || 0)
+                        }
+                        className="border-rose-200 focus-visible:ring-rose-400 text-rose-600 h-10 font-mono font-medium"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {/* Row 3: Locked Downpayment Banner (Full width read-only) */}
+              <div className="bg-stone-100 border border-stone-200 rounded-xl p-3.5 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                    🔒 Downpayment / Total Paid (Locked)
+                  </div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    Log or void payments via Order Dossier
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-stone-900 text-base">
+                    ₱{downpaymentReceived.toLocaleString()}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                      downpaymentReceived > 0
+                        ? "bg-stone-200 text-stone-800 border-stone-300"
+                        : "bg-rose-100 text-rose-800 border-rose-300",
+                    )}
+                  >
+                    {downpaymentReceived > 0
+                      ? watchedDownpaymentMethod &&
+                        watchedDownpaymentMethod !== "None"
+                        ? watchedDownpaymentMethod
+                        : "GCash"
+                      : "Unpaid"}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1684,21 +1757,6 @@ export default function EditOrderForm({
                 <span className="font-mono font-medium text-emerald-700">
                   - ₱{downpaymentReceived.toLocaleString()}
                 </span>
-              </div>
-
-              <div className="rounded-lg border border-stone-200 bg-white p-2">
-                <div className="text-[11px] font-semibold text-stone-600">
-                  BIR Downpayment Channel
-                </div>
-                <PaymentChannelPills
-                  value={watchedDownpaymentMethod}
-                  disabled={downpaymentReceived <= 0}
-                  onChange={(channel) =>
-                    form.setValue("downpaymentMethod", channel, {
-                      shouldDirty: true,
-                    })
-                  }
-                />
               </div>
 
               <div className="flex justify-between items-end pt-2 border-t border-stone-200">

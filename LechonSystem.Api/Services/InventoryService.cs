@@ -1,3 +1,4 @@
+using LechonSystem.Api.Common;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -156,7 +157,7 @@ namespace LechonSystem.Api.Services
             // - ReservationStatus == Committed
             // - Order.IsCancelled == false
             // - Order.TargetDeliveryTime >= DateTime.Today and Order.TargetDeliveryTime < DateTime.Today.AddDays(15)
-            var windowStart = DateTime.Today;
+            var windowStart = PhilippineTime.Today;
             var windowEnd = windowStart.AddDays(15);
 
             var reservations = await _context.InventoryReservations

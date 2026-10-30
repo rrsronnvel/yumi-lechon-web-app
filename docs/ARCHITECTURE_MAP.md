@@ -1,5 +1,31 @@
 **
 
+## 6. 2026-10-30 Operational Parity Additions
+
+### Backend
+
+- `LechonSystem.Api/Services/OrderService.cs`: Philippine-date Upcoming/Past slicing, strict date-less Drafts separation, operational Balance Due queue providing all active unpaid records for 4-pill client filtering, zero-DP inclusion with 3-Tier Alert Badges Matrix, custody-aware operational balance, rider-fee-at-door detail projection, and null-safe audit text comparison.
+- `LechonSystem.Api/Services/LogisticsService.cs`: Hop 1/2 and direct-settlement completion semantics; fully remitted Delivery orders and trips transition to `Delivered`. Rider assignments, changes, and unassignments record immutable `OrderAuditLog` records (`ActionType = "Rider Updated"`).
+- `LechonSystem.Api/Services/SchedulingService.cs`: Active non-draft orders remain on daily sheets even before Owner confirmation, with `IsTrustedCustomer` projected for no-DP warning logic, and `DailySheetItemDto.IsTimeTbd` stamped to guard against clock crashes. Schedule rider overrides record immutable `OrderAuditLog` records.
+- `LechonSystem.Api/DTOs/OrderDetailsDto.cs`: exposes `SettlementCustodyStatus` and `RiderFeeSettledAtDoor`; `BalanceDue` remains a derived read-model value.
+- `LechonSystem.Api/Program.cs`: QA scenario seeding is disabled by default and requires the explicit `EnableQaDataSeeder` configuration flag.
+
+### Web
+
+- `src/utils/chatParser.ts` and `messengerTextParser.ts`: official Messenger form compatibility, payment-method extraction, dual phone parsing, multiline events, freebie customization, and footer suppression.
+- `src/pages/OrdersPage.tsx`: Philippine-date directory boundary, 3-Tier Alert Badges (`⏳ TIME TBD`, `⚠️ NO DP • PENDING DEPOSIT`, `🚨 URGENT: NO DP`), 4-pill operational Balance Due filtering (`Due Today / Overdue`, `In Staff Drawer`, `Future Receivables`, `All Unpaid`), dossier rider assignment, and deep-linked dossier opening from Manifest.
+- `src/components/manifest/LalamoveSettlementTab.tsx`: direct `View / Cancel Order` dossier action. `QrSettlementModal.tsx` exposes Bank Transfer.
+- `src/components/ui/orders/EditOrderForm.tsx`: registered/custom rider assignment during edit.
+- `src/components/daily-sheets/{KitchenViewTab,RiderViewTab}.tsx`: Time-TBD backward clock crash guards displaying `[ ⏳ TIME TBD ]`, bottom table grouping under visual divider, and explicit no-DP confirmation warnings.
+
+### Mobile
+
+- `src/screens/PosScreen.tsx` uses the synchronized `chatParser.ts` contract and hydrates DP method plus freebie overrides.
+- `src/screens/OrdersScreen.tsx`: Philippine-date Today/Tomorrow/Upcoming slicing, 3-Tier Alert Badges, and 4-pill operational Balance Due sub-filter matching Web.
+- `src/screens/DrawerScreen.tsx`: Bank Transfer, native handover QR, schedule/Past Shift badges, and Lalamove dossier access.
+- `src/components/orders/{OrderDossierModal,EditOrderModal}.tsx` plus `src/hooks/useRiders.ts`: registered/custom rider assignment and post-mutation cache refresh.
+- Native QR dependencies are `react-native-qrcode-svg` and Expo-compatible `react-native-svg`.
+
 # Codebase Architecture Map
 
 ### 1. Directory Tree
@@ -189,7 +215,7 @@
 - lechon-system-web/src/components/auth/ProtectedRoute.tsx: Route wrapper enforcing authentication status and role-based permissions (Owner vs. Cashier).  
 - lechon-system-web/src/components/ui/Sidebar.tsx: Persistent Deep Roasted Espresso (`#181312`) navigation sidebar mounting `/yumi-logo.png`, Golden Amber active route indicators, role-aware CMS visibility, and active user shift profile/logout HUD with distinct Golden Crown (`Owner`) vs. warm stone (`Cashier`) badges.  
 - lechon-system-web/src/components/ui/orders/OrderForm.tsx: Widescreen POS terminal with Draft and `[ 🐷 Whole / Belly Lechon | 🍲 Non-Lechon / Extras Only ]` modes, a date-preserving `[ 🕒 Time TBD ]` control, zero-weight-only cart filtering in non-lechon mode, conditional event/rider/freebie sections, dual contacts, Messenger intake, tri-modal fulfillment, CMS delivery/discount calculations, and payment presets.
-- lechon-system-web/src/components/ui/orders/EditOrderForm.tsx: Edit-sheet parity for Draft/Time-TBD lifecycle and Lechon vs. Non-Lechon mode, including automatic carcass removal, conditional event/rider/freebie fields, noon normalization for dated Time-TBD drafts, and the existing locked-cash finalization controls.
+- lechon-system-web/src/components/ui/orders/EditOrderForm.tsx: Edit-sheet parity for Draft/Time-TBD lifecycle and Lechon vs. Non-Lechon mode, including automatic carcass removal, conditional event/rider/freebie fields, noon normalization for dated Time-TBD drafts, 3-row Financial Adjustments layout (Row 1: Transit Pricing with Est. Distance & Delivery Fee, Row 2: Courtesy Discount, Row 3: Read-only locked downpayment banner with payment channel pill), and automatic dynamic roasting schedule recalculation.
 - lechon-system-web/src/components/ui/orders/OrderScreenshotUploader.tsx: Dropzone and clipboard paste area (Ctrl + V) for Messenger intake screenshots.  
 - lechon-system-web/src/components/daily-sheets/KitchenViewTab.tsx: 13-column print/screenshot Kitchen Production Sheet (`NO.` | `TAHI` | `SALANG` | `PRIORITY` | `SIZE` | `WEIGHT` | `DEPARTURE / PICKUP` | `CUSTOMER` | `REMARKS` | `LOCATION` | `ADD-ONS` | `DELIVERY` | `RIDER`). The retired `PACKAGING` column gives more width to remarks/location; `MinimumWeightKg > 0` remains a defensive row gate.
 - lechon-system-web/src/components/daily-sheets/RiderViewTab.tsx: Rider Dispatch & Cash Manifest with `PRICE | ADD-ONS | DEL FEE | DOWN PAYMENT | TO COLLECT`; it consumes server-projected numeric totals, deducts discount/downpayment, totals corrected `TotalToCollect`, and displays screen/clean Walk-In markers with edit-mode row highlighting.
@@ -235,7 +261,7 @@
 - lechon-system-mobile/src/context/AuthContext.tsx: 12-hour shift session provider managing user identity, `isOwner` flag, and API environment state.
 - lechon-system-mobile/src/components/MainShell.tsx: Authenticated 3-tab mobile shell (`📋 Orders`, `➕ New POS`, `👑 Drawer`) with compact top shift HUD.
 - lechon-system-mobile/src/components/orders/OrderDossierModal.tsx: Slide-up customer dossier with customer/rider telemetry, Messenger receipt copier, editing/manual-payment/cancellation controls, full active-and-voided payment history, and an Owner-only mandatory-reason payment void confirmation overlay.
-- lechon-system-mobile/src/components/orders/EditOrderModal.tsx: Mobile editor with two-tier Draft/Time-TBD semantics, Lechon vs. zero-weight extras-only mode, and 12-hour `hh:mm` + AM/PM target/rider controls with 9:00 AM, 10:30 AM, 11:30 AM, 12:00 PM, and 3:00 PM presets.
+- lechon-system-mobile/src/components/orders/EditOrderModal.tsx: Mobile editor with two-tier Draft/Time-TBD semantics, Lechon vs. zero-weight extras-only mode, 12-hour `hh:mm` + AM/PM target/rider controls with 9:00 AM, 10:30 AM, 11:30 AM, 12:00 PM, and 3:00 PM presets, and restructured 3-row Financials card (Row 1: Transit Pricing, Row 2: Courtesy Discount, Row 3: Read-only locked downpayment banner with payment channel pill).
 - lechon-system-mobile/src/components/orders/FloorActionView.tsx: Mobile Floor Action Hub displaying Section A (Action Required: Downpayment Radar with countdown badges, 1-tap Messenger reminder copier, multi-contact dialing selection alert for CP #1 / CP #2, and direct deposit logger) and Section B (Tonight's Defrost & Kitchen Prep Roster with Defrost Roster Carcass Bouncer strictly filtering out non-carcass add-ons and negative/zero weights, `[ 📋 Copy Defrost List ]` 1-tap clipboard generator, rush badges, carcass quantities, and bold monospace Tahi prep deadlines).
 - lechon-system-mobile/src/screens/LoginScreen.tsx: Mobile shift login screen with API environment switcher pill and 1-tap Owner/Cashier demo credential buttons.
 - lechon-system-mobile/src/screens/OrdersScreen.tsx: Master Order Hub with debounced search, compact previous/next/Today/Tomorrow/Clear date bar, server-side date queries, Tier-1 dateless draft isolation, and amber Tier-2 dated incomplete cards with Time/Venue/Size TBD tags, alongside existing balance-custody filters and Floor Action workflows.

@@ -1,3 +1,4 @@
+using LechonSystem.Api.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -116,7 +117,7 @@ namespace LechonSystem.Api.Services
 
         public async Task<List<PendingConfirmationDto>> GetPendingConfirmationsAsync()
         {
-            var today = DateTime.UtcNow.Date;
+            var today = PhilippineTime.Today;
             var fourDaysFromNow = today.AddDays(4);
 
             var orders = await _context.Orders
@@ -241,7 +242,7 @@ namespace LechonSystem.Api.Services
 
         public async Task<List<DefrostRosterDto>> GetDefrostingRosterAsync()
         {
-            var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+            var tomorrow = PhilippineTime.Tomorrow;
 
             var schedules = await _context.OrderItemSchedules
                 .AsNoTracking()
@@ -318,7 +319,7 @@ namespace LechonSystem.Api.Services
                     !item.Order.IsCancelled &&
                     !item.Order.IsPriceWaived &&
                     item.Order.TargetDeliveryTime != null &&
-                    item.Order.TargetDeliveryTime >= DateTime.Today &&
+                    item.Order.TargetDeliveryTime >= PhilippineTime.Today &&
                     item.ItemCategory!.MinimumWeightKg > 0 &&
                     item.Price > 0 &&
                     item.Price < item.ItemCategory.BasePrice)

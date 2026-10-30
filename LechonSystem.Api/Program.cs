@@ -111,8 +111,21 @@ using (var scope = app.Services.CreateScope())
         .Where(rider => retiredTestRiderNames.Contains(rider.FullName) && rider.IsActive)
         .ExecuteUpdateAsync(updates => updates.SetProperty(rider => rider.IsActive, false));
 
-    // QA Test Data Seeder
-    if (app.Environment.IsDevelopment())
+    // Safe Data Self-Heal: Auto-heal any orders accidentally saved with Year < 2025 (e.g. 2016 typo like Jenah M. Chavez)
+    await context.Database.ExecuteSqlRawAsync(@"
+        UPDATE Orders
+        SET TargetDeliveryTime = DATEADD(year, 2026 - YEAR(TargetDeliveryTime), TargetDeliveryTime)
+        WHERE TargetDeliveryTime IS NOT NULL AND YEAR(TargetDeliveryTime) < 2025 AND IsCancelled = 0;
+
+        UPDATE Orders
+        SET RiderDepartureTime = DATEADD(year, 2026 - YEAR(RiderDepartureTime), RiderDepartureTime)
+        WHERE RiderDepartureTime IS NOT NULL AND YEAR(RiderDepartureTime) < 2025 AND IsCancelled = 0;
+    ");
+
+    // QA data can remove/recreate scenario orders. It must be explicitly opted in
+    // so ordinary local API restarts never mutate or purge operational records.
+    if (app.Environment.IsDevelopment() &&
+        builder.Configuration.GetValue<bool>("EnableQaDataSeeder"))
     {
         await QaDataSeeder.SeedQaDataAsync(scope.ServiceProvider);
     }

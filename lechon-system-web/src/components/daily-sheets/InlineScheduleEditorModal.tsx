@@ -111,6 +111,40 @@ export function InlineScheduleEditorModal({
   const [riderPhone, setRiderPhone] = useState("");
   const [remarks, setRemarks] = useState("");
 
+  const timeToMinutes = (hhmm: string): number | null => {
+    if (!hhmm || !hhmm.includes(":")) return null;
+    const [h, m] = hhmm.split(":").map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  const minutesToTime = (totalMinutes: number): string => {
+    const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+    const h = Math.floor(normalized / 60);
+    const m = normalized % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  const handleDepartureChange = (newDeparture: string) => {
+    const oldMin = timeToMinutes(departureTime);
+    const newMin = timeToMinutes(newDeparture);
+    setDepartureTime(newDeparture);
+
+    if (oldMin !== null && newMin !== null && newDeparture.length === 5) {
+      const delta = newMin - oldMin;
+      if (delta !== 0) {
+        const curTahi = timeToMinutes(tahiTime);
+        if (curTahi !== null) {
+          setTahiTime(minutesToTime(curTahi + delta));
+        }
+        const curSalang = timeToMinutes(salangTime);
+        if (curSalang !== null) {
+          setSalangTime(minutesToTime(curSalang + delta));
+        }
+      }
+    }
+  };
+
   const overrideMutation = useOverrideScheduleMutation();
 
   useEffect(() => {
@@ -142,10 +176,7 @@ export function InlineScheduleEditorModal({
 
     try {
       const refDate = item.targetDeliveryTime || item.tahiStartTime;
-      const formattedDeparture =
-        item.fulfillment === 0
-          ? undefined
-          : buildIsoTime(refDate, departureTime);
+      const formattedDeparture = buildIsoTime(refDate, departureTime);
 
       await overrideMutation.mutateAsync({
         orderItemId: targetId,
@@ -277,10 +308,9 @@ export function InlineScheduleEditorModal({
               <Input
                 id="departureTime"
                 type="time"
-                disabled={item.fulfillment === 0}
                 value={departureTime}
-                onChange={(e) => setDepartureTime(e.target.value)}
-                className="font-mono text-sm border-amber-300 disabled:bg-stone-100"
+                onChange={(e) => handleDepartureChange(e.target.value)}
+                className="font-mono text-sm border-amber-300"
               />
             </div>
           </div>

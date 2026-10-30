@@ -21,6 +21,9 @@ Architecture Phase: Phase 5 (Advanced Logistics & Cash Reconciliation)
 - Real user account attribution: User actions across the system stamp `FullName (@username)` (e.g. `Cristel May Alinas (@ishtel)`, `Robi Alinas (@alinas)`, `Store Cashier (@cashier)`) into `Order.CreatedBy`, `Order.OwnerConfirmedBy`, `OrderAuditLogs.ChangedBy`, `PaymentLog.VoidedBy`, and `SettlementQrSession.StaffValidatedBy`. Roles remain strictly for authorization policies. Empty diff comparisons for Add-Ons and Remarks are normalized to prevent false-positive audit logs.
 - Daily Manifest upper date ceiling: Freelance Rider (`GetPendingSettlementDropsAsync`), Store Pickup (`GetPendingPickupSettlementsAsync`), and Lalamove Pre-Release (`GetPendingLalamoveSettlementsAsync`) enforce `o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= PhilippineTime.Today`. Advance bookings (`> PhilippineTime.Today`) are excluded until their delivery date, preventing uncollected total inflation while preserving today's and past unsettled orders (Notebook Rule). VIP (`isTrustedCustomer`) and Walk-in markers are projected across all 3 settlement tabs.
 - Multi-cashier custody breakdown in Staff Drawer: Items in `InStaffDrawer` track `StaffValidatedBy`. The `In Staff Drawer` scoreboard card in `ManifestPage.tsx` and mobile `DrawerScreen.tsx` presents interactive custodian breakdown pills (`[ All Custodians ]`, `[ 👤 {Name}: ₱{Amount} ({Count}) ]`) that filter the table and list views, with custody status badges displaying `🟡 In Drawer • Held by {heldByStaffName}`.
+- Rider Assignment Audit Trail & Dossier Parity: Any assignment, change, or unassignment of an outsourced delivery rider (via Customer Dossier, Edit Order Form, Daily Dispatch Planner, or Logistics Command Center) immediately records an immutable `OrderAuditLog` entry (`ActionType = "Rider Updated"`, e.g., `Rider assigned: 'AL'`, `Rider changed from 'AL' to 'Aaron'`, `Rider unassigned (previously 'AL')`) and invalidates `['order']`, `['orders']`, `['daily-sheets']`, and `['logistics']` queries for real-time synchronization.
+- WalkInBadge React 19 Explicit Props Invariant: `<WalkInBadge>` must NEVER spread objects containing `key` (`<WalkInBadge {...item} />` or `<WalkInBadge {...props} />`). Props must always be passed explicitly (`source={item.source} customerName={item.customerName} facebookName={item.facebookName}`), preventing React 19 JSX runtime key-spread exceptions.
+- Official Messenger Template Multiline & Cart Add-Ons Parsing: High-precision parser with section-based multiline field gathering (advancing until next field label or divider), direct add-ons extraction with Tagalog/English word numbers (`dalawang`, `isang`, `tatlong`, etc.) and leading/trailing quantities directly into POS cart items (`items`), multi-pig orders (`2 Large and 1 Belly 3kg`), weight ranges (`25-27kg` -> `L`), belly weights (`[2-5]kg belly`), flexible date/times (`BEFORE 12PM` -> 11:30 AM, `10-10:30AM` -> 10:30 AM, `around 11am` -> 11:00 AM, `12nn`, `12mn`) with automatic `isTimeTbd` detection and noon normalization, distance KM extraction, and freebie swaps / prep instructions.
 
 ### 1. Core Philosophy & System Purpose
 
@@ -132,8 +135,16 @@ The POS and Logistics engines enforce strict boundary rules across three distinc
 - **Tier 1 — Date-Less Draft Inquiry:** `IsDraft = true` and `TargetDeliveryTime = null`. These tentative quotes live only in `[ 📝 Drafts ]`, ordered by `UpdatedAt ?? CreatedAt`, and may omit venue and item size. The purple Draft control requires at least `CustomerName` or `FacebookName`; no freezer reservation or kitchen clock is created.
 - **Tier 2 — Dated Incomplete Order:** `IsDraft = true` and `TargetDeliveryTime != null`. These records are intentionally included chronologically in `[ 📅 Upcoming ]` and rendered with an amber left border plus `[ ⚠️ Incomplete Draft ]`. Missing-detail tags identify `⚠️ Time TBD`, `⚠️ Venue TBD`, and `⚠️ Size TBD` without extra dossier queries.
 - **Time TBD contract:** All Web/Mobile create and edit forms keep the event date active beside `[ 🕒 Time TBD ]`. Enabling it forces `IsDraft = true`, persists `TargetDeliveryTime` at local `12:00:00` for the selected date, sets `IsTimeTbd = true`, clears `RiderDepartureTime`, and suppresses all backward schedule generation. A concrete time must be supplied before finalization.
-- **Master Directory slicing:** `filterTab=drafts` is strictly `IsDraft && TargetDeliveryTime == null && !IsCancelled`; `filterTab=upcoming` is `!IsCancelled && TargetDeliveryTime != null && TargetDeliveryTime >= Today`, naturally combining confirmed work and Tier-2 drafts. An optional `date` query applies a half-open single-day range. Web and Mobile expose previous/next, Today, Tomorrow, and Clear controls; Web BIR channel totals recalculate from the filtered order list.
-- **Production quarantine:** Any draft or Time-TBD order produces zero `OrderItemSchedule` rows and zero active freezer reservations. `SchedulingService.GetDailySheetsAsync` excludes `IsDraft`, `IsTimeTbd`, and zero-weight items, keeping Kitchen and Rider manifests production-safe.
+- **Master Directory slicing & 3-Tier Alert Badges:** `filterTab=drafts` is strictly `!IsCancelled && (TargetDeliveryTime == null || (IsDraft && !IsTimeTbd))`; `filterTab=upcoming` is `!IsCancelled && TargetDeliveryTime != null && TargetDeliveryTime >= Today && (!IsDraft || IsTimeTbd)`, ensuring all active dated advance bookings appear chronologically in Upcoming with the 3-Tier Alert Badges Matrix:
+  - *Tier 1 (Schedule/Logistics Gap - Soft Amber):* `isTimeTbd === true || !targetDeliveryTime || !deliveryAddress` -> `⏳ TIME TBD`.
+  - *Tier 2 (Advance Deposit Follow-up - Soft Orange):* `downpayment === 0 && !isTrustedCustomer && balanceDue > 0 && daysUntilDelivery > 2` -> `⚠️ NO DP • PENDING DEPOSIT`.
+  - *Tier 3 (Critical Urgent Follow-up - Crimson Pulse):* `downpayment === 0 && !isTrustedCustomer && balanceDue > 0 && daysUntilDelivery <= 2` -> `🚨 URGENT: NO DP (CONFIRM OR CANCEL)`.
+- **Complete 4-Pill Operational Sub-Filter for `💵 Balance Due`:** `filterTab=balance-due` returns all active unpaid orders and provides 4 dedicated operational sub-filters:
+  1. `[ ⚡ Due Today / Overdue ({count}) ]` (DEFAULT): Orders scheduled on/before today (`TargetDeliveryTime <= PhilippineTime.Today`) with active balances not in staff drawer, capturing road cash and today's counter store pickups.
+  2. `[ 🟡 In Staff Drawer ({count}) ]`: Physical cash held by counter staff awaiting owner Hop 2 reconciliation (`SettlementCustodyStatus == 'InStaffDrawer'`).
+  3. `[ 📅 Future Receivables ({count}) ]`: Advance COD bookings (`TargetDeliveryTime > PhilippineTime.Today && BalanceDue > 0`) allowing owner audit of upcoming commitments.
+  4. `[ 📋 All Unpaid ({count}) ]`: Master accounts receivable view across all active unpaid orders.
+- **Production quarantine & Kitchen Sheet Time TBD Guard:** Any draft or Time-TBD order produces zero `OrderItemSchedule` rows and zero active freezer reservations. On Kitchen roasting sheets (`KitchenViewTab.tsx` and `RiderViewTab.tsx`), dated Time-TBD orders suppress backward time math and display `[ ⏳ TIME TBD ]` badges, grouping under a dedicated visual divider: `⚠️ AWAITING CUSTOMER SERVING TIME — DO NOT ROAST UNTIL CONFIRMED` so pit masters never mistakenly roast on midnight placeholders.
 - **Finalization:** Turning Draft off validates the target time, item list, and delivery address where required; then it creates carcass reservations/schedules, records the audit transition, and exposes `[ 🔒 Finalize & Lock Order ]`.
 
 ##### Non-Lechon / Extras-Only POS Mode
@@ -877,3 +888,59 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 * `expo-notifications` configures Android channel `default` at high importance after authenticated permission is granted.
 * Daily local reminders run at **9:00 AM** for the 4-day deposit radar and **4:00 PM** for the nightly defrost pull-list.
 * Owner devices receive an immediate alert when the pending Owner queue increases; authenticated devices receive one when a new Rush Defrost item appears. Floor Action displays alert status and a `[ 🔔 Test Alert ]` action.
+
+---
+
+## 17. 2026-10-30 Mobile Operations and Settlement Parity Rollup
+
+### 17.1 Official Messenger Form Intake
+
+* Web and Mobile expose `utils/chatParser.ts` as the stable parser entry point, backed by their synchronized `messengerTextParser.ts` implementations.
+* The parser recognizes the official `DP & Mode`, `CP #1`, `CP #2`, `Del Add`, `Pickup or Deliver`, `Delivery Charge`, `Date & Time`, multiline `Type of Event`, and `Special Request` fields. DP methods normalize to `GCash`, `Maya`, `Bank Transfer`, or `Cash`, and both order forms hydrate the corresponding selector automatically.
+* Special-request freebie swaps switch to custom mode, apply explicit quantities or zeroes, and persist a customization note. Roasting/prep instructions remain in `Remarks`; unchanged examples and administrative footer boilerplate are discarded.
+
+### 17.2 Freelance Rider Fee Settlement
+
+* A Delivery order whose store net (`GrandTotal - DeliveryFee`) has been fully remitted is operationally paid in full when custody is `Settled`, or while custody is `InStaffDrawer` and the recorded rider remittance covers the outstanding store net. `BalanceDue` is derived rather than stored, so corrected directory/detail projections immediately self-heal legacy settled rows without a destructive data rewrite.
+* Hop 2 Owner approval and direct settlement mark qualifying Delivery orders and their `DeliveryTrip` as `Delivered`. The dossier split reports `Downpayment / Store Paid`, `Rider Fee (Collected by Rider)`, and zero balance separately.
+* Custody warnings are visible only for a positive balance in `InStaffDrawer` or `Uncollected`; they never appear for `Settled` or paid-in-full orders.
+
+### 17.3 Philippine-Date Directory and No-DP Safety
+
+* `Upcoming` uses the `Asia/Manila` calendar boundary and contains only non-cancelled, non-draft orders dated today or later. Earlier dates belong in `Past 30 Days`; explicit drafts remain exclusively in `Drafts` even when dated.
+* Active zero-DP, non-trusted bookings remain visible in Upcoming/Today/Tomorrow and carry `⚠️ NO DP • FOR CONFIRMATION`. Daily Kitchen and Rider sheets include the same orders with `[⚠️ NO DP - CONFIRM FIRST]` instead of hiding them behind Owner confirmation.
+* Lalamove Gate cards expose `View / Cancel Order`, opening the same dossier and audited cancellation workflow used by the master directory.
+
+### 17.4 Remittance and Rider Assignment
+
+* Hop 1 accepts Cash, Rider GCash, Direct GCash, and Bank Transfer. Mobile renders a native 180px `react-native-qrcode-svg` handover QR for `/qr-settle/{token}` and shows target date/time on every Hop 1, Hop 2, Pickup, and Lalamove card; earlier Philippine dates receive a `Past Shift` warning.
+* Web/Mobile dossiers and edit forms can assign or replace a registered rider, with a custom-name fallback, through `POST /api/logistics/assign-rider`. Successful assignment invalidates directory, dossier, schedule, manifest, and logistics caches.
+* Order-update audit comparisons normalize Add-Ons, Remarks, Delivery Address, and Landmark to trimmed empty strings, preventing null-versus-empty phantom diffs.
+* The Development QA data seeder is opt-in through `EnableQaDataSeeder=true`; routine API restarts never invoke its order replacement path.
+
+### 17.5 3-Tier Urgency Alert Matrix and Operational Balance Due Sub-Pills
+
+* **Upcoming 3-Tier Urgency Matrix:** Active non-cancelled bookings dated today or in the future (`TargetDeliveryTime >= PhilippineTime.Today`) are classified into 3 operational urgency tiers across Web and Mobile:
+  - **Tier 1 — Schedule / Logistics Gap (Soft Amber):** Triggered when `isTimeTbd === true || !targetDeliveryTime || !deliveryAddress`. Displays `⏳ TIME TBD` badge (`bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded text-xs`) and subtle amber border accent (`border-l-4 border-l-amber-400 bg-amber-50/30`).
+  - **Tier 2 — Normal Advance Deposit Follow-Up (Soft Orange / Coral):** Triggered when `downpayment === 0 && !isTrustedCustomer && balanceDue > 0 && daysUntilDelivery > 2`. Displays `⚠️ NO DP • PENDING DEPOSIT` badge (`bg-orange-100 text-orange-900 border border-orange-300 font-medium px-2 py-0.5 rounded text-xs`) and soft orange accent (`border-l-4 border-l-orange-400 bg-orange-50/30`).
+  - **Tier 3 — Critical Urgent Follow-Up (Crimson Red):** Triggered when `downpayment === 0 && !isTrustedCustomer && balanceDue > 0 && daysUntilDelivery <= 2`. Displays `🚨 URGENT: NO DP (CONFIRM OR CANCEL)` badge (`bg-rose-100 text-rose-900 border border-rose-500 font-bold px-2 py-0.5 rounded text-xs animate-pulse`) and pulsing rose tint (`bg-rose-50/60 border-l-4 border-l-rose-500`). When an order satisfies both Time TBD and No DP conditions, badges stack side-by-side with row accent reflecting highest severity (Rose > Orange > Amber).
+* **4-Pill Operational Sub-Filter for `💵 Balance Due`:** Returns all active unpaid orders and provides 4 dedicated operational sub-filters:
+  1. `[ ⚡ Due Today / Overdue ({count}) ]` (DEFAULT): Orders scheduled on/before today (`TargetDeliveryTime <= PhilippineTime.Today`) with active balances not in staff drawer, capturing road cash and today's counter store pickups.
+  2. `[ 🟡 In Staff Drawer ({count}) ]`: Physical cash held by counter staff awaiting owner Hop 2 reconciliation (`SettlementCustodyStatus == 'InStaffDrawer'`).
+  3. `[ 📅 Future Receivables ({count}) ]`: Advance COD bookings (`TargetDeliveryTime > PhilippineTime.Today && BalanceDue > 0`) allowing owner audit of upcoming commitments.
+  4. `[ 📋 All Unpaid ({count}) ]`: Master accounts receivable view across all active unpaid orders.
+* **Kitchen Roasting Sheet Time TBD Guard:** Kitchen roasting sheets (`KitchenViewTab.tsx` and `RiderViewTab.tsx`) detect `isTimeTbd: true` or missing departure times, suppressing backward time math / midnight calculations and rendering high-visibility `[ ⏳ TIME TBD ]` badges. Confirmed scheduled orders sort chronologically at top (Priority 1, 2, 3...); Time TBD orders group at the bottom under visual divider: `⚠️ AWAITING CUSTOMER SERVING TIME — DO NOT ROAST UNTIL CONFIRMED`.
+
+### 17.6 Philippine Time Date Normalization, Past-Year Typo Guard & Dynamic Roasting Rescheduling
+
+* **Strict Philippine Time (`UTC+8`) Calendar Boundaries:** All backend queries and business services evaluate "Today", "Tomorrow", and date comparisons using `PhilippineTime.Today` (`UTC+8`) rather than server-local `DateTime.Today` or `DateTime.UtcNow.Date`. Frontend dates use `getPhilippineDateString(date)` (`Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' })`), eliminating `.toISOString().slice(0, 10)` UTC rollback bugs that cause local morning orders to disappear on cloud hosting (SmarterASP).
+* **Past-Year Typo Guard & Startup Self-Heal:** Any date input from intake forms, edit payloads, or chat parsers where `year < 2025` is automatically normalized to `PhilippineTime.Today.Year` (`2026`). On startup and within `GetOrderDirectoryAsync`, SQL Server executes a self-healing repair (`DATEADD(year, 2026 - YEAR(TargetDeliveryTime), TargetDeliveryTime)`) to recover any active orders saved with an accidental past-year typo (e.g., `#102926-004 Jenah M. Chavez` with year `2016`).
+* **Dynamic Roasting Schedule Recalculation:** When updating an existing order's `TargetDeliveryTime` or `RiderDepartureTime`, `OrderService.UpdateOrderAsync` resets `IsManualOverride = false` and removes previous `OrderItemSchedules`, newly calculating `Tahi` (`TahiStartTime`) and `Salang` (`RoastingStartTime`) clocks. For Store Pickups (0) and Lalamove (2), `RiderDepartureTime` strictly synchronizes with `TargetDeliveryTime`. In `InlineScheduleEditorModal`, changing Departure auto-shifts Tahi and Salang by the minute delta.
+
+### 17.7 3-Row Financials Card Layout (`EditOrderModal.tsx` & `EditOrderForm.tsx`)
+
+* **Clean 3-Row Structure:** Replaces asymmetric 2-column layouts and eliminates empty white space:
+  - **Row 1 (Transit Pricing — 2 columns, shown when Delivery):** Left: `Est. Distance (KM)`, Right: `Delivery Fee (₱)`, Subtitle: `Rate: ₱{baseFare} base + ₱{ratePerKm}/km`.
+  - **Row 2 (Courtesy Discount — Full width):** Clean numeric input `Courtesy Discount (₱)`.
+  - **Row 3 (Locked Downpayment Banner — Full width read-only):** Sleek read-only container (`bg-stone-100 border border-stone-200 rounded-xl p-3.5 flex items-center justify-between`): Left: `🔒 Downpayment / Total Paid (Locked)` + `Log or void payments via Order Dossier`; Right: `₱{lockedDownpayment.toLocaleString()}` + read-only Payment Channel badge (pill, NOT 4 toggle buttons).
+* **Cash Lock Enforcement:** Eliminates interactive payment channel pills from edit order workflows, reinforcing the locked-cash rule that payments can only be appended or voided with audit logs.

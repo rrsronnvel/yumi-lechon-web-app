@@ -160,7 +160,11 @@ export default function LogisticsPage() {
                       <td className="p-4 font-medium text-stone-900">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span>{order.customerName}</span>
-                          <WalkInBadge {...order} />
+                          <WalkInBadge
+                            source={order.source}
+                            customerName={order.customerName}
+                            facebookName={order.facebookName}
+                          />
                         </div>
                       </td>
                       <td className="p-4 max-w-xs truncate text-stone-600">{order.deliveryAddress || "Store Pickup"}</td>

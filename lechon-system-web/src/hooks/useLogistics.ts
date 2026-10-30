@@ -67,7 +67,12 @@ export const useAssignRider = () => {
       queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
       queryClient.invalidateQueries({ queryKey: ["roster"] });
       queryClient.invalidateQueries({ queryKey: ["orders", "directory"] });
+      queryClient.invalidateQueries({ queryKey: ["order"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orders", "details"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-sheets"] });
       queryClient.invalidateQueries({ queryKey: ["logistics", "today"] });
+      queryClient.invalidateQueries({ queryKey: ["logistics"] });
     },
   });
 };

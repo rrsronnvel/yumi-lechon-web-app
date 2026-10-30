@@ -13,6 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../context/AuthContext';
 import {
   usePendingRiderSettlements,
@@ -31,6 +32,7 @@ import {
   PendingLalamoveSettlement,
 } from '../hooks/useManifest';
 import WalkInBadge from '../components/orders/WalkInBadge';
+import OrderDossierModal from '../components/orders/OrderDossierModal';
 
 type DrawerTabKey = 'hop2' | 'riders' | 'pickups' | 'lalamove';
 
@@ -44,6 +46,73 @@ interface ActiveModalState {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   isTrustedCustomer?: boolean;
+}
+
+const PHILIPPINE_TIME_ZONE = 'Asia/Manila';
+
+function getPhilippineDateKey(value: Date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: PHILIPPINE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+
+function getScheduleBadge(targetDeliveryTime?: string | null) {
+  if (!targetDeliveryTime) {
+    return { label: '📅 Schedule unavailable', isPast: false };
+  }
+
+  const localMatch = targetDeliveryTime.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/
+  );
+  const dateKey = localMatch
+    ? `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}`
+    : getPhilippineDateKey(new Date(targetDeliveryTime));
+  const isPast = dateKey < getPhilippineDateKey();
+
+  const scheduleDate = localMatch
+    ? new Date(
+        Number(localMatch[1]),
+        Number(localMatch[2]) - 1,
+        Number(localMatch[3]),
+        Number(localMatch[4]),
+        Number(localMatch[5])
+      )
+    : new Date(targetDeliveryTime);
+  const dateLabel = scheduleDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timeLabel = scheduleDate.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return {
+    label: isPast
+      ? `⚠️ ${dateLabel} • Past Shift`
+      : `📅 ${dateLabel} • ${timeLabel}`,
+    isPast,
+  };
+}
+
+function ScheduleBadge({ targetDeliveryTime }: { targetDeliveryTime?: string | null }) {
+  const schedule = getScheduleBadge(targetDeliveryTime);
+  return (
+    <View style={[styles.scheduleBadge, schedule.isPast && styles.scheduleBadgePast]}>
+      <Text
+        style={[
+          styles.scheduleBadgeText,
+          schedule.isPast && styles.scheduleBadgeTextPast,
+        ]}
+      >
+        {schedule.label}
+      </Text>
+    </View>
+  );
 }
 
 export default function DrawerScreen() {
@@ -99,6 +168,9 @@ export default function DrawerScreen() {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
+  const [selectedDossierOrderId, setSelectedDossierOrderId] = useState<number | null>(
+    null
+  );
 
   // Workflow A (Hop 2 Owner Envelope Speed Bump) State
   const [countedAmount, setCountedAmount] = useState('');
@@ -107,7 +179,7 @@ export default function DrawerScreen() {
 
   // Workflow B (Hop 1 Rider-to-Staff) State
   const [riderPayMethod, setRiderPayMethod] = useState<
-    'Cash' | 'ManualGCash' | 'GCash'
+    'Cash' | 'ManualGCash' | 'GCash' | 'Bank Transfer'
   >('Cash');
   const [directGcashRef, setDirectGcashRef] = useState('');
   const [showManualOverride, setShowManualOverride] = useState(false);
@@ -152,6 +224,7 @@ export default function DrawerScreen() {
       riderSignedBy?: string | null;
       heldByStaffName: string;
       heldPaymentMethod?: string | null;
+      targetDeliveryTime?: string | null;
     }[] = [];
 
     for (const r of riderDrops) {
@@ -172,6 +245,7 @@ export default function DrawerScreen() {
           riderSignedBy: r.riderSignedBy,
           heldByStaffName: r.heldByStaffName || 'Cashier',
           heldPaymentMethod: r.heldPaymentMethod,
+          targetDeliveryTime: r.targetDeliveryTime,
         });
       } else {
         uncollSum += amt;
@@ -197,6 +271,7 @@ export default function DrawerScreen() {
           riderSignedBy: p.riderSignedBy || 'Walk-in Customer',
           heldByStaffName: p.heldByStaffName || 'Cashier',
           heldPaymentMethod: p.heldPaymentMethod,
+          targetDeliveryTime: p.targetDeliveryTime,
         });
       } else {
         uncollSum += amt;
@@ -610,7 +685,12 @@ export default function DrawerScreen() {
           </Text>
           <Text style={styles.summaryCaption}>Awaiting Owner Turnover (Hop 2)</Text>
           {custodianBreakdown.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.custodianScrollRow}>
+            <ScrollView
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.custodianScrollContent}
+              style={styles.custodianScrollRow}
+            >
               <Pressable
                 style={[
                   styles.custodianPill,
@@ -623,6 +703,7 @@ export default function DrawerScreen() {
                     styles.custodianPillText,
                     selectedCustodian === null && styles.custodianPillTextActive,
                   ]}
+                  numberOfLines={1}
                 >
                   All Custodians ({inStaffDrawerCount})
                 </Text>
@@ -641,6 +722,7 @@ export default function DrawerScreen() {
                       styles.custodianPillText,
                       selectedCustodian === cust.name && styles.custodianPillTextActive,
                     ]}
+                    numberOfLines={1}
                   >
                     👤 {cust.name}: ₱{cust.amount.toLocaleString()} ({cust.count})
                   </Text>
@@ -806,7 +888,12 @@ export default function DrawerScreen() {
                   </View>
 
                   <Text style={styles.customerNameText}>{item.customerName}</Text>
-                  <WalkInBadge {...item} />
+                  <WalkInBadge
+                    source={item.source}
+                    customerName={item.customerName}
+                    facebookName={item.facebookName}
+                  />
+                  <ScheduleBadge targetDeliveryTime={item.targetDeliveryTime} />
 
                   <View style={styles.custodyMetaBox}>
                     <Text style={styles.custodyMetaLine}>
@@ -946,7 +1033,12 @@ export default function DrawerScreen() {
                     </View>
 
                     <Text style={styles.customerNameText}>{drop.customerName}</Text>
-                    <WalkInBadge {...drop} />
+                    <WalkInBadge
+                      source={drop.source}
+                      customerName={drop.customerName}
+                      facebookName={drop.facebookName}
+                    />
+                    <ScheduleBadge targetDeliveryTime={drop.targetDeliveryTime} />
                     <Text style={styles.addressSubText} numberOfLines={1}>
                       📍 {drop.deliveryAddress || 'Store Delivery'}
                     </Text>
@@ -1126,7 +1218,12 @@ export default function DrawerScreen() {
                     <Text style={styles.customerNameText}>
                       {pickup.customerName}
                     </Text>
-                    <WalkInBadge {...pickup} />
+                    <WalkInBadge
+                      source={pickup.source}
+                      customerName={pickup.customerName}
+                      facebookName={pickup.facebookName}
+                    />
+                    <ScheduleBadge targetDeliveryTime={pickup.targetDeliveryTime} />
                     <Text style={styles.addressSubText}>
                       📞 {pickup.contactNumber || 'N/A'} • 🏪{' '}
                       {pickup.address || pickup.remarks || 'Counter Pickup'}
@@ -1287,7 +1384,12 @@ export default function DrawerScreen() {
                         <Text style={styles.vipBadgeText}>👑 VIP</Text>
                       </View>
                     )}
-                    <WalkInBadge {...item} />
+                    <WalkInBadge
+                      source={item.source}
+                      customerName={item.customerName}
+                      facebookName={item.facebookName}
+                    />
+                    <ScheduleBadge targetDeliveryTime={item.targetDeliveryTime} />
                     <Text style={styles.addressSubText}>
                       📍 {item.deliveryAddress || 'Customer-booked pin'}
                     </Text>
@@ -1300,11 +1402,22 @@ export default function DrawerScreen() {
                           isCleared ? styles.textEmerald : styles.textRose,
                         ]}
                       >
-                        ₱{Number(item.balanceDue || 0).toLocaleString()}
+                        ₱{Math.round(Number(item.balanceDue || 0)).toLocaleString('en-US')}
                       </Text>
                     </View>
 
                     <View style={styles.cardActionRow}>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.viewOrderBtn,
+                          pressed && styles.btnPressed,
+                        ]}
+                        onPress={() => setSelectedDossierOrderId(item.orderId)}
+                      >
+                        <Text style={styles.viewOrderBtnText} numberOfLines={1}>
+                          👁️ View / Cancel Order
+                        </Text>
+                      </Pressable>
                       {isCleared ? (
                         <Pressable
                           style={({ pressed }) => [
@@ -1313,7 +1426,7 @@ export default function DrawerScreen() {
                           ]}
                           onPress={() => handleReleaseLalamoveCourier(item)}
                         >
-                          <Text style={styles.settleGreenBtnText}>
+                          <Text style={styles.settleGreenBtnText} numberOfLines={1}>
                             ✅ Release to Courier
                           </Text>
                         </Pressable>
@@ -1335,8 +1448,8 @@ export default function DrawerScreen() {
                             });
                           }}
                         >
-                          <Text style={styles.verifyPayBtnText}>
-                            🛑 Log Payment to Unlock Release
+                          <Text style={styles.verifyPayBtnText} numberOfLines={1}>
+                            💳 Collect & Unlock
                           </Text>
                         </Pressable>
                       )}
@@ -1348,6 +1461,11 @@ export default function DrawerScreen() {
           </>
         )}
       </ScrollView>
+
+      <OrderDossierModal
+        orderId={selectedDossierOrderId}
+        onClose={() => setSelectedDossierOrderId(null)}
+      />
 
       {/* ============================================================== */}
       {/* INTERACTIVE SETTLEMENT & SAFEGUARD WORKFLOWS MODAL             */}
@@ -1572,6 +1690,7 @@ export default function DrawerScreen() {
                       { label: '💵 Cash', value: 'Cash' },
                       { label: '📲 Rider GCash', value: 'ManualGCash' },
                       { label: '📱 Direct GCash', value: 'GCash' },
+                      { label: '🏦 Bank Transfer', value: 'Bank Transfer' },
                     ] as const
                   ).map((m) => {
                     const active = riderPayMethod === m.value;
@@ -1631,6 +1750,16 @@ export default function DrawerScreen() {
                   /* QR Polling + Safeguard 1 Discrepancy + Manual Counter Override */
                   <View style={styles.hop1QrSection}>
                     <View style={styles.qrTokenBox}>
+                      {sessionToken && (
+                        <View style={styles.nativeQrFrame}>
+                          <QRCode
+                            value={`https://yumilechon.netlify.app/qr-settle/${sessionToken}`}
+                            size={180}
+                            backgroundColor="#ffffff"
+                            color="#181312"
+                          />
+                        </View>
+                      )}
                       <Text style={styles.qrTokenLabel}>
                         ACTIVE 10-MINUTE HANDSHAKE TOKEN
                       </Text>
@@ -1940,23 +2069,29 @@ const styles = StyleSheet.create({
   },
   custodianScrollRow: {
     marginTop: 8,
-    flexDirection: 'row',
+  },
+  custodianScrollContent: {
+    gap: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
   },
   custodianPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     backgroundColor: '#382A24',
-    marginRight: 6,
     borderWidth: 1,
     borderColor: '#78350F',
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   custodianPillActive: {
     backgroundColor: '#F59E0B',
     borderColor: '#FBBF24',
   },
   custodianPillText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     color: '#FDE68A',
   },
@@ -2108,6 +2243,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#57534E',
   },
+  scheduleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F5F5F4',
+    borderColor: '#D6D3D1',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  scheduleBadgePast: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+  },
+  scheduleBadgeText: {
+    color: '#44403C',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  scheduleBadgeTextPast: {
+    color: '#B45309',
+    fontWeight: '900',
+  },
   custodyMetaBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
@@ -2238,16 +2395,35 @@ const styles = StyleSheet.create({
   },
   settleGreenBtn: {
     flex: 1,
+    height: 44,
     backgroundColor: '#059669',
     borderRadius: 9,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   settleGreenBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  viewOrderBtn: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#A8A29E',
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewOrderBtnText: {
+    color: '#292524',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   gateBadgeClear: {
     backgroundColor: '#D1FAE5',
@@ -2294,7 +2470,6 @@ const styles = StyleSheet.create({
   lalamoveBalanceVal: {
     fontSize: 14,
     fontWeight: '900',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   textEmerald: {
     color: '#047857',
@@ -2304,15 +2479,18 @@ const styles = StyleSheet.create({
   },
   verifyPayBtn: {
     flex: 1,
+    height: 44,
     backgroundColor: '#BE123C',
     borderRadius: 9,
-    paddingVertical: 11,
+    paddingHorizontal: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   verifyPayBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   centerBox: {
     paddingVertical: 48,
@@ -2632,6 +2810,16 @@ const styles = StyleSheet.create({
   },
   hop1QrSection: {
     gap: 12,
+  },
+  nativeQrFrame: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D6D3D1',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   qrTokenBox: {
     backgroundColor: '#FFFFFF',

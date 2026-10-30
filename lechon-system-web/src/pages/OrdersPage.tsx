@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
   useOrdersDirectory,
@@ -46,6 +46,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useConfirmOwnerOrderMutation } from "@/hooks/useDashboard";
+import { useAssignRider } from "@/hooks/useLogistics";
+import { useRidersQuery } from "@/hooks/useRiders";
 import {
   generateBookingConfirmation,
   TemplateOrderData,
@@ -80,6 +82,35 @@ const formatLocalDate = (date: Date) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
 
+const formatPhilippineDateKey = (value: Date | string): string => {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
+const philippineDateFromNow = (days = 0): string =>
+  formatPhilippineDateKey(new Date(Date.now() + days * 86_400_000));
+
+const getDaysUntilDelivery = (targetDeliveryTime?: string | Date | null): number => {
+  if (!targetDeliveryTime) return 999;
+  const targetKey = formatPhilippineDateKey(targetDeliveryTime);
+  const todayKey = philippineDateFromNow(0);
+  const targetDate = new Date(`${targetKey}T00:00:00Z`).getTime();
+  const todayDate = new Date(`${todayKey}T00:00:00Z`).getTime();
+  return Math.round((targetDate - todayDate) / 86_400_000);
+};
+
 const shiftDate = (date: string, days: number) => {
   const anchor = date ? new Date(`${date}T12:00:00`) : new Date();
   anchor.setDate(anchor.getDate() + days);
@@ -88,12 +119,15 @@ const shiftDate = (date: string, days: number) => {
 
 export default function OrdersPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { isOwner, user } = useAuth();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
+  const assignRiderMutation = useAssignRider();
+  const { data: registeredRiders = [] } = useRidersQuery();
   const { data: deliveryPricing } = useDeliveryPricing();
   const [filterTab, setFilterTab] = useState("upcoming");
-  const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
+  const [balanceSubFilter, setBalanceSubFilter] = useState<'due-today' | 'drawer' | 'future' | 'all'>('due-today');
   const [rawSearch, setRawSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const debouncedSearch = useDebounce(rawSearch, 300);
@@ -110,7 +144,7 @@ export default function OrdersPage() {
   // Reset sub-filter when leaving balance-due tab
   useEffect(() => {
     if (filterTab !== "balance-due") {
-      setBalanceSubFilter("all");
+      setBalanceSubFilter("due-today");
     }
   }, [filterTab]);
 
@@ -122,35 +156,33 @@ export default function OrdersPage() {
   }, [orders]);
 
   const custodyCounts = useMemo(() => {
-    const todayMidnight = new Date().setHours(0, 0, 0, 0);
-
-    let rider = 0;
+    const todayDatePh = philippineDateFromNow();
+    let dueToday = 0;
     let drawer = 0;
     let future = 0;
 
     unpaidOrders.forEach((o) => {
       const isDrawer =
         o.settlementCustodyStatus === "InStaffDrawer" && !o.isRemittedToOwner;
-      const isRider =
-        Number(o.fulfillment) === 1 &&
-        (o.routingStatus === "Assigned" || o.routingStatus === "OutForDelivery") &&
-        o.settlementCustodyStatus !== "InStaffDrawer" &&
-        !o.isRemittedToOwner;
-      const targetMidnight = o.targetDeliveryTime
-        ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
-        : 0;
-      const isFuture =
-        targetMidnight > todayMidnight &&
-        (o.settlementCustodyStatus === "Uncollected" || !o.settlementCustodyStatus);
+      if (isDrawer) {
+        drawer++;
+        return;
+      }
 
-      if (isDrawer) drawer++;
-      if (isRider) rider++;
-      if (isFuture) future++;
+      const orderDatePh = o.targetDeliveryTime
+        ? formatPhilippineDateKey(o.targetDeliveryTime)
+        : "";
+
+      if (!orderDatePh || orderDatePh <= todayDatePh) {
+        dueToday++;
+      } else {
+        future++;
+      }
     });
 
     return {
       all: unpaidOrders.length,
-      rider,
+      dueToday,
       drawer,
       future,
     };
@@ -158,35 +190,34 @@ export default function OrdersPage() {
 
   const displayedOrders = useMemo(() => {
     if (!orders) return [];
+    if (filterTab === "upcoming") {
+      const todayDatePh = philippineDateFromNow();
+      return orders.filter(
+        (order) =>
+          !order.isCancelled &&
+          Boolean(order.targetDeliveryTime) &&
+          formatPhilippineDateKey(order.targetDeliveryTime!) >= todayDatePh,
+      );
+    }
     if (filterTab !== "balance-due") return orders;
 
     if (balanceSubFilter === "all") return unpaidOrders;
 
-    const todayMidnight = new Date().setHours(0, 0, 0, 0);
-
+    const todayDatePh = philippineDateFromNow();
     return unpaidOrders.filter((o) => {
-      if (balanceSubFilter === "rider") {
-        return (
-          Number(o.fulfillment) === 1 &&
-          (o.routingStatus === "Assigned" || o.routingStatus === "OutForDelivery") &&
-          o.settlementCustodyStatus !== "InStaffDrawer" &&
-          !o.isRemittedToOwner
-        );
-      }
+      const isDrawer =
+        o.settlementCustodyStatus === "InStaffDrawer" && !o.isRemittedToOwner;
       if (balanceSubFilter === "drawer") {
-        return (
-          o.settlementCustodyStatus === "InStaffDrawer" && !o.isRemittedToOwner
-        );
+        return isDrawer;
+      }
+      const orderDatePh = o.targetDeliveryTime
+        ? formatPhilippineDateKey(o.targetDeliveryTime)
+        : "";
+      if (balanceSubFilter === "due-today") {
+        return !isDrawer && (!orderDatePh || orderDatePh <= todayDatePh);
       }
       if (balanceSubFilter === "future") {
-        const targetMidnight = o.targetDeliveryTime
-          ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
-          : 0;
-        return (
-          targetMidnight > todayMidnight &&
-          (o.settlementCustodyStatus === "Uncollected" ||
-            !o.settlementCustodyStatus)
-        );
+        return !isDrawer && orderDatePh > todayDatePh;
       }
       return true;
     });
@@ -217,6 +248,9 @@ export default function OrdersPage() {
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
   const [isNotesEditorOpen, setIsNotesEditorOpen] = useState(false);
+  const [isRiderAssignmentOpen, setIsRiderAssignmentOpen] = useState(false);
+  const [selectedRiderName, setSelectedRiderName] = useState("");
+  const [customRiderName, setCustomRiderName] = useState("");
   const [draftPreferences, setDraftPreferences] = useState("");
   const [draftComplaints, setDraftComplaints] = useState("");
   const paymentMutation = useLogPayment();
@@ -231,6 +265,26 @@ export default function OrdersPage() {
     selectedOrder?.id || null
   );
   const orderDetails = data as any;
+  const handleAssignRider = () => {
+    if (!selectedOrder?.id) return;
+    const riderName = (customRiderName || selectedRiderName).trim();
+    if (!riderName) {
+      toast.error("Select a rider or enter a custom rider name.");
+      return;
+    }
+    assignRiderMutation.mutate(
+      { orderIds: [selectedOrder.id], riderName, vehicleType: "Motorcycle" },
+      {
+        onSuccess: async () => {
+          await queryClient.invalidateQueries({ queryKey: ["order", selectedOrder.id] });
+          setIsRiderAssignmentOpen(false);
+          setCustomRiderName("");
+          toast.success(`${riderName} assigned to this delivery.`);
+        },
+        onError: () => toast.error("Could not assign this rider."),
+      },
+    );
+  };
   const displayedFreebiesSummary = useMemo(() => {
     if (!orderDetails?.freebiesConfigJson) {
       return sanitizeFreebiesSummary(orderDetails?.freebiesSummary);
@@ -332,6 +386,25 @@ export default function OrdersPage() {
     setIsNotesEditorOpen(false);
     setIsSheetOpen(true);
   };
+
+  useEffect(() => {
+    const openOrderId = Number(searchParams.get("openOrderId"));
+    if (!Number.isFinite(openOrderId) || openOrderId <= 0) return;
+
+    if (filterTab !== "all") setFilterTab("all");
+    if (rawSearch !== String(openOrderId)) setRawSearch(String(openOrderId));
+
+    const requestedOrder = orders?.find((order) => order.id === openOrderId);
+    if (!requestedOrder) return;
+
+    setSelectedOrder(requestedOrder);
+    setIsEditing(false);
+    setIsNotesEditorOpen(false);
+    setIsSheetOpen(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("openOrderId");
+    setSearchParams(nextParams, { replace: true });
+  }, [filterTab, orders, rawSearch, searchParams, setSearchParams]);
 
   const renderLocation = (order: OrderDirectoryDto) => {
     const fulfillment = Number(order.fulfillment);
@@ -667,21 +740,42 @@ export default function OrdersPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              displayedOrders.map((order: OrderDirectoryDto) => (
-                <TableRow
+              displayedOrders.map((order: OrderDirectoryDto) => {
+                const isTimeAlert = Boolean(
+                  order.isTimeTbd ||
+                  !order.targetDeliveryTime ||
+                  (Number(order.fulfillment) === 1 && !order.deliveryAddress?.trim())
+                );
+
+                const daysUntilDelivery = getDaysUntilDelivery(order.targetDeliveryTime);
+                const isNoDp =
+                  Number(order.downpayment || 0) === 0 &&
+                  !order.isTrustedCustomer &&
+                  Number(order.balanceDue || 0) > 0;
+
+                const isCriticalNoDp = isNoDp && daysUntilDelivery <= 2;
+                const isAdvanceNoDp = isNoDp && daysUntilDelivery > 2;
+
+                const rowAccentClass = isCriticalNoDp
+                  ? "bg-rose-50/60 hover:bg-rose-100/60 border-l-4 border-l-rose-500"
+                  : isAdvanceNoDp
+                  ? "bg-orange-50/30 hover:bg-orange-100/40 border-l-4 border-l-orange-400"
+                  : isTimeAlert
+                  ? "bg-amber-50/30 hover:bg-amber-100/50 border-l-4 border-l-amber-400"
+                  : "hover:bg-amber-50/40";
+
+                return <TableRow
                   key={order.id}
                   className={cn(
                     "cursor-pointer transition-colors border-b border-stone-100",
-                    order.isDraft && order.targetDeliveryTime
-                      ? "bg-amber-50/70 hover:bg-amber-100/60 border-l-4 border-l-amber-500"
-                      : "hover:bg-amber-50/40",
+                    rowAccentClass,
                   )}
                   onClick={() => handleRowClick(order)}
                 >
                   {/* Order Column */}
                   <TableCell>
                     <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-mono font-semibold text-stone-900">
                           #{order.orderReference || order.id}
                         </span>
@@ -692,6 +786,21 @@ export default function OrdersPage() {
                           >
                             ✏️ Edited
                           </Badge>
+                        )}
+                        {isTimeAlert && (
+                          <span className="bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded text-xs inline-flex items-center">
+                            ⏳ TIME TBD
+                          </span>
+                        )}
+                        {isAdvanceNoDp && (
+                          <span className="bg-orange-100 text-orange-900 border border-orange-300 font-medium px-2 py-0.5 rounded text-xs inline-flex items-center">
+                            ⚠️ NO DP • PENDING DEPOSIT
+                          </span>
+                        )}
+                        {isCriticalNoDp && (
+                          <span className="bg-rose-100 text-rose-900 border border-rose-500 font-bold px-2 py-0.5 rounded text-xs inline-flex items-center animate-pulse">
+                            🚨 URGENT: NO DP (CONFIRM OR CANCEL)
+                          </span>
                         )}
                       </div>
                       <div className="text-xs text-stone-500 font-normal">
@@ -793,8 +902,8 @@ export default function OrdersPage() {
                       )}
                     </div>
                   </TableCell>
-                </TableRow>
-              ))
+                </TableRow>;
+              })
             )}
           </TableBody>
         </Table>
@@ -851,8 +960,8 @@ export default function OrdersPage() {
           <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} aria-label="Next day">
             &gt;
           </Button>
-          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedDate(formatLocalDate(new Date()))}>Today</Button>
-          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedDate(shiftDate(formatLocalDate(new Date()), 1))}>Tomorrow</Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedDate(philippineDateFromNow())}>Today</Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedDate(philippineDateFromNow(1))}>Tomorrow</Button>
           {selectedDate && (
             <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-rose-700" onClick={() => setSelectedDate("")}>✕ Clear</Button>
           )}
@@ -864,7 +973,7 @@ export default function OrdersPage() {
         value={filterTab}
         onValueChange={(val) => {
           setFilterTab(val);
-          if (val !== "balance-due") setBalanceSubFilter("all");
+          if (val !== "balance-due") setBalanceSubFilter("due-today");
         }}
         className="w-full"
       >
@@ -927,49 +1036,25 @@ export default function OrdersPage() {
           >
             <button
               type="button"
-              aria-pressed={balanceSubFilter === "all"}
-              onClick={() => setBalanceSubFilter("all")}
+              aria-pressed={balanceSubFilter === "due-today"}
+              onClick={() => setBalanceSubFilter("due-today")}
               className={cn(
                 "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
-                balanceSubFilter === "all"
+                balanceSubFilter === "due-today"
                   ? "bg-amber-600 text-white font-medium shadow-sm"
                   : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               )}
             >
-              <span>📋 All Unpaid</span>
+              <span>⚡ Due Today / Overdue</span>
               <span
                 className={cn(
                   "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
-                  balanceSubFilter === "all"
+                  balanceSubFilter === "due-today"
                     ? "bg-amber-700 text-amber-100"
                     : "bg-slate-200 text-slate-700"
                 )}
               >
-                {custodyCounts.all}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              aria-pressed={balanceSubFilter === "rider"}
-              onClick={() => setBalanceSubFilter("rider")}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
-                balanceSubFilter === "rider"
-                  ? "bg-amber-600 text-white font-medium shadow-sm"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-              )}
-            >
-              <span>🛵 Road Cash</span>
-              <span
-                className={cn(
-                  "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
-                  balanceSubFilter === "rider"
-                    ? "bg-amber-700 text-amber-100"
-                    : "bg-slate-200 text-slate-700"
-                )}
-              >
-                {custodyCounts.rider}
+                {custodyCounts.dueToday}
               </span>
             </button>
 
@@ -984,7 +1069,7 @@ export default function OrdersPage() {
                   : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               )}
             >
-              <span>🟡 In Drawer</span>
+              <span>🟡 In Staff Drawer</span>
               <span
                 className={cn(
                   "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
@@ -1008,7 +1093,7 @@ export default function OrdersPage() {
                   : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               )}
             >
-              <span>📅 Advance</span>
+              <span>📅 Future Receivables</span>
               <span
                 className={cn(
                   "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
@@ -1018,6 +1103,30 @@ export default function OrdersPage() {
                 )}
               >
                 {custodyCounts.future}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={balanceSubFilter === "all"}
+              onClick={() => setBalanceSubFilter("all")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors cursor-pointer",
+                balanceSubFilter === "all"
+                  ? "bg-amber-600 text-white font-medium shadow-sm"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              )}
+            >
+              <span>📋 All Unpaid</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                  balanceSubFilter === "all"
+                    ? "bg-amber-700 text-amber-100"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {custodyCounts.all}
               </span>
             </button>
           </div>
@@ -1339,7 +1448,8 @@ export default function OrdersPage() {
                           Courier / Handover Status
                         </p>
                         {Number(orderDetails.fulfillment) === 1 ? (
-                          <div className="flex items-center justify-between p-3 bg-stone-50 rounded-lg border border-stone-200">
+                          <div className="space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-stone-50 rounded-lg border border-stone-200">
                             <div className="space-y-0.5">
                               <p className="text-sm font-semibold text-stone-900">
                                 {orderDetails.assignedRiderName ? (
@@ -1362,7 +1472,7 @@ export default function OrdersPage() {
                                 Freelance Delivery Courier
                               </p>
                             </div>
-                            <div>
+                            <div className="flex flex-wrap items-center gap-2">
                               {orderDetails.assignedRiderName ? (
                                 orderDetails.routingStatus === "Assigned" ||
                                 orderDetails.routingStatus === "Delivered" ? (
@@ -1388,7 +1498,58 @@ export default function OrdersPage() {
                                   ⚪ Pending Rider Assignment
                                 </Badge>
                               )}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 border-blue-300 bg-white text-xs font-bold text-blue-800 hover:bg-blue-50"
+                                onClick={() => {
+                                  setSelectedRiderName(orderDetails.assignedRiderName || "");
+                                  setCustomRiderName("");
+                                  setIsRiderAssignmentOpen((open) => !open);
+                                }}
+                              >
+                                🛵 Assign / Change Rider
+                              </Button>
                             </div>
+                          </div>
+                          {isRiderAssignmentOpen && (
+                            <div className="grid gap-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3 sm:grid-cols-[1fr_1fr_auto]">
+                              <select
+                                value={selectedRiderName}
+                                onChange={(event) => {
+                                  setSelectedRiderName(event.target.value);
+                                  if (event.target.value) setCustomRiderName("");
+                                }}
+                                className="h-9 rounded-md border border-stone-300 bg-white px-2 text-xs"
+                              >
+                                <option value="">Select registered rider</option>
+                                {registeredRiders.filter((rider) => rider.isActive).map((rider) => (
+                                  <option key={rider.id} value={rider.fullName}>
+                                    {rider.fullName} {rider.phoneNumber ? `• ${rider.phoneNumber}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              <Input
+                                value={customRiderName}
+                                onChange={(event) => {
+                                  setCustomRiderName(event.target.value);
+                                  if (event.target.value) setSelectedRiderName("");
+                                }}
+                                placeholder="Or enter custom rider name"
+                                className="h-9 bg-white text-xs"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={assignRiderMutation.isPending}
+                                onClick={handleAssignRider}
+                                className="h-9 bg-blue-700 text-white hover:bg-blue-800"
+                              >
+                                {assignRiderMutation.isPending ? "Assigning…" : "Save Rider"}
+                              </Button>
+                            </div>
+                          )}
                           </div>
                         ) : Number(orderDetails.fulfillment) === 2 ? (
                           <div className="flex items-center justify-between p-3 bg-amber-50/60 rounded-lg border border-amber-200">
@@ -1752,7 +1913,7 @@ export default function OrdersPage() {
                         </span>
                       </div>
                       <div className="flex justify-between text-emerald-700">
-                        <span>Downpayment:</span>
+                        <span>Downpayment / Store Paid:</span>
                         <span className="flex items-center gap-2">
                           <span className="font-mono">
                             - ₱{orderDetails.downpayment?.toLocaleString() || 0}
@@ -1774,6 +1935,14 @@ export default function OrdersPage() {
                           )}
                         </span>
                       </div>
+                      {Number(orderDetails.riderFeeSettledAtDoor || 0) > 0 && (
+                        <div className="flex justify-between text-amber-700">
+                          <span>Rider Fee (Collected by Rider):</span>
+                          <span className="font-mono">
+                            - â‚±{Number(orderDetails.riderFeeSettledAtDoor).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
                       {orderDetails.paymentLogs?.length > 0 && (
                         <div className="space-y-1 border-t border-stone-100 pt-2 text-xs">
                           <p className="font-semibold uppercase tracking-wide text-stone-500">
@@ -1854,29 +2023,34 @@ export default function OrdersPage() {
                           })}
                         </div>
                       )}
-                      <div className="flex justify-between text-rose-600 font-bold text-lg border-t border-stone-200 pt-2 mt-2">
+                      <div className={cn(
+                        "flex justify-between font-bold text-lg border-t border-stone-200 pt-2 mt-2",
+                        Number(orderDetails.balanceDue || 0) <= 0
+                          ? "text-emerald-700"
+                          : "text-rose-600",
+                      )}>
                         <span>Balance to Collect:</span>
                         <span className="font-mono">
-                          ₱
-                          {(
-                            (orderDetails.grandTotal || 0) -
-                            (orderDetails.downpayment || 0)
-                          ).toLocaleString()}
+                          {Number(orderDetails.balanceDue || 0) <= 0
+                            ? "₱0 (Paid in Full)"
+                            : `₱${Number(orderDetails.balanceDue || 0).toLocaleString()}`}
                         </span>
                       </div>
 
                       {/* Physical Cash Custody / Manifest Deep-Link Action */}
-                      {(orderDetails.settlementCustodyStatus === "InStaffDrawer" ||
-                        selectedOrder?.settlementCustodyStatus === "InStaffDrawer" ||
-                        orderDetails.routingStatus === "Assigned" ||
-                        selectedOrder?.routingStatus === "Assigned") && (
+                      {Number(orderDetails.balanceDue ?? selectedOrder?.balanceDue ?? 0) > 0 &&
+                        ["InStaffDrawer", "Uncollected"].includes(
+                          orderDetails.settlementCustodyStatus ||
+                            selectedOrder?.settlementCustodyStatus ||
+                            "Uncollected",
+                        ) && (
                         <div className="mt-3 pt-3 border-t border-stone-200 flex items-center justify-between bg-amber-50/80 p-3 rounded-lg border border-amber-200">
                           <div className="space-y-0.5">
                             <p className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
                               {(orderDetails.settlementCustodyStatus || selectedOrder?.settlementCustodyStatus) === "InStaffDrawer" ? (
                                 <>
                                   <span>🟡</span>
-                                  <span>In Staff Drawer</span>
+                                  <span>In Staff Drawer â€” Awaiting Owner Turnover</span>
                                 </>
                               ) : (
                                 <>

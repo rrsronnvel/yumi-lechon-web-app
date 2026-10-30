@@ -15,6 +15,7 @@ export interface FreebiesConfig {
   pigsWithFreebies: number;
   rawInnards: boolean;
   counts: Record<string, number>;
+  customizationNote?: string;
 }
 
 export const sanitizeFreebiesSummary = (
@@ -46,6 +47,7 @@ export const createDefaultFreebiesConfig = (
   pigsWithFreebies: Math.max(0, Math.floor(wholePigCount)),
   rawInnards: false,
   counts: createCounts(wholePigCount),
+  customizationNote: "",
 });
 
 export const getPigsWithFreebies = (
@@ -90,6 +92,7 @@ export const normalizeFreebiesConfig = (
       pigsWithFreebies: 0,
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
+      customizationNote: config.customizationNote?.trim() || "",
     };
   }
 
@@ -102,6 +105,7 @@ export const normalizeFreebiesConfig = (
     pigsWithFreebies,
     rawInnards: Boolean(config.rawInnards),
     counts,
+    customizationNote: config.customizationNote?.trim() || "",
   };
 };
 
@@ -129,6 +133,7 @@ export const updatePigsWithFreebies = (
       pigsWithFreebies: 0,
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
+      customizationNote: inputConfig.customizationNote?.trim() || "",
     };
   }
 
@@ -151,6 +156,7 @@ export const updatePigsWithFreebies = (
     pigsWithFreebies,
     rawInnards: normalized.rawInnards,
     counts,
+    customizationNote: inputConfig.customizationNote?.trim() || "",
   };
 };
 
@@ -170,6 +176,7 @@ export const parseFreebiesConfig = (
           (parsed.optOut ? 0 : Math.max(0, Math.floor(wholePigCount))),
         rawInnards: Boolean(parsed.rawInnards),
         counts: parsed.counts ?? {},
+        customizationNote: parsed.customizationNote ?? "",
       },
       wholePigCount,
     );
@@ -223,6 +230,9 @@ export const formatFreebiesSummary = (
     }
     if (omitted.length > 0) details.push(`No ${omitted.join(", ")}`);
     if (config.rawInnards) details.push("🥩 Raw Innards");
+  }
+  if (config.customizationNote) {
+    details.push(`Request: ${config.customizationNote}`);
   }
 
   const customizedSummary =

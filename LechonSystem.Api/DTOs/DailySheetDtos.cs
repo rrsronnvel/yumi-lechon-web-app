@@ -49,6 +49,7 @@ public class DailySheetItemDto
     public string DownpaymentMethod { get; set; } = "None";
     public decimal GrandTotal { get; set; }
     public decimal TotalToCollect { get; set; }
+    public bool IsTrustedCustomer { get; set; }
     public bool IsOwnerConfirmed { get; set; }
     public DateTime? OwnerConfirmedAt { get; set; }
     public string? OwnerConfirmedBy { get; set; }
@@ -57,4 +58,5 @@ public class DailySheetItemDto
     public string RiderName { get; set; } = "Unassigned";
     public string Status { get; set; } = string.Empty;
     public bool IsManualOverride { get; set; }
+    public bool IsTimeTbd { get; set; } = false;
 }

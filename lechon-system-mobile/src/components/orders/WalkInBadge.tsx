@@ -1,12 +1,16 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, StyleProp, ViewStyle } from 'react-native';
 import { isWalkInOrder, WalkInOrderLike } from '../../utils/walkIn';
 
-export default function WalkInBadge(order: WalkInOrderLike) {
-  if (!isWalkInOrder(order)) return null;
+interface WalkInBadgeProps extends WalkInOrderLike {
+  style?: StyleProp<ViewStyle>;
+}
+
+export default function WalkInBadge({ source, customerName, facebookName, style }: WalkInBadgeProps) {
+  if (!isWalkInOrder({ source, customerName, facebookName })) return null;
 
   return (
-    <View style={styles.badge}>
+    <View style={[styles.badge, style]}>
       <Text style={styles.text}>🚶 WALK-IN (WI)</Text>
     </View>
   );

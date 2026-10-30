@@ -25,7 +25,7 @@ import {
   RIDER_DEPARTURE_NUDGE_PILLS,
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
-import { parseMessengerTextToDraft } from "@/utils/messengerTextParser";
+import { parseChatText } from "@/utils/chatParser";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/context/AuthContext";
@@ -39,7 +39,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import OrderScreenshotUploader from "./OrderScreenshotUploader";
 import FreebiesSelector from "./FreebiesSelector";
 import PaymentChannelPills, {
   PaymentChannel,
@@ -112,6 +111,8 @@ export default function OrderForm({
   const pendingParsedFreebies = useRef<{
     optOut: boolean;
     rawInnards: boolean;
+    overrides: Record<string, number>;
+    customizationNote: string;
   } | null>(null);
 
   // 1. Fetch live inventory categories & CMS delivery pricing
@@ -350,6 +351,8 @@ export default function OrderForm({
           defaults.rawInnards = true;
           defaults.counts.Dinuguan = 0;
         }
+        defaults.counts = { ...defaults.counts, ...pending.overrides };
+        defaults.customizationNote = pending.customizationNote;
         return defaults;
       }
 
@@ -688,7 +691,9 @@ export default function OrderForm({
       .filter(Boolean);
     const primaryPhone = draftPhones[0] || "";
     const secondaryPhone =
-      draft.contactNumber2?.trim() || draftPhones.slice(1).join(",").trim();
+      draft.secondaryContactNumber?.trim() ||
+      draft.contactNumber2?.trim() ||
+      draftPhones.slice(1).join(",").trim();
     if (primaryPhone) {
       form.setValue("customerPhone", primaryPhone, {
         shouldValidate: true,
@@ -721,6 +726,26 @@ export default function OrderForm({
           shouldDirty: true,
         });
       }
+    }
+
+    if (draft.isTimeTbd) {
+      form.setValue("isTimeTbd", true, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      form.setValue("isDraft", true, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      form.setValue("riderDepartureTime", "", {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    } else if (draft.isTimeTbd === false) {
+      form.setValue("isTimeTbd", false, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
     }
 
     const fulfillmentVal =
@@ -808,6 +833,8 @@ export default function OrderForm({
       const parsedFreebies = {
         optOut: draft.freebiesOptOut === true,
         rawInnards: draft.rawInnards === true,
+        overrides: draft.freebieOverrides || {},
+        customizationNote: draft.freebiesCustomizationNote || "",
       };
       const parsedConfig = createDefaultFreebiesConfig(parsedWholePigCount);
       if (parsedFreebies.optOut) {
@@ -820,11 +847,20 @@ export default function OrderForm({
         parsedConfig.rawInnards = true;
         parsedConfig.counts.Dinuguan = 0;
       }
+      parsedConfig.counts = {
+        ...parsedConfig.counts,
+        ...parsedFreebies.overrides,
+      };
+      parsedConfig.customizationNote = parsedFreebies.customizationNote;
       setFreebiesConfig(parsedConfig);
       pendingParsedFreebies.current =
         parsedWholePigCount !== wholePigCount ? parsedFreebies : null;
       replace(mappedItems);
-    } else if (draft.freebiesOptOut != null || draft.rawInnards != null) {
+    } else if (
+      draft.freebiesOptOut != null ||
+      draft.rawInnards != null ||
+      draft.freebiesMode === "custom"
+    ) {
       const nextConfig = createDefaultFreebiesConfig(wholePigCount);
       if (draft.freebiesOptOut === true) {
         nextConfig.optOut = true;
@@ -836,6 +872,11 @@ export default function OrderForm({
         nextConfig.rawInnards = true;
         nextConfig.counts.Dinuguan = 0;
       }
+      nextConfig.counts = {
+        ...nextConfig.counts,
+        ...(draft.freebieOverrides || {}),
+      };
+      nextConfig.customizationNote = draft.freebiesCustomizationNote || "";
       setFreebiesConfig(nextConfig);
     }
 
@@ -853,17 +894,6 @@ export default function OrderForm({
     });
   };
 
-  const handleScreenshotParsed = (draft: ParsedOrderDraftDto) => {
-    applyDraftToForm(draft, "Order screenshot");
-  };
-
-  const handleScreenshotError = (errorMsg: string) => {
-    toast.error("Screenshot Parsing Failed", {
-      description:
-        errorMsg || "Could not extract booking details from screenshot.",
-    });
-  };
-
   // Clipboard Chat Text Bridge
   const handlePasteChatText = async () => {
     try {
@@ -874,7 +904,7 @@ export default function OrderForm({
         });
         return;
       }
-      const draft = parseMessengerTextToDraft(clipText, categories, {
+      const draft = parseChatText(clipText, categories, {
         noFreebiesDiscountPerPig,
       });
       applyDraftToForm(draft, "Messenger chat text");
@@ -885,6 +915,38 @@ export default function OrderForm({
       });
     }
   };
+
+  // Global Ctrl+V / Paste Handler for instantaneous Messenger form parsing
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl?.tagName === "INPUT" ||
+        activeEl?.tagName === "TEXTAREA" ||
+        (activeEl as HTMLElement)?.isContentEditable;
+
+      const clipText = e.clipboardData?.getData("text/plain");
+      if (!clipText || !clipText.trim()) return;
+
+      const isMessengerFormat =
+        /\b(?:name|customer|order|size|delivery|pickup|contact|phone|cp\s*#|address|total|freebie|dp\b|special\s*request)/i.test(
+          clipText
+        ) && clipText.includes("\n");
+
+      if (!isInput || isMessengerFormat) {
+        e.preventDefault();
+        const draft = parseChatText(clipText, categories, {
+          noFreebiesDiscountPerPig,
+        });
+        applyDraftToForm(draft, "Clipboard paste (Ctrl+V)");
+      }
+    };
+
+    window.addEventListener("paste", handleGlobalPaste);
+    return () => {
+      window.removeEventListener("paste", handleGlobalPaste);
+    };
+  }, [categories, noFreebiesDiscountPerPig]);
 
   const handleTimeTbdChange = (checked: boolean) => {
     form.setValue("isTimeTbd", checked, { shouldValidate: true, shouldDirty: true });
@@ -1023,22 +1085,15 @@ export default function OrderForm({
             </button>
           </div>
 
-          {/* 1. Compact Screenshot Uploader + Paste Chat Text Bridge */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <div className="flex-1 min-w-0">
-              <OrderScreenshotUploader
-                onParsed={handleScreenshotParsed}
-                onError={handleScreenshotError}
-              />
-            </div>
+          {/* 1. Primary Intake: Instant Clipboard Text Parser */}
+          <div>
             <Button
               type="button"
-              variant="outline"
               onClick={handlePasteChatText}
-              className="h-auto py-2.5 px-3 border-amber-300 bg-amber-50/70 hover:bg-amber-100/80 text-amber-950 text-xs font-semibold shrink-0 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+              className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-xs cursor-pointer flex items-center justify-center gap-2 border border-amber-700/30 rounded-lg transition-colors"
             >
-              <ClipboardPaste className="w-4 h-4 text-[#C81E1E]" />
-              <span>📋 Paste Chat Text</span>
+              <ClipboardPaste className="w-5 h-5 text-white" />
+              <span>📋 Paste Messenger Form (Ctrl+V)</span>
             </Button>
           </div>
 

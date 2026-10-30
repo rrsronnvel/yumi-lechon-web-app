@@ -28,6 +28,7 @@ public class OrderDetailsDto
     public decimal Discount { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal BalanceDue { get; set; }
+    public decimal RiderFeeSettledAtDoor { get; set; }
 
     public bool IsTrustedCustomer { get; set; }
     public DateTime? TargetDeliveryTime { get; set; }

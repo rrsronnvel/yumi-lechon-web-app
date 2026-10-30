@@ -471,7 +471,13 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-semibold text-stone-900">
                       Order #{task.orderReference || task.orderId} - {task.customerName}
-                      <span className="ml-1.5 inline-flex align-middle"><WalkInBadge {...task} /></span>
+                      <span className="ml-1.5 inline-flex align-middle">
+                        <WalkInBadge
+                          source={task.source}
+                          customerName={task.customerName}
+                          facebookName={task.facebookName}
+                        />
+                      </span>
                     </p>
                     <p className="text-xs text-stone-500">
                       Delivery: {new Date(task.targetDeliveryTime).toLocaleDateString()}
@@ -623,7 +629,13 @@ export default function DashboardPage() {
                     <div>
                       <div className="font-bold text-stone-900">
                         #{item.orderReference} • {item.customerName}
-                        <span className="ml-1.5 inline-flex align-middle"><WalkInBadge {...item} /></span>
+                        <span className="ml-1.5 inline-flex align-middle">
+                          <WalkInBadge
+                            source={item.source}
+                            customerName={item.customerName}
+                            facebookName={item.facebookName}
+                          />
+                        </span>
                       </div>
                       <div className="text-[11px] text-stone-500">
                         Encoded by {item.createdBy}
@@ -730,7 +742,13 @@ export default function DashboardPage() {
                           </TableCell>
                           <TableCell className="font-semibold text-stone-900">
                             {item.customerName}
-                            <span className="ml-1.5 inline-flex align-middle"><WalkInBadge {...item} /></span>
+                            <span className="ml-1.5 inline-flex align-middle">
+                              <WalkInBadge
+                                source={item.source}
+                                customerName={item.customerName}
+                                facebookName={item.facebookName}
+                              />
+                            </span>
                           </TableCell>
                           <TableCell className="font-mono text-xs text-stone-700">
                             {new Date(item.targetDeliveryTime).toLocaleString()}
@@ -855,7 +873,11 @@ export default function DashboardPage() {
                           <TableCell>
                             <div className="font-semibold text-stone-900 flex items-center gap-2">
                               {item.customerName}
-                              <WalkInBadge {...item} />
+                              <WalkInBadge
+                                source={item.source}
+                                customerName={item.customerName}
+                                facebookName={item.facebookName}
+                              />
                               {item.isTrustedCustomer && (
                                 <Badge
                                   variant="outline"

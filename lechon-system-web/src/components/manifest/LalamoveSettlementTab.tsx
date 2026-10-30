@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   usePendingLalamoveQuery,
@@ -25,6 +26,7 @@ import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
 
 export function LalamoveSettlementTab() {
+  const navigate = useNavigate();
   const { data: lalamoveOrders = [], isLoading } = usePendingLalamoveQuery();
   const [selectedOrderForPayment, setSelectedOrderForPayment] =
     useState<PendingLalamoveSettlement | null>(null);
@@ -203,6 +205,14 @@ export function LalamoveSettlementTab() {
 
                       {/* Action Button */}
                       <td className="px-3 py-2.5 text-center whitespace-nowrap text-xs">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mb-1.5 w-full border-stone-300 text-stone-800 hover:bg-stone-100 text-[11px] font-semibold cursor-pointer"
+                          onClick={() => navigate(`/orders?openOrderId=${order.orderId}`)}
+                        >
+                          👁️ View / Cancel Order
+                        </Button>
                         {isCleared ? (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

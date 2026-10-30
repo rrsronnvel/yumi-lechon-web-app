@@ -87,6 +87,7 @@ export interface OrderDetailsDto {
   discount: number;
   grandTotal: number;
   balanceDue: number;
+  riderFeeSettledAtDoor?: number;
   isTrustedCustomer: boolean;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;

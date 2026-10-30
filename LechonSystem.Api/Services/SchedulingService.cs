@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.DTOs;
@@ -12,11 +13,15 @@ namespace LechonSystem.Api.Services
     public class SchedulingService : ISchedulingService
     {
         private readonly LechonDbContext _context;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public SchedulingService(LechonDbContext context)
+        public SchedulingService(LechonDbContext context, IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
+            _httpContextAccessor = httpContextAccessor;
         }
+
+        private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
 
         public async Task<OrderItemSchedule> CalculateScheduleAsync(
             int orderItemId,
@@ -80,7 +85,6 @@ namespace LechonSystem.Api.Services
                          && s.OrderItem.ItemCategory != null
                          && s.OrderItem.ItemCategory.MinimumWeightKg > 0
                          && s.OrderItem.Order != null
-                         && s.OrderItem.Order.IsOwnerConfirmed
                          && !s.OrderItem.Order.IsDraft
                          && !s.OrderItem.Order.IsTimeTbd
                          && !s.OrderItem.Order.IsCancelled
@@ -127,6 +131,7 @@ namespace LechonSystem.Api.Services
                     downpayment = s.OrderItem.Order.Downpayment,
                     downpaymentMethod = s.OrderItem.Order.DownpaymentMethod,
                     grandTotal = s.OrderItem.Order.GrandTotal,
+                    isTrustedCustomer = s.OrderItem.Order.IsTrustedCustomer,
                     isOwnerConfirmed = s.OrderItem.Order.IsOwnerConfirmed,
                     ownerConfirmedAt = s.OrderItem.Order.OwnerConfirmedAt,
                     ownerConfirmedBy = s.OrderItem.Order.OwnerConfirmedBy,
@@ -191,6 +196,7 @@ namespace LechonSystem.Api.Services
                     TotalToCollect = Math.Max(
                         0,
                         Math.Max(0, s.price - s.discount) + s.addOnsTotal + s.deliveryFee - s.downpayment),
+                    IsTrustedCustomer = s.isTrustedCustomer,
                     IsOwnerConfirmed = s.isOwnerConfirmed,
                     OwnerConfirmedAt = s.ownerConfirmedAt,
                     OwnerConfirmedBy = s.ownerConfirmedBy,
@@ -198,7 +204,8 @@ namespace LechonSystem.Api.Services
                     Quantity = s.quantity,
                     RiderName = s.riderName,
                     Status = s.status,
-                    IsManualOverride = s.isManualOverride
+                    IsManualOverride = s.isManualOverride,
+                    IsTimeTbd = false
                 };
             }).ToList();
 
@@ -211,7 +218,6 @@ namespace LechonSystem.Api.Services
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
                          && !o.IsTimeTbd
-                         && o.IsOwnerConfirmed
                          && o.TargetDeliveryTime.HasValue
                          && o.TargetDeliveryTime.Value.Date == targetDate
                          && !o.OrderItems.Any(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg > 0))
@@ -268,6 +274,7 @@ namespace LechonSystem.Api.Services
                         DownpaymentMethod = order.DownpaymentMethod,
                         GrandTotal = order.GrandTotal,
                         TotalToCollect = totalToCollect,
+                        IsTrustedCustomer = order.IsTrustedCustomer,
                         IsOwnerConfirmed = order.IsOwnerConfirmed,
                         OwnerConfirmedAt = order.OwnerConfirmedAt,
                         OwnerConfirmedBy = order.OwnerConfirmedBy,
@@ -275,7 +282,8 @@ namespace LechonSystem.Api.Services
                         Quantity = 1,
                         RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
                         Status = "Confirmed",
-                        IsManualOverride = false
+                        IsManualOverride = false,
+                        IsTimeTbd = false
                     });
                 }
                 else
@@ -322,6 +330,7 @@ namespace LechonSystem.Api.Services
                             DownpaymentMethod = order.DownpaymentMethod,
                             GrandTotal = order.GrandTotal,
                             TotalToCollect = totalToCollect,
+                            IsTrustedCustomer = order.IsTrustedCustomer,
                             IsOwnerConfirmed = order.IsOwnerConfirmed,
                             OwnerConfirmedAt = order.OwnerConfirmedAt,
                             OwnerConfirmedBy = order.OwnerConfirmedBy,
@@ -329,7 +338,151 @@ namespace LechonSystem.Api.Services
                             Quantity = item.Quantity,
                             RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
                             Status = "Confirmed",
-                            IsManualOverride = false
+                            IsManualOverride = false,
+                            IsTimeTbd = false
+                        });
+                    }
+                }
+            }
+
+            // Include Time-TBD orders scheduled on targetDate
+            var timeTbdOrders = await _context.Orders
+                .AsNoTracking()
+                .Include(o => o.DeliveryTrip)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .Where(o => !o.IsDraft
+                         && !o.IsCancelled
+                         && o.IsTimeTbd
+                         && o.TargetDeliveryTime.HasValue
+                         && o.TargetDeliveryTime.Value.Date == targetDate)
+                .ToListAsync();
+
+            foreach (var order in timeTbdOrders)
+            {
+                var roastItemsList = order.OrderItems
+                    .Where(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg > 0)
+                    .ToList();
+
+                var addOnsTotal = order.OrderItems
+                    .Where(item => item.ItemCategory != null && item.ItemCategory.MinimumWeightKg <= 0)
+                    .Sum(item => item.TotalPrice);
+
+                var lechonPrice = Math.Max(0, order.Price - order.Discount);
+                var totalToCollect = Math.Max(0, lechonPrice + addOnsTotal + order.DeliveryFee - order.Downpayment);
+
+                if (roastItemsList.Count == 0)
+                {
+                    result.Add(new DailySheetItemDto
+                    {
+                        Id = order.Id,
+                        OrderItemId = order.Id,
+                        OrderId = order.Id,
+                        OrderReference = order.OrderReference,
+                        CustomerName = order.CustomerName,
+                        FacebookName = order.FacebookName,
+                        ContactNumber = order.ContactNumber,
+                        Source = order.Source,
+                        EventType = order.EventType,
+                        Landmark = order.Landmark,
+                        Size = "Order TBD",
+                        CategoryName = "Order TBD",
+                        Weight = "-",
+                        WeightRange = "-",
+                        MinWeight = 0,
+                        MaxWeight = 0,
+                        MinimumWeightKg = 0,
+                        MaximumWeightKg = 0,
+                        TargetDeliveryTime = order.TargetDeliveryTime,
+                        RiderDepartureTime = null,
+                        TahiStartTime = null,
+                        SalangStartTime = null,
+                        PackagingStartTime = null,
+                        Priority = null,
+                        Location = order.DeliveryAddress ?? string.Empty,
+                        Remarks = order.Remarks ?? string.Empty,
+                        FreebiesSummary = order.FreebiesSummary,
+                        FreebiesConfigJson = order.FreebiesConfigJson,
+                        AddOns = order.AddOns ?? "-",
+                        Price = order.Price,
+                        LechonPrice = lechonPrice,
+                        AddOnsTotal = addOnsTotal,
+                        DeliveryFee = order.DeliveryFee,
+                        Downpayment = order.Downpayment,
+                        DownpaymentMethod = order.DownpaymentMethod,
+                        GrandTotal = order.GrandTotal,
+                        TotalToCollect = totalToCollect,
+                        IsTrustedCustomer = order.IsTrustedCustomer,
+                        IsOwnerConfirmed = order.IsOwnerConfirmed,
+                        OwnerConfirmedAt = order.OwnerConfirmedAt,
+                        OwnerConfirmedBy = order.OwnerConfirmedBy,
+                        Fulfillment = (int)order.Fulfillment,
+                        Quantity = 1,
+                        RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                        Status = "Time TBD",
+                        IsManualOverride = false,
+                        IsTimeTbd = true
+                    });
+                }
+                else
+                {
+                    foreach (var item in roastItemsList)
+                    {
+                        var minW = item.ItemCategory?.MinimumWeightKg ?? 0m;
+                        var maxW = item.ItemCategory?.MaximumWeightKg ?? 0m;
+                        var formattedWeight = (minW > 0 || maxW > 0)
+                            ? (minW == maxW ? minW.ToString("0.##") : $"{minW:0.##}-{maxW:0.##}")
+                            : "-";
+
+                        result.Add(new DailySheetItemDto
+                        {
+                            Id = item.Id,
+                            OrderItemId = item.Id,
+                            OrderId = order.Id,
+                            OrderReference = order.OrderReference,
+                            CustomerName = order.CustomerName,
+                            FacebookName = order.FacebookName,
+                            ContactNumber = order.ContactNumber,
+                            Source = order.Source,
+                            EventType = order.EventType,
+                            Landmark = order.Landmark,
+                            Size = item.ItemCategory?.Name ?? "Lechon",
+                            CategoryName = item.ItemCategory?.Name ?? "Lechon",
+                            Weight = formattedWeight,
+                            WeightRange = formattedWeight,
+                            MinWeight = minW,
+                            MaxWeight = maxW,
+                            MinimumWeightKg = minW,
+                            MaximumWeightKg = maxW,
+                            TargetDeliveryTime = order.TargetDeliveryTime,
+                            RiderDepartureTime = null,
+                            TahiStartTime = null,
+                            SalangStartTime = null,
+                            PackagingStartTime = null,
+                            Priority = null,
+                            Location = order.DeliveryAddress ?? string.Empty,
+                            Remarks = order.Remarks ?? string.Empty,
+                            FreebiesSummary = order.FreebiesSummary,
+                            FreebiesConfigJson = order.FreebiesConfigJson,
+                            AddOns = order.AddOns ?? "-",
+                            Price = order.Price,
+                            LechonPrice = lechonPrice,
+                            AddOnsTotal = addOnsTotal,
+                            DeliveryFee = order.DeliveryFee,
+                            Downpayment = order.Downpayment,
+                            DownpaymentMethod = order.DownpaymentMethod,
+                            GrandTotal = order.GrandTotal,
+                            TotalToCollect = totalToCollect,
+                            IsTrustedCustomer = order.IsTrustedCustomer,
+                            IsOwnerConfirmed = order.IsOwnerConfirmed,
+                            OwnerConfirmedAt = order.OwnerConfirmedAt,
+                            OwnerConfirmedBy = order.OwnerConfirmedBy,
+                            Fulfillment = (int)order.Fulfillment,
+                            Quantity = item.Quantity,
+                            RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                            Status = "Time TBD",
+                            IsManualOverride = false,
+                            IsTimeTbd = true
                         });
                     }
                 }
@@ -412,7 +565,15 @@ namespace LechonSystem.Api.Services
 
             var effectiveDeparture = request.DepartureTime ?? request.RiderDepartureTime;
             if (effectiveDeparture.HasValue && schedule.OrderItem?.Order != null)
-                schedule.OrderItem.Order.RiderDepartureTime = NormalizeToLocalStoreTime(effectiveDeparture.Value);
+            {
+                var normalizedDeparture = NormalizeToLocalStoreTime(effectiveDeparture.Value);
+                schedule.OrderItem.Order.RiderDepartureTime = normalizedDeparture;
+                if (schedule.OrderItem.Order.Fulfillment == FulfillmentType.Pickup || schedule.OrderItem.Order.Fulfillment == FulfillmentType.Lalamove)
+                {
+                    schedule.OrderItem.Order.TargetDeliveryTime = normalizedDeparture;
+                    schedule.TargetDeliveryTime = normalizedDeparture;
+                }
+            }
 
             schedule.IsManualOverride = true;
 
@@ -422,6 +583,8 @@ namespace LechonSystem.Api.Services
             if (request.RiderName != null && schedule.OrderItem?.Order != null)
             {
                 var cleanRider = request.RiderName.Trim();
+                var oldRider = schedule.OrderItem.Order.DeliveryTrip?.RiderName?.Trim() ?? "";
+
                 if (string.IsNullOrWhiteSpace(cleanRider) || cleanRider.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
                 {
                     // Detach / Unassign rider
@@ -440,6 +603,18 @@ namespace LechonSystem.Api.Services
                                 _context.DeliveryTrips.Remove(trip);
                             }
                         }
+                    }
+
+                    if (!string.IsNullOrEmpty(oldRider))
+                    {
+                        _context.OrderAuditLogs.Add(new OrderAuditLog
+                        {
+                            OrderId = schedule.OrderItem.OrderId,
+                            ActionType = "Rider Updated",
+                            Changes = $"Rider unassigned (previously '{oldRider}')",
+                            ChangedBy = CurrentUser,
+                            Timestamp = DateTime.UtcNow
+                        });
                     }
                 }
                 else
@@ -470,6 +645,22 @@ namespace LechonSystem.Api.Services
                         trip.Orders.Add(schedule.OrderItem.Order);
                         schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Assigned;
                         _context.DeliveryTrips.Add(trip);
+                    }
+
+                    if (!string.Equals(oldRider, cleanRider, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string auditMsg = string.IsNullOrEmpty(oldRider)
+                            ? $"Rider assigned: '{cleanRider}'"
+                            : $"Rider changed from '{oldRider}' to '{cleanRider}'";
+
+                        _context.OrderAuditLogs.Add(new OrderAuditLog
+                        {
+                            OrderId = schedule.OrderItem.OrderId,
+                            ActionType = "Rider Updated",
+                            Changes = auditMsg,
+                            ChangedBy = CurrentUser,
+                            Timestamp = DateTime.UtcNow
+                        });
                     }
                 }
             }

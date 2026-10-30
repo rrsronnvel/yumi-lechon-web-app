@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
@@ -29,8 +29,6 @@ export default function FreebiesSelector({
     [config, wholePigCount],
   );
 
-  if (wholePigCount <= 0) return null;
-
   const allowedQuota = getFreebiesAllowedQuota(normalized, wholePigCount);
   const currentSum = FREEBIE_ITEMS.reduce(
     (sum, item) => sum + (normalized.counts[item] ?? 0),
@@ -42,6 +40,15 @@ export default function FreebiesSelector({
     wholePigCount,
     noFreebiesDiscountPerPig,
   );
+  const isCustomized = Boolean(normalized.customizationNote) || FREEBIE_ITEMS.some(
+    (item) => normalized.counts[item] !== (normalized.rawInnards && item === "Dinuguan" ? 0 : pigsWithFreebies),
+  );
+
+  useEffect(() => {
+    if (isCustomized) setIsExpanded(true);
+  }, [isCustomized]);
+
+  if (wholePigCount <= 0) return null;
 
   const selectStandard = () => {
     onChange(createDefaultFreebiesConfig(wholePigCount));
@@ -53,6 +60,7 @@ export default function FreebiesSelector({
       pigsWithFreebies: 0,
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
+      customizationNote: "",
     });
     setIsExpanded(false);
   };

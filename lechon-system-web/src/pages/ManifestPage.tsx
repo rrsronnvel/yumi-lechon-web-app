@@ -370,7 +370,11 @@ export default function ManifestPage() {
                                 >
                                   {drop.customerName}
                                 </span>
-                                <WalkInBadge {...drop} />
+                                <WalkInBadge
+                                  source={drop.source}
+                                  customerName={drop.customerName}
+                                  facebookName={drop.facebookName}
+                                />
                               </div>
                             </td>
                             <td className="px-3 py-2.5 whitespace-nowrap text-xs text-stone-700">

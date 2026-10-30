@@ -25,6 +25,7 @@ export function useEditOrder() {
       await queryClient.invalidateQueries({ queryKey: ["roster"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await queryClient.invalidateQueries({ queryKey: ["daily-sheets"] });
     },
     onError: (error: any) => {
       // 1. Set a generic fallback

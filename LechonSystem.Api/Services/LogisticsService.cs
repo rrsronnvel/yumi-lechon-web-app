@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
@@ -15,12 +16,19 @@ namespace LechonSystem.Api.Services
     {
         private readonly LechonDbContext _context;
         private readonly INotificationSender _notificationSender;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public LogisticsService(LechonDbContext context, INotificationSender notificationSender)
+        public LogisticsService(
+            LechonDbContext context,
+            INotificationSender notificationSender,
+            IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _notificationSender = notificationSender;
+            _httpContextAccessor = httpContextAccessor;
         }
+
+        private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
 
         // 1. Fetching unassigned orders (Returns all tomorrow orders so UI can flag non-delivery with badges)
         public async Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync()
@@ -30,7 +38,7 @@ namespace LechonSystem.Api.Services
                     .ThenInclude(i => i.OrderItemSchedule)
                 .Where(o => !o.IsDraft && o.RoutingStatus == DeliveryStatus.Unassigned
                          && !o.IsDraft && !o.IsCancelled
-                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value.Date == DateTime.Today.AddDays(1).Date)
+                         && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value.Date == PhilippineTime.Tomorrow)
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ToListAsync();
         }
@@ -46,6 +54,7 @@ namespace LechonSystem.Api.Services
             var ordersToAssign = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.OrderItemSchedule)
+                .Include(o => o.DeliveryTrip)
                 .Where(o => orderIds.Contains(o.Id))
                 .ToListAsync();
 
@@ -62,9 +71,11 @@ namespace LechonSystem.Api.Services
                 }
             }
 
+            var cleanRiderName = string.IsNullOrWhiteSpace(riderName) ? "" : riderName.Trim();
+
             var newTrip = new DeliveryTrip
             {
-                RiderName = riderName,
+                RiderName = cleanRiderName,
                 VehicleType = vehicleType,
                 Status = DeliveryStatus.Assigned,
                 DispatchTime = DateTime.UtcNow
@@ -72,10 +83,11 @@ namespace LechonSystem.Api.Services
 
             foreach (var order in ordersToAssign)
             {
+                var oldRider = order.DeliveryTrip?.RiderName?.Trim() ?? "";
                 order.RoutingStatus = DeliveryStatus.Assigned;
                 newTrip.Orders.Add(order);
 
-                string message = $"Internal Log: Rider {riderName} assigned for tomorrow's delivery route.";
+                string message = $"Internal Log: Rider {cleanRiderName} assigned for tomorrow's delivery route.";
                 bool dispatchSuccess = true;
 
                 var log = new NotificationLog
@@ -88,6 +100,25 @@ namespace LechonSystem.Api.Services
                 };
 
                 _context.NotificationLogs.Add(log);
+
+                // Rider Assignment Audit Log
+                if (!string.Equals(oldRider, cleanRiderName, StringComparison.OrdinalIgnoreCase))
+                {
+                    string auditMsg = string.IsNullOrEmpty(oldRider)
+                        ? $"Rider assigned: '{cleanRiderName}'"
+                        : (string.IsNullOrEmpty(cleanRiderName)
+                            ? $"Rider unassigned (previously '{oldRider}')"
+                            : $"Rider changed from '{oldRider}' to '{cleanRiderName}'");
+
+                    _context.OrderAuditLogs.Add(new OrderAuditLog
+                    {
+                        OrderId = order.Id,
+                        ActionType = "Rider Updated",
+                        Changes = auditMsg,
+                        ChangedBy = CurrentUser,
+                        Timestamp = DateTime.UtcNow
+                    });
+                }
             }
 
             _context.DeliveryTrips.Add(newTrip);
@@ -110,6 +141,7 @@ namespace LechonSystem.Api.Services
                 throw new ArgumentException($"Order #{orderId} not found.");
             }
 
+            var oldRider = order.DeliveryTrip?.RiderName?.Trim() ?? "";
             var oldTripId = order.DeliveryTripId;
             order.DeliveryTripId = null;
             order.RoutingStatus = DeliveryStatus.Unassigned;
@@ -125,6 +157,18 @@ namespace LechonSystem.Api.Services
                         _context.DeliveryTrips.Remove(trip);
                     }
                 }
+            }
+
+            if (!string.IsNullOrEmpty(oldRider))
+            {
+                _context.OrderAuditLogs.Add(new OrderAuditLog
+                {
+                    OrderId = order.Id,
+                    ActionType = "Rider Updated",
+                    Changes = $"Rider unassigned (previously '{oldRider}')",
+                    ChangedBy = CurrentUser,
+                    Timestamp = DateTime.UtcNow
+                });
             }
 
             await _context.SaveChangesAsync();
@@ -821,6 +865,17 @@ namespace LechonSystem.Api.Services
                 });
             }
 
+            var storeNetTotal = Math.Max(0, order.GrandTotal - order.DeliveryFee);
+            if (order.Fulfillment == FulfillmentType.Delivery && order.Downpayment >= storeNetTotal)
+            {
+                order.RoutingStatus = DeliveryStatus.Delivered;
+                if (order.DeliveryTrip != null)
+                {
+                    order.DeliveryTrip.Status = DeliveryStatus.Delivered;
+                    order.DeliveryTrip.ActualReturnTime = DateTime.UtcNow;
+                }
+            }
+
             await _context.SaveChangesAsync();
             return MapToStatusDto(session, order);
         }
@@ -828,7 +883,9 @@ namespace LechonSystem.Api.Services
         // 7. Direct Store GCash Bypass Settlement
         public async Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername)
         {
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            var order = await _context.Orders
+                .Include(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
             if (order == null)
             {
                 throw new ArgumentException($"Order #{orderId} not found.");
@@ -841,6 +898,17 @@ namespace LechonSystem.Api.Services
             order.OwnerApprovedBy = staffUsername;
             order.OwnerApprovedAt = DateTime.UtcNow;
             order.Downpayment += amount;
+
+            var storeNetTotal = Math.Max(0, order.GrandTotal - order.DeliveryFee);
+            if (order.Fulfillment == FulfillmentType.Delivery && order.Downpayment >= storeNetTotal)
+            {
+                order.RoutingStatus = DeliveryStatus.Delivered;
+                if (order.DeliveryTrip != null)
+                {
+                    order.DeliveryTrip.Status = DeliveryStatus.Delivered;
+                    order.DeliveryTrip.ActualReturnTime = DateTime.UtcNow;
+                }
+            }
 
             var refId = !string.IsNullOrWhiteSpace(referenceNumber)
                 ? referenceNumber

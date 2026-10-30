@@ -193,6 +193,10 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
               const downpayment = Number(item.downpayment) || 0;
               const amountToCollect = Number(item.totalToCollect) || 0;
               const isWalkIn = isWalkInOrder(item);
+              const needsDpConfirmation =
+                downpayment === 0 &&
+                !item.isTrustedCustomer &&
+                amountToCollect > 0;
 
               const editableCellClass = isEdit
                 ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
@@ -201,7 +205,7 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
               return (
                 <tr
                   key={item.id}
-                  className={`${isWalkIn && isEdit ? "bg-indigo-50/40" : "even:bg-slate-50 odd:bg-white"} text-slate-900 hover:bg-amber-50/40`}
+                  className={`${needsDpConfirmation ? "bg-amber-50 border-l-4 border-l-amber-500" : isWalkIn && isEdit ? "bg-indigo-50/40" : "even:bg-slate-50 odd:bg-white"} text-slate-900 hover:bg-amber-50/40`}
                 >
                   {/* 1. No. */}
                   <td className="px-2 py-2 text-center text-slate-800 border-r border-slate-300 text-xs min-w-[120px] whitespace-nowrap font-mono font-bold">
@@ -233,6 +237,11 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
                         facebookName={item.facebookName}
                         clean={isCleanView}
                       />
+                      {needsDpConfirmation && (
+                        <span className="rounded border border-amber-500 bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-950">
+                          [⚠️ NO DP - CONFIRM FIRST]
+                        </span>
+                      )}
                     </div>
                     {item.facebookName &&
                       item.facebookName.toLocaleLowerCase() !== item.customerName?.toLocaleLowerCase() && (

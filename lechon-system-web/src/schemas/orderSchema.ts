@@ -137,8 +137,10 @@ export interface ParsedOrderDraftDto {
   customerName: string;
   contactNumber: string;
   contactNumber2?: string | null;
+  secondaryContactNumber?: string | null;
   facebookName?: string | null;
   targetDeliveryTime?: string | null;
+  isTimeTbd?: boolean | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   deliveryAddress?: string | null;
   landmark?: string | null;
@@ -151,5 +153,8 @@ export interface ParsedOrderDraftDto {
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
   freebiesOptOut?: boolean | null;
   rawInnards?: boolean | null;
+  freebiesMode?: "standard" | "custom" | "optOut" | null;
+  freebieOverrides?: Record<string, number> | null;
+  freebiesCustomizationNote?: string | null;
   items: ParsedOrderItemDto[];
 }

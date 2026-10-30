@@ -58,6 +58,35 @@ const isSameLocalDay = (dateA: Date, dateB: Date): boolean => {
   );
 };
 
+const formatPhilippineDateKey = (value: Date | string): string => {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
+
+const philippineDateFromNow = (days = 0): string =>
+  formatPhilippineDateKey(new Date(Date.now() + days * 86_400_000));
+
+const getDaysUntilDelivery = (targetDeliveryTime?: string | Date | null): number => {
+  if (!targetDeliveryTime) return 999;
+  const targetKey = formatPhilippineDateKey(targetDeliveryTime);
+  const todayKey = philippineDateFromNow(0);
+  const targetDate = new Date(`${targetKey}T00:00:00Z`).getTime();
+  const todayDate = new Date(`${todayKey}T00:00:00Z`).getTime();
+  return Math.round((targetDate - todayDate) / 86_400_000);
+};
+
 const formatLocalDate = (date: Date): string => {
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -86,7 +115,7 @@ export default function OrdersScreen({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activePill, setActivePill] = useState<SmartPillKey>('upcoming');
   const [selectedDate, setSelectedDate] = useState('');
-  const [balanceSubFilter, setBalanceSubFilter] = useState<'all' | 'rider' | 'drawer' | 'future'>('all');
+  const [balanceSubFilter, setBalanceSubFilter] = useState<'due-today' | 'drawer' | 'future' | 'all'>('due-today');
   const [selectedOrder, setSelectedOrder] = useState<OrderDirectoryDto | null>(null);
 
   const { data: defrostRoster } = useDefrostRosterQuery();
@@ -109,7 +138,7 @@ export default function OrdersScreen({
   // Reset balanceSubFilter when activePill is not balance-due
   useEffect(() => {
     if (activePill !== 'balance-due') {
-      setBalanceSubFilter('all');
+      setBalanceSubFilter('due-today');
     }
   }, [activePill]);
 
@@ -131,90 +160,84 @@ export default function OrdersScreen({
 
   // Dynamic custody counts for balance-due sub-pills
   const custodyCounts = useMemo(() => {
-    if (!rawOrders) return { all: 0, rider: 0, drawer: 0, future: 0 };
+    if (!rawOrders) return { all: 0, dueToday: 0, drawer: 0, future: 0 };
     const unpaid = rawOrders.filter(
       (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
     );
-    const todayMidnight = new Date().setHours(0, 0, 0, 0);
-
-    let rider = 0;
+    const todayDatePh = philippineDateFromNow();
+    let dueToday = 0;
     let drawer = 0;
     let future = 0;
 
     unpaid.forEach((o) => {
       const isDrawer =
         o.settlementCustodyStatus === 'InStaffDrawer' && !o.isRemittedToOwner;
-      const isRider =
-        Number(o.fulfillment) === 1 &&
-        (o.routingStatus === 'Assigned' || o.routingStatus === 'OutForDelivery') &&
-        o.settlementCustodyStatus !== 'InStaffDrawer' &&
-        !o.isRemittedToOwner;
-      const targetMidnight = o.targetDeliveryTime
-        ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
-        : 0;
-      const isFuture =
-        targetMidnight > todayMidnight &&
-        (o.settlementCustodyStatus === 'Uncollected' || !o.settlementCustodyStatus);
+      if (isDrawer) {
+        drawer++;
+        return;
+      }
 
-      if (isDrawer) drawer++;
-      if (isRider) rider++;
-      if (isFuture) future++;
+      const orderDatePh = o.targetDeliveryTime
+        ? formatPhilippineDateKey(o.targetDeliveryTime)
+        : '';
+
+      if (!orderDatePh || orderDatePh <= todayDatePh) {
+        dueToday++;
+      } else {
+        future++;
+      }
     });
 
-    return { all: unpaid.length, rider, drawer, future };
+    return { all: unpaid.length, dueToday, drawer, future };
   }, [rawOrders]);
 
   // Apply client-side Today Only / Tomorrow and Balance Due Sub-filtering
   const filteredOrders = useMemo(() => {
     if (!rawOrders) return [];
     if (activePill === 'today') {
-      const today = new Date();
+      const todayDatePh = philippineDateFromNow();
       return rawOrders.filter((order) => {
         if (!order.targetDeliveryTime) return false;
-        const target = new Date(order.targetDeliveryTime);
-        return !isNaN(target.getTime()) && isSameLocalDay(target, today);
+        return formatPhilippineDateKey(order.targetDeliveryTime) === todayDatePh;
       });
     }
     if (activePill === 'tomorrow') {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowDatePh = philippineDateFromNow(1);
       return rawOrders.filter((order) => {
         if (!order.targetDeliveryTime) return false;
-        const target = new Date(order.targetDeliveryTime);
-        return !isNaN(target.getTime()) && isSameLocalDay(target, tomorrow);
+        return formatPhilippineDateKey(order.targetDeliveryTime) === tomorrowDatePh;
       });
+    }
+    if (activePill === 'upcoming') {
+      const todayDatePh = philippineDateFromNow();
+      return rawOrders.filter(
+        (order) =>
+          !order.isCancelled &&
+          Boolean(order.targetDeliveryTime) &&
+          formatPhilippineDateKey(order.targetDeliveryTime!) >= todayDatePh
+      );
     }
     if (activePill === 'balance-due') {
       const unpaid = rawOrders.filter(
         (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
       );
+      const todayDatePh = philippineDateFromNow();
       if (balanceSubFilter === 'all') return unpaid;
 
-      const todayMidnight = new Date().setHours(0, 0, 0, 0);
-
       return unpaid.filter((o) => {
-        if (balanceSubFilter === 'rider') {
-          return (
-            Number(o.fulfillment) === 1 &&
-            (o.routingStatus === 'Assigned' || o.routingStatus === 'OutForDelivery') &&
-            o.settlementCustodyStatus !== 'InStaffDrawer' &&
-            !o.isRemittedToOwner
-          );
-        }
+        const isDrawer =
+          o.settlementCustodyStatus === 'InStaffDrawer' && !o.isRemittedToOwner;
         if (balanceSubFilter === 'drawer') {
-          return (
-            o.settlementCustodyStatus === 'InStaffDrawer' && !o.isRemittedToOwner
-          );
+          return isDrawer;
+        }
+        const orderDatePh = o.targetDeliveryTime
+          ? formatPhilippineDateKey(o.targetDeliveryTime)
+          : '';
+        if (balanceSubFilter === 'due-today') {
+          return !isDrawer && (!orderDatePh || orderDatePh <= todayDatePh);
         }
         if (balanceSubFilter === 'future') {
-          const targetMidnight = o.targetDeliveryTime
-            ? new Date(o.targetDeliveryTime).setHours(0, 0, 0, 0)
-            : 0;
-          return (
-            targetMidnight > todayMidnight &&
-            (o.settlementCustodyStatus === 'Uncollected' ||
-              !o.settlementCustodyStatus)
-          );
+          return !isDrawer && orderDatePh > todayDatePh;
         }
         return true;
       });
@@ -356,6 +379,19 @@ export default function OrdersScreen({
     const isPaid = balanceDue <= 0;
     const isDraft = Boolean(item.isDraft);
     const isDatedDraft = isDraft && Boolean(item.targetDeliveryTime);
+    const isTimeAlert = Boolean(
+      item.isTimeTbd ||
+      !item.targetDeliveryTime ||
+      (Number(item.fulfillment) === 1 && !item.deliveryAddress?.trim())
+    );
+    const daysUntilDelivery = getDaysUntilDelivery(item.targetDeliveryTime);
+    const isNoDp =
+      Number(item.downpayment || 0) === 0 &&
+      !item.isTrustedCustomer &&
+      balanceDue > 0;
+    const isCriticalNoDp = isNoDp && daysUntilDelivery <= 2;
+    const isAdvanceNoDp = isNoDp && daysUntilDelivery > 2;
+
     const phones = (item.contactNumber || '')
       .split(',')
       .map((phone) => phone.trim())
@@ -365,7 +401,15 @@ export default function OrdersScreen({
       <Pressable
         style={({ pressed }) => [
           styles.orderCard,
-          isDatedDraft && styles.datedDraftCard,
+          isCriticalNoDp
+            ? styles.criticalNoDpCard
+            : isAdvanceNoDp
+            ? styles.advanceNoDpCard
+            : isTimeAlert
+            ? styles.timeTbdOrderCard
+            : isDatedDraft
+            ? styles.datedDraftCard
+            : null,
           pressed && styles.orderCardPressed,
         ]}
         onPress={() => {
@@ -408,6 +452,26 @@ export default function OrdersScreen({
               : `₱${Number(item.grandTotal || 0).toLocaleString()}`}
           </Text>
         </View>
+
+        {(isTimeAlert || isNoDp) && (
+          <View style={styles.alertBadgesRow}>
+            {isTimeAlert && (
+              <View style={styles.timeTbdBadge}>
+                <Text style={styles.timeTbdBadgeText}>⏳ TIME TBD</Text>
+              </View>
+            )}
+            {isAdvanceNoDp && (
+              <View style={styles.advanceNoDpBadge}>
+                <Text style={styles.advanceNoDpBadgeText}>⚠️ NO DP • PENDING DEPOSIT</Text>
+              </View>
+            )}
+            {isCriticalNoDp && (
+              <View style={styles.criticalNoDpBadge}>
+                <Text style={styles.criticalNoDpBadgeText}>🚨 URGENT: NO DP (CONFIRM OR CANCEL)</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {phones.length > 0 && (
           <View style={styles.contactNumbersStack}>
@@ -643,34 +707,17 @@ export default function OrdersScreen({
                 <Pressable
                   style={[
                     styles.subFilterPill,
-                    balanceSubFilter === 'all' && styles.subFilterPillActive,
+                    balanceSubFilter === 'due-today' && styles.subFilterPillActive,
                   ]}
-                  onPress={() => setBalanceSubFilter('all')}
+                  onPress={() => setBalanceSubFilter('due-today')}
                 >
                   <Text
                     style={[
                       styles.subFilterPillText,
-                      balanceSubFilter === 'all' && styles.subFilterPillTextActive,
+                      balanceSubFilter === 'due-today' && styles.subFilterPillTextActive,
                     ]}
                   >
-                    📋 All Unpaid ({custodyCounts.all})
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.subFilterPill,
-                    balanceSubFilter === 'rider' && styles.subFilterPillActive,
-                  ]}
-                  onPress={() => setBalanceSubFilter('rider')}
-                >
-                  <Text
-                    style={[
-                      styles.subFilterPillText,
-                      balanceSubFilter === 'rider' && styles.subFilterPillTextActive,
-                    ]}
-                  >
-                    🛵 Road Cash ({custodyCounts.rider})
+                    ⚡ Due Today / Overdue ({custodyCounts.dueToday})
                   </Text>
                 </Pressable>
 
@@ -687,7 +734,7 @@ export default function OrdersScreen({
                       balanceSubFilter === 'drawer' && styles.subFilterPillTextActive,
                     ]}
                   >
-                    🟡 In Drawer ({custodyCounts.drawer})
+                    🟡 In Staff Drawer ({custodyCounts.drawer})
                   </Text>
                 </Pressable>
 
@@ -704,7 +751,24 @@ export default function OrdersScreen({
                       balanceSubFilter === 'future' && styles.subFilterPillTextActive,
                     ]}
                   >
-                    📅 Advance ({custodyCounts.future})
+                    📅 Future Receivables ({custodyCounts.future})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.subFilterPill,
+                    balanceSubFilter === 'all' && styles.subFilterPillActive,
+                  ]}
+                  onPress={() => setBalanceSubFilter('all')}
+                >
+                  <Text
+                    style={[
+                      styles.subFilterPillText,
+                      balanceSubFilter === 'all' && styles.subFilterPillTextActive,
+                    ]}
+                  >
+                    📋 All Unpaid ({custodyCounts.all})
                   </Text>
                 </Pressable>
               </ScrollView>
@@ -1026,6 +1090,89 @@ const styles = StyleSheet.create({
   orderCardPressed: {
     backgroundColor: '#FFFBEB',
     borderColor: '#FCD34D',
+  },
+  criticalNoDpCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F43F5E',
+    backgroundColor: '#FFF1F2',
+  },
+  advanceNoDpCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#FB923C',
+    backgroundColor: '#FFF7ED',
+  },
+  noDpOrderCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F43F5E',
+    backgroundColor: '#FFF1F2',
+  },
+  timeTbdOrderCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+  },
+  alertBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  criticalNoDpBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#F43F5E',
+    backgroundColor: '#FFE4E6',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  criticalNoDpBadgeText: {
+    color: '#881337',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  advanceNoDpBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    backgroundColor: '#FFEDD5',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  advanceNoDpBadgeText: {
+    color: '#7C2D12',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  noDpBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#FDA4AF',
+    backgroundColor: '#FFE4E6',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  noDpBadgeText: {
+    color: '#881337',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  timeTbdBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timeTbdBadgeText: {
+    color: '#78350F',
+    fontSize: 10,
+    fontWeight: '700',
   },
   cardTopRow: {
     flexDirection: 'row',
