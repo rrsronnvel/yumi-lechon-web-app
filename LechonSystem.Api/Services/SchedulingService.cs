@@ -14,11 +14,13 @@ namespace LechonSystem.Api.Services
     {
         private readonly LechonDbContext _context;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IInventoryService _inventoryService;
 
-        public SchedulingService(LechonDbContext context, IHttpContextAccessor httpContextAccessor)
+        public SchedulingService(LechonDbContext context, IHttpContextAccessor httpContextAccessor, IInventoryService inventoryService)
         {
             _context = context;
             _httpContextAccessor = httpContextAccessor;
+            _inventoryService = inventoryService;
         }
 
         private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
@@ -29,6 +31,19 @@ namespace LechonSystem.Api.Services
             int itemCategoryId,
             DateTime? riderDepartureTime = null)
         {
+            if (orderItemId > 0)
+            {
+                var effectiveCategoryId = await _context.OrderItems
+                    .AsNoTracking()
+                    .Where(item => item.Id == orderItemId)
+                    .Select(item => item.FulfilledItemCategoryId ?? item.ItemCategoryId)
+                    .FirstOrDefaultAsync();
+                if (effectiveCategoryId > 0)
+                {
+                    itemCategoryId = effectiveCategoryId;
+                }
+            }
+
             var profile = await _context.ProductCookingProfiles
                 .FirstOrDefaultAsync(p => p.ItemCategoryId == itemCategoryId);
 
@@ -81,6 +96,8 @@ namespace LechonSystem.Api.Services
                         .ThenInclude(o => o!.DeliveryTrip)
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.ItemCategory)
+                .Include(s => s.OrderItem)
+                    .ThenInclude(oi => oi!.FulfilledItemCategory)
                 .Where(s => s.OrderItem != null
                          && s.OrderItem.ItemCategory != null
                          && s.OrderItem.ItemCategory.MinimumWeightKg > 0
@@ -102,10 +119,25 @@ namespace LechonSystem.Api.Services
                     source = s.OrderItem!.Order!.Source,
                     eventType = s.OrderItem!.Order!.EventType,
                     landmark = s.OrderItem!.Order!.Landmark,
-                    size = s.OrderItem!.ItemCategory!.Name,
-                    categoryName = s.OrderItem!.ItemCategory!.Name,
-                    minWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MinimumWeightKg : 0m,
-                    maxWeight = s.OrderItem!.ItemCategory != null ? s.OrderItem.ItemCategory.MaximumWeightKg : 0m,
+                    size = s.OrderItem!.FulfilledItemCategory != null
+                        ? s.OrderItem.FulfilledItemCategory.Name
+                        : s.OrderItem.ItemCategory!.Name,
+                    categoryName = s.OrderItem!.FulfilledItemCategory != null
+                        ? s.OrderItem.FulfilledItemCategory.Name
+                        : s.OrderItem.ItemCategory!.Name,
+                    bookedSizeName = s.OrderItem.FulfilledItemCategoryId.HasValue &&
+                                     s.OrderItem.FulfilledItemCategoryId != s.OrderItem.ItemCategoryId
+                        ? s.OrderItem.ItemCategory!.Name
+                        : null,
+                    bookedItemCategoryId = s.OrderItem.ItemCategoryId,
+                    fulfilledItemCategoryId = s.OrderItem.FulfilledItemCategoryId,
+                    minWeight = s.OrderItem.FulfilledItemCategory != null
+                        ? s.OrderItem.FulfilledItemCategory.MinimumWeightKg
+                        : s.OrderItem.ItemCategory!.MinimumWeightKg,
+                    maxWeight = s.OrderItem.FulfilledItemCategory != null
+                        ? s.OrderItem.FulfilledItemCategory.MaximumWeightKg
+                        : s.OrderItem.ItemCategory!.MaximumWeightKg,
+                    customWeightDisplay = s.CustomWeightDisplay,
 
                     // TIMINGS
                     targetDeliveryTime = (DateTime?)s.TargetDeliveryTime,
@@ -150,11 +182,14 @@ namespace LechonSystem.Api.Services
 
             var result = roastItems.Select(s =>
             {
-                var formattedWeight = (s.minWeight > 0 || s.maxWeight > 0)
+                var standardWeightRange = (s.minWeight > 0 || s.maxWeight > 0)
                     ? (s.minWeight == s.maxWeight
                         ? $"{s.minWeight:0.##}"
                         : $"{s.minWeight:0.##}-{s.maxWeight:0.##}")
                     : "-";
+                var formattedWeight = string.IsNullOrWhiteSpace(s.customWeightDisplay)
+                    ? standardWeightRange
+                    : s.customWeightDisplay.Trim();
 
                 return new DailySheetItemDto
                 {
@@ -170,8 +205,13 @@ namespace LechonSystem.Api.Services
                     Landmark = s.landmark,
                     Size = s.size,
                     CategoryName = s.categoryName,
+                    BookedSizeName = s.bookedSizeName,
+                    BookedItemCategoryId = s.bookedItemCategoryId,
+                    FulfilledItemCategoryId = s.fulfilledItemCategoryId,
                     Weight = formattedWeight,
                     WeightRange = formattedWeight,
+                    StandardWeightRange = standardWeightRange,
+                    CustomWeightDisplay = string.IsNullOrWhiteSpace(s.customWeightDisplay) ? null : s.customWeightDisplay.Trim(),
                     MinWeight = s.minWeight,
                     MaxWeight = s.maxWeight,
                     MinimumWeightKg = s.minWeight,
@@ -215,6 +255,10 @@ namespace LechonSystem.Api.Services
                 .Include(o => o.DeliveryTrip)
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.FulfilledItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.OrderItemSchedule)
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
                          && !o.IsTimeTbd
@@ -351,6 +395,10 @@ namespace LechonSystem.Api.Services
                 .Include(o => o.DeliveryTrip)
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.FulfilledItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.OrderItemSchedule)
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
                          && o.IsTimeTbd
@@ -428,11 +476,16 @@ namespace LechonSystem.Api.Services
                 {
                     foreach (var item in roastItemsList)
                     {
-                        var minW = item.ItemCategory?.MinimumWeightKg ?? 0m;
-                        var maxW = item.ItemCategory?.MaximumWeightKg ?? 0m;
+                        var cookingCategory = item.FulfilledItemCategory ?? item.ItemCategory;
+                        var minW = cookingCategory?.MinimumWeightKg ?? 0m;
+                        var maxW = cookingCategory?.MaximumWeightKg ?? 0m;
                         var formattedWeight = (minW > 0 || maxW > 0)
                             ? (minW == maxW ? minW.ToString("0.##") : $"{minW:0.##}-{maxW:0.##}")
                             : "-";
+                        var customWeightDisplay = item.OrderItemSchedule?.CustomWeightDisplay;
+                        var displayWeight = string.IsNullOrWhiteSpace(customWeightDisplay)
+                            ? formattedWeight
+                            : customWeightDisplay.Trim();
 
                         result.Add(new DailySheetItemDto
                         {
@@ -446,10 +499,17 @@ namespace LechonSystem.Api.Services
                             Source = order.Source,
                             EventType = order.EventType,
                             Landmark = order.Landmark,
-                            Size = item.ItemCategory?.Name ?? "Lechon",
-                            CategoryName = item.ItemCategory?.Name ?? "Lechon",
-                            Weight = formattedWeight,
-                            WeightRange = formattedWeight,
+                            Size = cookingCategory?.Name ?? "Lechon",
+                            CategoryName = cookingCategory?.Name ?? "Lechon",
+                            BookedSizeName = item.FulfilledItemCategoryId.HasValue && item.FulfilledItemCategoryId != item.ItemCategoryId
+                                ? item.ItemCategory?.Name
+                                : null,
+                            BookedItemCategoryId = item.ItemCategoryId,
+                            FulfilledItemCategoryId = item.FulfilledItemCategoryId,
+                            Weight = displayWeight,
+                            WeightRange = displayWeight,
+                            StandardWeightRange = formattedWeight,
+                            CustomWeightDisplay = string.IsNullOrWhiteSpace(customWeightDisplay) ? null : customWeightDisplay.Trim(),
                             MinWeight = minW,
                             MaxWeight = maxW,
                             MinimumWeightKg = minW,
@@ -552,7 +612,154 @@ namespace LechonSystem.Api.Services
                     .FirstOrDefaultAsync(s => s.Id == orderItemId);
 
             if (schedule == null)
+            {
+                var item = await _context.OrderItems
+                    .Include(orderItem => orderItem.Order)
+                    .FirstOrDefaultAsync(orderItem => orderItem.Id == orderItemId);
+                if (item?.Order?.TargetDeliveryTime != null)
+                {
+                    var cookingCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
+                    schedule = await CalculateScheduleAsync(
+                        item.Id,
+                        item.Order.TargetDeliveryTime.Value,
+                        cookingCategoryId,
+                        item.Order.RiderDepartureTime);
+                    schedule.OrderItem = item;
+                    _context.OrderItemSchedules.Add(schedule);
+                }
+            }
+
+            if (schedule == null)
                 throw new KeyNotFoundException($"Schedule for OrderItem #{orderItemId} not found.");
+
+            if (request.CustomWeightDisplay != null)
+            {
+                schedule.CustomWeightDisplay = string.IsNullOrWhiteSpace(request.CustomWeightDisplay)
+                    ? null
+                    : request.CustomWeightDisplay.Trim();
+            }
+
+            if (request.FulfilledItemCategoryId.HasValue && schedule.OrderItem != null)
+            {
+                var targetFulfilledCatId = request.FulfilledItemCategoryId.Value > 0 
+                    ? (int?)request.FulfilledItemCategoryId.Value 
+                    : null;
+                var oldFulfilledCatId = schedule.OrderItem.FulfilledItemCategoryId;
+
+                if (oldFulfilledCatId != targetFulfilledCatId)
+                {
+                    var fromCatId = oldFulfilledCatId ?? schedule.OrderItem.ItemCategoryId;
+                    var toCatId = targetFulfilledCatId ?? schedule.OrderItem.ItemCategoryId;
+
+                    var fromCat = await _context.ItemCategories.FindAsync(fromCatId);
+                    var toCat = await _context.ItemCategories.FindAsync(toCatId);
+
+                    var fromName = fromCat?.Name ?? $"Cat #{fromCatId}";
+                    var toName = toCat?.Name ?? $"Cat #{toCatId}";
+
+                    // If item has Quantity > 1 and is being upgraded, split 1 unit off into a sibling OrderItem!
+                    if (schedule.OrderItem.Quantity > 1 && targetFulfilledCatId.HasValue)
+                    {
+                        schedule.OrderItem.Quantity -= 1;
+                        schedule.OrderItem.TotalPrice = schedule.OrderItem.Price * schedule.OrderItem.Quantity;
+
+                        var splitItem = new OrderItem
+                        {
+                            OrderId = schedule.OrderItem.OrderId,
+                            ItemCategoryId = schedule.OrderItem.ItemCategoryId,
+                            FulfilledItemCategoryId = targetFulfilledCatId,
+                            Quantity = 1,
+                            Price = schedule.OrderItem.Price,
+                            TotalPrice = schedule.OrderItem.Price,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.OrderItems.Add(splitItem);
+                        await _context.SaveChangesAsync();
+
+                        var reqDeparture = request.DepartureTime ?? request.RiderDepartureTime;
+                        var anchorTime = reqDeparture 
+                            ?? schedule.OrderItem.Order?.RiderDepartureTime 
+                            ?? schedule.TargetDeliveryTime;
+
+                        var splitSchedule = await CalculateScheduleAsync(
+                            splitItem.Id,
+                            schedule.OrderItem.Order?.TargetDeliveryTime ?? schedule.TargetDeliveryTime,
+                            toCatId,
+                            anchorTime);
+
+                        splitSchedule.CustomWeightDisplay = schedule.CustomWeightDisplay;
+                        splitSchedule.IsManualOverride = true;
+                        splitSchedule.OrderItem = splitItem;
+                        _context.OrderItemSchedules.Add(splitSchedule);
+
+                        _context.InventoryReservations.Add(new InventoryReservation
+                        {
+                            OrderId = schedule.OrderItem.OrderId,
+                            ItemCategoryId = toCatId,
+                            ReservationDate = schedule.OrderItem.Order?.TargetDeliveryTime?.Date ?? DateTime.UtcNow.Date,
+                            Status = ReservationStatus.Committed,
+                            ReservationStatus = ReservationStatus.Committed,
+                            CreatedAt = DateTime.UtcNow
+                        });
+
+                        _context.OrderAuditLogs.Add(new OrderAuditLog
+                        {
+                            OrderId = schedule.OrderItem.OrderId,
+                            ActionType = "Stock Substitution Updated",
+                            Changes = $"Freezer stock partial upgrade: 1x '{fromName}' of {schedule.OrderItem.Quantity + 1}x order split and fulfilled using '{toName}' stock (Complimentary upgrade).",
+                            ChangedBy = CurrentUser,
+                            Timestamp = DateTime.UtcNow
+                        });
+
+                        await _context.SaveChangesAsync();
+                        return splitSchedule;
+                    }
+                    else
+                    {
+                        schedule.OrderItem.FulfilledItemCategoryId = targetFulfilledCatId;
+
+                        // Update committed inventory reservation to point to the effective category
+                        var reservation = await _context.InventoryReservations
+                            .FirstOrDefaultAsync(r => r.OrderId == schedule.OrderItem.OrderId && r.ItemCategoryId == fromCatId);
+                        if (reservation != null)
+                        {
+                            reservation.ItemCategoryId = toCatId;
+                        }
+
+                        _context.OrderAuditLogs.Add(new OrderAuditLog
+                        {
+                            OrderId = schedule.OrderItem.OrderId,
+                            ActionType = "Stock Substitution Updated",
+                            Changes = targetFulfilledCatId.HasValue
+                                ? $"Freezer stock fulfillment changed from '{fromName}' to '{toName}' (Complimentary upgrade)."
+                                : $"Freezer stock fulfillment reverted to booked size '{toName}'.",
+                            ChangedBy = CurrentUser,
+                            Timestamp = DateTime.UtcNow
+                        });
+
+                        // Dynamic schedule recalculation (Auto-Shift Tahi & Salang Earlier) on size upgrade / substitution
+                        // If caller did not provide explicit manual tahi / salang times, auto-shift using new cooking profile!
+                        if (!request.TahiStartTime.HasValue && !request.SalangStartTime.HasValue)
+                        {
+                            var profile = await _context.ProductCookingProfiles
+                                .FirstOrDefaultAsync(p => p.ItemCategoryId == toCatId);
+                            int tahiDuration = profile?.TahiDurationMinutes ?? 60;
+                            int salangDuration = profile?.SalangDurationMinutes ?? 180;
+                            int packagingDuration = profile?.PackagingDurationMinutes ?? 30;
+
+                            var reqDeparture = request.DepartureTime ?? request.RiderDepartureTime;
+                            var anchorTime = reqDeparture 
+                                ?? schedule.OrderItem.Order?.RiderDepartureTime 
+                                ?? schedule.TargetDeliveryTime;
+
+                            var normalizedAnchor = NormalizeToLocalStoreTime(anchorTime);
+                            schedule.PackagingStartTime = normalizedAnchor.AddMinutes(-packagingDuration);
+                            schedule.SalangStartTime = schedule.PackagingStartTime.AddMinutes(-salangDuration);
+                            schedule.TahiStartTime = schedule.SalangStartTime.AddMinutes(-tahiDuration);
+                        }
+                    }
+                }
+            }
 
             if (request.TahiStartTime.HasValue)
                 schedule.TahiStartTime = NormalizeToLocalStoreTime(request.TahiStartTime.Value);

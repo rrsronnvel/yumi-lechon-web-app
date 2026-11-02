@@ -45,6 +45,7 @@ namespace LechonSystem.Api.Models.DTOs
     {
         public int Id { get; set; } // The ID of the existing order item (0 if it's a brand new item added during edit)
         public int ItemCategoryId { get; set; }
+        public int? FulfilledItemCategoryId { get; set; }
         public int Quantity { get; set; }
     }
 }

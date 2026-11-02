@@ -9,6 +9,7 @@ import { KitchenViewTab } from "@/components/daily-sheets/KitchenViewTab";
 import { RiderViewTab } from "@/components/daily-sheets/RiderViewTab";
 import { Button } from "@/components/ui/button";
 import { useDailySheets } from "@/hooks/useSchedules";
+import { useAuth } from "@/context/AuthContext";
 import {
   CalendarDays,
   Camera,
@@ -49,6 +50,8 @@ function formatIsoDate(isoDate: string): string {
 }
 
 export default function DailySheetsPage() {
+  const { user } = useAuth();
+  const isOwner = user?.role === "Owner";
   const [mode, setMode] = useState<"edit" | "clean">("edit");
   const [activeTab, setActiveTab] = useState<string>("kitchen");
   const [isSavingImage, setIsSavingImage] = useState(false);
@@ -230,7 +233,7 @@ export default function DailySheetsPage() {
             </Button>
 
             <div className="inline-flex rounded-lg border border-stone-300 bg-stone-100 p-0.5 shadow-xs">
-              <Button
+              {isOwner && <Button
                 type="button"
                 size="sm"
                 variant={mode === "edit" ? "default" : "ghost"}
@@ -242,12 +245,12 @@ export default function DailySheetsPage() {
                 }`}
               >
                 <Pencil className="mr-1 h-3.5 w-3.5" /> Edit Mode
-              </Button>
+              </Button>}
               <Button
                 type="button"
                 size="sm"
                 variant={mode === "clean" ? "default" : "ghost"}
-                onClick={() => setMode("clean")}
+                onClick={() => setMode((current) => current === "clean" ? "edit" : "clean")}
                 className={`h-7 px-2.5 text-xs font-bold ${
                   mode === "clean"
                     ? "bg-[#181312] text-white shadow-xs"
@@ -343,7 +346,7 @@ export default function DailySheetsPage() {
           </div>
         )}
 
-        {mode === "edit" && (
+        {mode === "edit" && isOwner && (
           <div className="mb-4 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
             <div className="flex min-w-0 items-start gap-2">
               <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900">
@@ -375,11 +378,11 @@ export default function DailySheetsPage() {
           )}
 
           <TabsContent value="kitchen" className="mt-0 focus-visible:outline-none">
-            <KitchenViewTab mode={mode} selectedDate={selectedDate} />
+            <KitchenViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} />
           </TabsContent>
 
           <TabsContent value="rider" className="mt-0 focus-visible:outline-none">
-            <RiderViewTab mode={mode} selectedDate={selectedDate} />
+            <RiderViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} />
           </TabsContent>
         </Tabs>
       </div>
@@ -415,9 +418,9 @@ export default function DailySheetsPage() {
             </span>
           </div>
           {activeTab === "kitchen" ? (
-            <KitchenViewTab mode="clean" selectedDate={selectedDate} />
+            <KitchenViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
           ) : (
-            <RiderViewTab mode="clean" selectedDate={selectedDate} />
+            <RiderViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
           )}
         </div>
       </div>

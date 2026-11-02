@@ -330,3 +330,11 @@ Upsert-QaOrder `
 
 Write-Host "Targeted QA Seeding Complete!"
 $conn.Close()
+
+
+# Also seed Daily Ops Enhancements QA Orders (Non-destructive)
+if (Test-Path "$PSScriptRoot\seed_nov02_qa_orders.ps1") {
+    & "$PSScriptRoot\seed_nov02_qa_orders.ps1"
+} elseif (Test-Path "$PSScriptRoot\seed_oct31_qa_orders.ps1") {
+    & "$PSScriptRoot\seed_oct31_qa_orders.ps1"
+}

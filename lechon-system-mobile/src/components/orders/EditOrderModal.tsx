@@ -45,6 +45,7 @@ import {
 interface EditableCartItem {
   id: number; // Existing OrderItem.id or 0 for newly added
   itemCategoryId: number;
+  fulfilledItemCategoryId?: number | null;
   name: string;
   unitPrice: number;
   quantity: number;
@@ -111,7 +112,8 @@ export default function EditOrderModal({
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
   const { data: balances = [] } = useInventoryBalances();
   const { data: deliveryPricing } = useDeliveryPricingQuery();
-  const updateOrderMutation = useUpdateOrderMutation();  const assignRiderMutation = useAssignRiderMutation();
+  const updateOrderMutation = useUpdateOrderMutation();
+  const assignRiderMutation = useAssignRiderMutation();
   const { data: registeredRiders = [] } = useRiders();
 
 
@@ -129,7 +131,8 @@ export default function EditOrderModal({
   const [debouncedFbName, setDebouncedFbName] = useState('');
   const [source, setSource] = useState('Business FB Page');
   const [eventType, setEventType] = useState('');
-  const [fulfillment, setFulfillment] = useState<number>(1);  const [assignedRiderName, setAssignedRiderName] = useState('');
+  const [fulfillment, setFulfillment] = useState<number>(1);
+  const [assignedRiderName, setAssignedRiderName] = useState('');
 
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [landmark, setLandmark] = useState('');
@@ -141,6 +144,8 @@ export default function EditOrderModal({
   const [remarks, setRemarks] = useState('');
 
   const [cartItems, setCartItems] = useState<EditableCartItem[]>([]);
+  const [expandedUpgradeIndices, setExpandedUpgradeIndices] = useState<Record<number, boolean>>({});
+  const [upgradeMode, setUpgradeMode] = useState<Record<number, "single" | "all">>({});
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [activeCategoryFilter, setActiveCategoryFilter] =
     useState<CategoryFilterType | null>(null);
@@ -225,7 +230,8 @@ export default function EditOrderModal({
     setShowContactNumber2(Boolean(hydratedPhones[1]));
     setSource(order.source || 'Business FB Page');
     setEventType(order.eventType || '');
-    setFulfillment(Number(order.fulfillment ?? 1));    setAssignedRiderName(order.assignedRiderName || '');
+    setFulfillment(Number(order.fulfillment ?? 1));
+    setAssignedRiderName(order.assignedRiderName || '');
 
     setDeliveryAddress(order.deliveryAddress || '');
     setLandmark(order.landmark || '');
@@ -321,6 +327,7 @@ export default function EditOrderModal({
           {
             id: item.id || 0,
             itemCategoryId,
+            fulfilledItemCategoryId: item.fulfilledItemCategoryId ?? null,
             name: cat.name,
             unitPrice,
             quantity,
@@ -481,11 +488,11 @@ export default function EditOrderModal({
     });
   };
 
-  const updateCartItemQuantity = (itemCategoryId: number, delta: number) => {
+  const updateCartItemQuantity = (index: number, delta: number) => {
     setCartItems((prev) =>
       prev
-        .map((item) => {
-          if (item.itemCategoryId === itemCategoryId) {
+        .map((item, i) => {
+          if (i === index) {
             const nextQty = item.quantity + delta;
             return nextQty > 0 ? { ...item, quantity: nextQty } : null;
           }
@@ -495,10 +502,58 @@ export default function EditOrderModal({
     );
   };
 
-  const removeCartItem = (itemCategoryId: number) => {
-    setCartItems((prev) =>
-      prev.filter((item) => item.itemCategoryId !== itemCategoryId)
+  const removeCartItem = (index: number) => {
+    setCartItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateFulfilledCategory = (
+    index: number,
+    fulfilledItemCategoryId: number | null
+  ) => {
+    setCartItems((items) =>
+      items.map((item, i) =>
+        i === index
+          ? { ...item, fulfilledItemCategoryId }
+          : item
+      )
     );
+  };
+
+  const handleUpgradeSelect = (index: number, upgradeCatId: number | null) => {
+    const item = cartItems[index];
+    if (!item) return;
+
+    if (!upgradeCatId) {
+      updateFulfilledCategory(index, null);
+      setExpandedUpgradeIndices((prev) => ({ ...prev, [index]: false }));
+      return;
+    }
+
+    const mode = upgradeMode[index] ?? 'single';
+    if (item.quantity > 1 && mode === 'single') {
+      // Split 1 unit into a new sibling cart item!
+      const updated = [...cartItems];
+      updated[index] = { ...item, quantity: item.quantity - 1, fulfilledItemCategoryId: null };
+      const newItem: EditableCartItem = {
+        id: 0,
+        itemCategoryId: item.itemCategoryId,
+        fulfilledItemCategoryId: upgradeCatId,
+        name: item.name,
+        unitPrice: item.unitPrice,
+        quantity: 1,
+        isRoast: item.isRoast,
+        minimumWeightKg: item.minimumWeightKg,
+      };
+      updated.splice(index + 1, 0, newItem);
+      setCartItems(updated);
+      setExpandedUpgradeIndices((prev) => ({
+        ...prev,
+        [index]: false,
+        [index + 1]: true,
+      }));
+    } else {
+      updateFulfilledCategory(index, upgradeCatId);
+    }
   };
 
   const searchSuggestions = useMemo(() => {
@@ -831,6 +886,7 @@ export default function EditOrderModal({
         items: validCartItems.map((i) => ({
           id: i.id,
           itemCategoryId: i.itemCategoryId,
+          fulfilledItemCategoryId: i.fulfilledItemCategoryId ?? null,
           quantity: i.quantity,
         })),
       });
@@ -1137,6 +1193,7 @@ export default function EditOrderModal({
                       styles.triSegmentText,
                       fulfillment === 1 && styles.triSegmentTextActive,
                     ]}
+                    numberOfLines={1}
                   >
                     🚗 Delivery
                   </Text>
@@ -1153,6 +1210,7 @@ export default function EditOrderModal({
                       styles.triSegmentText,
                       fulfillment === 0 && styles.triSegmentTextActive,
                     ]}
+                    numberOfLines={1}
                   >
                     🏪 Pickup
                   </Text>
@@ -1169,6 +1227,7 @@ export default function EditOrderModal({
                       styles.triSegmentText,
                       fulfillment === 2 && styles.triSegmentTextActive,
                     ]}
+                    numberOfLines={1}
                   >
                     📦 Lalamove
                   </Text>
@@ -1454,8 +1513,8 @@ export default function EditOrderModal({
               <ActivityIndicator color="#C81E1E" size="small" />
             ) : (
               <View style={styles.activeCartList}>
-                {cartItems.map((item) => (
-                  <View key={item.itemCategoryId} style={styles.activeCartItemCard}>
+                {cartItems.map((item, index) => (
+                  <View key={`${item.itemCategoryId}-${index}`} style={styles.activeCartItemCard}>
                     <View style={styles.activeCartTopRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.activeCartItemName}>{item.name}</Text>
@@ -1464,36 +1523,201 @@ export default function EditOrderModal({
                         </Text>
                       </View>
                       <Text style={styles.activeCartLineTotal}>
-                        ₱{(item.unitPrice * item.quantity).toLocaleString()}
+                        ₱{Math.round(item.unitPrice * item.quantity).toLocaleString('en-US')}
                       </Text>
                     </View>
                     <View style={styles.activeCartBottomRow}>
                       <View style={styles.stepperBox}>
                         <Pressable
                           style={styles.stepperBtn}
-                          onPress={() =>
-                            updateCartItemQuantity(item.itemCategoryId, -1)
-                          }
+                          onPress={() => updateCartItemQuantity(index, -1)}
                         >
                           <Text style={styles.stepperBtnText}>−</Text>
                         </Pressable>
                         <Text style={styles.stepperQtyText}>{item.quantity}</Text>
                         <Pressable
                           style={[styles.stepperBtn, styles.stepperBtnPlus]}
-                          onPress={() =>
-                            updateCartItemQuantity(item.itemCategoryId, 1)
-                          }
+                          onPress={() => updateCartItemQuantity(index, 1)}
                         >
                           <Text style={styles.stepperBtnPlusText}>+</Text>
                         </Pressable>
                       </View>
                       <Pressable
                         style={styles.removeCartItemBtn}
-                        onPress={() => removeCartItem(item.itemCategoryId)}
+                        onPress={() => removeCartItem(index)}
                       >
                         <Text style={styles.removeCartItemBtnText}>🗑️ Remove</Text>
                       </Pressable>
                     </View>
+                    {(() => {
+                      if (user?.role !== 'Owner' || !item.isRoast) return null;
+                      const bookedCategory = categories.find((c) => c.id === item.itemCategoryId);
+                      const bookedSizeName = bookedCategory?.name || item.name || 'Booked';
+                      const isUpgradeActive = Boolean(item.fulfilledItemCategoryId && item.fulfilledItemCategoryId !== item.itemCategoryId);
+                      const isExpanded = expandedUpgradeIndices[index] ?? isUpgradeActive;
+                      const currentMode = upgradeMode[index] ?? 'single';
+
+                      if (!isExpanded) {
+                        return (
+                          <View style={{ marginTop: 8 }}>
+                            <Pressable
+                              style={styles.expandUpgradeLink}
+                              onPress={() => setExpandedUpgradeIndices((prev) => ({ ...prev, [index]: true }))}
+                            >
+                              <Text style={styles.expandUpgradeLinkText}>🔄 Free Stock Upgrade</Text>
+                            </Pressable>
+                          </View>
+                        );
+                      }
+
+                      return (
+                        <View style={{ marginTop: 10, gap: 8, borderTopWidth: 1, borderTopColor: '#EEF2FF', paddingTop: 8 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={styles.fieldLabel}>🔄 Fulfill from Freezer Stock</Text>
+                            <Pressable
+                              style={styles.resetUpgradeBtn}
+                              onPress={() => {
+                                updateFulfilledCategory(index, null);
+                                setExpandedUpgradeIndices((prev) => ({ ...prev, [index]: false }));
+                              }}
+                            >
+                              <Text style={styles.resetUpgradeBtnText}>✕ Reset / Booked</Text>
+                            </Pressable>
+                          </View>
+
+                          {/* Multi-pig prompt when quantity > 1 */}
+                          {item.quantity > 1 && (
+                            <View style={styles.multiPigPromptBox}>
+                              <Text style={styles.multiPigPromptText}>
+                                Order has {item.quantity}x {bookedSizeName}. How many to upgrade?
+                              </Text>
+                              <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                                <Pressable
+                                  style={[
+                                    styles.multiPigPill,
+                                    currentMode === 'single' && styles.multiPigPillActive,
+                                  ]}
+                                  onPress={() => setUpgradeMode((prev) => ({ ...prev, [index]: 'single' }))}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.multiPigPillText,
+                                      currentMode === 'single' && styles.multiPigPillTextActive,
+                                    ]}
+                                  >
+                                    Upgrade 1 Pig
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  style={[
+                                    styles.multiPigPill,
+                                    currentMode === 'all' && styles.multiPigPillActive,
+                                  ]}
+                                  onPress={() => setUpgradeMode((prev) => ({ ...prev, [index]: 'all' }))}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.multiPigPillText,
+                                      currentMode === 'all' && styles.multiPigPillTextActive,
+                                    ]}
+                                  >
+                                    Upgrade All {item.quantity}
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          )}
+
+                          <ScrollView
+                            horizontal={true}
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={{ paddingHorizontal: 4, alignItems: 'center' }}
+                          >
+                            <Pressable
+                              style={[
+                                {
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 8,
+                                  borderRadius: 8,
+                                  marginRight: 8,
+                                  flexShrink: 0,
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  borderWidth: 1,
+                                },
+                                !item.fulfilledItemCategoryId
+                                  ? { backgroundColor: '#4F46E5', borderColor: '#4338CA' }
+                                  : { backgroundColor: '#FFFFFF', borderColor: '#D1D5DB' },
+                              ]}
+                              onPress={() => handleUpgradeSelect(index, null)}
+                            >
+                              <Text
+                                style={[
+                                  { fontSize: 12 },
+                                  !item.fulfilledItemCategoryId
+                                    ? { color: '#FFFFFF', fontWeight: '700' }
+                                    : { color: '#4B5563', fontWeight: '600' },
+                                ]}
+                              >
+                                {!item.fulfilledItemCategoryId ? `✓ Same as Booked (${bookedSizeName})` : `Same as Booked (${bookedSizeName})`}
+                              </Text>
+                            </Pressable>
+                            {categories
+                              .filter(
+                                (category) =>
+                                  category.minimumWeightKg > 0 &&
+                                  category.id !== item.itemCategoryId
+                              )
+                              .map((category) => {
+                                const isSelected = item.fulfilledItemCategoryId === category.id;
+                                return (
+                                  <Pressable
+                                    key={category.id}
+                                    style={[
+                                      {
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 8,
+                                        borderRadius: 8,
+                                        marginRight: 8,
+                                        flexShrink: 0,
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        borderWidth: 1,
+                                      },
+                                      isSelected
+                                        ? { backgroundColor: '#4F46E5', borderColor: '#4338CA' }
+                                        : { backgroundColor: '#FFFFFF', borderColor: '#D1D5DB' },
+                                    ]}
+                                    onPress={() => handleUpgradeSelect(index, category.id)}
+                                  >
+                                    <Text
+                                      style={[
+                                        { fontSize: 12 },
+                                        isSelected
+                                          ? { color: '#FFFFFF', fontWeight: '700' }
+                                          : { color: '#4B5563', fontWeight: '600' },
+                                      ]}
+                                    >
+                                      {isSelected ? `✓ ${category.name} (Upgrade)` : `${category.name} (Upgrade)`}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                          </ScrollView>
+                          {item.fulfilledItemCategoryId ? (
+                            (() => {
+                              const selectedCat = categories.find((c) => c.id === item.fulfilledItemCategoryId);
+                              const selectedCategoryName = selectedCat ? `${selectedCat.name} (${selectedCat.minimumWeightKg}-${selectedCat.maximumWeightKg}kg)` : 'Freezer Stock';
+                              return (
+                                <Text style={{ color: '#047857', fontWeight: '700', fontSize: 11 }}>
+                                  🔄 Fulfilling with {selectedCategoryName} from Freezer • Booked price locked at ₱{Math.round(item.unitPrice).toLocaleString('en-US')}
+                                </Text>
+                              );
+                            })()
+                          ) : null}
+                        </View>
+                      );
+                    })()}
                   </View>
                 ))}
               </View>
@@ -1894,7 +2118,8 @@ const styles = StyleSheet.create({
   },
   fieldGroup: {
     gap: 6,
-  },  riderAssignmentField: {
+  },
+  riderAssignmentField: {
     gap: 7,
     borderWidth: 1,
     borderColor: '#BFDBFE',
@@ -2020,11 +2245,13 @@ const styles = StyleSheet.create({
   triSegment: {
     flex: 1,
     paddingVertical: 9,
+    paddingHorizontal: 4,
     borderRadius: 8,
     backgroundColor: '#F5F5F4',
     borderWidth: 1,
     borderColor: '#E7E5E4',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   triSegmentActive: {
     backgroundColor: '#181312',
@@ -2034,6 +2261,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#57534E',
+    textAlign: 'center',
   },
   triSegmentTextActive: {
     color: '#FBBF24',
@@ -2220,7 +2448,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#C81E1E',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   activeCartBottomRow: {
     flexDirection: 'row',
@@ -2270,6 +2497,61 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#991B1B',
+  },
+  expandUpgradeLink: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#EEF2FF',
+    alignSelf: 'flex-start',
+  },
+  expandUpgradeLinkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  resetUpgradeBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  resetUpgradeBtnText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  multiPigPromptBox: {
+    backgroundColor: '#EEF2FF',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  multiPigPromptText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E1B4B',
+  },
+  multiPigPill: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  multiPigPillActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4338CA',
+  },
+  multiPigPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  multiPigPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   stickyFooter: {
     backgroundColor: '#FFFFFF',

@@ -7,12 +7,20 @@ export function useLogPayment() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (paymentData: { orderId: number; amount: number; paymentProvider: string }) => {
+        mutationFn: async (paymentData: {
+            orderId: number;
+            amount?: number;
+            paymentProvider?: string;
+            referenceNumber?: string;
+            splits?: Array<{ amount: number; paymentMethod: string; referenceNumber?: string }>;
+        }) => {
            
             const response = await apiClient.post(`/internal/payments/manual`, {
                 orderId: paymentData.orderId,
                 amount: paymentData.amount,
                 paymentMethod: paymentData.paymentProvider,
+                referenceNumber: paymentData.referenceNumber,
+                splits: paymentData.splits,
             });
             return response.data;
         },

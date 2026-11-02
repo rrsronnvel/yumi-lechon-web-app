@@ -11,4 +11,6 @@ public class OverrideScheduleRequest
     public DateTime? DepartureTime { get; set; }
     public string? RiderName { get; set; }
     public string? Remarks { get; set; }
+    public string? CustomWeightDisplay { get; set; }
+    public int? FulfilledItemCategoryId { get; set; }
 }

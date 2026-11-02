@@ -22,4 +22,5 @@ public class PendingPickupSettlementDto
     public string? RiderSignedBy { get; set; }
     public string? HeldByStaffName { get; set; }
     public string? HeldPaymentMethod { get; set; }
+    public decimal? HeldByStaffAmount { get; set; }
 }

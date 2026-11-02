@@ -17,6 +17,7 @@ export interface PendingSettlementDrop {
   riderSignedBy?: string | null;
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
+  heldByStaffAmount?: number | null;
   createdAt?: string;
   targetDeliveryTime?: string;
   riderDepartureTime?: string | null;
@@ -42,6 +43,7 @@ export interface PendingPickupSettlement {
   riderSignedBy?: string | null;
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
+  heldByStaffAmount?: number | null;
 }
 
 export interface PendingLalamoveSettlement {
@@ -104,6 +106,10 @@ export interface StaffValidatePayload {
   manualOverrideRiderName?: string;
   manualOverrideAmount?: number;
   staffName?: string;
+  cashAmount?: number;
+  digitalAmount?: number;
+  digitalMethod?: string;
+  digitalReferenceNumber?: string;
 }
 
 export interface OwnerApprovePayload {
@@ -119,6 +125,10 @@ export interface CounterCollectPickupPayload {
   amount?: number;
   referenceNumber?: string;
   staffName?: string;
+  cashAmount?: number;
+  digitalAmount?: number;
+  digitalMethod?: string;
+  digitalReferenceNumber?: string;
 }
 
 export interface DirectGcashPayload {
@@ -216,6 +226,10 @@ export const useStaffValidateQrMutation = () => {
           manualOverrideRiderName: payload.manualOverrideRiderName,
           manualOverrideAmount: payload.manualOverrideAmount,
           staffName: payload.staffName,
+          cashAmount: payload.cashAmount,
+          digitalAmount: payload.digitalAmount,
+          digitalMethod: payload.digitalMethod,
+          digitalReferenceNumber: payload.digitalReferenceNumber,
         }
       );
       return response.data;

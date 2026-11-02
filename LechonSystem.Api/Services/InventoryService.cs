@@ -72,7 +72,9 @@ namespace LechonSystem.Api.Services
         {
             // 1. Calculate Physical On-Hand Stock from the Append-Only Ledger
             var totalStockIn = await _context.InventoryTransactions
-                .Where(t => t.ItemCategoryId == itemCategoryId && (t.Type == TransactionType.StockIn || t.Type == TransactionType.Adjustment))
+                .Where(t => t.ItemCategoryId == itemCategoryId &&
+                            (t.Type == TransactionType.StockIn || t.Type == TransactionType.Adjustment) &&
+                            (t.Reason == null || !t.Reason.StartsWith("[Reservation Swap Audit]")))
                 .SumAsync(t => t.Quantity);
 
             var totalStockOut = await _context.InventoryTransactions
@@ -138,6 +140,7 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
 
             var physicalStockMap = transactions
+                .Where(t => t.Reason == null || !t.Reason.StartsWith("[Reservation Swap Audit]"))
                 .GroupBy(t => t.ItemCategoryId)
                 .ToDictionary(
                     g => g.Key,

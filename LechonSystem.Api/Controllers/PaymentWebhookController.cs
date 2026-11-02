@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.Services;
+using LechonSystem.Api.DTOs;
 
 using Microsoft.AspNetCore.Authorization;
 
@@ -55,6 +56,17 @@ namespace LechonSystem.Api.Controllers
         {
             try
             {
+                if (dto.Splits is { Count: > 0 })
+                {
+                    if (dto.Splits.Count != 2)
+                    {
+                        return BadRequest(new { message = "Split payment requires exactly two payment channels." });
+                    }
+
+                    await _paymentService.ProcessSplitPaymentAsync(dto.OrderId, dto.Splits);
+                    return Ok(new { message = "Split payment recorded successfully." });
+                }
+
                 // Pick up either ReferenceNumber or ReferenceId
                 var refId = !string.IsNullOrWhiteSpace(dto.ReferenceNumber) ? dto.ReferenceNumber : dto.ReferenceId;
                 if (string.IsNullOrWhiteSpace(refId))
@@ -106,5 +118,6 @@ namespace LechonSystem.Api.Controllers
         public string? ReferenceNumber { get; set; }
         public PaymentProvider? Provider { get; set; } // Cash, ManualGCash, BankTransfer, etc.
         public string? PaymentMethod { get; set; }     // E.g., "Physical Cash", "Store GCash"
+        public List<PaymentSplitDto>? Splits { get; set; }
     }
 }

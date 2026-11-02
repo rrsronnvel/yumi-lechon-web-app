@@ -179,7 +179,7 @@ export default function DrawerScreen() {
 
   // Workflow B (Hop 1 Rider-to-Staff) State
   const [riderPayMethod, setRiderPayMethod] = useState<
-    'Cash' | 'ManualGCash' | 'GCash' | 'Bank Transfer'
+    'Cash' | 'ManualGCash' | 'GCash' | 'Bank Transfer' | 'Split'
   >('Cash');
   const [directGcashRef, setDirectGcashRef] = useState('');
   const [showManualOverride, setShowManualOverride] = useState(false);
@@ -187,8 +187,12 @@ export default function DrawerScreen() {
   const [overrideAmount, setOverrideAmount] = useState('');
 
   // Workflow C & D (Pickup Counter & Lalamove Gate) State
-  const [counterMethod, setCounterMethod] = useState<'Cash' | 'GCash'>('Cash');
+  const [counterMethod, setCounterMethod] = useState<'Cash' | 'GCash' | 'Split'>('Cash');
   const [counterRef, setCounterRef] = useState('');
+  const [splitCashAmount, setSplitCashAmount] = useState('');
+  const [splitDigitalAmount, setSplitDigitalAmount] = useState('');
+  const [splitDigitalMethod, setSplitDigitalMethod] = useState('GCash');
+  const [splitDigitalRef, setSplitDigitalRef] = useState('');
 
   // Poll QR Session Status when Hop 1 or Hop 2 QR token is active
   const shouldPollQr =
@@ -254,7 +258,7 @@ export default function DrawerScreen() {
     }
 
     for (const p of pickupDrops) {
-      const amt = Number(p.balanceDue || 0);
+      const amt = Number(p.heldByStaffAmount ?? p.balanceDue ?? 0);
       if (p.custodyStatus === 'InStaffDrawer') {
         drawerSum += amt;
         drawerCnt += 1;
@@ -391,6 +395,9 @@ export default function DrawerScreen() {
     setDirectGcashRef('');
     setShowManualOverride(false);
     setCounterRef('');
+    setSplitCashAmount('');
+    setSplitDigitalAmount('');
+    setSplitDigitalRef('');
   };
 
   const showSuccessFeedback = (msg: string) => {
@@ -504,8 +511,13 @@ export default function DrawerScreen() {
       await staffValidateMutation.mutateAsync({
         token: sessionToken,
         manualOverrideRiderName: useOverride ? overrideRiderName.trim() : undefined,
-        manualOverrideAmount: useOverride ? parseFloat(overrideAmount) : undefined,
+        manualOverrideAmount: useOverride ? (riderPayMethod === 'Split' ? Number(splitCashAmount) : parseFloat(overrideAmount)) : undefined,
         staffName: receivedByStaff.trim() || undefined,
+        cashAmount: riderPayMethod === 'Split' ? Number(splitCashAmount) : undefined,
+        digitalAmount: riderPayMethod === 'Split' ? Number(splitDigitalAmount) : undefined,
+        digitalMethod: riderPayMethod === 'Split' ? splitDigitalMethod : undefined,
+        digitalReferenceNumber:
+          riderPayMethod === 'Split' ? splitDigitalRef.trim() || undefined : undefined,
       });
       const id = modalState.orderId;
       closeActiveModal();
@@ -572,6 +584,11 @@ export default function DrawerScreen() {
         paymentMethod: counterMethod,
         referenceNumber: counterRef.trim() || undefined,
         staffName: receivedByStaff.trim() || undefined,
+        cashAmount: counterMethod === 'Split' ? Number(splitCashAmount) : undefined,
+        digitalAmount: counterMethod === 'Split' ? Number(splitDigitalAmount) : undefined,
+        digitalMethod: counterMethod === 'Split' ? splitDigitalMethod : undefined,
+        digitalReferenceNumber:
+          counterMethod === 'Split' ? splitDigitalRef.trim() || undefined : undefined,
       });
       const id = modalState.orderId;
       closeActiveModal();
@@ -1691,6 +1708,7 @@ export default function DrawerScreen() {
                       { label: '📲 Rider GCash', value: 'ManualGCash' },
                       { label: '📱 Direct GCash', value: 'GCash' },
                       { label: '🏦 Bank Transfer', value: 'Bank Transfer' },
+                      { label: '➕ Split', value: 'Split' },
                     ] as const
                   ).map((m) => {
                     const active = riderPayMethod === m.value;
@@ -1701,7 +1719,14 @@ export default function DrawerScreen() {
                           styles.methodSegBtn,
                           active && styles.methodSegBtnActive,
                         ]}
-                        onPress={() => setRiderPayMethod(m.value)}
+                        onPress={() => {
+                          setRiderPayMethod(m.value);
+                          if (m.value === 'Split') {
+                            setSplitCashAmount(String(expectedHop1Amount));
+                            setSplitDigitalAmount('0');
+                            setOverrideAmount(String(expectedHop1Amount));
+                          }
+                        }}
                       >
                         <Text
                           style={[
@@ -1715,6 +1740,67 @@ export default function DrawerScreen() {
                     );
                   })}
                 </View>
+
+                {riderPayMethod === 'Split' && (
+                  <View style={styles.directGcashBox}>
+                    <Text style={styles.fieldLabel}>Physical Cash to Drawer (₱)</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      keyboardType="numeric"
+                      value={splitCashAmount}
+                      onChangeText={(value) => {
+                        setSplitCashAmount(value);
+                        setOverrideAmount(value);
+                        setSplitDigitalAmount(
+                          String(Math.max(0, expectedHop1Amount - (Number(value) || 0)))
+                        );
+                      }}
+                    />
+                    <Text style={styles.fieldLabel}>Digital Transfer Amount (₱)</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      keyboardType="numeric"
+                      value={splitDigitalAmount}
+                      onChangeText={setSplitDigitalAmount}
+                    />
+                    <Text style={styles.fieldLabel}>Digital Channel</Text>
+                    <View style={styles.methodSegmentRow}>
+                      {(
+                        [
+                          { label: '📱 Direct GCash', value: 'ManualGCash' },
+                          { label: '📲 Rider GCash', value: 'GCash' },
+                          { label: '💚 Maya', value: 'Maya' },
+                          { label: '🏦 Bank', value: 'BankTransfer' },
+                        ] as const
+                      ).map((channel) => (
+                        <Pressable
+                          key={channel.value}
+                          style={[
+                            styles.methodSegBtn,
+                            splitDigitalMethod === channel.value && styles.methodSegBtnActive,
+                          ]}
+                          onPress={() => setSplitDigitalMethod(channel.value)}
+                        >
+                          <Text
+                            style={[
+                              styles.methodSegBtnText,
+                              splitDigitalMethod === channel.value && styles.methodSegBtnTextActive,
+                            ]}
+                          >
+                            {channel.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="Digital reference # (optional)"
+                      placeholderTextColor="#A8A29E"
+                      value={splitDigitalRef}
+                      onChangeText={setSplitDigitalRef}
+                    />
+                  </View>
+                )}
 
                 {riderPayMethod === 'GCash' ? (
                   /* 1-Hop Direct Store GCash Bypass */
@@ -1750,16 +1836,30 @@ export default function DrawerScreen() {
                   /* QR Polling + Safeguard 1 Discrepancy + Manual Counter Override */
                   <View style={styles.hop1QrSection}>
                     <View style={styles.qrTokenBox}>
-                      {sessionToken && (
-                        <View style={styles.nativeQrFrame}>
-                          <QRCode
-                            value={`https://yumilechon.netlify.app/qr-settle/${sessionToken}`}
+                      {sessionToken && (() => {
+                          const splitQuery =
+                            riderPayMethod === 'Split'
+                              ? `?mode=Split&cash=${splitCashAmount}&digital=${splitDigitalAmount}&digitalMethod=${encodeURIComponent(
+                                  splitDigitalMethod === 'ManualGCash'
+                                    ? 'Direct GCash'
+                                    : splitDigitalMethod === 'GCash'
+                                    ? 'Rider GCash'
+                                    : splitDigitalMethod === 'BankTransfer'
+                                    ? 'Bank Transfer'
+                                    : splitDigitalMethod
+                                )}`
+                              : '';
+                          return (
+                            <View style={styles.nativeQrFrame}>
+                              <QRCode
+                                value={`https://yumilechon.netlify.app/qr-settle/${sessionToken}${splitQuery}`}
                             size={180}
                             backgroundColor="#ffffff"
                             color="#181312"
                           />
-                        </View>
-                      )}
+                            </View>
+                          );
+                        })()}
                       <Text style={styles.qrTokenLabel}>
                         ACTIVE 10-MINUTE HANDSHAKE TOKEN
                       </Text>
@@ -1855,13 +1955,23 @@ export default function DrawerScreen() {
                           />
 
                           <Text style={styles.fieldLabel}>
-                            Counted Peso Amount Received (₱)
+                            {riderPayMethod === 'Split'
+                              ? 'Counted Physical Cash Received into Drawer (₱)'
+                              : 'Counted Peso Amount Received (₱)'}
                           </Text>
                           <TextInput
                             style={styles.modalInput}
                             keyboardType="numeric"
                             value={overrideAmount}
-                            onChangeText={setOverrideAmount}
+                            onChangeText={(value) => {
+                              setOverrideAmount(value);
+                              if (riderPayMethod === 'Split') {
+                                setSplitCashAmount(value);
+                                setSplitDigitalAmount(
+                                  String(Math.max(0, expectedHop1Amount - (Number(value) || 0)))
+                                );
+                              }
+                            }}
                           />
 
                           <Pressable
@@ -1949,7 +2059,80 @@ export default function DrawerScreen() {
                       📱 Store GCash QR
                     </Text>
                   </Pressable>
+                  <Pressable
+                    style={[
+                      styles.methodSegBtn,
+                      counterMethod === 'Split' && styles.methodSegBtnActive,
+                    ]}
+                    onPress={() => {
+                      setCounterMethod('Split');
+                      setSplitCashAmount(String(modalState.expectedAmount));
+                      setSplitDigitalAmount('0');
+                    }}
+                  >
+                    <Text style={[styles.methodSegBtnText, counterMethod === 'Split' && styles.methodSegBtnTextActive]}>➕ Split</Text>
+                  </Pressable>
                 </View>
+
+                {counterMethod === 'Split' && (
+                  <View style={styles.directGcashBox}>
+                    <Text style={styles.fieldLabel}>Physical Cash to Drawer (₱)</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      keyboardType="numeric"
+                      value={splitCashAmount}
+                      onChangeText={(value) => {
+                        setSplitCashAmount(value);
+                        setSplitDigitalAmount(
+                          String(Math.max(0, modalState.expectedAmount - (Number(value) || 0)))
+                        );
+                      }}
+                    />
+                    <Text style={styles.fieldLabel}>Digital Transfer Amount (₱)</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      keyboardType="numeric"
+                      value={splitDigitalAmount}
+                      onChangeText={setSplitDigitalAmount}
+                    />
+                    <Text style={styles.fieldLabel}>Digital Channel</Text>
+                    <View style={styles.methodSegmentRow}>
+                      {(
+                        [
+                          { label: '📱 Direct GCash', value: 'ManualGCash' },
+                          { label: '📲 Rider GCash', value: 'GCash' },
+                          { label: '💚 Maya', value: 'Maya' },
+                          { label: '🏦 Bank', value: 'BankTransfer' },
+                        ] as const
+                      ).map((channel) => (
+                        <Pressable
+                          key={channel.value}
+                          style={[
+                            styles.methodSegBtn,
+                            splitDigitalMethod === channel.value && styles.methodSegBtnActive,
+                          ]}
+                          onPress={() => setSplitDigitalMethod(channel.value)}
+                        >
+                          <Text
+                            style={[
+                              styles.methodSegBtnText,
+                              splitDigitalMethod === channel.value && styles.methodSegBtnTextActive,
+                            ]}
+                          >
+                            {channel.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="Digital reference # (optional)"
+                      placeholderTextColor="#A8A29E"
+                      value={splitDigitalRef}
+                      onChangeText={setSplitDigitalRef}
+                    />
+                  </View>
+                )}
 
                 <Text style={styles.fieldLabel}>
                   Reference / Receipt Number (Optional)
@@ -2782,8 +2965,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   methodSegBtnActive: {
-    backgroundColor: '#181312',
-    borderColor: '#181312',
+    backgroundColor: '#059669',
+    borderColor: '#047857',
   },
   methodSegBtnText: {
     fontSize: 11,
@@ -2792,7 +2975,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   methodSegBtnTextActive: {
-    color: '#FBBF24',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   directGcashBox: {
     backgroundColor: '#F0F9FF',

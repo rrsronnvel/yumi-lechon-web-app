@@ -149,6 +149,8 @@ export interface ParsedOrderDraftDto {
   deliveryFee?: number | null;
   distanceKm?: number | null;
   discount?: number | null;
+  quotedItemsTotal?: number | null;
+  quotedBalanceDue?: number | null;
   downpayment?: number | null;
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
   freebiesOptOut?: boolean | null;

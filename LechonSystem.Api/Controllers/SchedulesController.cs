@@ -39,6 +39,11 @@ public class SchedulesController : ControllerBase
     [HttpPut("{orderItemId}/override")]
     public async Task<IActionResult> OverrideSchedule(int orderItemId, [FromBody] OverrideScheduleRequest request)
     {
+        if (!User.IsInRole("Owner"))
+        {
+            return Forbid();
+        }
+
         try
         {
             var updated = await _schedulingService.OverrideScheduleItemAsync(orderItemId, request);

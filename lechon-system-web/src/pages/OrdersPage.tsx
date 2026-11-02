@@ -377,6 +377,11 @@ export default function OrdersPage() {
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentMethod, setPaymentMethod] = useState("GCash");
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentAmount2, setPaymentAmount2] = useState<number | "">("");
+  const [paymentMethod2, setPaymentMethod2] = useState("Cash");
+  const [paymentReference2, setPaymentReference2] = useState("");
   const [paymentToVoid, setPaymentToVoid] = useState<any | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
@@ -1828,6 +1833,12 @@ export default function OrdersPage() {
                                 {item.quantity}x{" "}
                                 {item.itemCategory?.name || "Lechon Size"}
                               </p>
+                              {item.fulfilledCategoryName &&
+                                item.fulfilledItemCategoryId !== item.itemCategoryId && (
+                                  <span className="mt-1 inline-flex rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-800">
+                                    🔄 Stock Upgraded: Fulfilling with {item.fulfilledCategoryName} ({item.fulfilledMinimumWeightKg}-{item.fulfilledMaximumWeightKg}kg)
+                                  </span>
+                                )}
                             </div>
 
                             <p className="font-semibold text-sm text-stone-900 font-mono">
@@ -2148,16 +2159,39 @@ export default function OrdersPage() {
             <DialogTitle className="text-lg font-bold text-stone-900">Log Additional Payment</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            <Button
+              type="button"
+              variant={isSplitPayment ? "default" : "outline"}
+              className="w-full"
+              onClick={() => {
+                const next = !isSplitPayment;
+                setIsSplitPayment(next);
+                if (next) {
+                  setPaymentMethod2(paymentMethod === "Cash" ? "GCash" : "Cash");
+                  setPaymentAmount2(
+                    Math.max(0, Number(orderDetails?.balanceDue || 0) - Number(paymentAmount || 0)),
+                  );
+                }
+              }}
+            >
+              {isSplitPayment ? "✓ Split Payment Enabled" : "➕ Split Payment (2 Channels)"}
+            </Button>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-stone-700 block">
-                Amount Received (₱)
+                {isSplitPayment ? "Payment 1 Amount (₱)" : "Amount Received (₱)"}
               </label>
               <Input
                 type="number"
                 value={paymentAmount}
-                onChange={(e) =>
-                  setPaymentAmount(parseFloat(e.target.value) || "")
-                }
+                onChange={(e) => {
+                  const amount = parseFloat(e.target.value) || "";
+                  setPaymentAmount(amount);
+                  if (isSplitPayment) {
+                    setPaymentAmount2(
+                      Math.max(0, Number(orderDetails?.balanceDue || 0) - Number(amount || 0)),
+                    );
+                  }
+                }}
                 placeholder="e.g., 3000"
                 className="h-10 border-stone-300"
               />
@@ -2168,7 +2202,13 @@ export default function OrdersPage() {
               </label>
               <select
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                onChange={(e) => {
+                  const nextMethod = e.target.value;
+                  setPaymentMethod(nextMethod);
+                  if (isSplitPayment) {
+                    setPaymentMethod2(nextMethod === "Cash" ? "GCash" : "Cash");
+                  }
+                }}
                 className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm"
               >
                 <option value="GCash">GCash</option>
@@ -2177,27 +2217,72 @@ export default function OrdersPage() {
                 <option value="Bank Transfer">Bank Transfer</option>
               </select>
             </div>
+            <Input
+              value={paymentReference}
+              onChange={(event) => setPaymentReference(event.target.value)}
+              placeholder="Payment 1 reference # (optional)"
+            />
+            {isSplitPayment && (
+              <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                <label className="text-sm font-medium text-stone-700 block">
+                  Payment 2 Amount (₱)
+                </label>
+                <Input
+                  type="number"
+                  value={paymentAmount2}
+                  onChange={(event) => setPaymentAmount2(parseFloat(event.target.value) || "")}
+                />
+                <select
+                  value={paymentMethod2}
+                  onChange={(event) => setPaymentMethod2(event.target.value)}
+                  className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="GCash">GCash</option>
+                  <option value="Maya">Maya</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                </select>
+                <Input
+                  value={paymentReference2}
+                  onChange={(event) => setPaymentReference2(event.target.value)}
+                  placeholder="Payment 2 reference # (optional)"
+                />
+              </div>
+            )}
             <Button
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2 h-11 font-semibold"
-              disabled={paymentMutation.isPending || !paymentAmount}
+              disabled={paymentMutation.isPending || !paymentAmount || (isSplitPayment && !paymentAmount2)}
               onClick={() => {
                 if (!selectedOrder) return;
                 paymentMutation.mutate(
-                  {
-                    orderId: selectedOrder.id,
-                    amount: Number(paymentAmount),
-                    paymentProvider: paymentMethod,
-                  },
+                  isSplitPayment
+                    ? {
+                        orderId: selectedOrder.id,
+                        splits: [
+                          { amount: Number(paymentAmount), paymentMethod, referenceNumber: paymentReference || undefined },
+                          { amount: Number(paymentAmount2), paymentMethod: paymentMethod2, referenceNumber: paymentReference2 || undefined },
+                        ],
+                      }
+                    : {
+                        orderId: selectedOrder.id,
+                        amount: Number(paymentAmount),
+                        paymentProvider: paymentMethod,
+                        referenceNumber: paymentReference || undefined,
+                      },
                   {
                     onSuccess: () => {
                       setIsPaymentOpen(false);
                       setPaymentAmount("");
+                      setPaymentAmount2("");
+                      setPaymentReference("");
+                      setPaymentReference2("");
+                      setIsSplitPayment(false);
                     },
                   }
                 );
               }}
             >
-              {paymentMutation.isPending ? "Logging..." : "Confirm Deposit"}
+              {paymentMutation.isPending ? "Logging..." : isSplitPayment ? "💾 Record Split Payment" : "Confirm Deposit"}
             </Button>
           </div>
         </DialogContent>

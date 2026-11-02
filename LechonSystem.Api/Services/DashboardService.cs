@@ -74,6 +74,7 @@ namespace LechonSystem.Api.Services
         public string WeightCategory { get; set; } = string.Empty;
         public string CategoryName { get; set; } = string.Empty;
         public string WeightRange { get; set; } = string.Empty;
+        public string? CustomWeightDisplay { get; set; }
         public decimal MinimumWeightKg { get; set; }
         public decimal MaximumWeightKg { get; set; }
         public int Quantity { get; set; }
@@ -249,6 +250,8 @@ namespace LechonSystem.Api.Services
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.ItemCategory)
                 .Include(s => s.OrderItem)
+                    .ThenInclude(oi => oi!.FulfilledItemCategory)
+                .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
                 .Where(s => s.OrderItem != null 
                          && s.OrderItem.ItemCategory != null
@@ -263,15 +266,20 @@ namespace LechonSystem.Api.Services
             return schedules.Select(s =>
             {
                 var order = s.OrderItem!.Order!;
-                var catName = s.OrderItem.ItemCategory?.Name ?? "Lechon";
-                var itemCatId = s.OrderItem.ItemCategoryId;
-                var minWeight = s.OrderItem.ItemCategory?.MinimumWeightKg ?? 0m;
-                var maxWeight = s.OrderItem.ItemCategory?.MaximumWeightKg ?? 0m;
+                var effectiveCategory = s.OrderItem.FulfilledItemCategory ?? s.OrderItem.ItemCategory;
+                var catName = effectiveCategory?.Name ?? "Lechon";
+                var itemCatId = s.OrderItem.FulfilledItemCategoryId ?? s.OrderItem.ItemCategoryId;
+                var minWeight = effectiveCategory?.MinimumWeightKg ?? 0m;
+                var maxWeight = effectiveCategory?.MaximumWeightKg ?? 0m;
                 var weightRange = (minWeight > 0 || maxWeight > 0)
                     ? (minWeight == maxWeight
                         ? $"{minWeight:0.##}"
                         : $"{minWeight:0.##}-{maxWeight:0.##}")
                     : string.Empty;
+                if (!string.IsNullOrWhiteSpace(s.CustomWeightDisplay))
+                {
+                    weightRange = s.CustomWeightDisplay.Trim();
+                }
 
                 var rushCutoff = s.TahiStartTime.Date.AddDays(-1).AddHours(12);
                 if (s.TahiStartTime.Hour >= 12)
@@ -289,6 +297,7 @@ namespace LechonSystem.Api.Services
                     WeightCategory = catName,
                     CategoryName = catName,
                     WeightRange = weightRange,
+                    CustomWeightDisplay = string.IsNullOrWhiteSpace(s.CustomWeightDisplay) ? null : s.CustomWeightDisplay.Trim(),
                     MinimumWeightKg = minWeight,
                     MaximumWeightKg = maxWeight,
                     Quantity = s.OrderItem.Quantity,

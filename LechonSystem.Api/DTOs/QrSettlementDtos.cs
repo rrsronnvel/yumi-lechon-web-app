@@ -43,6 +43,10 @@ public class StaffValidateRequest
     public string? ManualOverrideRiderName { get; set; }
     public decimal? ManualOverrideAmount { get; set; }
     public string? StaffName { get; set; }
+    public decimal? CashAmount { get; set; }
+    public decimal? DigitalAmount { get; set; }
+    public string? DigitalMethod { get; set; }
+    public string? DigitalReferenceNumber { get; set; }
 }
 
 public class OwnerApproveRequest
@@ -59,6 +63,10 @@ public class CounterCollectRequest
     public decimal? Amount { get; set; }
     public string? ReferenceNumber { get; set; }
     public string? StaffName { get; set; }
+    public decimal? CashAmount { get; set; }
+    public decimal? DigitalAmount { get; set; }
+    public string? DigitalMethod { get; set; }
+    public string? DigitalReferenceNumber { get; set; }
 }
 
 public class SettleDirectGcashRequest

@@ -15,6 +15,8 @@ public class DailySheetItemDto
     public int Id { get; set; }
     public int OrderItemId { get; set; }
     public int OrderId { get; set; }
+    public int BookedItemCategoryId { get; set; }
+    public int? FulfilledItemCategoryId { get; set; }
     public string OrderReference { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
@@ -26,6 +28,9 @@ public class DailySheetItemDto
     public string CategoryName { get; set; } = string.Empty;
     public string Weight { get; set; } = string.Empty;
     public string WeightRange { get; set; } = string.Empty;
+    public string StandardWeightRange { get; set; } = string.Empty;
+    public string? CustomWeightDisplay { get; set; }
+    public string? BookedSizeName { get; set; }
     public decimal MinWeight { get; set; }
     public decimal MaxWeight { get; set; }
     public decimal MinimumWeightKg { get; set; }

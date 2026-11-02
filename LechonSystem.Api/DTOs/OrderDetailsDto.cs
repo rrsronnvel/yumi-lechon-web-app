@@ -54,6 +54,7 @@ public class OrderDetailsDto
     public string? CustomerPreferences { get; set; }
     public string? CustomerComplaintHistory { get; set; }
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
+    public decimal? HeldByStaffAmount { get; set; }
     public bool IsOwnerConfirmed { get; set; }
     public DateTime? OwnerConfirmedAt { get; set; }
     public string? OwnerConfirmedBy { get; set; }
@@ -89,10 +90,15 @@ public class OrderDetailItemDto
     public int Id { get; set; }
     public int OrderId { get; set; }
     public int ItemCategoryId { get; set; }
+    public int? FulfilledItemCategoryId { get; set; }
+    public string? FulfilledCategoryName { get; set; }
+    public decimal? FulfilledMinimumWeightKg { get; set; }
+    public decimal? FulfilledMaximumWeightKg { get; set; }
     public int Quantity { get; set; }
     public decimal Price { get; set; }
     public decimal TotalPrice { get; set; }
     public OrderDetailCategoryDto? ItemCategory { get; set; }
+    public OrderDetailCategoryDto? FulfilledItemCategory { get; set; }
 }
 
 public class OrderDetailCategoryDto

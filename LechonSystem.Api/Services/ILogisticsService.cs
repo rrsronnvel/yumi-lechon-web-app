@@ -26,7 +26,7 @@ namespace LechonSystem.Api.Services
         Task<QrSessionStatusDto> RejectRiderSignatureAsync(string token);
         Task<QrSessionStatusDto> StaffValidateQrSessionAsync(string token, StaffValidateRequest? request, string staffUsername);
         Task<QrSessionStatusDto> CounterCollectQrSessionAsync(string token, string staffUsername);
-        Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null);
+        Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null, decimal? cashAmount = null, decimal? digitalAmount = null, string? digitalMethod = null, string? digitalReferenceNumber = null);
         Task<bool> RevertCustodyAsync(int orderId, string currentUser, bool isOwner);
         Task<QrSessionStatusDto> OwnerApproveQrSessionAsync(string token, OwnerApproveRequest? request, string? currentUsername, bool isOwnerRole);
         Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername);

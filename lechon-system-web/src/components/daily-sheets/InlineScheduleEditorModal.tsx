@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useOverrideScheduleMutation, RoastingScheduleItem } from "@/hooks/useSchedules";
+import { useMenuCategories } from "@/hooks/useCms";
 import { useRidersQuery, useCreateRiderMutation } from "@/hooks/useRiders";
 import { Clock, User, MapPin, Package, FileText, Calendar, Phone } from "lucide-react";
 
@@ -103,6 +104,7 @@ export function InlineScheduleEditorModal({
 }: InlineScheduleEditorModalProps) {
   const { data: registeredRiders = [] } = useRidersQuery();
   const createRiderMutation = useCreateRiderMutation();
+  const { data: menuCategories = [] } = useMenuCategories();
 
   const [tahiTime, setTahiTime] = useState("");
   const [salangTime, setSalangTime] = useState("");
@@ -110,6 +112,8 @@ export function InlineScheduleEditorModal({
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [customWeightDisplay, setCustomWeightDisplay] = useState("");
+  const [fulfilledCategoryId, setFulfilledCategoryId] = useState<number | null>(null);
 
   const timeToMinutes = (hhmm: string): number | null => {
     if (!hhmm || !hhmm.includes(":")) return null;
@@ -145,6 +149,32 @@ export function InlineScheduleEditorModal({
     }
   };
 
+  const handleSubstitutionChange = (newCatId: number | null, fallbackBookedCatId?: number) => {
+    setFulfilledCategoryId(newCatId);
+
+    // Dynamic Schedule Recalculation (Auto-Shift Tahi & Salang Earlier) on Size Upgrade / Substitution
+    const effectiveCatId = newCatId ?? (item?.bookedItemCategoryId || fallbackBookedCatId);
+    const targetCategory = menuCategories.find((c) => c.id === effectiveCatId);
+
+    if (targetCategory) {
+      const salangDuration = targetCategory.salangDurationMinutes ?? 180;
+      const tahiDuration = targetCategory.tahiDurationMinutes ?? 60;
+      const packagingDuration = 30;
+
+      const anchorHHMM = departureTime || formatToHHMM(item?.riderDepartureTime ?? item?.targetDeliveryTime);
+      const anchorMinutes = timeToMinutes(anchorHHMM);
+
+      if (anchorMinutes !== null) {
+        const packagingMinutes = anchorMinutes - packagingDuration;
+        const newSalangMinutes = packagingMinutes - salangDuration;
+        const newTahiMinutes = newSalangMinutes - tahiDuration;
+
+        setSalangTime(minutesToTime(newSalangMinutes));
+        setTahiTime(minutesToTime(newTahiMinutes));
+      }
+    }
+  };
+
   const overrideMutation = useOverrideScheduleMutation();
 
   useEffect(() => {
@@ -164,6 +194,8 @@ export function InlineScheduleEditorModal({
       );
       setRiderPhone(matched ? matched.phoneNumber : item.riderPhone || "");
       setRemarks(item.remarks || "");
+      setCustomWeightDisplay(item.customWeightDisplay || "");
+      setFulfilledCategoryId(item.fulfilledItemCategoryId ?? null);
     }
   }, [item, open, registeredRiders]);
 
@@ -186,6 +218,8 @@ export function InlineScheduleEditorModal({
         departureTime: formattedDeparture,
         riderName: riderName.trim() || undefined,
         remarks: remarks.trim() || undefined,
+        customWeightDisplay,
+        fulfilledItemCategoryId: fulfilledCategoryId ?? 0,
       });
 
       // Auto-save new ad-hoc rider to registry if phone and name are provided
@@ -314,6 +348,90 @@ export function InlineScheduleEditorModal({
               />
             </div>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="customWeightDisplay" className="text-xs font-semibold text-slate-700">
+                Custom Weight Display (Screenshot / Pit Target)
+              </Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => setCustomWeightDisplay("")}
+              >
+                Reset to Default
+              </Button>
+            </div>
+            <Input
+              id="customWeightDisplay"
+              value={customWeightDisplay}
+              onChange={(event) => setCustomWeightDisplay(event.target.value.slice(0, 32))}
+              placeholder={`Default: ${item.standardWeightRange || item.weightRange || item.weight || "-"} (e.g. type 24 or 50)`}
+            />
+            {Number(customWeightDisplay) > Number(item.maximumWeightKg || 0) && (
+              <button
+                type="button"
+                className="rounded-full border border-orange-300 bg-orange-100 px-3 py-1 text-left text-[11px] font-bold text-orange-900"
+                onClick={() => {
+                  const tahi = timeToMinutes(tahiTime);
+                  const salang = timeToMinutes(salangTime);
+                  if (tahi !== null) setTahiTime(minutesToTime(tahi - 30));
+                  if (salang !== null) setSalangTime(minutesToTime(salang - 30));
+                }}
+              >
+                🔥 Heavy Pig: Click [+30m Roast Buffer] to move Tahi &amp; Salang 30 mins earlier
+              </button>
+            )}
+          </div>
+
+          {/* Freezer Stock Substitution (Free Upgrade) */}
+          {(() => {
+            const bookedCatId = item.bookedItemCategoryId || (menuCategories.find((c) => c.name.toLowerCase() === (item.bookedSizeName || item.size || "").toLowerCase())?.id);
+            const bookedCategory = bookedCatId ? menuCategories.find((c) => c.id === bookedCatId) : null;
+            const bookedCatName = item.bookedSizeName || (bookedCategory ? bookedCategory.name : item.size) || "Booked";
+            const lechonUpgradeOptions = menuCategories.filter(
+              (cat) => cat.isActive && cat.minimumWeightKg > 0 && cat.id !== bookedCatId
+            );
+
+            return (
+              <div className="space-y-1.5 p-3 rounded-lg border border-indigo-200 bg-indigo-50/50">
+                <Label htmlFor="stockSubstitution" className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                  <span>🔄 Freezer Stock Substitution (Free Upgrade)</span>
+                </Label>
+                <select
+                  id="stockSubstitution"
+                  value={fulfilledCategoryId ?? ""}
+                  onChange={(e) => {
+                    const newCatId = e.target.value ? Number(e.target.value) : null;
+                    handleSubstitutionChange(newCatId, bookedCatId);
+                  }}
+                  className={`w-full h-10 rounded-md bg-white px-3 text-xs focus:outline-none transition-colors ${
+                    fulfilledCategoryId
+                      ? "border-2 border-indigo-600 font-semibold text-indigo-950 bg-indigo-50/30"
+                      : "border border-slate-300 text-slate-700"
+                  }`}
+                >
+                  <option value="">Same as Booked ({bookedCatName})</option>
+                  {lechonUpgradeOptions.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} ({cat.minimumWeightKg}-{cat.maximumWeightKg}kg) — Free Stock Upgrade
+                    </option>
+                  ))}
+                </select>
+                {fulfilledCategoryId ? (
+                  <p className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                    <span>ℹ</span> Will reserve freezer stock for upgraded size while keeping customer's booked price locked.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Substitute a larger lechon from freezer stock at no extra charge if booked size is out of stock.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Rider Selection & Ad-Hoc Entry */}
           <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">

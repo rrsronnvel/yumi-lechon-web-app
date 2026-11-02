@@ -32,6 +32,7 @@ export interface DefrostRosterDto {
   weightCategory: string;
   categoryName?: string;
   weightRange?: string;
+  customWeightDisplay?: string | null;
   minimumWeightKg?: number;
   maximumWeightKg?: number;
   quantity: number;

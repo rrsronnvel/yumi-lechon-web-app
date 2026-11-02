@@ -233,7 +233,7 @@ export function PickupSettlementTab({ selectedCustodian }: { selectedCustodian?:
 
                       {/* Balance to Collect */}
                       <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/20 text-xs tabular-nums whitespace-nowrap border-l border-stone-200/80">
-                        ₱{pickup.balanceDue.toLocaleString()}
+                        ₱{Number(pickup.heldByStaffAmount ?? pickup.balanceDue).toLocaleString()}
                       </td>
 
                       {/* Action */}
@@ -311,7 +311,7 @@ export function PickupSettlementTab({ selectedCustodian }: { selectedCustodian?:
           }}
           orderId={selectedOwnerRemit.orderId}
           customerName={selectedOwnerRemit.customerName}
-          expectedAmount={selectedOwnerRemit.balanceDue}
+          expectedAmount={Number(selectedOwnerRemit.heldByStaffAmount ?? selectedOwnerRemit.balanceDue)}
           riderName="Walk-in Store Pickup"
           hopStage="StaffToOwner"
           heldByStaffName={selectedOwnerRemit.heldByStaffName}

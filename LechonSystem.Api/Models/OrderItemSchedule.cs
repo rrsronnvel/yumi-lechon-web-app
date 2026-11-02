@@ -17,6 +17,7 @@ namespace LechonSystem.Api.Models
         public DateTime PackagingStartTime { get; set; }
         public DateTime SalangStartTime { get; set; }
         public DateTime TahiStartTime { get; set; }
+        public string? CustomWeightDisplay { get; set; }
 
 
         public bool IsManualOverride { get; set; } = false;

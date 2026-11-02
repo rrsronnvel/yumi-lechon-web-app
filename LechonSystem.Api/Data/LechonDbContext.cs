@@ -42,6 +42,17 @@ public class LechonDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<OrderItem>()
+            .HasOne(item => item.ItemCategory)
+            .WithMany()
+            .HasForeignKey(item => item.ItemCategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<OrderItem>()
+            .HasOne(item => item.FulfilledItemCategory)
+            .WithMany()
+            .HasForeignKey(item => item.FulfilledItemCategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Explicitly define a completely static date to override the BaseEntity default
         var seedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 

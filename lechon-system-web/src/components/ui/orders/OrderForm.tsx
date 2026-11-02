@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -72,6 +72,7 @@ import {
   Minus,
   Copy,
   ClipboardPaste,
+  RotateCcw,
 } from "lucide-react";
 
 export interface OrderFormProps {
@@ -215,18 +216,33 @@ export default function OrderForm({
     watchedFacebookName || "",
   );
 
+  // Form reset callback to restore clean empty state
+  const handleReset = useCallback(() => {
+    form.reset(DEFAULT_ORDER_VALUES);
+    form.setValue("targetDeliveryTime", "");
+    form.setValue("riderDepartureTime", "");
+    form.setValue("isTimeTbd", false);
+    form.setValue("distanceKm", 0);
+    form.setValue("deliveryFee", 0);
+    form.setValue("discount", 0);
+    form.setValue("downpayment", 0);
+    form.setValue("downpaymentMethod", "None");
+    form.setValue("items", []);
+    replace([]);
+    setFreebiesConfig(createDefaultFreebiesConfig(0));
+    setAppliedFreebiesDiscount(0);
+    setShowSecondaryPhone(false);
+    setIsNonLechonMode(false);
+    previousWholePigCount.current = 0;
+    pendingParsedFreebies.current = null;
+  }, [DEFAULT_ORDER_VALUES, form, replace]);
+
   // Reset form to clean empty state when modal opens
   useEffect(() => {
     if (_open) {
-      form.reset(DEFAULT_ORDER_VALUES);
-      setFreebiesConfig(createDefaultFreebiesConfig(0));
-      setAppliedFreebiesDiscount(0);
-      setShowSecondaryPhone(false);
-      setIsNonLechonMode(false);
-      previousWholePigCount.current = 0;
-      pendingParsedFreebies.current = null;
+      handleReset();
     }
-  }, [_open, form, DEFAULT_ORDER_VALUES]);
+  }, [_open, handleReset]);
 
   // 3. Interactive Store Pickup & Lalamove Safeguards
   useEffect(() => {
@@ -242,7 +258,10 @@ export default function OrderForm({
       form.setValue("riderDepartureTime", "", { shouldValidate: true });
       return;
     }
-    if (!watchedTargetTime) return;
+    if (!watchedTargetTime) {
+      form.setValue("riderDepartureTime", "", { shouldValidate: true });
+      return;
+    }
     const targetDate = new Date(watchedTargetTime);
     if (isNaN(targetDate.getTime())) return;
 
@@ -966,16 +985,19 @@ export default function OrderForm({
   const closeSuccessModal = () => {
     setIsSuccessModalOpen(false);
     setSavedOrderForModal(null);
-    form.reset();
-    setFreebiesConfig(createDefaultFreebiesConfig(0));
-    setAppliedFreebiesDiscount(0);
-    setShowSecondaryPhone(false);
-    setIsNonLechonMode(false);
-    previousWholePigCount.current = 0;
-    pendingParsedFreebies.current = null;
+    setSavedOrderRef("");
+    handleReset();
     createOrderMutation.reset();
     onClose?.();
     onOpenChange?.(false);
+  };
+
+  const handleCreateAnotherOrder = () => {
+    setIsSuccessModalOpen(false);
+    setSavedOrderForModal(null);
+    setSavedOrderRef("");
+    handleReset();
+    createOrderMutation.reset();
   };
 
   return (
@@ -988,13 +1010,25 @@ export default function OrderForm({
         {/* Left Column: Who & Where Logistics                        */}
         {/* ========================================================= */}
         <div className="space-y-4 border-b border-stone-200 p-5 sm:p-6 lg:col-span-6 lg:max-h-[92vh] lg:overflow-y-auto lg:border-r lg:border-b-0">
-          <div className="border-b border-stone-200 pb-3">
-            <h2 className="text-lg font-bold text-stone-900 tracking-tight flex items-center gap-2">
-              <span>🐷</span> Order Entry Terminal
-            </h2>
-            <p className="text-xs text-stone-500">
-              Customer demographics, fulfillment routing & event logistics.
-            </p>
+          <div className="border-b border-stone-200 pb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-stone-900 tracking-tight flex items-center gap-2">
+                <span>🐷</span> Order Entry Terminal
+              </h2>
+              <p className="text-xs text-stone-500">
+                Customer demographics, fulfillment routing & event logistics.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleReset}
+              className="text-xs text-stone-600 hover:text-stone-900 border-stone-300 h-8 flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-stone-500" />
+              <span>Clear Form</span>
+            </Button>
           </div>
 
           {!createOrderMutation.isSuccess &&
@@ -2126,14 +2160,24 @@ export default function OrderForm({
           )}
 
           <DialogFooter className="mx-0 mb-0 bg-transparent border-t border-stone-200 pt-3 px-0 pb-0 flex sm:justify-between gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-stone-300 text-stone-700 h-10"
-              onClick={closeSuccessModal}
-            >
-              Done / Close
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-stone-300 text-stone-700 h-10 cursor-pointer"
+                onClick={closeSuccessModal}
+              >
+                Done / Close
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="border border-stone-300 text-stone-800 bg-stone-100 hover:bg-stone-200 h-10 font-semibold cursor-pointer"
+                onClick={handleCreateAnotherOrder}
+              >
+                + Book Another Order
+              </Button>
+            </div>
             <Button
               type="button"
               className="bg-[#C81E1E] hover:bg-[#A81818] text-white font-semibold h-10 flex items-center gap-1.5"

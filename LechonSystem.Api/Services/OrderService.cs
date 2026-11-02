@@ -591,6 +591,8 @@ namespace LechonSystem.Api.Services
             var order = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.FulfilledItemCategory)
                 .Include(o => o.DeliveryTrip)
                 .FirstOrDefaultAsync(o => o.Id == id);
 
@@ -616,7 +618,10 @@ namespace LechonSystem.Api.Services
             var isOwner = _httpContextAccessor.HttpContext?.User.IsInRole("Owner") ?? false;
             var isCashier = _httpContextAccessor.HttpContext?.User.IsInRole("Cashier") ?? false;
             var previousDownpayment = order.Downpayment;
-            var requestedCategoryIds = request.Items.Select(item => item.ItemCategoryId).Distinct().ToList();
+            var requestedCategoryIds = request.Items
+                .SelectMany(item => new[] { item.ItemCategoryId, item.FulfilledItemCategoryId ?? item.ItemCategoryId })
+                .Distinct()
+                .ToList();
             var requestedCategories = await _context.ItemCategories
                 .Where(category => requestedCategoryIds.Contains(category.Id))
                 .ToDictionaryAsync(category => category.Id);
@@ -901,11 +906,32 @@ namespace LechonSystem.Api.Services
 
                 if (existingItem != null)
                 {
-                    if (existingItem.ItemCategoryId != requestedItem.ItemCategoryId || existingItem.Quantity != requestedItem.Quantity)
+                    var requestedFulfilledCategoryId = requestedItem.FulfilledItemCategoryId == requestedItem.ItemCategoryId
+                        ? null
+                        : requestedItem.FulfilledItemCategoryId;
+                    var oldQuantity = existingItem.Quantity;
+                    var oldEffectiveCategoryId = existingItem.FulfilledItemCategoryId ?? existingItem.ItemCategoryId;
+                    var oldEffectiveCategoryName = existingItem.FulfilledItemCategory?.Name
+                        ?? existingItem.ItemCategory?.Name
+                        ?? "Unknown Size";
+                    var newEffectiveCategoryId = requestedFulfilledCategoryId ?? requestedItem.ItemCategoryId;
+                    var effectiveCategoryChanged = oldEffectiveCategoryId != newEffectiveCategoryId;
+                    var substitutionChanged = existingItem.FulfilledItemCategoryId != requestedFulfilledCategoryId;
+                    var bookedCategoryChanged = existingItem.ItemCategoryId != requestedItem.ItemCategoryId;
+
+                    if (substitutionChanged && !isOwner)
+                    {
+                        throw new UnauthorizedAccessException("Only an Owner can substitute freezer stock for an order item.");
+                    }
+
+                    if (bookedCategoryChanged ||
+                        existingItem.Quantity != requestedItem.Quantity ||
+                        effectiveCategoryChanged)
                     {
                         if (!order.IsDraft) requiresRescheduling = true;
 
                         var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
+                        requestedCategories.TryGetValue(newEffectiveCategoryId, out var fulfilledCat);
                         string oldName = existingItem.ItemCategory?.Name ?? "Unknown Size";
                         string newName = newCat?.Name ?? "Unknown Size";
 
@@ -919,15 +945,73 @@ namespace LechonSystem.Api.Services
                         }
 
                         existingItem.ItemCategoryId = requestedItem.ItemCategoryId;
+                        existingItem.FulfilledItemCategoryId = requestedFulfilledCategoryId;
                         existingItem.Quantity = requestedItem.Quantity;
 
-                        existingItem.Price = newCat?.BasePrice ?? 0;
-                        existingItem.TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity;
+                        if (bookedCategoryChanged)
+                        {
+                            existingItem.Price = newCat?.BasePrice ?? 0;
+                        }
+                        existingItem.TotalPrice = existingItem.Price * requestedItem.Quantity;
+
+                        if (effectiveCategoryChanged)
+                        {
+                            var activeReservation = await _context.InventoryReservations
+                                .FirstOrDefaultAsync(reservation =>
+                                    reservation.OrderId == order.Id &&
+                                    reservation.ItemCategoryId == oldEffectiveCategoryId &&
+                                    !reservation.IsCancelled &&
+                                    reservation.Status != ReservationStatus.Cancelled &&
+                                    reservation.ReservationStatus != ReservationStatus.Cancelled);
+                            if (activeReservation != null)
+                            {
+                                var isStockCommitted =
+                                    activeReservation.Status == ReservationStatus.Committed ||
+                                    activeReservation.ReservationStatus == ReservationStatus.Committed;
+                                activeReservation.ItemCategoryId = newEffectiveCategoryId;
+                                if (isStockCommitted && substitutionChanged)
+                                {
+                                    var reasonPrefix = "[Reservation Swap Audit]";
+                                    _context.InventoryTransactions.AddRange(
+                                        new InventoryTransaction
+                                        {
+                                            ItemCategoryId = oldEffectiveCategoryId,
+                                            Quantity = oldQuantity,
+                                            Type = TransactionType.Adjustment,
+                                            ReferenceId = order.Id,
+                                            Reason = $"{reasonPrefix} Stock released: Order #{order.OrderReference} upgraded from {oldEffectiveCategoryName} to {fulfilledCat?.Name ?? newName}"
+                                        },
+                                        new InventoryTransaction
+                                        {
+                                            ItemCategoryId = newEffectiveCategoryId,
+                                            Quantity = -existingItem.Quantity,
+                                            Type = TransactionType.Adjustment,
+                                            ReferenceId = order.Id,
+                                            Reason = $"{reasonPrefix} Stock deducted: Order #{order.OrderReference} complimentary upgrade (booked {newName}, fulfilled with {fulfilledCat?.Name ?? newName})"
+                                        });
+                                }
+                            }
+
+                            if (substitutionChanged)
+                            {
+                                auditChanges.Add(requestedFulfilledCategoryId.HasValue
+                                    ? $"Complimentary Stock Upgrade: Booked '{existingItem.Quantity}x {newName}' fulfilled using '{fulfilledCat?.Name ?? newName}' stock (Price locked at ₱{existingItem.Price:N0})"
+                                    : $"Stock Substitution Cleared: '{existingItem.Quantity}x {newName}' restored to booked freezer stock (Price remains ₱{existingItem.Price:N0})");
+                            }
+                        }
                     }
                 }
                 else if (requestedItem.Id == 0)
                 {
                     if (!order.IsDraft) requiresRescheduling = true;
+
+                    var requestedFulfilledCategoryId = requestedItem.FulfilledItemCategoryId == requestedItem.ItemCategoryId
+                        ? null
+                        : requestedItem.FulfilledItemCategoryId;
+                    if (requestedFulfilledCategoryId.HasValue && !isOwner)
+                    {
+                        throw new UnauthorizedAccessException("Only an Owner can substitute freezer stock for an order item.");
+                    }
 
                     var newCat = await _context.ItemCategories.FindAsync(requestedItem.ItemCategoryId);
                     string newName = newCat?.Name ?? "Item";
@@ -937,6 +1021,7 @@ namespace LechonSystem.Api.Services
                     var newItem = new OrderItem
                     {
                         ItemCategoryId = requestedItem.ItemCategoryId,
+                        FulfilledItemCategoryId = requestedFulfilledCategoryId,
                         Quantity = requestedItem.Quantity,
                         Price = newCat?.BasePrice ?? 0,
                         TotalPrice = (newCat?.BasePrice ?? 0) * requestedItem.Quantity
@@ -969,7 +1054,7 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
 
-            if (order.IsDraft || order.IsTimeTbd || isNonLechonOrder)
+            if (order.IsDraft || isNonLechonOrder)
             {
                 var orderItemIds = order.OrderItems.Select(item => item.Id).ToList();
                 var obsoleteSchedules = await _context.OrderItemSchedules
@@ -1000,14 +1085,15 @@ namespace LechonSystem.Api.Services
             // Handle finalization or rescheduling
             if (isFinalizing && !order.IsTimeTbd && order.TargetDeliveryTime.HasValue)
             {
-                var itemCatIds = order.OrderItems.Select(i => i.ItemCategoryId).Distinct().ToList();
+                var itemCatIds = order.OrderItems.Select(i => i.FulfilledItemCategoryId ?? i.ItemCategoryId).Distinct().ToList();
                 var itemCategories = await _context.ItemCategories
                     .Where(c => itemCatIds.Contains(c.Id))
                     .ToDictionaryAsync(c => c.Id, c => c);
 
                 foreach (var item in order.OrderItems)
                 {
-                    if (itemCategories.TryGetValue(item.ItemCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    var effectiveCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
+                    if (itemCategories.TryGetValue(effectiveCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
                     {
                         continue; // Exclude add-ons
                     }
@@ -1015,14 +1101,14 @@ namespace LechonSystem.Api.Services
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
                         item.Id,
                         order.TargetDeliveryTime.Value,
-                        item.ItemCategoryId,
+                        effectiveCategoryId,
                         order.RiderDepartureTime);
 
                     _context.OrderItemSchedules.Add(newSchedule);
 
                     await _inventoryService.CreatePendingReservationAsync(
                         order.Id,
-                        item.ItemCategoryId,
+                        effectiveCategoryId,
                         order.TargetDeliveryTime.Value,
                         order.IsTrustedCustomer,
                         order.Downpayment
@@ -1031,7 +1117,7 @@ namespace LechonSystem.Api.Services
             }
             else if (!order.IsDraft && !order.IsTimeTbd && requiresRescheduling && order.TargetDeliveryTime.HasValue)
             {
-                var itemCatIds = order.OrderItems.Select(i => i.ItemCategoryId).Distinct().ToList();
+                var itemCatIds = order.OrderItems.Select(i => i.FulfilledItemCategoryId ?? i.ItemCategoryId).Distinct().ToList();
                 var itemCategories = await _context.ItemCategories
                     .Where(c => itemCatIds.Contains(c.Id))
                     .ToDictionaryAsync(c => c.Id, c => c);
@@ -1040,8 +1126,10 @@ namespace LechonSystem.Api.Services
                 {
                     var oldSchedule = await _context.OrderItemSchedules
                         .FirstOrDefaultAsync(s => s.OrderItemId == item.Id);
+                    var customWeightDisplay = oldSchedule?.CustomWeightDisplay;
 
-                    if (itemCategories.TryGetValue(item.ItemCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    var effectiveCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
+                    if (itemCategories.TryGetValue(effectiveCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
                     {
                         if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
                         continue;
@@ -1053,10 +1141,11 @@ namespace LechonSystem.Api.Services
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
                         item.Id,
                         order.TargetDeliveryTime.Value,
-                        item.ItemCategoryId,
+                        effectiveCategoryId,
                         order.RiderDepartureTime);
 
                     newSchedule.IsManualOverride = false;
+                    newSchedule.CustomWeightDisplay = customWeightDisplay;
                     _context.OrderItemSchedules.Add(newSchedule);
                 }
             }
@@ -1092,6 +1181,8 @@ namespace LechonSystem.Api.Services
             var order = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.FulfilledItemCategory)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -1103,6 +1194,8 @@ namespace LechonSystem.Api.Services
             var order = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.FulfilledItemCategory)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -1146,6 +1239,7 @@ namespace LechonSystem.Api.Services
                 RoutingStatus = order.RoutingStatus.ToString(),
                 DeliveryTripId = order.DeliveryTripId,
                 SettlementCustodyStatus = order.SettlementCustodyStatus ?? "Uncollected",
+                HeldByStaffAmount = order.HeldByStaffAmount,
                 IsOwnerConfirmed = order.IsOwnerConfirmed,
                 OwnerConfirmedAt = order.OwnerConfirmedAt,
                 OwnerConfirmedBy = order.OwnerConfirmedBy,
@@ -1154,6 +1248,10 @@ namespace LechonSystem.Api.Services
                     Id = i.Id,
                     OrderId = i.OrderId,
                     ItemCategoryId = i.ItemCategoryId,
+                    FulfilledItemCategoryId = i.FulfilledItemCategoryId,
+                    FulfilledCategoryName = i.FulfilledItemCategory?.Name,
+                    FulfilledMinimumWeightKg = i.FulfilledItemCategory?.MinimumWeightKg,
+                    FulfilledMaximumWeightKg = i.FulfilledItemCategory?.MaximumWeightKg,
                     Quantity = i.Quantity,
                     Price = i.Price,
                     TotalPrice = i.TotalPrice,
@@ -1164,6 +1262,14 @@ namespace LechonSystem.Api.Services
                         BasePrice = i.ItemCategory.BasePrice,
                         MinimumWeightKg = i.ItemCategory.MinimumWeightKg,
                         MaximumWeightKg = i.ItemCategory.MaximumWeightKg
+                    },
+                    FulfilledItemCategory = i.FulfilledItemCategory == null ? null : new OrderDetailCategoryDto
+                    {
+                        Id = i.FulfilledItemCategory.Id,
+                        Name = i.FulfilledItemCategory.Name,
+                        BasePrice = i.FulfilledItemCategory.BasePrice,
+                        MinimumWeightKg = i.FulfilledItemCategory.MinimumWeightKg,
+                        MaximumWeightKg = i.FulfilledItemCategory.MaximumWeightKg
                     }
                 }).ToList()
             };
@@ -1346,12 +1452,34 @@ namespace LechonSystem.Api.Services
                 : "None";
             order.UpdatedAt = voidedAt;
 
+            var financialOutstandingAfterVoid = Math.Max(0m, order.GrandTotal - order.Downpayment);
+            var hasActiveDrawerHolding =
+                string.Equals(order.SettlementCustodyStatus, "InStaffDrawer", StringComparison.OrdinalIgnoreCase) &&
+                (order.HeldByStaffAmount ?? 0m) > 0m;
+            var restoredToUncollected = financialOutstandingAfterVoid > 0m &&
+                (!hasActiveDrawerHolding ||
+                 string.Equals(order.SettlementCustodyStatus, "Settled", StringComparison.OrdinalIgnoreCase));
+
+            if (restoredToUncollected)
+            {
+                order.SettlementCustodyStatus = "Uncollected";
+                order.StaffValidatedBy = null;
+                order.StaffValidatedAt = null;
+                order.HeldByStaffMethod = null;
+                order.HeldByStaffAmount = 0m;
+            }
+            var newBalance = restoredToUncollected
+                ? CalculateOperationalBalanceDue(order, order.Downpayment)
+                : financialOutstandingAfterVoid;
+
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = order.Id,
                 ChangedBy = voidedBy,
                 ActionType = "Payment Voided",
-                Changes = $"Voided payment of ₱{payment.Amount:N2} ({PaymentChannels.Normalize(payment.PaymentMethod)}) recorded on {payment.CreatedAt:g}. Reason: {reason}",
+                Changes = restoredToUncollected
+                    ? $"Payment of ₱{payment.Amount:N2} ({PaymentChannels.Normalize(payment.PaymentMethod)}) voided. Order restored to Uncollected queue (Balance Due: ₱{newBalance:N2}). Reason: {reason}"
+                    : $"Voided payment of ₱{payment.Amount:N2} ({PaymentChannels.Normalize(payment.PaymentMethod)}) recorded on {payment.CreatedAt:g}. Reason: {reason}",
                 Timestamp = voidedAt
             });
 

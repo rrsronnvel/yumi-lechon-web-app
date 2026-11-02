@@ -106,6 +106,20 @@ const formatDateTime = (dateVal: string | Date): string => {
   });
 };
 
+export const groupItemsForReceipt = (
+  items: { categoryName: string; quantity: number }[]
+): { categoryName: string; quantity: number }[] => {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    const name = item.categoryName || "Lechon Order";
+    map.set(name, (map.get(name) || 0) + (item.quantity || 1));
+  }
+  return Array.from(map.entries()).map(([categoryName, quantity]) => ({
+    categoryName,
+    quantity,
+  }));
+};
+
 export const generateBookingConfirmation = (order: TemplateOrderData): string => {
   const fulfillmentLabels: Record<number, string> = {
     0: '🏪 Walk-in Store Pickup',
@@ -113,10 +127,11 @@ export const generateBookingConfirmation = (order: TemplateOrderData): string =>
     2: '📦 Lalamove Courier (Customer Paid)',
   };
 
+  const groupedItems = groupItemsForReceipt(order.items || []);
   const itemsList =
-    order.items.length > 0
-      ? order.items.map((i) => `• (${i.quantity}x) ${i.categoryName}`).join('\n')
-      : '• Lechon Order';
+    groupedItems.length > 0
+      ? groupedItems.map((i) => `• (${i.quantity}x) ${i.categoryName}`).join("\n")
+      : "• Lechon Order";
 
   const addressLine = order.deliveryAddress?.trim()
     ? `📍 Address: ${order.deliveryAddress}`
@@ -150,9 +165,11 @@ Maraming salamat po sa pagtitiwala sa Yumi's Lechon! Kung mayroon po kayong kara
 };
 
 export const generateVerificationReminder = (order: TemplateOrderData): string => {
-  const itemsList = order.items
-    .map((i) => `(${i.quantity}x) ${i.categoryName}`)
-    .join(', ');
+  const groupedItems = groupItemsForReceipt(order.items || []);
+  const itemsList =
+    groupedItems.length > 0
+      ? groupedItems.map((i) => `(${i.quantity}x) ${i.categoryName}`).join(", ")
+      : "(1x) Lechon Order";
 
   const landmarkSuffix = order.landmark?.trim()
     ? `\n🧭 Landmark: ${order.landmark.trim()}`
@@ -262,6 +279,7 @@ export interface DefrostRosterItem {
   categoryName?: string;
   weightCategory?: string;
   weightRange?: string;
+  customWeightDisplay?: string | null;
   minimumWeightKg?: number;
   maximumWeightKg?: number;
 }
@@ -406,6 +424,14 @@ export const generateDefrostRosterMessage = (
         bellyLines.push(`${sizeLabel} - ${customer}`);
       }
     } else {
+      if (item.customWeightDisplay) {
+        for (let i = 0; i < qty; i++) {
+          wholeLechonLines.push(
+            `${item.customWeightDisplay}kg (${item.categoryName || item.weightCategory || 'Lechon'}) - ${customer}`
+          );
+        }
+        continue;
+      }
       const weightRange = extractWholeWeightRange(item);
       for (let i = 0; i < qty; i++) {
         wholeLechonLines.push(`${weightRange} - ${customer}`);

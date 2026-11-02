@@ -310,7 +310,11 @@ namespace LechonSystem.Api.Controllers
                     request.PaymentMethod,
                     staffUsername,
                     request.Amount,
-                    request.ReferenceNumber);
+                    request.ReferenceNumber,
+                    request.CashAmount,
+                    request.DigitalAmount,
+                    request.DigitalMethod,
+                    request.DigitalReferenceNumber);
                 return Ok(new { success = result, message = $"Order #{request.OrderId} placed into staff drawer custody." });
             }
             catch (ArgumentException ex)

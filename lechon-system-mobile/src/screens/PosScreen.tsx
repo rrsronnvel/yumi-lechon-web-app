@@ -35,9 +35,8 @@ import {
 } from '../utils/messengerTemplates';
 import FreebiesSelector from '../components/orders/FreebiesSelector';
 import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from '../utils/similarityHelper';
-import { normalizeDateInput } from '../utils/dateNormalizer';
+import { normalizeDateInput, getPhilippineDateString } from '../utils/dateNormalizer';
 import PaymentChannelPills from '../components/orders/PaymentChannelPills';
-import { useAuth } from '../context/AuthContext';
 import {
   FreebiesConfig,
   createDefaultFreebiesConfig,
@@ -100,7 +99,6 @@ const formatLocalHM = (d: Date): string => {
 };
 
 export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
-  const { user } = useAuth();
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
   const { data: balances = [] } = useInventoryBalances();
   const { data: deliveryPricing } = useDeliveryPricingQuery();
@@ -113,7 +111,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     deliveryPricing?.noFreebiesDiscountPerPig ?? 2000;
 
   // Default date = Tomorrow at 11:30
-  const getInitialDateStr = () => {
+  const getInitialDateStr = () => getPhilippineDateString();
+  const _oldInitialDateStr = () => {
     const tmr = new Date();
     tmr.setDate(tmr.getDate() + 1);
     return formatLocalYMD(tmr);
@@ -135,10 +134,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [fulfillment, setFulfillment] = useState<number>(1); // 1 = Delivery, 0 = Pickup, 2 = Lalamove
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [landmark, setLandmark] = useState('');
-  const [targetDate, setTargetDate] = useState(getInitialDateStr);
-  const [targetTime, setTargetTime] = useState('11:30');
+  const [targetDate, setTargetDate] = useState(() => getPhilippineDateString());
+  const [targetTime, setTargetTime] = useState('');
   const [targetPeriod, setTargetPeriod] = useState<Meridiem>('AM');
-  const [riderDepartureTimeStr, setRiderDepartureTimeStr] = useState('11:15');
+  const [riderDepartureTimeStr, setRiderDepartureTimeStr] = useState('');
   const [riderDeparturePeriod, setRiderDeparturePeriod] = useState<Meridiem>('AM');
   const [remarks, setRemarks] = useState('');
 
@@ -217,6 +216,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   useEffect(() => {
     if (isTimeTbd || isNonLechonMode) return;
     const targetTime24 = to24HourTime(targetTime, targetPeriod);
+    if (!targetTime.trim()) {
+      setRiderDepartureTimeStr('');
+      return;
+    }
     if (!targetTime24) return;
     const isoTarget = `${targetDate.trim()}T${targetTime24}:00`;
     const parsedTarget = new Date(isoTarget);
@@ -240,6 +243,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const handleApplyNudgeOffset = (offsetMinutes: number) => {
     if (fulfillment === 0) return;
     const targetTime24 = to24HourTime(targetTime, targetPeriod);
+    if (!targetTime.trim()) {
+      setRiderDepartureTimeStr('');
+      return;
+    }
     if (!targetTime24) return;
     const isoTarget = `${targetDate.trim()}T${targetTime24}:00`;
     const parsedTarget = new Date(isoTarget);
@@ -673,6 +680,42 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       .reduce((sum, item) => sum + item.quantity, 0);
     previousWholePigCount.current = hydratedWholePigCount;
 
+    const catalogItemsSubtotal = hydratedCart.reduce(
+      (total, item) => total + item.unitPrice * item.quantity,
+      0
+    );
+    const parsedDeliveryFee =
+      nextFulfillment === 0 || nextFulfillment === 2
+        ? 0
+        : Math.max(0, Number(draft.deliveryFee ?? deliveryFee) || 0);
+    const parsedDownpayment = Math.max(
+      0,
+      Number(draft.downpayment ?? downpayment) || 0
+    );
+    const hasExplicitDiscount =
+      draft.discount !== undefined && draft.discount !== null;
+    let courtesyDiscount: number | null = null;
+    if (
+      draft.freebiesOptOut !== true &&
+      Number(draft.quotedItemsTotal) > 0 &&
+      catalogItemsSubtotal > Number(draft.quotedItemsTotal)
+    ) {
+      courtesyDiscount =
+        catalogItemsSubtotal - Number(draft.quotedItemsTotal);
+    } else if (
+      draft.freebiesOptOut !== true &&
+      !hasExplicitDiscount &&
+      draft.quotedBalanceDue !== undefined &&
+      draft.quotedBalanceDue !== null
+    ) {
+      const preDiscountBalance =
+        catalogItemsSubtotal + parsedDeliveryFee - parsedDownpayment;
+      if (preDiscountBalance > Number(draft.quotedBalanceDue)) {
+        courtesyDiscount =
+          preDiscountBalance - Number(draft.quotedBalanceDue);
+      }
+    }
+
     const hydratedFreebies = createDefaultFreebiesConfig(hydratedWholePigCount);
     if (draft.freebiesOptOut === true) {
       const optOutDiscount =
@@ -700,7 +743,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       freebiesDiscountApplied.current = 0;
       setDiscount(
         String(
-          draft.discount !== undefined && draft.discount !== null
+          courtesyDiscount !== null
+            ? Math.max(0, courtesyDiscount)
+            : draft.discount !== undefined && draft.discount !== null
             ? Math.max(0, Number(draft.discount) || 0)
             : 0
         )
@@ -727,10 +772,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setFulfillment(1);
     setDeliveryAddress('');
     setLandmark('');
-    setTargetDate(getInitialDateStr());
-    setTargetTime('11:30');
+    setTargetDate(getPhilippineDateString());
+    setTargetTime('');
     setTargetPeriod('AM');
-    setRiderDepartureTimeStr('11:15');
+    setRiderDepartureTimeStr('');
     setRiderDeparturePeriod('AM');
     setRemarks('');
     setCartItems([]);

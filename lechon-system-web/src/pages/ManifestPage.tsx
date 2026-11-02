@@ -62,7 +62,7 @@ export default function ManifestPage() {
     const pickupInDrawer = pickupDrops
       .filter((p) => (p.settlementCustodyStatus || p.custodyStatus) === "InStaffDrawer")
       .map((p) => ({
-        amount: Number(p.balanceDue || 0),
+        amount: Number(p.heldByStaffAmount ?? p.balanceDue ?? 0),
         custodian: p.heldByStaffName?.trim() || "Staff",
       }));
 

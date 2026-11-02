@@ -1,5 +1,32 @@
 **
 
+## 7. 2026-10-31 Daily Operations Enhancements
+
+### Intake and pricing
+
+- Web and Mobile Messenger parsers share the same implicit Belly token rules, quantity aggregation, third-party courier override, additive quoted-price parsing, quoted-balance extraction, and floating culinary-note capture.
+- `OrderForm` and `PosScreen` compare the quoted item total with catalog item prices and materialize the difference as a Courtesy Discount, with quoted balance as the fallback reconciliation source.
+
+### Payment and custody ledger
+
+- Manual split payment requests create two `PaymentLog` rows atomically through `PaymentService.ProcessSplitPaymentAsync`, so payment history and channel summaries remain ledger-based.
+- `LogisticsService` settles the digital leg of a Hop 1 split immediately. The cash leg alone enters `InStaffDrawer` and is persisted in `Orders.HeldByStaffAmount`; Hop 2 remits that stored amount.
+- `OrderService.VoidPaymentAsync` recomputes the active ledger and restores unpaid, non-held orders to `Uncollected`. Web and Mobile invalidate order, manifest, logistics, and drawer caches after a void.
+
+### Production authorization and overrides
+
+- Daily Sheet edit affordances receive an Owner-only `canEdit` capability. The API separately rejects schedule overrides unless the authenticated principal is in the Owner role.
+- `OrderItemSchedules.CustomWeightDisplay` is projected alongside `StandardWeightRange`. Scheduling preserves it during time regeneration; Kitchen Sheets and nightly defrost text consume it without changing inventory categories or prices.
+
+### Complimentary stock substitution
+
+- `OrderItems.FulfilledItemCategoryId` defines the effective freezer and cooking category. Reservation reassignment moves committed demand between categories and emits inventory/audit history while retaining the booked `OrderItem.Price`.
+- Scheduling resolves cooking profiles, size, and weight from the fulfilled category. Internal dossier and non-clean planner views disclose the booked category, while receipt generators continue to use only the booked category.
+
+### Additive schema policy
+
+- `Program.cs` owns idempotent `COL_LENGTH` guards for `Orders.HeldByStaffAmount`, `OrderItemSchedules.CustomWeightDisplay`, and `OrderItems.FulfilledItemCategoryId`. No destructive migration or seed reset is part of this capability.
+
 ## 6. 2026-10-30 Operational Parity Additions
 
 ### Backend

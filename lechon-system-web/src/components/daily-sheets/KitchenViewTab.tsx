@@ -9,6 +9,7 @@ import { isWalkInOrder } from "@/utils/walkIn";
 interface KitchenViewTabProps {
   mode?: "edit" | "clean";
   selectedDate?: string;
+  canEdit?: boolean;
 }
 
 // Bulletproof Time Formatter
@@ -42,7 +43,7 @@ const formatWeightDisplay = (weight?: string | null): string => {
     .trim() || "-";
 };
 
-export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabProps) {
+export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: KitchenViewTabProps) {
   const { data: dailySheets, isLoading, isError } = useDailySheets(selectedDate);
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -82,12 +83,12 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
   });
 
   const handleCellClick = (item: RoastingScheduleItem) => {
-    if (mode === "clean") return;
+    if (mode === "clean" || !canEdit) return;
     setSelectedItem(item);
     setIsEditorOpen(true);
   };
 
-  const isEdit = mode === "edit";
+  const isEdit = mode === "edit" && canEdit;
 
   const renderKitchenRow = (
     item: RoastingScheduleItem,
@@ -101,7 +102,9 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
       : "";
     const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
     const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
-    const displayWeight = hasTahi && minW > 0 ? formatWeightDisplay(item.weight) : "-";
+    const displayWeight = minW > 0
+      ? formatWeightDisplay(item.customWeightDisplay || item.weightRange || item.weight)
+      : "-";
     const isWalkIn = isWalkInOrder(item);
     const needsDpConfirmation =
       Number(item.downpayment || 0) === 0 &&
@@ -168,13 +171,31 @@ export function KitchenViewTab({ mode = "edit", selectedDate }: KitchenViewTabPr
         </td>
 
         {/* 5. Size */}
-        <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 whitespace-nowrap text-xs">
-          {item.size || item.categoryName || "-"}
+        <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 max-w-[85px] overflow-hidden break-words whitespace-normal leading-tight text-xs">
+          <div>
+            {(item.size || item.categoryName || "-").toLowerCase().includes("lamang-loob") || (item.size || item.categoryName || "").toLowerCase().includes("raw innards") ? (
+              <span className="leading-tight block">
+                Raw Innards
+                <span className="text-[10px] block text-stone-500 font-normal">(Lamang-Loob)</span>
+              </span>
+            ) : (
+              item.size || item.categoryName || "-"
+            )}
+          </div>
+          {item.bookedSizeName && mode !== "clean" && (
+            <div className="text-[8px] font-semibold text-indigo-700">🔄 booked {item.bookedSizeName}</div>
+          )}
         </td>
 
         {/* 6. Weight */}
-        <td className="px-1.5 py-2 text-center font-medium text-slate-700 border-r border-slate-300 whitespace-nowrap text-[11px]">
-          {displayWeight}
+        <td
+          onClick={() => isEdit && minW > 0 && handleCellClick(item)}
+          className={`px-1.5 py-2 text-center font-medium text-slate-700 border-r border-slate-300 whitespace-nowrap text-[11px] ${isEdit && minW > 0 ? "cursor-pointer hover:bg-amber-100/70" : ""}`}
+          title={isEdit ? "Click to set a screenshot/pit target weight" : undefined}
+        >
+          <span className={item.customWeightDisplay && mode !== "clean" ? "border-b border-dotted border-amber-600" : ""}>
+            {displayWeight}
+          </span>
         </td>
 
         {/* 7. Departure / Pickup Time */}

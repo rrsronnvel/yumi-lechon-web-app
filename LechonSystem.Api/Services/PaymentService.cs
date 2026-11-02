@@ -1,9 +1,12 @@
 using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
 using LechonSystem.Api.Models;
 using LechonSystem.Api.Common;
+using LechonSystem.Api.DTOs;
 
 using Microsoft.AspNetCore.Http;
 
@@ -100,6 +103,68 @@ namespace LechonSystem.Api.Services
             // 5. Shared Trigger: Wire successful matches to automatically lock reservations
             await _orderService.ConfirmPaymentAsync(orderId);
 
+            return true;
+        }
+
+        public async Task<bool> ProcessSplitPaymentAsync(
+            int orderId,
+            IReadOnlyList<PaymentSplitDto> splits)
+        {
+            if (splits.Count != 2 || splits.Any(split => split.Amount <= 0))
+            {
+                throw new ArgumentException("Split payment requires exactly two positive amounts.");
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable);
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                .FirstOrDefaultAsync(o => o.Id == orderId)
+                ?? throw new ArgumentException($"Validation Error: Order ID {orderId} does not exist.");
+
+            var normalized = splits.Select((split, index) => new
+            {
+                split.Amount,
+                Method = PaymentChannels.Normalize(split.PaymentMethod),
+                Reference = string.IsNullOrWhiteSpace(split.ReferenceNumber)
+                    ? $"SPLIT_{orderId}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}_{index + 1}"
+                    : split.ReferenceNumber.Trim()
+            }).ToList();
+
+            var references = normalized.Select(split => split.Reference).ToList();
+            if (references.Distinct(StringComparer.OrdinalIgnoreCase).Count() != references.Count ||
+                await _context.PaymentLogs.AnyAsync(payment => references.Contains(payment.GatewayReferenceId)))
+            {
+                throw new ArgumentException("Each split payment reference must be unique.");
+            }
+
+            foreach (var split in normalized)
+            {
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = orderId,
+                    GatewayReferenceId = split.Reference,
+                    Provider = PaymentChannels.ToProvider(split.Method),
+                    PaymentMethod = split.Method,
+                    Amount = split.Amount,
+                    Status = PaymentStatus.Success
+                });
+            }
+
+            order.Downpayment += normalized.Sum(split => split.Amount);
+            order.DownpaymentMethod = normalized[^1].Method;
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = orderId,
+                ActionType = "Split Payment Logged",
+                Changes = $"Split payment recorded: ₱{normalized[0].Amount:N2} via {normalized[0].Method} + ₱{normalized[1].Amount:N2} via {normalized[1].Method}.",
+                ChangedBy = CurrentUser,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            await _orderService.ConfirmPaymentAsync(orderId);
             return true;
         }
     }

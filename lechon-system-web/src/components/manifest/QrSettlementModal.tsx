@@ -76,6 +76,10 @@ export function QrSettlementModal({
     heldPaymentMethod || "Cash"
   );
   const [directGcashRef, setDirectGcashRef] = useState<string>("");
+  const [cashAmount, setCashAmount] = useState<number>(expectedAmount);
+  const [digitalAmount, setDigitalAmount] = useState<number>(0);
+  const [digitalMethod, setDigitalMethod] = useState<string>("GCash");
+  const [digitalReference, setDigitalReference] = useState<string>("");
 
   // Hop 2 Counted Envelope Bills state
   const [countedBills, setCountedBills] = useState<string>("");
@@ -97,8 +101,11 @@ export function QrSettlementModal({
   useEffect(() => {
     if (open) {
       setReceivedByStaff(defaultStaffLabel);
+      setCashAmount(expectedAmount);
+      setDigitalAmount(0);
+      setDigitalReference("");
     }
-  }, [open, defaultStaffLabel]);
+  }, [open, defaultStaffLabel, expectedAmount]);
 
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -187,6 +194,11 @@ export function QrSettlementModal({
           ? Number(overrideAmount)
           : undefined,
         staffName: receivedByStaff.trim() || undefined,
+        cashAmount: paymentMethod === "Split" ? (isManualOverride && typeof overrideAmount === "number" ? overrideAmount : cashAmount) : undefined,
+        digitalAmount: paymentMethod === "Split" ? digitalAmount : undefined,
+        digitalMethod: paymentMethod === "Split" ? digitalMethod : undefined,
+        digitalReferenceNumber:
+          paymentMethod === "Split" ? digitalReference.trim() || undefined : undefined,
       },
       {
         onSuccess: (res) => {
@@ -315,7 +327,19 @@ export function QrSettlementModal({
   };
 
   const qrUrl = sessionToken
-    ? `${window.location.origin}/qr-settle/${sessionToken}`
+    ? `${window.location.origin}/qr-settle/${sessionToken}${
+        paymentMethod === "Split"
+          ? `?mode=Split&cash=${cashAmount}&digital=${digitalAmount}&digitalMethod=${encodeURIComponent(
+              digitalMethod === "ManualGCash"
+                ? "Rider GCash"
+                : digitalMethod === "GCash"
+                ? "Direct GCash"
+                : digitalMethod === "Bank Transfer"
+                ? "Bank Transfer"
+                : digitalMethod
+            )}`
+          : ""
+      }`
     : "";
 
   const isSignedByRider = sessionStatus?.status === "SignedByRider";
@@ -377,7 +401,13 @@ export function QrSettlementModal({
               <Select
                 value={paymentMethod}
                 onValueChange={(val: string | null) => {
-                  if (val) setPaymentMethod(val);
+                  if (val) {
+                    setPaymentMethod(val);
+                    if (val === "Split") {
+                      setCashAmount(expectedAmount);
+                      setDigitalAmount(0);
+                    }
+                  }
                 }}
               >
                 <SelectTrigger className="w-full h-10 border-stone-300">
@@ -399,9 +429,52 @@ export function QrSettlementModal({
                   <SelectItem value="Bank Transfer">
                     🏦 Bank Transfer
                   </SelectItem>
+                  <SelectItem value="Split">
+                    ➕ Split (Cash + Digital)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {paymentMethod === "Split" && (
+              <div className="grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Physical Cash to Drawer (₱)</Label>
+                  <Input
+                    type="number"
+                    value={cashAmount}
+                    onChange={(event) => {
+                      const cash = Math.max(0, Number(event.target.value) || 0);
+                      setCashAmount(cash);
+                      setOverrideAmount(cash);
+                      setDigitalAmount(Math.max(0, expectedAmount - cash));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Digital Transfer Amount (₱)</Label>
+                  <Input
+                    type="number"
+                    value={digitalAmount}
+                    onChange={(event) => setDigitalAmount(Math.max(0, Number(event.target.value) || 0))}
+                  />
+                </div>
+                <Select value={digitalMethod} onValueChange={(value) => value && setDigitalMethod(value)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GCash">Direct GCash</SelectItem>
+                    <SelectItem value="ManualGCash">Rider GCash</SelectItem>
+                    <SelectItem value="Maya">Maya</SelectItem>
+                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={digitalReference}
+                  onChange={(event) => setDigitalReference(event.target.value)}
+                  placeholder="Digital reference # (optional)"
+                />
+              </div>
+            )}
 
             {/* Direct Store GCash Branch */}
             {paymentMethod === "GCash" ? (
@@ -588,17 +661,22 @@ export function QrSettlementModal({
 
                       <div className="space-y-1">
                         <Label htmlFor="override-amount" className="text-[11px] font-semibold text-stone-700">
-                          Counted Peso Amount (₱)
+                          {paymentMethod === "Split"
+                            ? "Counted Physical Cash Received into Drawer (₱)"
+                            : "Counted Peso Amount (₱)"}
                         </Label>
                         <Input
                           id="override-amount"
                           type="number"
                           value={overrideAmount}
-                          onChange={(e) =>
-                            setOverrideAmount(
-                              e.target.value === "" ? "" : Number(e.target.value)
-                            )
-                          }
+                          onChange={(e) => {
+                            const val = e.target.value === "" ? "" : Number(e.target.value);
+                            setOverrideAmount(val);
+                            if (paymentMethod === "Split" && typeof val === "number") {
+                              setCashAmount(val);
+                              setDigitalAmount(Math.max(0, expectedAmount - val));
+                            }
+                          }}
                           className="h-9 text-xs font-mono font-bold border-stone-300"
                         />
                       </div>

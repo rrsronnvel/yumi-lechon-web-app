@@ -233,11 +233,12 @@ namespace LechonSystem.Api.Services
                     RiderDepartureTime = o.RiderDepartureTime,
                     TotalCollected = o.GrandTotal - o.Downpayment,
                     RiderDeliveryFee = o.DeliveryFee,
-                    NetRemittance = o.RiderRemittedAmount ?? ((o.GrandTotal - o.Downpayment) - o.DeliveryFee),
+                    NetRemittance = o.HeldByStaffAmount ?? o.RiderRemittedAmount ?? ((o.GrandTotal - o.Downpayment) - o.DeliveryFee),
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
-                    HeldPaymentMethod = o.HeldByStaffMethod
+                    HeldPaymentMethod = o.HeldByStaffMethod,
+                    HeldByStaffAmount = o.HeldByStaffAmount
                 })
                 .ToListAsync();
         }
@@ -273,7 +274,8 @@ namespace LechonSystem.Api.Services
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
-                    HeldPaymentMethod = o.HeldByStaffMethod
+                    HeldPaymentMethod = o.HeldByStaffMethod,
+                    HeldByStaffAmount = o.HeldByStaffAmount
                 })
                 .ToListAsync();
         }
@@ -358,6 +360,13 @@ namespace LechonSystem.Api.Services
             if (order == null)
             {
                 throw new ArgumentException($"Order #{request.OrderId} does not exist.");
+            }
+
+            if (string.Equals(request.HopStage, "StaffToOwner", StringComparison.OrdinalIgnoreCase) &&
+                order.HeldByStaffAmount.HasValue)
+            {
+                request.ExpectedAmount = order.HeldByStaffAmount.Value;
+                request.PaymentMethod = PaymentChannels.Normalize(order.HeldByStaffMethod, "Cash");
             }
 
             var existingSession = await _context.SettlementQrSessions
@@ -562,19 +571,54 @@ namespace LechonSystem.Api.Services
             session.IsUsed = true;
 
             var order = session.Order;
+            var isSplit = (request?.CashAmount ?? 0m) > 0m || (request?.DigitalAmount ?? 0m) > 0m;
+            var cashAmount = isSplit
+                ? Math.Max(0m, request?.CashAmount ?? 0m)
+                : (session.RiderRemittedAmount ?? session.ExpectedAmount);
+            var digitalAmount = isSplit ? Math.Max(0m, request?.DigitalAmount ?? 0m) : 0m;
+            if (isSplit && (cashAmount <= 0m || digitalAmount <= 0m))
+            {
+                throw new ArgumentException("Split handover requires positive Cash and Digital amounts.");
+            }
+            if (isSplit && cashAmount + digitalAmount != session.ExpectedAmount)
+            {
+                throw new ArgumentException($"Split amounts must equal the expected remittance of ₱{session.ExpectedAmount:N2}.");
+            }
+
             order.SettlementCustodyStatus = "InStaffDrawer";
-            order.HeldByStaffMethod = session.PaymentMethod;
+            order.HeldByStaffMethod = isSplit ? "Cash" : session.PaymentMethod;
+            order.HeldByStaffAmount = cashAmount;
             order.RiderSignedBy = session.RiderSignedBy;
             order.RiderRemittedAmount = session.RiderRemittedAmount;
             order.RiderSignedAt = session.RiderSignedAt;
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
 
+            if (digitalAmount > 0m)
+            {
+                var digitalMethod = PaymentChannels.Normalize(request?.DigitalMethod, "GCash");
+                var digitalReference = !string.IsNullOrWhiteSpace(request?.DigitalReferenceNumber)
+                    ? request.DigitalReferenceNumber.Trim()
+                    : $"SPLIT_DIGITAL_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+                order.Downpayment += digitalAmount;
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = digitalReference,
+                    Provider = PaymentChannels.ToProvider(digitalMethod),
+                    PaymentMethod = digitalMethod,
+                    Amount = digitalAmount,
+                    Status = PaymentStatus.Success
+                });
+            }
+
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = order.Id,
                 ActionType = "Custody: In Staff Drawer",
-                Changes = $"Rider {session.RiderSignedBy} remitted ₱{session.RiderRemittedAmount:N2} via {session.PaymentMethod}. Validated into drawer by {staffUsername}.",
+                Changes = isSplit
+                    ? $"Split handover validated: ₱{cashAmount:N2} Cash placed in drawer + ₱{digitalAmount:N2} via {PaymentChannels.Normalize(request?.DigitalMethod, "GCash")}. Validated by {staffUsername}."
+                    : $"Rider {session.RiderSignedBy} remitted ₱{session.RiderRemittedAmount:N2} via {session.PaymentMethod}. Validated into drawer by {staffUsername}.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow
             });
@@ -584,7 +628,7 @@ namespace LechonSystem.Api.Services
         }
 
         // 5. Store Counter Collection (Tab 2: Walk-in Store Pickups)
-        public async Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null)
+        public async Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null, decimal? cashAmount = null, decimal? digitalAmount = null, string? digitalMethod = null, string? digitalReferenceNumber = null)
         {
             var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
             if (order == null)
@@ -594,16 +638,46 @@ namespace LechonSystem.Api.Services
 
             var balance = (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment;
             var collectedAmount = amount ?? balance;
+            var isSplit = (cashAmount ?? 0m) > 0m || (digitalAmount ?? 0m) > 0m;
+            var physicalCash = isSplit ? Math.Max(0m, cashAmount ?? 0m) : collectedAmount;
+            var digitalTransfer = isSplit ? Math.Max(0m, digitalAmount ?? 0m) : 0m;
+            if (isSplit && (physicalCash <= 0m || digitalTransfer <= 0m))
+            {
+                throw new ArgumentException("Split handover requires positive Cash and Digital amounts.");
+            }
+            if (isSplit && physicalCash + digitalTransfer != collectedAmount)
+            {
+                throw new ArgumentException($"Split amounts must equal the collection amount of ₱{collectedAmount:N2}.");
+            }
 
             order.SettlementCustodyStatus = "InStaffDrawer";
-            order.HeldByStaffMethod = paymentMethod;
+            order.HeldByStaffMethod = isSplit ? "Cash" : paymentMethod;
+            order.HeldByStaffAmount = physicalCash;
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
+
+            if (digitalTransfer > 0m)
+            {
+                var normalizedDigitalMethod = PaymentChannels.Normalize(digitalMethod, "GCash");
+                var digitalRef = !string.IsNullOrWhiteSpace(digitalReferenceNumber)
+                    ? digitalReferenceNumber.Trim()
+                    : $"COUNTER_SPLIT_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+                order.Downpayment += digitalTransfer;
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = digitalRef,
+                    Provider = PaymentChannels.ToProvider(normalizedDigitalMethod),
+                    PaymentMethod = normalizedDigitalMethod,
+                    Amount = digitalTransfer,
+                    Status = PaymentStatus.Success
+                });
+            }
 
             // When collecting payment for a Lalamove order:
             // Courier orders must be paid in full prior to release. Update Downpayment so BalanceDue evaluates to ₱0
             // and GateStatus evaluates to ClearToRelease (🟢 CLEAR TO RELEASE).
-            if (order.Fulfillment == FulfillmentType.Lalamove)
+            if (order.Fulfillment == FulfillmentType.Lalamove && !isSplit)
             {
                 order.Downpayment += collectedAmount;
 
@@ -629,7 +703,9 @@ namespace LechonSystem.Api.Services
             {
                 OrderId = order.Id,
                 ActionType = order.Fulfillment == FulfillmentType.Lalamove ? "Lalamove Payment Collected" : "Counter Pickup Collected",
-                Changes = $"Store counter collected ₱{collectedAmount:N2} via {paymentMethod}. Held in drawer by {staffUsername}.",
+                Changes = isSplit
+                    ? $"Split counter handover: ₱{physicalCash:N2} Cash held in drawer + ₱{digitalTransfer:N2} via {PaymentChannels.Normalize(digitalMethod, "GCash")}. Collected by {staffUsername}."
+                    : $"Store counter collected ₱{collectedAmount:N2} via {paymentMethod}. Held in drawer by {staffUsername}.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow
             });
@@ -658,6 +734,7 @@ namespace LechonSystem.Api.Services
             var order = session.Order;
             order.SettlementCustodyStatus = "InStaffDrawer";
             order.HeldByStaffMethod = session.PaymentMethod;
+            order.HeldByStaffAmount = session.ExpectedAmount;
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
 
@@ -720,6 +797,7 @@ namespace LechonSystem.Api.Services
             order.StaffValidatedBy = null;
             order.StaffValidatedAt = null;
             order.HeldByStaffMethod = null;
+            order.HeldByStaffAmount = 0m;
             order.RiderSignedBy = null;
             order.RiderRemittedAmount = null;
             order.RiderSignedAt = null;
@@ -827,9 +905,10 @@ namespace LechonSystem.Api.Services
             order.OwnerApprovedBy = verifiedOwnerUsername;
             order.OwnerApprovedAt = DateTime.UtcNow;
 
-            decimal amountToSettle = session.ExpectedAmount > 0
-                ? session.ExpectedAmount
-                : Math.Max(0, (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment);
+            decimal amountToSettle = order.HeldByStaffAmount ??
+                (session.ExpectedAmount > 0
+                    ? session.ExpectedAmount
+                    : Math.Max(0, (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment));
 
             if (amountToSettle > 0)
             {
@@ -864,6 +943,9 @@ namespace LechonSystem.Api.Services
                     Timestamp = DateTime.UtcNow
                 });
             }
+
+            order.HeldByStaffAmount = 0m;
+            order.HeldByStaffMethod = null;
 
             var storeNetTotal = Math.Max(0, order.GrandTotal - order.DeliveryFee);
             if (order.Fulfillment == FulfillmentType.Delivery && order.Downpayment >= storeNetTotal)

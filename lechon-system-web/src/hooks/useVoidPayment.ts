@@ -32,6 +32,8 @@ export const useVoidPaymentMutation = () => {
         }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["manifest"] }),
+        queryClient.invalidateQueries({ queryKey: ["logistics"] }),
+        queryClient.invalidateQueries({ queryKey: ["drawer"] }),
         queryClient.invalidateQueries({
           queryKey: ["orders", variables.orderId, "audit-logs"],
         }),

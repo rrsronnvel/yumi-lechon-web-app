@@ -6,6 +6,15 @@
 
 ---
 
+## October 31, 2026 Daily Operations Invariants
+
+- A `2kg`–`6kg` Messenger size is an implicit Belly item even without the word Belly. Aggregate repeated/multiplied weights. Lalamove/Grab/Angkas/customer-book language wins over Deliver and forces a zero delivery fee. Additive `Price` quotes and explicit balance quotes reconcile through Courtesy Discount without overriding Less-2k/freebie opt-out semantics.
+- A split payment always produces distinct channel ledger entries. During Hop 1 split custody, only physical cash belongs in `HeldByStaffAmount` and `InStaffDrawer`; the digital leg is already settled. Hop 2 remits the held amount, not the original order balance. A void that restores unpaid financial balance must restore `Uncollected` custody when no active drawer holding remains.
+- Daily Sheet scheduling mutation is Owner-only in both clients and API authorization. Cashiers remain read/export capable. Rider assignment outside schedule override retains its existing permissions.
+- `CustomWeightDisplay` is presentation and kitchen-pull metadata only. Preserve it through schedule regeneration, include it in Kitchen/defrost outputs, and never mutate CMS weight brackets, price, or stock category.
+- `FulfilledItemCategoryId` is the effective freezer/cooking category for an internal complimentary substitution. Move stock reservation and cooking schedule to it, keep booked price/category on customer receipts, and disclose the fulfilled category only on internal operational surfaces.
+- All three October 31 nullable columns are installed by idempotent startup `COL_LENGTH` guards. Never use destructive purge, truncate, drop, or seed-reset operations to deploy them.
+
 ## October 29, 2026 Operational Invariants
 
 - Order editing is role-aware: Owners may edit/reschedule past orders; Cashiers are rejected only when assigning a changed `TargetDeliveryTime` in the past. A target change must never leave `RiderDepartureTime > TargetDeliveryTime`; shift the old lead time or clamp safely.

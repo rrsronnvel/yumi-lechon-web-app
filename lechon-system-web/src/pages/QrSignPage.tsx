@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   useQrSessionStatusQuery,
   useRiderSignQrMutation,
@@ -25,12 +25,18 @@ import { toast } from "sonner";
 
 export default function QrSignPage() {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
   const {
     data: session,
     isLoading,
     isError,
     error,
   } = useQrSessionStatusQuery(token || null, true);
+
+  const isSplit = searchParams.get("mode") === "Split" || session?.paymentMethod === "Split";
+  const splitCash = searchParams.get("cash") ? Number(searchParams.get("cash")) : null;
+  const splitDigital = searchParams.get("digital") ? Number(searchParams.get("digital")) : null;
+  const splitDigitalMethod = searchParams.get("digitalMethod") || "Direct GCash";
 
   const riderSignMutation = useRiderSignQrMutation();
   const ownerApproveMutation = useOwnerApproveQrMutation();
@@ -65,7 +71,7 @@ export default function QrSignPage() {
         );
       }
       if (remittedAmount === "") {
-        setRemittedAmount(session.expectedAmount);
+        setRemittedAmount(isSplit && splitCash !== null ? splitCash : session.expectedAmount);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,14 +296,26 @@ export default function QrSignPage() {
               {/* Remittance Amount */}
               <div className="bg-emerald-50 rounded-xl p-4 text-center border border-emerald-100">
                 <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
-                  Remitted Net Amount
+                  {isSplit ? "Remitted Cash to Drawer" : "Remitted Net Amount"}
                 </span>
                 <div className="text-3xl sm:text-4xl font-mono font-black text-emerald-700 mt-1">
-                  ₱{(session.riderRemittedAmount ?? session.expectedAmount).toLocaleString()}
+                  ₱{(session.riderRemittedAmount ?? (isSplit && splitCash !== null ? splitCash : session.expectedAmount)).toLocaleString()}
                 </div>
                 <span className="text-[11px] text-emerald-600 font-medium">
-                  Payment Method: {session.paymentMethod}
+                  Payment Method: {isSplit ? "Split (Cash + Digital)" : session.paymentMethod}
                 </span>
+                {isSplit && (
+                  <div className="mt-2 pt-2 border-t border-emerald-200/60 text-xs text-stone-700 text-left space-y-1">
+                    <div className="flex justify-between font-semibold text-emerald-900">
+                      <span>💵 Physical Cash:</span>
+                      <span>₱{(splitCash ?? session.riderRemittedAmount ?? 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>📱 {splitDigitalMethod}:</span>
+                      <span>₱{(splitDigital ?? Math.max(0, session.expectedAmount - (splitCash ?? 0))).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Custody Parties */}
@@ -439,16 +457,35 @@ export default function QrSignPage() {
             )}
 
             {/* Amount Summary */}
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
-              <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
-                Expected Net Remittance
-              </span>
-              <div className="text-3xl font-mono font-black text-emerald-700">
-                ₱{session.expectedAmount.toLocaleString()}
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+              <div className="text-center">
+                <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
+                  {isSplit ? "Physical Cash to Hand Over" : "Expected Net Remittance"}
+                </span>
+                <div className="text-3xl font-mono font-black text-emerald-700">
+                  ₱{(isSplit && splitCash !== null ? splitCash : session.expectedAmount).toLocaleString()}
+                </div>
+                <span className="text-xs text-emerald-600 font-medium">
+                  Payment Channel: {isSplit ? "Split (Cash + Digital)" : session.paymentMethod}
+                </span>
               </div>
-              <span className="text-xs text-emerald-600 font-medium">
-                Payment Channel: {session.paymentMethod}
-              </span>
+
+              {isSplit && (
+                <div className="bg-white/80 rounded-lg p-2.5 text-xs border border-emerald-200 text-stone-700 space-y-1 text-left">
+                  <div className="flex justify-between font-semibold text-emerald-900 border-b border-emerald-100 pb-1">
+                    <span>💵 Physical Cash to Cashier:</span>
+                    <span>₱{(splitCash ?? 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-stone-600">
+                    <span>📱 {splitDigitalMethod} to Store:</span>
+                    <span>₱{(splitDigital ?? Math.max(0, session.expectedAmount - (splitCash ?? 0))).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-stone-900 pt-1 border-t border-emerald-100">
+                    <span>Total Order Balance:</span>
+                    <span>₱{session.expectedAmount.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {errorMessage && (

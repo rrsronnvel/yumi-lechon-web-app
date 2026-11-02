@@ -30,6 +30,8 @@ export interface ParsedOrderDraftDto {
   deliveryFee?: number | null;
   distanceKm?: number | null;
   discount?: number | null;
+  quotedItemsTotal?: number | null;
+  quotedBalanceDue?: number | null;
   downpayment?: number | null;
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
   freebiesOptOut?: boolean | null;
@@ -45,7 +47,7 @@ export interface MessengerParserPricingConfig {
 }
 
 const BOILERPLATE_PATTERN =
-  /to confirm your order|with\s+7\s+freebies|^assisted\s+by\s+admin|^spaghetti,\s*palabok.*consumed|^delivery suggestion\b|^kung gusto nyo po ng mas masarap|total balance\s*:/i;
+  /to confirm your order|with\s+7\s+freebies|^assisted\s+by\s+admin|^spaghetti,\s*palabok.*consumed|^delivery suggestion\b|^kung gusto nyo po ng mas masarap/i;
 
 const FOOTER_DISCLAIMER_PATTERN =
   /Spaghetti,\s*Palabok|Delivery\s*Suggestion|Kung\s*gusto\s*nyo\s*po|Assisted\s*by/i;
@@ -101,7 +103,7 @@ function extractNonFreebieRemarks(value: string): string[] {
 }
 
 const FIELD_LABEL_PATTERN =
-  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?|remarks?|notes?|bilin|instructions?|distance(?:\s*km)?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|discount|price)\s*[:\-]/i;
+  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?|remarks?|notes?|bilin|instructions?|distance(?:\s*km)?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|discount|price|total\s*balance|balance\s*due)\s*[:\-]/i;
 
 const WORD_NUMBER_MAP: Record<string, number> = {
   isa: 1,
@@ -158,6 +160,16 @@ const parsePesoNumber = (raw: string): number => {
   const cleaned = (raw || "").replace(/,/g, "").replace(/[^0-9.\-]/g, "");
   const value = Number.parseFloat(cleaned);
   return Number.isFinite(value) ? Math.max(0, value) : 0;
+};
+
+const parsePriceExpression = (raw: string): number => {
+  const expression = (raw || "").replace(/[₱,\s]/g, "");
+  if (!/^\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*$/.test(expression)) {
+    return parsePesoNumber(raw);
+  }
+  return expression
+    .split("+")
+    .reduce((sum, part) => sum + (Number.parseFloat(part) || 0), 0);
 };
 
 const normalizePhone = (raw: string): string => {
@@ -621,6 +633,8 @@ export function parseMessengerTextToDraft(
   let deliveryFee: number | null = null;
   let distanceKm: number | null = null;
   let discount: number | null = null;
+  let quotedItemsTotal: number | null = null;
+  let quotedBalanceDue: number | null = null;
   let downpayment: number | null = null;
   let downpaymentMethod: ParsedOrderDraftDto["downpaymentMethod"] = null;
   let freebiesOptOut: boolean | null = null;
@@ -791,6 +805,10 @@ export function parseMessengerTextToDraft(
       deliveryFee = parsePesoNumber(value);
     } else if (/^discount$/i.test(header)) {
       discount = parsePesoNumber(value);
+    } else if (/^price$/i.test(header)) {
+      quotedItemsTotal = parsePriceExpression(value);
+    } else if (/^(?:total\s*balance|balance\s*due)$/i.test(header)) {
+      quotedBalanceDue = parsePesoNumber(value);
     }
   }
 
@@ -804,7 +822,11 @@ export function parseMessengerTextToDraft(
     const cleaned = cleanNoteText(line);
     if (!cleaned) continue;
 
-    if (CULINARY_PREP_PATTERN.test(cleaned)) {
+    if (
+      CULINARY_PREP_PATTERN.test(cleaned) ||
+      (/^with\b/i.test(cleaned) &&
+        /\b(?:palabok|pancit|spaghetti|dinuguan|liver\s*sauce|sarsa|puto|biko)\b/i.test(cleaned))
+    ) {
       if (!remarks.some((r) => r.toLowerCase() === cleaned.toLowerCase())) {
         remarks.push(cleaned);
         if (
@@ -842,10 +864,15 @@ export function parseMessengerTextToDraft(
     if (distMatch) distanceKm = Number(distMatch[1]);
   }
 
-  if (!fulfillmentExplicit) {
-    if (/\blalamove\b/i.test(sanitizedText)) {
-      fulfillment = 2;
-    } else if (/\b(?:pick\s*-?\s*up|store\s*pickup)\b/i.test(sanitizedText)) {
+  const isThirdPartyBooked =
+    /\b(?:lalamove|grab|angkas|customer\s+book(?:ed|ing)?|booked\s+by\s+(?:the\s+)?customer)\b/i.test(
+      sanitizedText,
+    );
+  if (isThirdPartyBooked) {
+    fulfillment = 2;
+    deliveryFee = 0;
+  } else if (!fulfillmentExplicit) {
+    if (/\b(?:pick\s*-?\s*up|store\s*pickup)\b/i.test(sanitizedText)) {
       fulfillment = 0;
     }
   }
@@ -909,22 +936,25 @@ export function parseMessengerTextToDraft(
 
       // Check Belly
       const bellyKgMatch = lower.match(
-        /\b([2-5])\s*kg\s*(?:lechon\s*)?belly\b|\b(?:lechon\s*)?belly\s*([2-5])\s*kg\b|\b([2-5])\s*kg\b/i,
+        /\b([2-6])\s*(?:kgs?|kls?|kilos?)\s*(?:lechon\s*)?belly\b|\b(?:lechon\s*)?belly\s*([2-6])\s*(?:kgs?|kls?|kilos?)\b|\b([2-6])\s*(?:kgs?|kls?|kilos?)\b/i,
       );
       const isBellyMention = /belly/i.test(lower);
-      if (isBellyMention || (bellyKgMatch && bellyKgMatch[1])) {
+      if (isBellyMention || bellyKgMatch) {
         const kg = Number(
           bellyKgMatch
             ? bellyKgMatch[1] || bellyKgMatch[2] || bellyKgMatch[3]
             : 0,
         );
-        const bellyCategory = activeCategories.find((c) =>
-          /belly/i.test(c.name) && (kg ? c.minimumWeightKg === kg : true),
+        const bellyCategory = activeCategories.find(
+          (c) =>
+            (/belly/i.test(c.name) ||
+              (c.minimumWeightKg === kg && c.maximumWeightKg === kg)) &&
+            (kg ? c.minimumWeightKg === kg && c.maximumWeightKg === kg : true),
         );
         if (bellyCategory) {
           let qty = 1;
           const qm = lower.match(
-            /(\d+|isang?|dalawang?|tatlong?|apat|lima)\s*(?:x|pcs?|orders?)?\s*(?:(?:lechon\s*)?belly|[2-5]\s*kg)/i,
+            /(\d+|isang?|dalawang?|tatlong?|apat|lima)\s*(?:x|pcs?|orders?)?\s*(?:(?:lechon\s*)?belly|[2-6]\s*(?:kgs?|kls?|kilos?))/i,
           );
           if (qm) qty = parseWordNumber(qm[1]);
           addItem(bellyCategory, qty);
@@ -1070,6 +1100,8 @@ export function parseMessengerTextToDraft(
     deliveryFee,
     distanceKm,
     discount,
+    quotedItemsTotal,
+    quotedBalanceDue,
     downpayment,
     downpaymentMethod,
     freebiesOptOut,

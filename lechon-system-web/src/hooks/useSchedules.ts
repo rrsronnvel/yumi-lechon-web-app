@@ -6,6 +6,8 @@ export interface RoastingScheduleItem {
   id: number;
   orderItemId?: number;
   orderId?: number;
+  bookedItemCategoryId?: number;
+  fulfilledItemCategoryId?: number | null;
   orderReference?: string;
   customerName?: string;
   facebookName?: string | null;
@@ -15,6 +17,9 @@ export interface RoastingScheduleItem {
   categoryName?: string;
   weight?: string;
   weightRange?: string;
+  standardWeightRange?: string;
+  customWeightDisplay?: string | null;
+  bookedSizeName?: string | null;
   minimumWeightKg?: number;
   maximumWeightKg?: number;
   targetDeliveryTime: string;
@@ -56,6 +61,8 @@ export interface OverrideSchedulePayload {
   departureTime?: string;
   riderName?: string;
   remarks?: string;
+  customWeightDisplay?: string | null;
+  fulfilledItemCategoryId?: number | null;
 }
 
 export interface DailySheetsResponse {

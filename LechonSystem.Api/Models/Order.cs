@@ -58,6 +58,7 @@ public class Order : BaseEntity
 
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected" | "InStaffDrawer" | "Settled"
     public string? HeldByStaffMethod { get; set; } // "Cash" | "ManualGCash" | "GCash"
+    public decimal? HeldByStaffAmount { get; set; }
     public string? RiderSignedBy { get; set; }
     public decimal? RiderRemittedAmount { get; set; }
     public DateTime? RiderSignedAt { get; set; }

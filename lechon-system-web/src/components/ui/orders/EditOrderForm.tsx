@@ -175,10 +175,14 @@ export default function EditOrderForm({
     append: appendItem,
     remove: removeItem,
     replace: replaceItems,
+    insert: insertItem,
   } = useFieldArray({
     name: "items" as const,
     control: form.control,
   });
+
+  const [expandedUpgradeRows, setExpandedUpgradeRows] = useState<Record<number, boolean>>({});
+  const [upgradeMode, setUpgradeMode] = useState<Record<number, "single" | "all">>({});
 
   const {
     fields: addOnFields,
@@ -248,6 +252,7 @@ export default function EditOrderForm({
             {
               id: Number(item.id) || 0,
               itemCategoryId,
+              fulfilledItemCategoryId: item.fulfilledItemCategoryId ?? item.fulfilledItemCategory?.id ?? null,
               quantity,
               category,
             },
@@ -261,9 +266,10 @@ export default function EditOrderForm({
             Number(item.category.maximumWeightKg) > 0 ||
             Number(item.category.minimumWeightKg) > 0,
         )
-        .map(({ id, itemCategoryId, quantity }: any) => ({
+        .map(({ id, itemCategoryId, fulfilledItemCategoryId, quantity }: any) => ({
           id,
           itemCategoryId,
+          fulfilledItemCategoryId,
           quantity,
         }));
 
@@ -651,6 +657,9 @@ export default function EditOrderForm({
         {
           id: Number(item.id) || 0,
           itemCategoryId,
+          fulfilledItemCategoryId: item.fulfilledItemCategoryId
+            ? Number(item.fulfilledItemCategoryId)
+            : null,
           quantity,
         },
       ];
@@ -1378,6 +1387,7 @@ export default function EditOrderForm({
                   appendItem({
                     id: 0,
                     itemCategoryId: lechonOptions[0]?.id || 1,
+                    fulfilledItemCategoryId: null,
                     quantity: 1,
                   });
                 }}
@@ -1387,68 +1397,223 @@ export default function EditOrderForm({
             </div>
 
             <div className="space-y-3">
-              {fields.map((field, index) => (
-                <div
-                  key={field.id}
-                  className="flex gap-3 items-center bg-stone-50/70 p-3 rounded-lg border border-stone-200"
-                >
-                  <Input
-                    type="number"
-                    min="1"
-                    className="w-16 bg-white h-10 text-sm text-center font-medium border-stone-300"
-                    {...form.register(`items.${index}.quantity` as const, {
-                      valueAsNumber: true,
-                      onChange: (e) => {
-                        const val = parseInt(e.target.value, 10);
-                        form.setValue(
-                          `items.${index}.quantity`,
-                          isNaN(val) || val < 1 ? 1 : val,
-                          { shouldValidate: true, shouldDirty: true },
-                        );
-                      },
-                    })}
-                  />
+              {fields.map((field, index) => {
+                const currentCatId = Number(form.watch(`items.${index}.itemCategoryId`));
+                const fulfilledCatId = form.watch(`items.${index}.fulfilledItemCategoryId`);
+                const qty = form.watch(`items.${index}.quantity`) || 1;
+                const bookedCat = lechonOptions.find((c: any) => Number(c.id) === currentCatId);
+                const subCat = fulfilledCatId
+                  ? lechonOptions.find((c: any) => Number(c.id) === Number(fulfilledCatId))
+                  : null;
+                const bookedPrice = bookedCat?.basePrice || bookedCat?.price || 0;
+                const isRoast = bookedCat && (Number(bookedCat.minimumWeightKg) > 0 || Number(bookedCat.maximumWeightKg) > 0);
+                const isUpgradeActive = Boolean(fulfilledCatId && Number(fulfilledCatId) !== currentCatId);
+                const isExpanded = expandedUpgradeRows[index] ?? isUpgradeActive;
+                const currentUpgradeMode = upgradeMode[index] ?? "single";
 
-                  <select
-                    {...form.register(
-                      `items.${index}.itemCategoryId` as const,
-                      {
-                        valueAsNumber: true,
-                        onChange: (e) => {
-                          const val = parseInt(e.target.value, 10);
-                          form.setValue(`items.${index}.itemCategoryId`, val, {
-                            shouldValidate: true,
-                            shouldDirty: true,
-                          });
-                        },
-                      },
-                    )}
-                    className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                return (
+                  <div
+                    key={field.id}
+                    className="bg-stone-50/70 p-3 rounded-lg border border-stone-200 space-y-2.5"
                   >
-                    {/* ONLY SHOW LECHONS HERE */}
-                    {lechonOptions.map((cat: any) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name} (₱
-                        {(cat.basePrice || cat.price || 0).toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
+                    <div className="flex gap-3 items-end">
+                      {/* Column 1: QTY */}
+                      <div className="w-16 space-y-1 shrink-0">
+                        <label className="text-[10px] font-bold uppercase text-stone-500 block">
+                          QTY
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          className="w-full bg-white h-10 text-sm text-center font-medium border-stone-300"
+                          {...form.register(`items.${index}.quantity` as const, {
+                            valueAsNumber: true,
+                            onChange: (e) => {
+                              const val = parseInt(e.target.value, 10);
+                              form.setValue(
+                                `items.${index}.quantity`,
+                                isNaN(val) || val < 1 ? 1 : val,
+                                { shouldValidate: true, shouldDirty: true },
+                              );
+                            },
+                          })}
+                        />
+                      </div>
 
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-rose-500 hover:text-rose-700 hover:bg-rose-50 shrink-0 cursor-pointer"
-                      onClick={() => {
-                        removeItem(index);
-                      }}
-                    >
-                      ✕
-                    </Button>
-                  )}
-                </div>
-              ))}
+                      {/* Column 2: BOOKED SIZE & PRICE */}
+                      <div className="flex-1 space-y-1 min-w-0">
+                        <label className="text-[10px] font-bold uppercase text-stone-500 block">
+                          BOOKED SIZE & PRICE
+                        </label>
+                        <select
+                          {...form.register(
+                            `items.${index}.itemCategoryId` as const,
+                            {
+                              valueAsNumber: true,
+                              onChange: (e) => {
+                                const val = parseInt(e.target.value, 10);
+                                form.setValue(`items.${index}.itemCategoryId`, val, {
+                                  shouldValidate: true,
+                                  shouldDirty: true,
+                                });
+                              },
+                            },
+                          )}
+                          className="w-full h-10 rounded-md border border-stone-300 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                          {lechonOptions.map((cat: any) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name} (₱{(cat.basePrice || cat.price || 0).toLocaleString()})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {fields.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 text-rose-500 hover:text-rose-700 hover:bg-rose-50 shrink-0 cursor-pointer"
+                          onClick={() => {
+                            removeItem(index);
+                          }}
+                        >
+                          ✕
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Stock Upgrade Trigger Button when Collapsed */}
+                    {user?.role === "Owner" && isRoast && !isExpanded && (
+                      <div className="flex items-center justify-between pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedUpgradeRows((prev) => ({ ...prev, [index]: true }))}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span>🔄</span> Free Stock Upgrade
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Expanded Stock Upgrade Section */}
+                    {user?.role === "Owner" && isRoast && isExpanded && (
+                      <div className="pt-2 border-t border-indigo-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold uppercase text-indigo-700 flex items-center gap-1">
+                            <span>🔄</span> FULFILL FROM FREEZER STOCK
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              form.setValue(`items.${index}.fulfilledItemCategoryId`, null, {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              });
+                              setExpandedUpgradeRows((prev) => ({ ...prev, [index]: false }));
+                            }}
+                            className="text-[11px] text-stone-500 hover:text-stone-700 underline cursor-pointer"
+                          >
+                            ✕ Cancel / Same as Booked
+                          </button>
+                        </div>
+
+                        {/* Multi-pig prompt when quantity > 1 */}
+                        {qty > 1 && (
+                          <div className="bg-indigo-50/70 p-2.5 rounded-md border border-indigo-200/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span className="font-medium text-indigo-950">
+                              Order has <strong>{qty}x {bookedCat?.name || "Booked"}</strong>. How many to upgrade?
+                            </span>
+                            <div className="inline-flex rounded-md shadow-xs bg-white p-0.5 border border-indigo-200" role="group">
+                              <button
+                                type="button"
+                                onClick={() => setUpgradeMode((prev) => ({ ...prev, [index]: "single" }))}
+                                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors ${
+                                  currentUpgradeMode === "single"
+                                    ? "bg-indigo-600 text-white shadow-xs"
+                                    : "text-stone-600 hover:text-stone-900"
+                                }`}
+                              >
+                                Upgrade 1 Pig
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setUpgradeMode((prev) => ({ ...prev, [index]: "all" }))}
+                                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors ${
+                                  currentUpgradeMode === "all"
+                                    ? "bg-indigo-600 text-white shadow-xs"
+                                    : "text-stone-600 hover:text-stone-900"
+                                }`}
+                              >
+                                Upgrade All {qty}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Upgrade Category Dropdown */}
+                        <select
+                          value={fulfilledCatId || ""}
+                          onChange={(event) => {
+                            const val = event.target.value ? Number(event.target.value) : null;
+                            if (val) {
+                              if (qty > 1 && currentUpgradeMode === "single") {
+                                // Split 1 unit into a new sibling cart item!
+                                form.setValue(`items.${index}.quantity`, qty - 1, { shouldDirty: true, shouldValidate: true });
+                                form.setValue(`items.${index}.fulfilledItemCategoryId`, null, { shouldDirty: true, shouldValidate: true });
+                                insertItem(index + 1, {
+                                  id: 0,
+                                  itemCategoryId: currentCatId,
+                                  fulfilledItemCategoryId: val,
+                                  quantity: 1,
+                                });
+                                setExpandedUpgradeRows((prev) => ({
+                                  ...prev,
+                                  [index]: false,
+                                  [index + 1]: true,
+                                }));
+                              } else {
+                                form.setValue(`items.${index}.fulfilledItemCategoryId`, val, {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                });
+                              }
+                            } else {
+                              form.setValue(`items.${index}.fulfilledItemCategoryId`, null, {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              });
+                              setExpandedUpgradeRows((prev) => ({ ...prev, [index]: false }));
+                            }
+                          }}
+                          className={`h-10 w-full rounded-md bg-white px-2.5 text-xs focus:outline-none transition-colors ${
+                            fulfilledCatId
+                              ? "border-2 border-indigo-600 font-semibold text-indigo-950 bg-indigo-50/30"
+                              : "border border-stone-300 text-stone-700"
+                          }`}
+                        >
+                          <option value="">Same as Booked ({bookedCat?.name || "Booked"})</option>
+                          {lechonOptions
+                            .filter((category: any) => Number(category.id) !== currentCatId)
+                            .map((category: any) => (
+                              <option key={category.id} value={category.id}>
+                                {category.name} ({category.minimumWeightKg}-{category.maximumWeightKg}kg) — Free Stock Upgrade
+                              </option>
+                            ))}
+                        </select>
+
+                        {/* Feedback pill when substitute stock is active */}
+                        {fulfilledCatId && subCat && (
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 text-[11px] font-semibold">
+                            <span>🔄 Deducting {qty}x {subCat.name} from Freezer & Kitchen (Price locked at ₱{bookedPrice.toLocaleString()})</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <p className="text-[11px] text-amber-800 mt-2 font-medium flex items-center gap-1">
               <span className="text-amber-600">ℹ</span> Changing the Departure

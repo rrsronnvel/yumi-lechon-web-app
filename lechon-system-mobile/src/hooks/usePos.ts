@@ -64,6 +64,7 @@ export interface CreateOrderPayload {
 export interface UpdateOrderItemPayload {
   id: number;
   itemCategoryId: number;
+  fulfilledItemCategoryId?: number | null;
   quantity: number;
 }
 

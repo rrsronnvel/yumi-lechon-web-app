@@ -8,6 +8,15 @@ Location: Cavite, Philippines
 
 Architecture Phase: Phase 5 (Advanced Logistics & Cash Reconciliation)
 
+### Daily Operations Enhancements — October 31, 2026
+
+- Messenger intake treats standalone `2kg`–`6kg` weights as Belly items, aggregates duplicate and multiplied weights, honors third-party courier language over the template's delivery choice, evaluates additive quoted prices, and reconciles catalog totals with an explicit Courtesy Discount. Belly culinary inclusion lines are retained as kitchen remarks.
+- Payments may be recorded as two distinct channels. A cash/digital Hop 1 split settles the digital portion immediately and stores only the physical cash in `Orders.HeldByStaffAmount` for Hop 2. Voiding a settlement payment with a restored financial balance returns the order to `Uncollected` unless an active drawer holding still exists.
+- Daily Sheet mutation is Owner-only at both the UI and `SchedulesController`; Cashiers retain date navigation, sheet switching, clean view, image export, and printing.
+- `OrderItemSchedules.CustomWeightDisplay` is an operational pit target that persists independently of category price and inventory. It appears on Kitchen Sheets and defrost instructions, survives time rescheduling, and can be reset to the standard category range.
+- `OrderItems.FulfilledItemCategoryId` is an internal stock/cooking substitution. Inventory reservation, defrost, category display, and cooking duration use the fulfilled category, while price and customer-facing receipts remain locked to the booked category. Internal dossiers expose the substitution audit badge.
+- These nullable columns are installed only through idempotent `IF COL_LENGTH(...) IS NULL ALTER TABLE ...` startup guards. Existing records are never purged, truncated, dropped, or reset.
+
 ### Operational Corrections — October 29, 2026
 
 - Order edit override: an Owner may edit or reschedule any existing order even after its original time has passed. A Cashier is blocked only when changing `TargetDeliveryTime` to a new past date/time; corrections to non-time fields remain allowed. When a changed target would leave `RiderDepartureTime` on a stale date or later than delivery, the backend preserves the prior lead time where possible and guarantees `RiderDepartureTime <= TargetDeliveryTime`.

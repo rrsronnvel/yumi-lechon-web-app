@@ -94,6 +94,10 @@ export default function OrderDossierModal({
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('GCash');
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [paymentAmount2, setPaymentAmount2] = useState('');
+  const [paymentMethod2, setPaymentMethod2] = useState<PaymentMethod>('Cash');
+  const [referenceNumber2, setReferenceNumber2] = useState('');
   const [paymentFeedback, setPaymentFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -119,6 +123,10 @@ export default function OrderDossierModal({
     setPaymentAmount('');
     setPaymentMethod('GCash');
     setReferenceNumber('');
+    setIsSplitPayment(false);
+    setPaymentAmount2('');
+    setPaymentMethod2('Cash');
+    setReferenceNumber2('');
     setPaymentFeedback(null);
     setPaymentToVoid(null);
     setVoidReason('');
@@ -270,19 +278,49 @@ export default function OrderDossierModal({
       return;
     }
 
-    try {
-      await paymentMutation.mutateAsync({
-        orderId,
-        amount: parsedAmount,
-        paymentMethod,
-        referenceNumber: referenceNumber.trim() || undefined,
+    const parsedAmount2 = parseFloat(paymentAmount2);
+    if (isSplitPayment && (isNaN(parsedAmount2) || parsedAmount2 <= 0)) {
+      setPaymentFeedback({
+        type: 'error',
+        message: 'Please enter a valid second payment amount greater than ₱0.',
       });
+      return;
+    }
+
+    try {
+      await paymentMutation.mutateAsync(
+        isSplitPayment
+          ? {
+              orderId,
+              splits: [
+                {
+                  amount: parsedAmount,
+                  paymentMethod,
+                  referenceNumber: referenceNumber.trim() || undefined,
+                },
+                {
+                  amount: parsedAmount2,
+                  paymentMethod: paymentMethod2,
+                  referenceNumber: referenceNumber2.trim() || undefined,
+                },
+              ],
+            }
+          : {
+              orderId,
+              amount: parsedAmount,
+              paymentMethod,
+              referenceNumber: referenceNumber.trim() || undefined,
+            }
+      );
       setPaymentFeedback({
         type: 'success',
         message: `₱${parsedAmount.toLocaleString()} (${paymentMethod}) logged to ledger!`,
       });
       setPaymentAmount('');
       setReferenceNumber('');
+      setPaymentAmount2('');
+      setReferenceNumber2('');
+      setIsSplitPayment(false);
       setIsPaymentExpanded(false);
     } catch (err: unknown) {
       const axiosErr = err as {
@@ -1095,11 +1133,17 @@ export default function OrderDossierModal({
 
                     return (
                       <View key={item.id || idx} style={styles.itemRow}>
-                        <View style={styles.itemLeft}>
+                        <View style={[styles.itemLeft, { flex: 1, flexWrap: 'wrap' }]}>
                           <Text style={styles.itemQtyBadge}>{item.quantity}x</Text>
                           <Text style={styles.itemName}>
                             {item.itemCategory?.name || 'Lechon Roast'}
                           </Text>
+                          {item.fulfilledCategoryName &&
+                            item.fulfilledItemCategoryId !== item.itemCategoryId && (
+                              <Text style={{ color: '#3730A3', fontSize: 10, fontWeight: '800' }}>
+                                🔄 Stock Upgraded: Fulfilling with {item.fulfilledCategoryName} ({item.fulfilledMinimumWeightKg}-{item.fulfilledMaximumWeightKg}kg)
+                              </Text>
+                            )}
                         </View>
                         <Text style={styles.itemTotal}>
                           {lineTotal > 0 ? `₱${lineTotal.toLocaleString()}` : 'Included'}
@@ -1335,6 +1379,24 @@ export default function OrderDossierModal({
                         </Pressable>
                       </View>
 
+                      <Pressable
+                        style={styles.fullBalanceChip}
+                        onPress={() => {
+                          const next = !isSplitPayment;
+                          setIsSplitPayment(next);
+                          if (next) {
+                            setPaymentMethod2(paymentMethod === 'Cash' ? 'GCash' : 'Cash');
+                            setPaymentAmount2(
+                              String(Math.max(0, computedBalanceDue - (Number(paymentAmount) || 0)))
+                            );
+                          }
+                        }}
+                      >
+                        <Text style={styles.fullBalanceChipText}>
+                          {isSplitPayment ? '✓ Split Payment Enabled' : '➕ Split Payment (2 Channels)'}
+                        </Text>
+                      </Pressable>
+
                       {/* Amount Input + 1-Tap Full Balance Chip */}
                       <View style={styles.paymentFieldGroup}>
                         <View style={styles.amountHeaderRow}>
@@ -1354,7 +1416,14 @@ export default function OrderDossierModal({
                           placeholderTextColor="#A8A29E"
                           keyboardType="numeric"
                           value={paymentAmount}
-                          onChangeText={setPaymentAmount}
+                          onChangeText={(value) => {
+                            setPaymentAmount(value);
+                            if (isSplitPayment) {
+                              setPaymentAmount2(
+                                String(Math.max(0, computedBalanceDue - (Number(value) || 0)))
+                              );
+                            }
+                          }}
                         />
                       </View>
 
@@ -1371,7 +1440,12 @@ export default function OrderDossierModal({
                                   styles.segmentBtn,
                                   active && styles.segmentBtnActive,
                                 ]}
-                                onPress={() => setPaymentMethod(m.value)}
+                                onPress={() => {
+                                  setPaymentMethod(m.value);
+                                  if (isSplitPayment) {
+                                    setPaymentMethod2(m.value === 'Cash' ? 'GCash' : 'Cash');
+                                  }
+                                }}
                               >
                                 <Text
                                   style={[
@@ -1399,6 +1473,49 @@ export default function OrderDossierModal({
                         />
                       </View>
 
+                      {isSplitPayment && (
+                        <>
+                          <View style={styles.paymentFieldGroup}>
+                            <Text style={styles.fieldLabel}>Payment 2 Amount (₱)</Text>
+                            <TextInput
+                              style={styles.formTextInput}
+                              keyboardType="numeric"
+                              value={paymentAmount2}
+                              onChangeText={setPaymentAmount2}
+                            />
+                          </View>
+                          <View style={styles.paymentFieldGroup}>
+                            <Text style={styles.fieldLabel}>Payment 2 Channel</Text>
+                            <View style={styles.segmentedRow}>
+                              {PAYMENT_METHODS.map((method) => (
+                                <Pressable
+                                  key={`split-${method.value}`}
+                                  style={[
+                                    styles.segmentBtn,
+                                    paymentMethod2 === method.value && styles.segmentBtnActive,
+                                  ]}
+                                  onPress={() => setPaymentMethod2(method.value)}
+                                >
+                                  <Text style={[
+                                    styles.segmentBtnText,
+                                    paymentMethod2 === method.value && styles.segmentBtnTextActive,
+                                  ]}>
+                                    {method.label}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                            <TextInput
+                              style={styles.formTextInput}
+                              placeholder="Reference # (optional)"
+                              placeholderTextColor="#A8A29E"
+                              value={referenceNumber2}
+                              onChangeText={setReferenceNumber2}
+                            />
+                          </View>
+                        </>
+                      )}
+
                       <Pressable
                         style={({ pressed }) => [
                           styles.savePaymentBtn,
@@ -1411,7 +1528,9 @@ export default function OrderDossierModal({
                         {paymentMutation.isPending ? (
                           <ActivityIndicator color="#FFFFFF" size="small" />
                         ) : (
-                          <Text style={styles.savePaymentBtnText}>✅ Save Payment</Text>
+                          <Text style={styles.savePaymentBtnText}>
+                            {isSplitPayment ? '💾 Record Split Payment' : '✅ Save Payment'}
+                          </Text>
                         )}
                       </Pressable>
                     </View>

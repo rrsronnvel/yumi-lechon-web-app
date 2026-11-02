@@ -47,6 +47,10 @@ export function SettlePickupModal({
 }: SettlePickupModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
   const [referenceNumber, setReferenceNumber] = useState<string>("");
+  const [cashAmount, setCashAmount] = useState<number>(0);
+  const [digitalAmount, setDigitalAmount] = useState<number>(0);
+  const [digitalMethod, setDigitalMethod] = useState<string>("GCash");
+  const [digitalReference, setDigitalReference] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { user } = useAuth();
@@ -58,14 +62,21 @@ export function SettlePickupModal({
   useEffect(() => {
     if (open) {
       setReceivedByStaff(defaultStaffLabel);
+      setCashAmount(order?.balanceDue ?? 0);
+      setDigitalAmount(0);
+      setDigitalReference("");
     }
-  }, [open, defaultStaffLabel]);
+  }, [open, defaultStaffLabel, order?.balanceDue]);
 
   const collectMutation = useCounterCollectPickupMutation();
 
   const handleClose = () => {
     setPaymentMethod("Cash");
     setReferenceNumber("");
+    setCashAmount(0);
+    setDigitalAmount(0);
+    setDigitalMethod("GCash");
+    setDigitalReference("");
     setErrorMessage(null);
     onOpenChange(false);
   };
@@ -75,6 +86,13 @@ export function SettlePickupModal({
 
     if (!paymentMethod) {
       setErrorMessage("Please select a payment method.");
+      return;
+    }
+    if (
+      paymentMethod === "Split" &&
+      (cashAmount <= 0 || digitalAmount <= 0 || cashAmount + digitalAmount !== order.balanceDue)
+    ) {
+      setErrorMessage(`Cash and Digital amounts must both be positive and total ₱${order.balanceDue.toLocaleString()}.`);
       return;
     }
 
@@ -87,6 +105,11 @@ export function SettlePickupModal({
         paymentMethod,
         referenceNumber: referenceNumber.trim() || undefined,
         staffName: receivedByStaff.trim() || undefined,
+        cashAmount: paymentMethod === "Split" ? cashAmount : undefined,
+        digitalAmount: paymentMethod === "Split" ? digitalAmount : undefined,
+        digitalMethod: paymentMethod === "Split" ? digitalMethod : undefined,
+        digitalReferenceNumber:
+          paymentMethod === "Split" ? digitalReference.trim() || undefined : undefined,
       },
       {
         onSuccess: () => {
@@ -207,9 +230,51 @@ export function SettlePickupModal({
                 <SelectItem value="Bank Transfer">
                   🏦 Bank Transfer
                 </SelectItem>
+                <SelectItem value="Split">
+                  ➕ Split (Cash + Digital)
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {paymentMethod === "Split" && (
+            <div className="grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Physical Cash to Drawer (₱)</Label>
+                <Input
+                  type="number"
+                  value={cashAmount}
+                  onChange={(event) => {
+                    const cash = Math.max(0, Number(event.target.value) || 0);
+                    setCashAmount(cash);
+                    setDigitalAmount(Math.max(0, order.balanceDue - cash));
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Digital Transfer Amount (₱)</Label>
+                <Input
+                  type="number"
+                  value={digitalAmount}
+                  onChange={(event) => setDigitalAmount(Math.max(0, Number(event.target.value) || 0))}
+                />
+              </div>
+              <Select value={digitalMethod} onValueChange={(value) => value && setDigitalMethod(value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GCash">Direct GCash</SelectItem>
+                  <SelectItem value="ManualGCash">Rider GCash</SelectItem>
+                  <SelectItem value="Maya">Maya</SelectItem>
+                  <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                value={digitalReference}
+                onChange={(event) => setDigitalReference(event.target.value)}
+                placeholder="Digital reference # (optional)"
+              />
+            </div>
+          )}
 
           {/* Optional Reference Number */}
           <div className="space-y-2">

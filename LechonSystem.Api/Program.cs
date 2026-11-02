@@ -97,6 +97,17 @@ using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<LechonDbContext>();
     await context.Database.ExecuteSqlRawAsync(@"
+        IF COL_LENGTH('Orders', 'HeldByStaffAmount') IS NULL
+            ALTER TABLE Orders ADD HeldByStaffAmount decimal(18,2) NULL;
+
+        IF COL_LENGTH('OrderItemSchedules', 'CustomWeightDisplay') IS NULL
+            ALTER TABLE OrderItemSchedules ADD CustomWeightDisplay nvarchar(32) NULL;
+
+        IF COL_LENGTH('OrderItems', 'FulfilledItemCategoryId') IS NULL
+            ALTER TABLE OrderItems ADD FulfilledItemCategoryId int NULL;
+    ");
+
+    await context.Database.ExecuteSqlRawAsync(@"
         UPDATE oi
         SET oi.Price = ic.BasePrice,
             oi.TotalPrice = ic.BasePrice * oi.Quantity

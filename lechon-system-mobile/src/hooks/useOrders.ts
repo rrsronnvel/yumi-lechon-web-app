@@ -33,6 +33,7 @@ export interface OrderDirectoryDto {
   updatedAt?: string | null;
   hasRecentEdits: boolean;
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
+  heldByStaffAmount?: number | null;
   riderName?: string | null;
   isRemittedToOwner?: boolean;
   isOwnerConfirmed: boolean;
@@ -58,10 +59,15 @@ export interface OrderDetailItemDto {
   id: number;
   orderId: number;
   itemCategoryId: number;
+  fulfilledItemCategoryId?: number | null;
+  fulfilledCategoryName?: string | null;
+  fulfilledMinimumWeightKg?: number | null;
+  fulfilledMaximumWeightKg?: number | null;
   quantity: number;
   price: number;
   totalPrice: number;
   itemCategory?: OrderDetailCategoryDto | null;
+  fulfilledItemCategory?: OrderDetailCategoryDto | null;
 }
 
 export interface OrderDetailsDto {
@@ -108,6 +114,7 @@ export interface OrderDetailsDto {
   customerPreferences?: string | null;
   customerComplaintHistory?: string | null;
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
+  heldByStaffAmount?: number | null;
   isOwnerConfirmed: boolean;
   ownerConfirmedAt?: string | null;
   ownerConfirmedBy?: string | null;
@@ -142,9 +149,14 @@ export interface OrderAuditLogDto {
 
 export interface RecordManualPaymentPayload {
   orderId: number;
-  amount: number;
-  paymentMethod: 'GCash' | 'Cash' | 'Maya' | 'Bank Transfer' | string;
+  amount?: number;
+  paymentMethod?: 'GCash' | 'Cash' | 'Maya' | 'Bank Transfer' | string;
   referenceNumber?: string;
+  splits?: {
+    amount: number;
+    paymentMethod: string;
+    referenceNumber?: string;
+  }[];
 }
 
 export interface VoidPaymentPayload {
@@ -215,6 +227,7 @@ export const useRecordManualPaymentMutation = () => {
         paymentMethod: payload.paymentMethod,
         referenceNumber: payload.referenceNumber?.trim() || undefined,
         referenceId: payload.referenceNumber?.trim() || '',
+        splits: payload.splits,
       });
       return response.data;
     },
@@ -248,6 +261,8 @@ export const useVoidPaymentMutation = () => {
         queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['manifest'] }),
+        queryClient.invalidateQueries({ queryKey: ['logistics'] }),
+        queryClient.invalidateQueries({ queryKey: ['drawer'] }),
         queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] }),
       ]);
     },

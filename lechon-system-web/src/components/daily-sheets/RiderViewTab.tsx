@@ -15,6 +15,7 @@ import { isWalkInOrder } from "@/utils/walkIn";
 interface RiderViewTabProps {
   mode?: "edit" | "clean";
   selectedDate?: string;
+  canEdit?: boolean;
 }
 
 // Bulletproof Time Formatter
@@ -58,7 +59,7 @@ const formatWeightDisplay = (weight?: string | null): string => {
     .trim() || "-";
 };
 
-export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps) {
+export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: RiderViewTabProps) {
   const { data: dailySheets, isLoading, isError } = useDailySheets(selectedDate);
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -81,13 +82,13 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
   });
 
   const handleCellClick = (item: RoastingScheduleItem) => {
-    if (mode === "clean") return;
+    if (mode === "clean" || !canEdit) return;
     setSelectedItem(item);
     setIsEditorOpen(true);
   };
 
   const isCleanView = mode === "clean";
-  const isEdit = !isCleanView;
+  const isEdit = !isCleanView && canEdit;
 
   const handleCopyDispatch = (item: RoastingScheduleItem) => {
     const matchedRider = registeredRiders.find(
@@ -213,8 +214,15 @@ export function RiderViewTab({ mode = "edit", selectedDate }: RiderViewTabProps)
                   </td>
 
                   {/* 2. Size (Compact & Centered: fits "S. Jumbo" without wrapping) */}
-                  <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 whitespace-nowrap text-xs">
-                    {item.size || "-"}
+                  <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 max-w-[85px] overflow-hidden break-words whitespace-normal leading-tight text-xs">
+                    {(item.size || "-").toLowerCase().includes("lamang-loob") || (item.size || "").toLowerCase().includes("raw innards") ? (
+                      <span className="leading-tight block">
+                        Raw Innards
+                        <span className="text-[10px] block text-stone-500 font-normal">(Lamang-Loob)</span>
+                      </span>
+                    ) : (
+                      item.size || "-"
+                    )}
                   </td>
 
                   {/* 3. Weight */}

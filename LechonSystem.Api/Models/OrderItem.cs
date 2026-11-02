@@ -8,6 +8,8 @@ public class OrderItem : BaseEntity
     
     public int ItemCategoryId { get; set; } // Foreign Key to the specific size bucket
     public ItemCategory? ItemCategory { get; set; } // Navigation property
+    public int? FulfilledItemCategoryId { get; set; }
+    public ItemCategory? FulfilledItemCategory { get; set; }
     
     public int Quantity { get; set; }
 
