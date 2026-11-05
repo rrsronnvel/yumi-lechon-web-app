@@ -9,6 +9,7 @@ import {
 } from "../hooks/useInventory";
 import ReceiveStockModal from "@/components/ui/inventory/ReceiveStockModal";
 import AdjustLedgerModal from "@/components/ui/inventory/AdjustLedgerModal";
+import PapakatayPlannerModal from "@/components/ui/inventory/PapakatayPlannerModal";
 import {
   Table,
   TableBody,
@@ -31,6 +32,7 @@ export default function InventoryPage() {
   // 2. Local Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
+  const [isPapakatayModalOpen, setIsPapakatayModalOpen] = useState(false);
 
   // 3. Handlers
   const handleCopyProcurement = () => {
@@ -78,6 +80,15 @@ export default function InventoryPage() {
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+          {/* PAPAKATAY / BUTCHER PLANNER HERO BUTTON */}
+          <Button
+            onClick={() => setIsPapakatayModalOpen(true)}
+            className="h-10 w-full bg-amber-600 font-bold text-white shadow-sm hover:bg-amber-700 sm:w-auto flex items-center justify-center gap-1.5"
+          >
+            <span>🔪</span>
+            <span>Papakatay Planner (Butcher List)</span>
+          </Button>
+
           {/* FREEZER-GATE INTAKE */}
           <Button
             onClick={() => setIsReceiveModalOpen(true)}
@@ -94,6 +105,11 @@ export default function InventoryPage() {
           >
             Manual Adjustment
           </Button>
+
+          <PapakatayPlannerModal
+            open={isPapakatayModalOpen}
+            onOpenChange={setIsPapakatayModalOpen}
+          />
 
           <AdjustLedgerModal
             open={isModalOpen}

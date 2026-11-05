@@ -38,6 +38,7 @@ export interface CreateOrderPayload {
   contactNumber?: string;
   source: string;
   eventType?: string;
+  assistedByAdmin?: string;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
   assignedRiderName?: string | null;
@@ -315,6 +316,7 @@ export const useCreateOrderMutation = () => {
     },
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['riders'] }),
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['customers'] }),
         queryClient.invalidateQueries({ queryKey: ['manifest'] }),
@@ -337,6 +339,7 @@ export const useUpdateOrderMutation = () => {
     },
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['riders'] }),
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['schedules'] }),

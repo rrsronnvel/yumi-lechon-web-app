@@ -107,6 +107,7 @@ export default function OrderForm({
   );
   const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
+  const [showAssistedByAdmin, setShowAssistedByAdmin] = useState(false);
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
   const previousWholePigCount = useRef(0);
   const pendingParsedFreebies = useRef<{
@@ -154,6 +155,7 @@ export default function OrderForm({
       facebookName: "",
       source: "Business FB Page",
       eventType: "",
+      assistedByAdmin: "",
       landmark: "",
       targetDeliveryTime: "",
       riderDepartureTime: "",
@@ -232,6 +234,7 @@ export default function OrderForm({
     setFreebiesConfig(createDefaultFreebiesConfig(0));
     setAppliedFreebiesDiscount(0);
     setShowSecondaryPhone(false);
+    setShowAssistedByAdmin(false);
     setIsNonLechonMode(false);
     previousWholePigCount.current = 0;
     pendingParsedFreebies.current = null;
@@ -568,6 +571,10 @@ export default function OrderForm({
       : duplicateEvaluation.repeatCustomerMatches[0];
 
   function onSubmit(data: OrderFormData) {
+    if (!data.isDraft && !data.targetDeliveryTime?.trim()) {
+      toast.error("⚠️ Please select a Delivery / Pickup Date before submitting.");
+      return;
+    }
     const normalizedTargetDeliveryTime = data.targetDeliveryTime
       ? normalizeLocalDateTimeInput(data.targetDeliveryTime)
       : "";
@@ -658,6 +665,7 @@ export default function OrderForm({
       facebookName: data.facebookName?.trim() || null,
       source: data.source?.trim() || "POS Terminal",
       eventType: isNonLechonMode ? null : data.eventType?.trim() || null,
+      assistedByAdmin: data.assistedByAdmin?.trim() || null,
       landmark: data.landmark?.trim() || null,
       targetDeliveryTime: data.targetDeliveryTime ? data.targetDeliveryTime : null,
       riderDepartureTime: effectiveRiderDeparture,
@@ -736,6 +744,11 @@ export default function OrderForm({
       shouldValidate: true,
       shouldDirty: true,
     });
+    form.setValue("assistedByAdmin", draft.assistedByAdmin || "", {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    setShowAssistedByAdmin(Boolean(draft.assistedByAdmin?.trim()));
 
     if (draft.targetDeliveryTime) {
       const d = new Date(draft.targetDeliveryTime);
@@ -1351,6 +1364,47 @@ export default function OrderForm({
               </FormItem>
             )}
           />}
+
+          {!showAssistedByAdmin ? (
+            <button
+              type="button"
+              onClick={() => setShowAssistedByAdmin(true)}
+              className="w-fit rounded-md border border-dashed border-stone-300 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:border-amber-400 hover:bg-amber-50"
+            >
+              👤 + Assisted by Admin
+            </button>
+          ) : (
+            <FormField
+              control={form.control}
+              name="assistedByAdmin"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center justify-between text-xs font-semibold text-stone-700">
+                    <span>Assisted by Admin</span>
+                    <button
+                      type="button"
+                      className="text-[10px] font-bold text-stone-500 hover:text-rose-700"
+                      onClick={() => {
+                        field.onChange("");
+                        setShowAssistedByAdmin(false);
+                      }}
+                    >
+                      Hide
+                    </button>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      maxLength={64}
+                      placeholder="Admin name for sales / commission tracking"
+                      className="h-10 text-xs border-stone-300"
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+          )}
 
           {/* 3. Segmented Delivery Method Toggle */}
           <FormField

@@ -368,9 +368,11 @@ export default function DrawerScreen() {
         {
           onSuccess: (data) => {
             setSessionToken(data.token);
-            setOverrideRiderName(
-              data.assignedRiderName || modalState.riderName || 'Freelance Rider'
-            );
+            const resolvedRider = data.assignedRiderName || modalState.riderName || '';
+            const isUnassigned =
+              !resolvedRider.trim() || resolvedRider.trim().toLowerCase() === 'unassigned';
+            setOverrideRiderName(isUnassigned ? '' : resolvedRider);
+            setShowManualOverride(isUnassigned);
             setOverrideAmount(String(data.expectedAmount || modalState.expectedAmount));
           },
           onError: (err: unknown) => {
@@ -671,6 +673,12 @@ export default function DrawerScreen() {
   const isCountedEntered = countedAmount.trim() !== '';
   const isCountedExactMatch =
     isCountedEntered && !isNaN(parsedCounted) && parsedCounted === expectedHop2Amount;
+  const normalizedHop2Method = (modalState?.heldPaymentMethod || '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+  const isDigitalHop2 =
+    modalState?.workflow === 'hop2_owner' &&
+    ['gcash', 'manualgcash', 'maya', 'banktransfer'].includes(normalizedHop2Method);
 
   // Hop 1 Rider Signature Discrepancy Math
   const isSignedByRider = qrStatus?.status === 'SignedByRider';
@@ -1012,6 +1020,9 @@ export default function DrawerScreen() {
               visibleRiderDrops.map((drop) => {
                 const isInDrawer = drop.custodyStatus === 'InStaffDrawer';
                 const targetOrderId = drop.orderId || drop.id;
+                const isUnassignedRider =
+                  !drop.riderName?.trim() ||
+                  drop.riderName.trim().toLowerCase() === 'unassigned';
 
                 return (
                   <View
@@ -1029,9 +1040,15 @@ export default function DrawerScreen() {
                             <Text style={styles.vipBadgeText}>👑 VIP</Text>
                           </View>
                         )}
-                        <Text style={styles.riderBadgeText}>
-                          🛵 {drop.riderName}
-                        </Text>
+                        {isUnassignedRider ? (
+                          <View style={{ backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ color: '#78350F', fontSize: 11, fontWeight: '900' }}>
+                              ⚠️ No Rider
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.riderBadgeText}>🛵 {drop.riderName}</Text>
+                        )}
                       </View>
 
                       {isInDrawer ? (
@@ -1138,8 +1155,8 @@ export default function DrawerScreen() {
                           onPress={() => {
                             setRiderPayMethod('Cash');
                             setDirectGcashRef('');
-                            setShowManualOverride(false);
-                            setOverrideRiderName(drop.riderName || '');
+                            setShowManualOverride(isUnassignedRider);
+                            setOverrideRiderName(isUnassignedRider ? '' : drop.riderName || '');
                             setOverrideAmount(String(drop.netRemittance));
                             setModalError(null);
                             setModalState({
@@ -1152,7 +1169,9 @@ export default function DrawerScreen() {
                           }}
                         >
                           <Text style={styles.settleGreenBtnText}>
-                            Settle Payment (Hop 1)
+                            {isUnassignedRider
+                              ? '🛵 Assign Rider & Settle (Hop 1)'
+                              : 'Settle Payment (Hop 1)'}
                           </Text>
                         </Pressable>
                       )}
@@ -1570,7 +1589,9 @@ export default function DrawerScreen() {
                 <View style={styles.speedBumpCard}>
                   <View style={styles.speedBumpHeader}>
                     <Text style={styles.speedBumpTitle}>
-                      💵 Physical Bills Counted in Envelope (₱) *
+                      {isDigitalHop2
+                        ? `📱 Digital Transfer Verification (${modalState.heldPaymentMethod}) (₱)`
+                        : '💵 Physical Bills Counted in Envelope (₱)'} *
                     </Text>
                     <Pressable
                       style={styles.matchExactChip}
@@ -1584,7 +1605,11 @@ export default function DrawerScreen() {
 
                   <TextInput
                     style={styles.speedBumpInput}
-                    placeholder={`Count physical envelope bills (Expect ₱${expectedHop2Amount.toLocaleString()})`}
+                    placeholder={
+                      isDigitalHop2
+                        ? 'Confirm digital amount received on phone...'
+                        : `Count physical envelope bills (Expect ₱${expectedHop2Amount.toLocaleString()})`
+                    }
                     placeholderTextColor="#A8A29E"
                     keyboardType="numeric"
                     value={countedAmount}
@@ -1594,9 +1619,9 @@ export default function DrawerScreen() {
                   {isCountedEntered && !isCountedExactMatch && (
                     <View style={styles.mismatchAlertBox}>
                       <Text style={styles.mismatchAlertText}>
-                        ⚠️ Counted bills (₱
+                        ⚠️ {isDigitalHop2 ? 'Verified digital amount' : 'Counted bills'} (₱
                         {(isNaN(parsedCounted) ? 0 : parsedCounted).toLocaleString()}
-                        ) do not match expected remittance (₱
+                        ) does not match expected remittance (₱
                         {expectedHop2Amount.toLocaleString()}). Recount envelope before closing.
                       </Text>
                     </View>
@@ -1647,7 +1672,9 @@ export default function DrawerScreen() {
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
                       <Text style={styles.ownerApproveBtnText}>
-                        👑 Confirm &amp; Close Order #{modalState.orderId}
+                        {isDigitalHop2
+                          ? `👑 Verify ${modalState.heldPaymentMethod} & Close Order #${modalState.orderId}`
+                          : `👑 Confirm & Close Order #${modalState.orderId}`}
                       </Text>
                     )}
                   </Pressable>

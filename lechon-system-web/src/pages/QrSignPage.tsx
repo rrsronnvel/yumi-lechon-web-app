@@ -34,6 +34,11 @@ export default function QrSignPage() {
   } = useQrSessionStatusQuery(token || null, true);
 
   const isSplit = searchParams.get("mode") === "Split" || session?.paymentMethod === "Split";
+  const isDigitalHop2 =
+    session?.hopStage === "StaffToOwner" &&
+    ["gcash", "manualgcash", "maya", "banktransfer"].includes(
+      (session.paymentMethod || "").replace(/\s+/g, "").toLowerCase(),
+    );
   const splitCash = searchParams.get("cash") ? Number(searchParams.get("cash")) : null;
   const splitDigital = searchParams.get("digital") ? Number(searchParams.get("digital")) : null;
   const splitDigitalMethod = searchParams.get("digitalMethod") || "Direct GCash";
@@ -668,7 +673,10 @@ export default function QrSignPage() {
                   htmlFor="countedBills"
                   className="text-sm font-semibold text-stone-800"
                 >
-                  Physical Bills Counted in Envelope (₱) <span className="text-rose-500">*</span>
+                  {isDigitalHop2
+                    ? `📱 Digital Transfer Verification (${session.paymentMethod}) (₱)`
+                    : "💵 Physical Bills Counted in Envelope (₱)"}{" "}
+                  <span className="text-rose-500">*</span>
                 </Label>
                 <div className="relative">
                   <Banknote className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
@@ -682,14 +690,18 @@ export default function QrSignPage() {
                         e.target.value === "" ? "" : Number(e.target.value)
                       )
                     }
-                    placeholder="Enter exact counted bills"
+                    placeholder={
+                      isDigitalHop2
+                        ? "Confirm digital amount received on phone..."
+                        : "Enter exact counted bills"
+                    }
                     className="pl-9 h-10 font-mono font-bold text-lg border-stone-300"
                     required
                   />
                 </div>
                 {ownerCountedBills !== "" && Number(ownerCountedBills) !== session.expectedAmount && (
                   <p className="text-xs text-rose-600 font-medium pt-0.5">
-                    Counted bills (₱{Number(ownerCountedBills).toLocaleString()}) do not match expected remittance (₱{session.expectedAmount.toLocaleString()}). Recount envelope before closing.
+                    {isDigitalHop2 ? "Verified digital amount" : "Counted bills"} (₱{Number(ownerCountedBills).toLocaleString()}) does not match expected remittance (₱{session.expectedAmount.toLocaleString()}).
                   </p>
                 )}
               </div>
@@ -738,7 +750,11 @@ export default function QrSignPage() {
                   "Verifying & Closing..."
                 ) : (
                   <>
-                    <span>👑 Owner Approve & Settle</span>
+                    <span>
+                      {isDigitalHop2
+                        ? `👑 Verify ${session.paymentMethod} & Close Order #${session.orderId}`
+                        : `👑 Confirm & Close Order #${session.orderId}`}
+                    </span>
                   </>
                 )}
               </Button>

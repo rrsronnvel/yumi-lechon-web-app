@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Boxes,
+  BarChart3,
   ClipboardList,
   FileSpreadsheet,
   LayoutDashboard,
@@ -23,7 +24,7 @@ import {
 
 export default function Sidebar() {
   const location = useLocation();
-  const { user, isOwner, logout, apiEnv, apiBaseUrl, switchApiEnv } = useAuth();
+  const { user, logout, apiEnv, apiBaseUrl, switchApiEnv } = useAuth();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   const navigation = [
@@ -32,7 +33,12 @@ export default function Sidebar() {
     { name: "Logistics", href: "/logistics", icon: Truck },
     { name: "Manifest", href: "/manifest", icon: FileSpreadsheet },
     { name: "Inventory", href: "/inventory", icon: Boxes },
-    ...(isOwner ? [{ name: "Settings", href: "/cms", icon: Settings }] : []),
+    ...(user?.role === "Owner"
+      ? [
+          { name: "Reports", href: "/reports", icon: BarChart3 },
+          { name: "Settings", href: "/cms", icon: Settings },
+        ]
+      : []),
   ];
 
   useEffect(() => {

@@ -219,6 +219,126 @@ namespace LechonSystem.Api.Services
             return await GetInventoryBalancesAsync();
         }
 
+        public async Task<ButcherPlanResponseDto> GetButcherPlanAsync(DateTime? startDate, DateTime? endDate)
+        {
+            var today = PhilippineTime.Today;
+            var effectiveStart = startDate?.Date ?? today.AddDays(1);
+            var effectiveEnd = endDate?.Date ?? today.AddDays(3);
+
+            if (effectiveEnd < effectiveStart)
+            {
+                effectiveEnd = effectiveStart;
+            }
+
+            // 1. Fetch all Whole Lechon categories (ordered by weight ascending: MinimumWeightKg >= 10kg)
+            var categories = await _context.ItemCategories
+                .AsNoTracking()
+                .Where(c => c.IsActive && c.MinimumWeightKg >= 10.0m)
+                .OrderBy(c => c.MinimumWeightKg)
+                .ThenBy(c => c.MaximumWeightKg)
+                .ToListAsync();
+
+            // 2. Fetch physical stock per category from transactions
+            var transactions = await _context.InventoryTransactions
+                .AsNoTracking()
+                .ToListAsync();
+
+            var physicalStockMap = transactions
+                .Where(t => t.Reason == null || !t.Reason.StartsWith("[Reservation Swap Audit]"))
+                .GroupBy(t => t.ItemCategoryId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Sum(t =>
+                    {
+                        if (t.Type == TransactionType.StockIn)
+                            return Math.Abs(t.Quantity);
+                        if (t.Type == TransactionType.StockOut)
+                            return -Math.Abs(t.Quantity);
+                        return t.Quantity;
+                    })
+                );
+
+            // 3. Query all active (non-cancelled, non-draft) Whole Lechon orders scheduled within [effectiveStart, effectiveEnd]
+            var wholeCategoryIds = categories.Select(c => c.Id).ToHashSet();
+
+            var orders = await _context.Orders
+                .AsNoTracking()
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.OrderItemSchedule)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.ItemCategory)
+                .Where(o => !o.IsCancelled && !o.IsDraft
+                         && o.TargetDeliveryTime.HasValue
+                         && o.TargetDeliveryTime.Value.Date >= effectiveStart
+                         && o.TargetDeliveryTime.Value.Date <= effectiveEnd)
+                .ToListAsync();
+
+            // Group upcoming orders count & custom weights by effective category (FulfilledItemCategoryId ?? ItemCategoryId)
+            var upcomingCountMap = new Dictionary<int, int>();
+            var customWeightsMap = new Dictionary<int, List<string>>();
+
+            foreach (var order in orders)
+            {
+                foreach (var item in order.OrderItems)
+                {
+                    var effectiveCatId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
+                    if (!wholeCategoryIds.Contains(effectiveCatId))
+                        continue;
+
+                    upcomingCountMap[effectiveCatId] = upcomingCountMap.GetValueOrDefault(effectiveCatId, 0) + item.Quantity;
+
+                    var customWeight = item.OrderItemSchedule?.CustomWeightDisplay?.Trim();
+                    if (!string.IsNullOrWhiteSpace(customWeight))
+                    {
+                        if (!customWeightsMap.ContainsKey(effectiveCatId))
+                            customWeightsMap[effectiveCatId] = new List<string>();
+
+                        if (!customWeightsMap[effectiveCatId].Contains(customWeight))
+                            customWeightsMap[effectiveCatId].Add(customWeight);
+                    }
+                }
+            }
+
+            // 4. Construct items
+            var planItems = categories.Select(cat =>
+            {
+                var upcoming = upcomingCountMap.GetValueOrDefault(cat.Id, 0);
+                var freezerStock = Math.Max(0, physicalStockMap.GetValueOrDefault(cat.Id, 0));
+                var suggested = Math.Max(0, upcoming - freezerStock);
+                var customWeights = customWeightsMap.GetValueOrDefault(cat.Id, new List<string>());
+
+                var weightBracket = $"{cat.MinimumWeightKg:0.#}-{cat.MaximumWeightKg:0.#}kg";
+
+                return new ButcherPlanItemDto
+                {
+                    CategoryId = cat.Id,
+                    CategoryName = cat.Name,
+                    WeightBracket = weightBracket,
+                    MinimumWeightKg = cat.MinimumWeightKg,
+                    MaximumWeightKg = cat.MaximumWeightKg,
+                    CustomWeights = customWeights,
+                    UpcomingOrdersCount = upcoming,
+                    AvailableFreezerStock = freezerStock,
+                    SuggestedSlaughterCount = suggested
+                };
+            }).ToList();
+
+            string dateLabel = effectiveStart == effectiveEnd
+                ? effectiveStart.ToString("MMM d, yyyy")
+                : $"{effectiveStart:MMM d} - {effectiveEnd:MMM d, yyyy}";
+
+            return new ButcherPlanResponseDto
+            {
+                StartDate = effectiveStart.ToString("yyyy-MM-dd"),
+                EndDate = effectiveEnd.ToString("yyyy-MM-dd"),
+                DateRangeLabel = dateLabel,
+                TotalUpcomingOrders = planItems.Sum(i => i.UpcomingOrdersCount),
+                TotalAvailableFreezerStock = planItems.Sum(i => i.AvailableFreezerStock),
+                TotalSuggestedSlaughter = planItems.Sum(i => i.SuggestedSlaughterCount),
+                Items = planItems
+            };
+        }
+
         public async Task<ReceiveStockResponseDto> ReceiveStockAsync(ReceiveStockRequest request)
         {
             if (request == null)

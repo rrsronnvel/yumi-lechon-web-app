@@ -156,7 +156,10 @@ namespace LechonSystem.Api.Services
                 OwnerConfirmedBy = isOwnerConfirmed ? CurrentUser : null,
                 Discount = request.Discount,
                 GrandTotal = request.GrandTotal,
-                CreatedBy = CurrentUser
+                CreatedBy = CurrentUser,
+                AssistedByAdmin = string.IsNullOrWhiteSpace(request.AssistedByAdmin)
+                    ? null
+                    : request.AssistedByAdmin.Trim()
             };
 
             if (!string.IsNullOrWhiteSpace(normalizedPhone))
@@ -457,11 +460,8 @@ namespace LechonSystem.Api.Services
                 case "balance-due":
                     query = query.Where(o => !o.IsDraft && !o.IsCancelled
                         && o.SettlementCustodyStatus != "Settled"
-                        && !(o.Fulfillment == FulfillmentType.Delivery
-                             && o.SettlementCustodyStatus == "InStaffDrawer"
-                             && (o.Downpayment >= (o.GrandTotal - o.DeliveryFee)
-                                 || (o.RiderRemittedAmount ?? 0) >= ((o.GrandTotal - o.DeliveryFee) - o.Downpayment)))
-                        && (o.GrandTotal - o.Downpayment) > 0);
+                        && ((o.GrandTotal - o.Downpayment) > 0
+                            || o.SettlementCustodyStatus == "InStaffDrawer"));
                     query = query.OrderBy(o => o.TargetDeliveryTime);
                     break;
 
@@ -540,14 +540,27 @@ namespace LechonSystem.Api.Services
                     IsCancelled = o.IsCancelled,
                     CancellationReason = o.CancellationReason,
                     CreatedBy = o.CreatedBy,
+                    AssistedByAdmin = o.AssistedByAdmin,
                     UpdatedAt = o.UpdatedAt,
                     HasRecentEdits = o.UpdatedAt.HasValue && o.UpdatedAt.Value >= recentCutoff,
                     SettlementCustodyStatus = o.SettlementCustodyStatus ?? "Uncollected",
+                    HeldByStaffAmount = o.HeldByStaffAmount,
+                    HeldPaymentMethod = o.HeldByStaffMethod,
                     IsRemittedToOwner = o.SettlementCustodyStatus == "Settled",
                     RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : o.RiderSignedBy,
                     IsOwnerConfirmed = o.IsOwnerConfirmed,
                     OwnerConfirmedAt = o.OwnerConfirmedAt,
-                    OwnerConfirmedBy = o.OwnerConfirmedBy
+                    OwnerConfirmedBy = o.OwnerConfirmedBy,
+                    Items = o.OrderItems.Select(i => new OrderDirectoryItemDto
+                    {
+                        Quantity = i.Quantity,
+                        CategoryName = i.ItemCategory != null ? i.ItemCategory.Name : string.Empty,
+                        MinimumWeightKg = i.ItemCategory != null ? i.ItemCategory.MinimumWeightKg : 0,
+                        MaximumWeightKg = i.ItemCategory != null ? i.ItemCategory.MaximumWeightKg : 0,
+                        FulfilledCategoryName = i.FulfilledItemCategory != null ? i.FulfilledItemCategory.Name : null,
+                        IsRoastItem = i.ItemCategory != null && i.ItemCategory.MinimumWeightKg > 0,
+                        CustomWeightDisplay = i.OrderItemSchedule != null ? i.OrderItemSchedule.CustomWeightDisplay : null
+                    }).ToList()
                 })
                 .ToListAsync();
 
@@ -813,6 +826,8 @@ namespace LechonSystem.Api.Services
                 }
                 else
                 {
+                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRider);
+
                     if (!string.Equals(oldRider, cleanRider, StringComparison.OrdinalIgnoreCase))
                     {
                         var trip = order.DeliveryTrip
@@ -869,6 +884,9 @@ namespace LechonSystem.Api.Services
             order.DeliveryAddress = newDeliveryAddress;
             order.Landmark = newLandmark;
             order.Remarks = newRemarks;
+            order.AssistedByAdmin = string.IsNullOrWhiteSpace(request.AssistedByAdmin)
+                ? null
+                : request.AssistedByAdmin.Trim();
             order.TargetDeliveryTime = effectiveTargetDeliveryTime;
             order.RiderDepartureTime = effectiveRiderDepartureTime;
             order.IsTimeTbd = request.IsTimeTbd;
@@ -1233,6 +1251,7 @@ namespace LechonSystem.Api.Services
                 CancellationReason = order.CancellationReason,
                 IsPriceWaived = order.IsPriceWaived,
                 CreatedBy = order.CreatedBy,
+                AssistedByAdmin = order.AssistedByAdmin,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
                 Fulfillment = (int)order.Fulfillment,
@@ -1240,6 +1259,7 @@ namespace LechonSystem.Api.Services
                 DeliveryTripId = order.DeliveryTripId,
                 SettlementCustodyStatus = order.SettlementCustodyStatus ?? "Uncollected",
                 HeldByStaffAmount = order.HeldByStaffAmount,
+                HeldPaymentMethod = order.HeldByStaffMethod,
                 IsOwnerConfirmed = order.IsOwnerConfirmed,
                 OwnerConfirmedAt = order.OwnerConfirmedAt,
                 OwnerConfirmedBy = order.OwnerConfirmedBy,

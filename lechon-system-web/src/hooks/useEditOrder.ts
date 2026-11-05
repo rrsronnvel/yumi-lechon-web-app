@@ -20,6 +20,7 @@ export function useEditOrder() {
 
       // 3. The Clean Slate: Force React to instantly fetch the new reality!
       // Notice these are Catch-Alls now! No "directory" or "details" attached.
+      await queryClient.invalidateQueries({ queryKey: ["riders"] });
       await queryClient.invalidateQueries({ queryKey: ["orders"] }); // Catches all plural ["orders", ...]
       await queryClient.invalidateQueries({ queryKey: ["order"] });  // Catches all singular ["order", 41]
       await queryClient.invalidateQueries({ queryKey: ["roster"] });

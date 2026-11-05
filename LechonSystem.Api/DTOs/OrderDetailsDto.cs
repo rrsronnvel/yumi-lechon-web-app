@@ -39,6 +39,7 @@ public class OrderDetailsDto
     public string? CancellationReason { get; set; }
     public bool IsPriceWaived { get; set; }
     public string CreatedBy { get; set; } = "System";
+    public string? AssistedByAdmin { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
@@ -55,6 +56,7 @@ public class OrderDetailsDto
     public string? CustomerComplaintHistory { get; set; }
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
     public decimal? HeldByStaffAmount { get; set; }
+    public string? HeldPaymentMethod { get; set; }
     public bool IsOwnerConfirmed { get; set; }
     public DateTime? OwnerConfirmedAt { get; set; }
     public string? OwnerConfirmedBy { get; set; }

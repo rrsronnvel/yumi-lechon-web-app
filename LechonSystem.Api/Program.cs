@@ -30,6 +30,7 @@ builder.Services.AddScoped<ILogisticsService, LogisticsService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<IProcurementService, ProcurementService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<INotificationSender, SmsNotificationService>();
 builder.Services.AddScoped<ICmsService, CmsService>();
 builder.Services.AddHttpClient();
@@ -99,6 +100,9 @@ using (var scope = app.Services.CreateScope())
     await context.Database.ExecuteSqlRawAsync(@"
         IF COL_LENGTH('Orders', 'HeldByStaffAmount') IS NULL
             ALTER TABLE Orders ADD HeldByStaffAmount decimal(18,2) NULL;
+
+        IF COL_LENGTH('Orders', 'AssistedByAdmin') IS NULL
+            ALTER TABLE Orders ADD AssistedByAdmin nvarchar(64) NULL;
 
         IF COL_LENGTH('OrderItemSchedules', 'CustomWeightDisplay') IS NULL
             ALTER TABLE OrderItemSchedules ADD CustomWeightDisplay nvarchar(32) NULL;

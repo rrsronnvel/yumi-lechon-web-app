@@ -34,6 +34,7 @@ export interface ParsedOrderDraftDto {
   quotedBalanceDue?: number | null;
   downpayment?: number | null;
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
+  assistedByAdmin?: string | null;
   freebiesOptOut?: boolean | null;
   rawInnards?: boolean | null;
   freebiesMode?: "standard" | "custom" | "optOut" | null;
@@ -47,10 +48,10 @@ export interface MessengerParserPricingConfig {
 }
 
 const BOILERPLATE_PATTERN =
-  /to confirm your order|with\s+7\s+freebies|^assisted\s+by\s+admin|^spaghetti,\s*palabok.*consumed|^delivery suggestion\b|^kung gusto nyo po ng mas masarap/i;
+  /to confirm your order|with\s+7\s+freebies|^spaghetti,\s*palabok.*consumed|^delivery suggestion\b|^kung gusto nyo po ng mas masarap/i;
 
 const FOOTER_DISCLAIMER_PATTERN =
-  /Spaghetti,\s*Palabok|Delivery\s*Suggestion|Kung\s*gusto\s*nyo\s*po|Assisted\s*by/i;
+  /Spaghetti,\s*Palabok|Delivery\s*Suggestion|Kung\s*gusto\s*nyo\s*po/i;
 
 const HORIZONTAL_RULE_PATTERN = /^[—\-_=\u2014\u2013\u2015\s]{3,}$/;
 
@@ -103,7 +104,19 @@ function extractNonFreebieRemarks(value: string): string[] {
 }
 
 const FIELD_LABEL_PATTERN =
-  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?|remarks?|notes?|bilin|instructions?|distance(?:\s*km)?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|discount|price|total\s*balance|balance\s*due)\s*[:\-]/i;
+  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)\s*[:\-]/i;
+
+function findFieldSeparator(line: string): number {
+  let parenthesisDepth = 0;
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+    if (char === "(") parenthesisDepth++;
+    else if (char === ")") parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+    else if (parenthesisDepth === 0 && char === ":") return index;
+  }
+  const spacedDash = line.search(/\s[-â€“â€”]\s/);
+  return spacedDash;
+}
 
 const WORD_NUMBER_MAP: Record<string, number> = {
   isa: 1,
@@ -579,9 +592,8 @@ export function parseMessengerTextToDraft(
           value: currentLines.join("\n").trim(),
         });
       }
-      const colonIndex = line.indexOf(":");
-      const dashIndex = line.indexOf("-");
-      const splitIdx = colonIndex !== -1 ? colonIndex : dashIndex;
+      const splitIdx = findFieldSeparator(line);
+      if (splitIdx < 0) continue;
       currentHeader = line.slice(0, splitIdx).trim().toLowerCase();
       const rest = line.slice(splitIdx + 1).trim();
       currentLines = rest ? [rest] : [];
@@ -637,6 +649,7 @@ export function parseMessengerTextToDraft(
   let quotedBalanceDue: number | null = null;
   let downpayment: number | null = null;
   let downpaymentMethod: ParsedOrderDraftDto["downpaymentMethod"] = null;
+  let assistedByAdmin: string | null = null;
   let freebiesOptOut: boolean | null = null;
   let rawInnards: boolean | null = null;
   let freebiesMode: ParsedOrderDraftDto["freebiesMode"] = null;
@@ -709,7 +722,7 @@ export function parseMessengerTextToDraft(
       /^(?:type\s*of\s*event|event(?:\s*type)?|occasion|okasyon)$/i.test(header)
     ) {
       eventType = eventType || parseEventType(value);
-    } else if (/^date\s*(?:&|and)\s*time$/i.test(header)) {
+    } else if (/^date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?$/i.test(header)) {
       dateParts.push(value);
     } else if (
       /^(?:date|delivery\s*date|target\s*date|schedule|petsa)$/i.test(header)
@@ -766,7 +779,7 @@ export function parseMessengerTextToDraft(
           rawInnards = true;
         }
       }
-    } else if (/^distance(?:\s*km)?$/i.test(header)) {
+    } else if (/^(?:delivery\s*)?distance(?:\s*\([^)]*\)|\s*km)?$/i.test(header)) {
       const lines = value
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -790,8 +803,10 @@ export function parseMessengerTextToDraft(
           }
         }
       }
+    } else if (/^dp\s*payment\s*method(?:\s*\([^)]*\))?$/i.test(header)) {
+      downpaymentMethod = sniffPaymentMethod(value, downpayment ?? 1);
     } else if (
-      /^(?:dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit)$/i.test(
+      /^(?:dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit)$/i.test(
         header,
       )
     ) {
@@ -803,6 +818,8 @@ export function parseMessengerTextToDraft(
       )
     ) {
       deliveryFee = parsePesoNumber(value);
+    } else if (/^assisted\s*by\s*admin$/i.test(header)) {
+      assistedByAdmin = value.replace(/^[:\s]+/, "").trim() || null;
     } else if (/^discount$/i.test(header)) {
       discount = parsePesoNumber(value);
     } else if (/^price$/i.test(header)) {
@@ -932,7 +949,11 @@ export function parseMessengerTextToDraft(
       .filter(Boolean);
 
     for (const token of tokens) {
-      const lower = token.toLowerCase();
+      const lower = token
+        .toLowerCase()
+        .replace(/\b(?:bilao|tubs?|trays?|orders?|packs?|pcs?|pieces?)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 
       // Check Belly
       const bellyKgMatch = lower.match(
@@ -1104,6 +1125,7 @@ export function parseMessengerTextToDraft(
     quotedBalanceDue,
     downpayment,
     downpaymentMethod,
+    assistedByAdmin,
     freebiesOptOut,
     rawInnards,
     freebiesMode,

@@ -151,7 +151,10 @@ export default function OrdersPage() {
   // Dynamic calculation for Balance Due custody counts
   const unpaidOrders = useMemo(() => {
     return (orders || []).filter(
-      (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
+      (o) =>
+        (Number(o.balanceDue || 0) > 0 ||
+          o.settlementCustodyStatus === "InStaffDrawer") &&
+        !o.isCancelled,
     );
   }, [orders]);
 
@@ -411,6 +414,82 @@ export default function OrdersPage() {
     setSearchParams(nextParams, { replace: true });
   }, [filterTab, orders, rawSearch, searchParams, setSearchParams]);
 
+  const renderOrderItemsSummary = (order: OrderDirectoryDto) => {
+    const items = order.items || [];
+    if (!items || items.length === 0) {
+      return <span className="text-stone-400 text-xs">—</span>;
+    }
+
+    const wholeLechons: React.ReactNode[] = [];
+    const bellies: React.ReactNode[] = [];
+    let addOnsCount = 0;
+
+    items.forEach((item, idx) => {
+      const isBelly =
+        item.categoryName.toLowerCase().includes("belly") ||
+        (item.minimumWeightKg >= 2 && item.minimumWeightKg <= 5);
+      const isWholeLechon =
+        !isBelly && (item.isRoastItem || item.minimumWeightKg >= 13);
+
+      if (isWholeLechon) {
+        const isUpgraded =
+          Boolean(item.fulfilledCategoryName) &&
+          item.fulfilledCategoryName?.trim().toLowerCase() !==
+            item.categoryName.trim().toLowerCase();
+
+        if (isUpgraded) {
+          wholeLechons.push(
+            <span
+              key={`wl-${idx}`}
+              className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap inline-flex items-center"
+              title={`Upgraded from ${item.categoryName} to ${item.fulfilledCategoryName}`}
+            >
+              {item.quantity}x {item.categoryName} → {item.fulfilledCategoryName} (Upgrade)
+            </span>
+          );
+        } else {
+          wholeLechons.push(
+            <span
+              key={`wl-${idx}`}
+              className="bg-amber-50 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.5 rounded text-xs whitespace-nowrap inline-flex items-center"
+            >
+              {item.quantity}x {item.categoryName}
+            </span>
+          );
+        }
+      } else if (isBelly) {
+        bellies.push(
+          <span
+            key={`belly-${idx}`}
+            className="bg-orange-50 text-orange-800 border border-orange-200 font-medium px-1.5 py-0.5 rounded text-xs whitespace-nowrap inline-flex items-center"
+          >
+            {item.quantity}x {item.categoryName}
+          </span>
+        );
+      } else {
+        addOnsCount += item.quantity;
+      }
+    });
+
+    return (
+      <div className="flex flex-wrap items-center gap-1 max-w-[200px] leading-tight">
+        {wholeLechons}
+        {bellies}
+        {addOnsCount > 0 && (
+          <span
+            className="bg-stone-100 text-stone-600 border border-stone-200 font-medium px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap inline-flex items-center"
+            title={`${addOnsCount} extra add-on item${addOnsCount > 1 ? "s" : ""}`}
+          >
+            + {addOnsCount} Add-on{addOnsCount > 1 ? "s" : ""}
+          </span>
+        )}
+        {wholeLechons.length === 0 && bellies.length === 0 && addOnsCount === 0 && (
+          <span className="text-stone-400 text-xs">—</span>
+        )}
+      </div>
+    );
+  };
+
   const renderLocation = (order: OrderDirectoryDto) => {
     const fulfillment = Number(order.fulfillment);
     const address = (order.deliveryAddress || "").trim();
@@ -434,12 +513,9 @@ export default function OrdersPage() {
       );
     }
 
-    const truncated =
-      address.length > 32 ? `${address.substring(0, 32)}...` : address;
-
     if (fulfillment === 2) {
       return (
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex flex-col items-start gap-1">
           <Badge
             variant="outline"
             className="bg-orange-50 text-orange-700 border-orange-200 text-xs font-medium"
@@ -447,10 +523,10 @@ export default function OrdersPage() {
             📦 Lalamove
           </Badge>
           <span
-            className="text-sm text-slate-600 truncate max-w-[200px]"
+            className="text-xs text-slate-600 line-clamp-2 break-words leading-tight"
             title={address}
           >
-            {truncated || (
+            {address || (
               <span className="italic text-slate-400">No Address</span>
             )}
           </span>
@@ -461,13 +537,13 @@ export default function OrdersPage() {
     // fulfillment === 1 (Delivery) or default
     return (
       <div className="space-y-0.5">
-        <span className="text-sm text-slate-700 block" title={address}>
-          {truncated || (
+        <span className="text-xs text-slate-700 block line-clamp-2 break-words leading-tight" title={address}>
+          {address || (
             <span className="italic text-slate-400">No Address Provided</span>
           )}
         </span>
         {order.landmark && (
-          <span className="text-[11px] text-amber-800 block truncate max-w-[200px]">
+          <span className="text-[10.5px] text-amber-800 block line-clamp-1 truncate max-w-full" title={order.landmark}>
             🧭 {order.landmark}
           </span>
         )}
@@ -607,18 +683,26 @@ export default function OrdersPage() {
       );
     }
 
+    const isInStaffDrawer = order.settlementCustodyStatus === "InStaffDrawer";
     const isPaid = Number(order.balanceDue || 0) <= 0;
     return (
       <div className="tabular-nums font-mono text-right space-y-0.5">
-        <div className="font-bold text-slate-900 text-sm">
+        <div className="font-bold text-slate-900 text-xs sm:text-sm">
           ₱{Number(order.grandTotal || 0).toLocaleString()}
         </div>
         <div className="text-xs font-medium">
-          {isPaid ? (
+          {isInStaffDrawer ? (
+            <div className="text-amber-700 font-semibold text-[11px] leading-tight">
+              <span>🟡 ₱{Number(order.heldByStaffAmount || order.balanceDue || 0).toLocaleString()} In Drawer</span>
+              <span className="block text-[10px] text-amber-600 font-normal font-sans">
+                ({order.heldPaymentMethod || "Cash"})
+              </span>
+            </div>
+          ) : isPaid ? (
             <span className="text-emerald-700">🟢 Paid in Full</span>
           ) : (
             <div className="flex flex-col items-end gap-1">
-              <span className="text-red-600">
+              <span className="text-red-600 font-semibold">
                 🔴 ₱{Number(order.balanceDue || 0).toLocaleString()} Due
               </span>
               {renderCustodyBadge(order)}
@@ -653,6 +737,17 @@ export default function OrdersPage() {
           className="bg-red-50 text-red-700 border-red-200 font-medium"
         >
           🛑 Cancelled
+        </Badge>
+      );
+    }
+
+    if (order.settlementCustodyStatus === "InStaffDrawer") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-amber-50 text-amber-800 border-amber-300 font-semibold"
+        >
+          {Number(order.fulfillment) === 0 ? "Picked Up" : "Delivered"}
         </Badge>
       );
     }
@@ -712,21 +807,31 @@ export default function OrdersPage() {
         </div>
       </CardHeader>
       <CardContent className="w-full overflow-x-auto p-0 [-webkit-overflow-scrolling:touch]">
-        <Table>
+        <Table className="table-fixed w-full border-collapse">
+          <colgroup>
+            <col className="w-[13%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[16%]" />
+            <col className="w-[14%]" />
+            <col className="w-[13%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <TableHeader>
             <TableRow className="bg-stone-100/70 border-b border-stone-200">
-              <TableHead className="w-[150px] text-stone-600 font-semibold uppercase tracking-wider text-xs">Order</TableHead>
-              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Customer</TableHead>
-              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Location</TableHead>
-              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs">Target Schedule</TableHead>
-              <TableHead className="text-right text-stone-600 font-semibold uppercase tracking-wider text-xs">Total / Balance</TableHead>
-              <TableHead className="w-[140px] text-stone-600 font-semibold uppercase tracking-wider text-xs">Status</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Order</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Customer</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Items / Sizes</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Location</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Target Schedule</TableHead>
+              <TableHead className="text-right text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Total / Balance</TableHead>
+              <TableHead className="text-stone-600 font-semibold uppercase tracking-wider text-xs px-2.5">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-stone-500">
+                <TableCell colSpan={7} className="text-center py-12 text-stone-500">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#C81E1E]"></div>
                     <span className="text-sm">Loading orders...</span>
@@ -735,7 +840,7 @@ export default function OrdersPage() {
               </TableRow>
             ) : displayedOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-stone-500">
+                <TableCell colSpan={7} className="text-center py-12 text-stone-500">
                   <div className="flex flex-col items-center justify-center gap-1">
                     <p className="font-medium text-stone-700">No orders found.</p>
                     <p className="text-xs text-stone-400">
@@ -756,7 +861,10 @@ export default function OrdersPage() {
                 const isNoDp =
                   Number(order.downpayment || 0) === 0 &&
                   !order.isTrustedCustomer &&
-                  Number(order.balanceDue || 0) > 0;
+                  Number(order.balanceDue || 0) > 0 &&
+                  !["InStaffDrawer", "Settled"].includes(
+                    order.settlementCustodyStatus || "Uncollected",
+                  );
 
                 const isCriticalNoDp = isNoDp && daysUntilDelivery <= 2;
                 const isAdvanceNoDp = isNoDp && daysUntilDelivery > 2;
@@ -778,10 +886,10 @@ export default function OrdersPage() {
                   onClick={() => handleRowClick(order)}
                 >
                   {/* Order Column */}
-                  <TableCell>
-                    <div className="space-y-0.5">
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono font-semibold text-stone-900">
+                        <span className="font-mono font-bold text-stone-900 text-xs sm:text-sm">
                           #{order.orderReference || order.id}
                         </span>
                         {order.hasRecentEdits && (
@@ -792,33 +900,41 @@ export default function OrdersPage() {
                             ✏️ Edited
                           </Badge>
                         )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
                         {isTimeAlert && (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded text-xs inline-flex items-center">
+                          <span className="bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-1.5 py-0.5 rounded text-[10px] sm:text-[10.5px] inline-flex items-center">
                             ⏳ TIME TBD
                           </span>
                         )}
                         {isAdvanceNoDp && (
-                          <span className="bg-orange-100 text-orange-900 border border-orange-300 font-medium px-2 py-0.5 rounded text-xs inline-flex items-center">
-                            ⚠️ NO DP • PENDING DEPOSIT
+                          <span
+                            className="bg-orange-100 text-orange-900 border border-orange-300 font-medium px-1.5 py-0.5 rounded text-[10px] sm:text-[10.5px] inline-flex items-center"
+                            title="Advance deposit pending"
+                          >
+                            ⚠️ PENDING DP
                           </span>
                         )}
                         {isCriticalNoDp && (
-                          <span className="bg-rose-100 text-rose-900 border border-rose-500 font-bold px-2 py-0.5 rounded text-xs inline-flex items-center animate-pulse">
-                            🚨 URGENT: NO DP (CONFIRM OR CANCEL)
+                          <span
+                            className="bg-rose-100 text-rose-900 border border-rose-500 font-bold px-1.5 py-0.5 rounded text-[10px] sm:text-[10.5px] inline-flex items-center animate-pulse"
+                            title="Critical: Delivery within 48h (Confirm or Cancel)"
+                          >
+                            🚨 URGENT: NO DP
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-stone-500 font-normal">
+                      <div className="text-[11px] text-stone-500 font-normal">
                         by {order.createdBy || "System"}
                       </div>
                     </div>
                   </TableCell>
 
                   {/* Customer Column */}
-                  <TableCell>
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-medium text-stone-900">
+                        <span className="font-medium text-stone-900 text-xs sm:text-sm line-clamp-1" title={order.customerName}>
                           {order.customerName}
                         </span>
                         <WalkInBadge
@@ -829,7 +945,7 @@ export default function OrdersPage() {
                         {order.isTrustedCustomer && (
                           <Badge
                             variant="outline"
-                            className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-5 px-2 uppercase tracking-widest shadow-xs"
+                            className="bg-gradient-to-r from-orange-100 to-amber-100 text-amber-800 border-amber-300 font-bold text-[10px] h-4.5 px-1.5 uppercase tracking-wider shadow-2xs"
                           >
                             👑 VIP
                           </Badge>
@@ -837,16 +953,16 @@ export default function OrdersPage() {
                         {order.eventType && (
                           <Badge
                             variant="outline"
-                            className="bg-stone-50 text-stone-600 border-stone-200 text-[10px] h-4.5 px-1.5"
+                            className="bg-stone-50 text-stone-600 border-stone-200 text-[10px] h-4 px-1"
                           >
                             🎉 {order.eventType}
                           </Badge>
                         )}
                       </div>
-                      <div className="font-mono text-xs text-stone-500 flex items-center gap-1.5">
+                      <div className="font-mono text-[11px] text-stone-500 flex flex-wrap items-center gap-1.5">
                         <span>{order.contactNumber || "N/A"}</span>
                         {order.facebookName && (
-                          <span className="text-blue-700 font-sans">
+                          <span className="text-blue-700 font-sans truncate max-w-[130px]" title={order.facebookName}>
                             • 💬 {order.facebookName}
                           </span>
                         )}
@@ -854,19 +970,28 @@ export default function OrdersPage() {
                     </div>
                   </TableCell>
 
+                  {/* Items / Sizes Column */}
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
+                    {renderOrderItemsSummary(order)}
+                  </TableCell>
+
                   {/* Location Column */}
-                  <TableCell>{renderLocation(order)}</TableCell>
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
+                    {renderLocation(order)}
+                  </TableCell>
 
                   {/* Target Schedule Column */}
-                  <TableCell>
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
                     {renderTargetSchedule(order)}
                   </TableCell>
 
                   {/* Total / Balance Column */}
-                  <TableCell>{renderFinancialGrid(order)}</TableCell>
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
+                    {renderFinancialGrid(order)}
+                  </TableCell>
 
                   {/* Status Column */}
-                  <TableCell>
+                  <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
                     <div className="flex flex-col items-start gap-1.5">
                       {renderStatus(order)}
                       {order.isDraft && order.targetDeliveryTime && (
@@ -917,7 +1042,7 @@ export default function OrdersPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
+    <div className="w-full max-w-[1680px] mx-auto space-y-4 sm:space-y-6">
       {/* Header with New Order Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200/90 pb-5">
         <div>
@@ -1946,6 +2071,16 @@ export default function OrdersPage() {
                           )}
                         </span>
                       </div>
+                      {orderDetails.settlementCustodyStatus === "InStaffDrawer" && (
+                        <div className="flex justify-between gap-4 font-semibold text-amber-700">
+                          <span>
+                            Collected by Staff (In Drawer • {orderDetails.heldPaymentMethod || "Cash"}):
+                          </span>
+                          <span className="shrink-0 font-mono">
+                            - ₱{Number(orderDetails.heldByStaffAmount || orderDetails.balanceDue || 0).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
                       {Number(orderDetails.riderFeeSettledAtDoor || 0) > 0 && (
                         <div className="flex justify-between text-amber-700">
                           <span>Rider Fee (Collected by Rider):</span>
@@ -2040,16 +2175,19 @@ export default function OrdersPage() {
                           ? "text-emerald-700"
                           : "text-rose-600",
                       )}>
-                        <span>Balance to Collect:</span>
+                        <span>Customer Balance Due:</span>
                         <span className="font-mono">
-                          {Number(orderDetails.balanceDue || 0) <= 0
+                          {orderDetails.settlementCustodyStatus === "InStaffDrawer"
+                            ? "₱0 (Awaiting Owner Verification)"
+                            : Number(orderDetails.balanceDue || 0) <= 0
                             ? "₱0 (Paid in Full)"
                             : `₱${Number(orderDetails.balanceDue || 0).toLocaleString()}`}
                         </span>
                       </div>
 
                       {/* Physical Cash Custody / Manifest Deep-Link Action */}
-                      {Number(orderDetails.balanceDue ?? selectedOrder?.balanceDue ?? 0) > 0 &&
+                      {(orderDetails.settlementCustodyStatus === "InStaffDrawer" ||
+                        Number(orderDetails.balanceDue ?? selectedOrder?.balanceDue ?? 0) > 0) &&
                         ["InStaffDrawer", "Uncollected"].includes(
                           orderDetails.settlementCustodyStatus ||
                             selectedOrder?.settlementCustodyStatus ||
@@ -2061,7 +2199,7 @@ export default function OrdersPage() {
                               {(orderDetails.settlementCustodyStatus || selectedOrder?.settlementCustodyStatus) === "InStaffDrawer" ? (
                                 <>
                                   <span>🟡</span>
-                                  <span>In Staff Drawer â€” Awaiting Owner Turnover</span>
+                                  <span>In Staff Drawer — Awaiting Owner Turnover</span>
                                 </>
                               ) : (
                                 <>

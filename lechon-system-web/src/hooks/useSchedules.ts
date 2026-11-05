@@ -104,6 +104,7 @@ export const useOverrideScheduleMutation = () => {
       return response.data;
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["riders"] });
       queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
       queryClient.invalidateQueries({ queryKey: ["roster"] });
       queryClient.invalidateQueries({ queryKey: ["logistics", "unassigned-orders"] });

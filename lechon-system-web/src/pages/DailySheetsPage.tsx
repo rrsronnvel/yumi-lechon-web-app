@@ -96,9 +96,13 @@ export default function DailySheetsPage() {
 
     try {
       await document.fonts?.ready;
+      const elementWidth = exportNode.offsetWidth || 1920;
+      const dynamicPixelRatio = Math.max(3.5, 3840 / elementWidth);
+
       const dataUrl = await toPng(exportNode, {
         width: 1920,
-        pixelRatio: 2,
+        pixelRatio: dynamicPixelRatio,
+        quality: 1.0,
         backgroundColor: "#ffffff",
         cacheBust: true,
         style: {
@@ -111,7 +115,10 @@ export default function DailySheetsPage() {
           padding: "32px",
           paddingBottom: "48px",
           backgroundColor: "#ffffff",
-        },
+          WebkitFontSmoothing: "antialiased",
+          MozOsxFontSmoothing: "grayscale",
+          textRendering: "optimizeLegibility",
+        } as any,
       });
       const blob = await (await fetch(dataUrl)).blob();
       const file = new File([blob], fileName, { type: "image/png" });

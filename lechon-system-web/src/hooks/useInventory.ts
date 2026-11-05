@@ -30,6 +30,43 @@ export interface InventoryTransaction {
   transactionDate: string;
 }
 
+export interface ButcherPlanItem {
+  categoryId: number;
+  categoryName: string;
+  weightBracket: string;
+  minimumWeightKg: number;
+  maximumWeightKg: number;
+  customWeights: string[];
+  upcomingOrdersCount: number;
+  availableFreezerStock: number;
+  suggestedSlaughterCount: number;
+}
+
+export interface ButcherPlanResponse {
+  startDate: string;
+  endDate: string;
+  dateRangeLabel: string;
+  totalUpcomingOrders: number;
+  totalAvailableFreezerStock: number;
+  totalSuggestedSlaughter: number;
+  items: ButcherPlanItem[];
+}
+
+export const useButcherPlan = (startDate?: string, endDate?: string) => {
+  return useQuery<ButcherPlanResponse>({
+    queryKey: ['inventory', 'butcher-plan', startDate, endDate],
+    queryFn: async () => {
+      const response = await apiClient.get('/inventory/butcher-plan', {
+        params: {
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+        },
+      });
+      return response.data;
+    },
+  });
+};
+
 // 1. The Camera: Fetches current stock and low-stock warnings
 export const useInventoryAlerts = () => {
   return useQuery<InventoryAlert[]>({

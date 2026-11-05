@@ -1,5 +1,16 @@
 namespace LechonSystem.Api.DTOs;
 
+public class OrderDirectoryItemDto
+{
+    public int Quantity { get; set; }
+    public string CategoryName { get; set; } = string.Empty;
+    public decimal MinimumWeightKg { get; set; }
+    public decimal MaximumWeightKg { get; set; }
+    public string? FulfilledCategoryName { get; set; }
+    public bool IsRoastItem { get; set; }
+    public string? CustomWeightDisplay { get; set; }
+}
+
 public class OrderDirectoryDto
 {
     public int Id { get; set; }
@@ -30,13 +41,17 @@ public class OrderDirectoryDto
     public bool IsCancelled { get; set; }
     public string? CancellationReason { get; set; }
     public string CreatedBy { get; set; } = "System";
+    public string? AssistedByAdmin { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public bool HasRecentEdits { get; set; }
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
+    public decimal? HeldByStaffAmount { get; set; }
+    public string? HeldPaymentMethod { get; set; }
     public string? RiderName { get; set; }
     public bool IsRemittedToOwner { get; set; }
     public bool IsOwnerConfirmed { get; set; }
     public DateTime? OwnerConfirmedAt { get; set; }
     public string? OwnerConfirmedBy { get; set; }
     public List<PaymentChannelTotalDto> PaymentChannelsSummary { get; set; } = new();
+    public List<OrderDirectoryItemDto> Items { get; set; } = new();
 }

@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import InventoryPage from "./pages/InventoryPage";
 import ManifestPage from "./pages/ManifestPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import ReportsPage from "./pages/ReportsPage";
 import DailySheetsPage from "./pages/DailySheetsPage";
 import CmsPage from "./pages/CmsPage";
 import LoginPage from "./pages/LoginPage";
@@ -40,6 +41,15 @@ export default function App() {
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="manifest" element={<ManifestPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
+
+            <Route
+              path="reports"
+              element={
+                <ProtectedRoute allowedRoles={["Owner"]}>
+                  <ReportsPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Owner-Only Routes */}
             <Route

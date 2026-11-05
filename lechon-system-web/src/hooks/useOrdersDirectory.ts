@@ -6,6 +6,16 @@ export interface PaymentChannelTotalDto {
   amount: number;
 }
 
+export interface OrderDirectoryItemDto {
+  quantity: number;
+  categoryName: string;
+  minimumWeightKg: number;
+  maximumWeightKg: number;
+  fulfilledCategoryName?: string | null;
+  isRoastItem: boolean;
+  customWeightDisplay?: string | null;
+}
+
 export interface OrderDirectoryDto {
   id: number;
   orderReference?: string;
@@ -25,6 +35,7 @@ export interface OrderDirectoryDto {
   riderDepartureTime?: string | null;
   itemsCount?: number;
   hasRoastItems?: boolean;
+  items?: OrderDirectoryItemDto[];
   grandTotal: number;
   downpayment: number;
   downpaymentMethod: string;
@@ -35,9 +46,12 @@ export interface OrderDirectoryDto {
   isCancelled: boolean;
   cancellationReason?: string | null;
   createdBy: string;
+  assistedByAdmin?: string | null;
   updatedAt?: string | null;
   hasRecentEdits: boolean;
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
+  heldByStaffAmount?: number | null;
+  heldPaymentMethod?: string | null;
   riderName?: string | null;
   isRemittedToOwner?: boolean;
   isOwnerConfirmed: boolean;

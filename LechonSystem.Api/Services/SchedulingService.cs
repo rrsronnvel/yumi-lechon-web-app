@@ -831,6 +831,8 @@ namespace LechonSystem.Api.Services
                         throw new InvalidOperationException("Only Delivery orders can be assigned to freelance riders.");
                     }
 
+                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRider);
+
                     // Update assigned rider on active DeliveryTrip if present
                     var trip = schedule.OrderItem.Order.DeliveryTrip
                         ?? await _context.DeliveryTrips.Include(t => t.Orders)
@@ -853,6 +855,8 @@ namespace LechonSystem.Api.Services
                         schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Assigned;
                         _context.DeliveryTrips.Add(trip);
                     }
+
+                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRider);
 
                     if (!string.Equals(oldRider, cleanRider, StringComparison.OrdinalIgnoreCase))
                     {

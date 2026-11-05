@@ -30,10 +30,12 @@ export interface OrderDirectoryDto {
   isCancelled: boolean;
   cancellationReason?: string | null;
   createdBy: string;
+  assistedByAdmin?: string | null;
   updatedAt?: string | null;
   hasRecentEdits: boolean;
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   heldByStaffAmount?: number | null;
+  heldPaymentMethod?: string | null;
   riderName?: string | null;
   isRemittedToOwner?: boolean;
   isOwnerConfirmed: boolean;
@@ -102,6 +104,7 @@ export interface OrderDetailsDto {
   cancellationReason?: string | null;
   isPriceWaived: boolean;
   createdBy: string;
+  assistedByAdmin?: string | null;
   createdAt: string;
   updatedAt?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
@@ -115,6 +118,7 @@ export interface OrderDetailsDto {
   customerComplaintHistory?: string | null;
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   heldByStaffAmount?: number | null;
+  heldPaymentMethod?: string | null;
   isOwnerConfirmed: boolean;
   ownerConfirmedAt?: string | null;
   ownerConfirmedBy?: string | null;

@@ -11,6 +11,7 @@ export const orderFormSchema = z
     facebookName: z.string().optional().default(""),
     source: z.string().optional().default("Business FB Page"),
     eventType: z.string().optional().default(""),
+    assistedByAdmin: z.string().max(64).optional().default(""),
     landmark: z.string().optional().default(""),
     targetDeliveryTime: z.string().default(""),
     riderDepartureTime: z.string().optional().default(""),
@@ -99,7 +100,7 @@ export const orderFormSchema = z
       if (!data.targetDeliveryTime || data.targetDeliveryTime.trim() === "") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Target delivery/pickup time is required.",
+          message: "⚠️ Please select a Delivery / Pickup Date before submitting.",
           path: ["targetDeliveryTime"],
         });
       }
@@ -153,6 +154,7 @@ export interface ParsedOrderDraftDto {
   quotedBalanceDue?: number | null;
   downpayment?: number | null;
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
+  assistedByAdmin?: string | null;
   freebiesOptOut?: boolean | null;
   rawInnards?: boolean | null;
   freebiesMode?: "standard" | "custom" | "optOut" | null;

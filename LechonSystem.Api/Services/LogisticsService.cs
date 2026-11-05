@@ -72,6 +72,7 @@ namespace LechonSystem.Api.Services
             }
 
             var cleanRiderName = string.IsNullOrWhiteSpace(riderName) ? "" : riderName.Trim();
+            await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRiderName);
 
             var newTrip = new DeliveryTrip
             {
@@ -212,18 +213,24 @@ namespace LechonSystem.Api.Services
             return await _context.Orders
                 .AsNoTracking()
                 .Include(o => o.DeliveryTrip)
-                .Where(o => o.DeliveryTripId != null
-                         && o.Fulfillment == FulfillmentType.Delivery
+                .Where(o => o.Fulfillment == FulfillmentType.Delivery
                          && !o.IsDraft && !o.IsCancelled
                          && o.SettlementCustodyStatus != "Settled"
                          && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
-                         && ((o.GrandTotal - o.Downpayment) - o.DeliveryFee) > 0)
+                         && (((o.GrandTotal > 0
+                                  ? o.GrandTotal
+                                  : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0
+                             || o.SettlementCustodyStatus == "InStaffDrawer"))
                 .OrderByDescending(o => o.CreatedAt)
                 .Select(o => new PendingSettlementDropDto
                 {
                     Id = o.Id,
                     OrderId = o.Id,
-                    RiderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : (o.RiderSignedBy ?? "Unassigned"),
+                    RiderName = o.DeliveryTrip != null
+                        && !string.IsNullOrWhiteSpace(o.DeliveryTrip.RiderName)
+                        && o.DeliveryTrip.RiderName != "Unassigned"
+                            ? o.DeliveryTrip.RiderName
+                            : (o.RiderSignedBy ?? "Unassigned"),
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
                     Source = o.Source,
@@ -231,9 +238,14 @@ namespace LechonSystem.Api.Services
                     DeliveryAddress = o.DeliveryAddress ?? string.Empty,
                     TargetDeliveryTime = o.TargetDeliveryTime,
                     RiderDepartureTime = o.RiderDepartureTime,
-                    TotalCollected = o.GrandTotal - o.Downpayment,
+                    TotalCollected = (o.GrandTotal > 0
+                        ? o.GrandTotal
+                        : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment,
                     RiderDeliveryFee = o.DeliveryFee,
-                    NetRemittance = o.HeldByStaffAmount ?? o.RiderRemittedAmount ?? ((o.GrandTotal - o.Downpayment) - o.DeliveryFee),
+                    NetRemittance = o.HeldByStaffAmount ?? o.RiderRemittedAmount ?? Math.Max(0,
+                        ((o.GrandTotal > 0
+                            ? o.GrandTotal
+                            : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) - o.DeliveryFee),
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
@@ -254,7 +266,8 @@ namespace LechonSystem.Api.Services
                          && !o.IsDraft && !o.IsCancelled
                          && o.SettlementCustodyStatus != "Settled"
                          && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
-                         && ((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0)
+                         && (((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0
+                             || o.SettlementCustodyStatus == "InStaffDrawer"))
                 .OrderByDescending(o => o.TargetDeliveryTime)
                 .Select(o => new PendingPickupSettlementDto
                 {
@@ -490,6 +503,7 @@ namespace LechonSystem.Api.Services
             }
 
             session.RiderSignedBy = request.RiderName.Trim();
+            await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, session.RiderSignedBy);
             session.RiderRemittedAmount = request.RemittedAmount;
             session.RiderSignedAt = DateTime.UtcNow;
             session.Status = "SignedByRider";
@@ -557,6 +571,7 @@ namespace LechonSystem.Api.Services
             if (!string.IsNullOrWhiteSpace(request?.ManualOverrideRiderName))
             {
                 session.RiderSignedBy = request.ManualOverrideRiderName.Trim();
+                await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, session.RiderSignedBy);
                 session.RiderRemittedAmount = request.ManualOverrideAmount ?? session.ExpectedAmount;
                 session.RiderSignedAt = DateTime.UtcNow;
             }
@@ -589,6 +604,10 @@ namespace LechonSystem.Api.Services
             order.HeldByStaffMethod = isSplit ? "Cash" : session.PaymentMethod;
             order.HeldByStaffAmount = cashAmount;
             order.RiderSignedBy = session.RiderSignedBy;
+            if (!string.IsNullOrWhiteSpace(order.RiderSignedBy))
+            {
+                await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, order.RiderSignedBy);
+            }
             order.RiderRemittedAmount = session.RiderRemittedAmount;
             order.RiderSignedAt = session.RiderSignedAt;
             order.StaffValidatedBy = staffUsername;

@@ -70,6 +70,16 @@ export function QrSettlementModal({
   onSuccess,
 }: QrSettlementModalProps) {
   const { user, isOwner } = useAuth();
+  const isUnassignedRider =
+    !riderName?.trim() || riderName.trim().toLowerCase() === "unassigned";
+  const normalizedHeldMethod = (heldPaymentMethod || "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  const isDigitalHop2 =
+    hopStage === "StaffToOwner" &&
+    ["gcash", "manualgcash", "maya", "banktransfer"].includes(
+      normalizedHeldMethod,
+    );
 
   // Payment channel for Hop 1
   const [paymentMethod, setPaymentMethod] = useState<string>(
@@ -104,8 +114,10 @@ export function QrSettlementModal({
       setCashAmount(expectedAmount);
       setDigitalAmount(0);
       setDigitalReference("");
+      setShowOverride(isUnassignedRider);
+      if (isUnassignedRider) setOverrideRiderName("");
     }
-  }, [open, defaultStaffLabel, expectedAmount]);
+  }, [open, defaultStaffLabel, expectedAmount, isUnassignedRider]);
 
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -148,8 +160,11 @@ export function QrSettlementModal({
         {
           onSuccess: (data) => {
             setSessionToken(data.token);
+            const resolvedRider = data.assignedRiderName || riderName || "";
             setOverrideRiderName(
-              data.assignedRiderName || riderName || "Freelance Rider"
+              !resolvedRider || resolvedRider.toLowerCase() === "unassigned"
+                ? ""
+                : resolvedRider,
             );
             setOverrideAmount(data.expectedAmount || expectedAmount);
           },
@@ -763,7 +778,10 @@ export function QrSettlementModal({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
                         <Label htmlFor="owner-counted-bills" className="font-semibold text-stone-800">
-                          Physical Bills Counted in Envelope (₱) <span className="text-rose-500">*</span>
+                          {isDigitalHop2
+                            ? `📱 Digital Transfer Verification (${heldPaymentMethod}) (₱)`
+                            : "💵 Physical Bills Counted in Envelope (₱)"}{" "}
+                          <span className="text-rose-500">*</span>
                         </Label>
                         <button
                           type="button"
@@ -779,12 +797,18 @@ export function QrSettlementModal({
                         step="any"
                         value={countedBills}
                         onChange={(e) => setCountedBills(e.target.value)}
-                        placeholder={`Enter exact ₱${expectedAmount.toLocaleString()}`}
+                        placeholder={
+                          isDigitalHop2
+                            ? "Confirm digital amount received on phone..."
+                            : `Enter exact ₱${expectedAmount.toLocaleString()}`
+                        }
                         className="h-10 font-mono text-sm bg-white border-stone-300"
                       />
                       {countedBills !== "" && Number(countedBills) !== (sessionStatus?.expectedAmount ?? expectedAmount) && (
                         <p className="text-xs text-rose-600 font-medium pt-0.5">
-                          Counted bills do not match expected remittance. Recount envelope before closing.
+                          {isDigitalHop2
+                            ? "Digital amount does not match expected remittance. Verify the transfer on the receiving phone."
+                            : "Counted bills do not match expected remittance. Recount envelope before closing."}
                         </p>
                       )}
                     </div>
@@ -800,7 +824,9 @@ export function QrSettlementModal({
                     >
                       {ownerApproveMutation.isPending
                         ? "Closing Ledger..."
-                        : `👑 Confirm & Close Order #${orderId}`}
+                        : isDigitalHop2
+                          ? `👑 Verify ${heldPaymentMethod} & Close Order #${orderId}`
+                          : `👑 Confirm & Close Order #${orderId}`}
                     </Button>
                   </div>
                 )}

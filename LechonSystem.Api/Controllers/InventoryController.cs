@@ -88,6 +88,13 @@ public class InventoryController : ControllerBase
         return Ok(balances);
     }
 
+    [HttpGet("butcher-plan")]
+    public async Task<IActionResult> GetButcherPlan([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+    {
+        var plan = await _inventoryService.GetButcherPlanAsync(startDate, endDate);
+        return Ok(plan);
+    }
+
     [HttpPost("receive")]
     public async Task<ActionResult<ReceiveStockResponseDto>> ReceiveStock([FromBody] ReceiveStockRequest request)
     {

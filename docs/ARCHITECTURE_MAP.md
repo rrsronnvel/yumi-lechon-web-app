@@ -1,5 +1,37 @@
 **
 
+## 8. 2026-11-04 Owner Reports, Intake Attribution & Custody Safety
+
+### Backend
+
+- `LechonSystem.Api/Services/RiderRegistrationHelper.cs`: Reusable auto-save helper `EnsureRiderRegisteredAsync` ensuring typed freelance riders are persisted in the master `Riders` table or reactivated. Reserved system keywords (`Unassigned`, `Store Pickup`, `Pickup`, `Lalamove`, `Lalamove Courier`, `Walk-in`, `None`, `TBD`, `-`) are blocked.
+- `LechonSystem.Api/Controllers/InventoryController.cs` & `Services/InventoryService.cs`: `GET /api/inventory/butcher-plan` endpoint and service logic computing the Papakatay procurement plan across 9 ascending Whole Lechon categories, factoring in physical stock, upcoming order counts, and custom weight displays.
+- `LechonSystem.Api/DTOs/ButcherPlanDtos.cs`: `ButcherPlanItemDto` and `ButcherPlanResponseDto` data contracts.
+- `LechonSystem.Api/Controllers/ReportsController.cs`: Owner-only `GET /api/reports/analytics` boundary accepting `startDate`, `endDate`, and `preset` query filters.
+- `LechonSystem.Api/Services/ReportService.cs`: Read-optimized aggregation layer for Reports 1–3: order/size revenue summary, `COALESCE(AssistedByAdmin, CreatedBy)` admin tally, and payment/collection channel reconciliation.
+- `LechonSystem.Api/DTOs/ReportDtos.cs`: Typed analytics response contract shared by the three report tabs.
+- `LechonSystem.Api/Models/Order.cs` + `Program.cs`: Nullable `AssistedByAdmin` model field and idempotent `COL_LENGTH` startup installation guard.
+- `LechonSystem.Api/Services/LogisticsService.cs`: Freelance settlement projection includes unassigned Delivery orders with a due balance or drawer custody, independent of `DeliveryTripId`. Integrates rider auto-registration on assignment and Hop 1 drawer drop validation.
+
+### Web
+
+- `lechon-system-web/src/components/ui/orders/OrderDetailsModal.tsx`: Slide-out Order Details Dossier modal mounted directly on `/manifest`, enabling comprehensive order inspection, item line items with upgrades (`🔄 Upgraded: M → L`), financial splits, in-modal single/split payment logging, audit trails, and void dialogs without leaving `/manifest` or losing state.
+- `lechon-system-web/src/pages/ManifestPage.tsx`, `PickupSettlementTab.tsx`, `LalamoveSettlementTab.tsx`: Added real-time multi-field search (`customerName`, `#orderId`, `riderName` / `No Rider`, `deliveryAddress` / landmark / remarks), live header counter indicators (`Showing {filtered} of {total} drops`), friendly empty search state with clear CTA, clickable `#OrderNumber` and customer name triggers opening the in-modal dossier, and standardized 152px/240px action column button bounding boxes.
+- `lechon-system-web/src/components/ui/inventory/PapakatayPlannerModal.tsx`: Interactive Papakatay Planner modal with quick date presets, interactive planning table with net shortage and editable quantity steppers, custom weight rows, and 1-click clipboard generator strictly outputting weight brackets by default.
+- `lechon-system-web/src/pages/InventoryPage.tsx`: Prominent `[ 🔪 Papakatay Planner (Butcher List) ]` hero button and planner modal mount.
+- `lechon-system-web/src/components/daily-sheets/KitchenViewTab.tsx`: Displays `🏪 Store Pickup` and `📦 Lalamove` badges in the RIDER column with `Store Counter` fallback for empty locations, in both standard and clean screenshot views.
+- `lechon-system-web/src/pages/DailySheetsPage.tsx`: Upgraded 4K UHD PNG export with dynamic `pixelRatio = Math.max(3.5, 3840 / element.offsetWidth)`, `quality: 1.0`, `cacheBust: true`, and antialiased font smoothing.
+- `lechon-system-web/src/hooks/useInventory.ts`, `useSchedules.ts`, `useEditOrder.ts`, `useLogistics.ts`, `useManifest.ts`: Integrated `useButcherPlan` query hook and added `['riders']` query cache invalidations on all rider mutation callbacks.
+- `lechon-system-web/src/pages/ReportsPage.tsx`: Owner-only `/reports` workspace with month/custom date filters, three report tabs, KPI cards, tables, and active-tab CSV export.
+- `lechon-system-web/src/components/ui/Sidebar.tsx` + `src/App.tsx`: Owner-only Reports navigation and protected route.
+- `lechon-system-web/src/utils/messengerTextParser.ts`: Parenthetical-colon-safe field splitting, new template financial/admin fields, container-unit cleanup, and `S. Jumbo` aliases. `chatParser.ts` remains the stable re-export entry point.
+
+### Mobile
+
+- `lechon-system-mobile/src/hooks/usePos.ts` & `useManifest.ts`: Added `['riders']` query cache invalidations to `useUpdateOrderMutation` and `invalidateAllSettlementCaches`.
+- `lechon-system-mobile/src/screens/PosScreen.tsx`: Blank schedule defaults and collapsed assisted-admin attribution field with parser-driven expansion.
+- `lechon-system-mobile/src/screens/DrawerScreen.tsx`: Unassigned-rider Hop 1 entry safeguard and payment-channel-aware digital Hop 2 verification.
+
 ## 7. 2026-10-31 Daily Operations Enhancements
 
 ### Intake and pricing

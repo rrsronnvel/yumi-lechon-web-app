@@ -148,19 +148,19 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
         <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
-            <col className="w-[8%] min-w-[120px]" />  {/* 1. No. */}
+            <col className="w-[8%] min-w-[115px]" />  {/* 1. No. */}
             <col className="w-[4.5%]" />              {/* 2. Size (Compact: fits "S. Jumbo") */}
             <col className="w-[4.5%]" />              {/* 3. Weight */}
-            <col className="w-[7.5%]" />              {/* 4. Departure / Pickup Time */}
-            <col className="w-[9%]" />                {/* 5. Customer Name */}
-            <col className="w-[17%]" />               {/* 6. Location (Expanded) */}
-            <col className="w-[7.5%]" />              {/* 7. Rider Name */}
-            <col className="w-[18%]" />               {/* 8. Remarks (Expanded) */}
+            <col className="w-[8.5%]" />              {/* 4. Departure / Pickup Time */}
+            <col className="w-[9.5%]" />              {/* 5. Customer Name */}
+            <col className="w-[15%]" />               {/* 6. Location (Expanded) */}
+            <col className="w-[11%]" />               {/* 7. Rider Name */}
+            <col className="w-[15%]" />               {/* 8. Remarks (Expanded) */}
             <col className="w-[4.5%]" />              {/* 9. Price */}
             <col className="w-[3.5%]" />              {/* 10. Add-ons */}
             <col className="w-[4%]" />                {/* 11. Delivery Fee */}
             <col className="w-[4.5%]" />              {/* 12. Down Payment */}
-            <col className="w-[7.5%]" />              {/* 13. Amount to Collect */}
+            <col className="w-[8%]" />                {/* 13. Amount to Collect */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}
@@ -199,6 +199,23 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                 !item.isTrustedCustomer &&
                 amountToCollect > 0;
 
+              const isStorePickup =
+                item.fulfillment === 0 ||
+                item.fulfillmentType === "Pickup" ||
+                item.fulfillmentType === 0 ||
+                item.deliveryMethod === "Pickup" ||
+                item.deliveryMethod === "Store Pickup" ||
+                item.riderName === "Store Pickup";
+
+              const isLalamove =
+                item.fulfillment === 2 ||
+                item.fulfillmentType === "Lalamove" ||
+                item.fulfillmentType === 2 ||
+                item.deliveryMethod === "Lalamove" ||
+                item.deliveryMethod === "Lalamove Courier" ||
+                item.riderName === "Lalamove" ||
+                item.riderName === "Lalamove Courier";
+
               const editableCellClass = isEdit
                 ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
                 : "";
@@ -231,8 +248,14 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                   </td>
 
                   {/* 4. Departure / Pickup Time (Anti-Complacency Guard: ONLY shows RiderDepartureTime ?? TargetDeliveryTime) */}
-                  <td className="px-1.5 py-2 text-center font-mono font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
-                    {formatTime(item.riderDepartureTime ?? item.targetDeliveryTime)}
+                  <td className="px-1 py-2 text-center font-mono font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
+                    {item.isTimeTbd || (!item.riderDepartureTime && !item.targetDeliveryTime) ? (
+                      <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.5 rounded text-[10.5px] whitespace-nowrap inline-flex items-center justify-center leading-none">
+                        ⏳ Time TBD
+                      </span>
+                    ) : (
+                      formatTime(item.riderDepartureTime ?? item.targetDeliveryTime)
+                    )}
                   </td>
 
                   {/* 5. Customer Name */}
@@ -274,36 +297,42 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
 
                   {/* 7. Rider Name (Editable in edit mode) */}
                   <td
-                    onClick={() => handleCellClick(item)}
-                    className={`px-1.5 py-2 text-center text-[11px] font-bold border-r border-slate-300 ${editableCellClass}`}
-                    title={isEdit ? "Click to assign or change rider" : undefined}
+                    onClick={() => !isStorePickup && !isLalamove && handleCellClick(item)}
+                    className={`px-1 py-2 text-center text-[11px] font-bold border-r border-slate-300 ${!isStorePickup && !isLalamove ? editableCellClass : ""}`}
+                    title={!isStorePickup && !isLalamove && isEdit ? "Click to assign or change rider" : undefined}
                   >
                     <div className="flex flex-col items-center justify-center gap-0.5">
                       {isCleanView ? (
-                        <span
-                          className={
-                            item.fulfillment === 1 &&
-                            (!item.riderName || item.riderName === "Unassigned")
-                              ? "text-slate-400 italic font-normal"
-                              : "text-slate-900 font-bold"
-                          }
-                        >
-                          {item.fulfillment === 0
-                            ? "Store Pickup"
-                            : item.fulfillment === 2
-                              ? "Lalamove Courier"
-                              : item.riderName || "Unassigned"}
-                        </span>
+                        isStorePickup ? (
+                          <span className="bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
+                            🏪 Store Pickup
+                          </span>
+                        ) : isLalamove ? (
+                          <span className="bg-orange-50 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
+                            📦 Lalamove
+                          </span>
+                        ) : (
+                          <span
+                            className={
+                              item.fulfillment === 1 &&
+                              (!item.riderName || item.riderName === "Unassigned")
+                                ? "text-slate-400 italic font-normal"
+                                : "text-slate-900 font-bold"
+                            }
+                          >
+                            {item.riderName || "Unassigned"}
+                          </span>
+                        )
                       ) : (
                         <>
                           <div className="flex items-center justify-center gap-1">
-                            {item.fulfillment === 0 ? (
-                              <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
+                            {isStorePickup ? (
+                              <span className="bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
                                 🏪 Store Pickup
                               </span>
-                            ) : item.fulfillment === 2 ? (
-                              <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300 font-semibold text-[10px]">
-                                📦 Lalamove Courier
+                            ) : isLalamove ? (
+                              <span className="bg-orange-50 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
+                                📦 Lalamove
                               </span>
                             ) : (
                               <span
@@ -316,13 +345,13 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                                 {item.riderName || "Unassigned"}
                               </span>
                             )}
-                            {isEdit && (
+                            {!isStorePickup && !isLalamove && isEdit && (
                               <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
                             )}
                           </div>
                           {((item.riderName && item.riderName !== "Unassigned") ||
-                            item.fulfillment === 0 ||
-                            item.fulfillment === 2) && (
+                            isStorePickup ||
+                            isLalamove) && (
                             <button
                               type="button"
                               className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-[9px] font-semibold print:hidden shadow-2xs transition-colors mt-0.5"
@@ -334,9 +363,9 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                             >
                               <Copy className="w-2.5 h-2.5" />
                               <span>
-                                {item.fulfillment === 0
+                                {isStorePickup
                                   ? "Pickup Alert"
-                                  : item.fulfillment === 2
+                                  : isLalamove
                                     ? "Lalamove Alert"
                                     : "Dispatch Alert"}
                               </span>

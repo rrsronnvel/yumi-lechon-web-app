@@ -63,6 +63,7 @@ export const useAssignRider = () => {
       return response.data;
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["riders"] });
       queryClient.invalidateQueries({ queryKey: ["logistics", "unassigned-orders"] });
       queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
       queryClient.invalidateQueries({ queryKey: ["roster"] });
@@ -87,6 +88,7 @@ export const useUnassignRider = () => {
       return response.data;
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["riders"] });
       queryClient.invalidateQueries({ queryKey: ["logistics", "unassigned-orders"] });
       queryClient.invalidateQueries({ queryKey: ["schedules", "daily-sheets"] });
       queryClient.invalidateQueries({ queryKey: ["roster"] });

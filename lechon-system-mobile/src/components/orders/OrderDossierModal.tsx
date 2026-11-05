@@ -172,8 +172,8 @@ export default function OrderDossierModal({
     'Uncollected'
   ).trim();
   const isPhysicalCustodyActive =
-    computedBalanceDue > 0 &&
-    (custodyStatus === 'InStaffDrawer' || custodyStatus === 'Uncollected');
+    custodyStatus === 'InStaffDrawer' ||
+    (computedBalanceDue > 0 && custodyStatus === 'Uncollected');
 
   const handleAssignRider = async () => {
     if (!orderId || !assignedRiderInput.trim()) {
@@ -1240,6 +1240,22 @@ export default function OrderDossierModal({
                   </View>
                 </View>
 
+                {custodyStatus === 'InStaffDrawer' && (
+                  <View style={styles.ledgerRow}>
+                    <Text style={styles.downpaymentLabel}>
+                      Collected by Staff (In Drawer •{' '}
+                      {orderDetails?.heldPaymentMethod || fallbackOrder?.heldPaymentMethod || 'Cash'})
+                    </Text>
+                    <Text style={styles.downpaymentValue}>
+                      - ₱{Number(
+                        orderDetails?.heldByStaffAmount ||
+                          fallbackOrder?.heldByStaffAmount ||
+                          computedBalanceDue
+                      ).toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+
                 {Number(orderDetails?.riderFeeSettledAtDoor || 0) > 0 && (
                   <View style={styles.ledgerRow}>
                     <Text style={styles.ledgerLabel}>Rider Fee (Collected by Rider)</Text>
@@ -1330,16 +1346,18 @@ export default function OrderDossierModal({
                 ) : null}
 
                 <View style={styles.balanceHighlightBox}>
-                  <Text style={styles.balanceHighlightLabel}>Remaining Balance Due</Text>
+                  <Text style={styles.balanceHighlightLabel}>Customer Balance Due</Text>
                   <Text
                     style={[
                       styles.balanceHighlightValue,
-                      computedBalanceDue <= 0
+                      custodyStatus === 'InStaffDrawer' || computedBalanceDue <= 0
                         ? styles.balanceZeroText
                         : styles.balancePositiveText,
                     ]}
                   >
-                    {computedBalanceDue <= 0
+                    {custodyStatus === 'InStaffDrawer'
+                      ? '₱0 (Awaiting Owner Verification)'
+                      : computedBalanceDue <= 0
                       ? '🟢 ₱0 (Paid in Full)'
                       : `🔴 ₱${computedBalanceDue.toLocaleString()}`}
                   </Text>

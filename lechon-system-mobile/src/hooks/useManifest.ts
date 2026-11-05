@@ -192,6 +192,7 @@ const invalidateAllSettlementCaches = async (
   queryClient: ReturnType<typeof useQueryClient>
 ) => {
   await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['riders'] }),
     queryClient.invalidateQueries({ queryKey: ['manifest'] }),
     queryClient.invalidateQueries({ queryKey: ['orders'] }),
     queryClient.invalidateQueries({ queryKey: ['dashboard'] }),

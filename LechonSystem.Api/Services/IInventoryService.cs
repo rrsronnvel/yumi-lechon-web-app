@@ -22,6 +22,9 @@ public interface IInventoryService
     Task<IEnumerable<InventoryBalanceDto>> GetInventoryBalancesAsync();
     Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync();
 
+    // Papakatay / Butcher Slaughter & Procurement Plan
+    Task<ButcherPlanResponseDto> GetButcherPlanAsync(DateTime? startDate, DateTime? endDate);
+
     // Freezer-Gate Stock Intake & PO Fulfillment
     Task<ReceiveStockResponseDto> ReceiveStockAsync(ReceiveStockRequest request);
 }

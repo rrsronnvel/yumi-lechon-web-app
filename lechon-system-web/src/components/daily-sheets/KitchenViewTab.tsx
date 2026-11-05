@@ -111,6 +111,22 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
       !item.isTrustedCustomer &&
       Number(item.totalToCollect || 0) > 0;
 
+    const isStorePickup =
+      item.fulfillment === 0 ||
+      item.fulfillmentType === "Pickup" ||
+      item.fulfillmentType === 0 ||
+      item.deliveryMethod === "Pickup" ||
+      item.deliveryMethod === "Store Pickup" ||
+      item.riderName === "Store Pickup";
+
+    const isLalamove =
+      item.fulfillment === 2 ||
+      item.fulfillmentType === "Lalamove" ||
+      item.fulfillmentType === 2 ||
+      item.deliveryMethod === "Lalamove" ||
+      item.riderName === "Lalamove" ||
+      item.riderName === "Lalamove Courier";
+
     return (
       <tr
         key={item.id}
@@ -201,11 +217,11 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         {/* 7. Departure / Pickup Time */}
         <td
           onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
-          className={`px-1.5 py-2 text-center font-mono font-bold text-amber-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
+          className={`px-1 py-2 text-center font-mono font-bold text-amber-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
           title={isEdit && hasTahi && !isTimeTbd ? "Click to override departure or production timings" : undefined}
         >
           {isTimeTbd ? (
-            <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded text-xs inline-block">
+            <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.5 rounded text-[10.5px] whitespace-nowrap inline-flex items-center justify-center leading-none">
               ⏳ Time TBD
             </span>
           ) : (
@@ -275,9 +291,15 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         {/* 10. Location */}
         <td
           className="px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words"
-          title={item.location || undefined}
+          title={item.location || (isStorePickup ? "Store Counter" : undefined)}
         >
-          <div>{item.location || "-"}</div>
+          <div>
+            {item.location && item.location !== "-"
+              ? item.location
+              : isStorePickup
+              ? "Store Counter"
+              : "-"}
+          </div>
           {item.landmark && (
             <div className="text-[9.5px] text-amber-800 font-semibold mt-0.5">
               🧭 {item.landmark}
@@ -301,22 +323,34 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
 
         {/* 13. Rider Name */}
         <td
-          onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
-          className={`px-1.5 py-2 text-center text-[11px] font-bold ${editableCellClass}`}
-          title={isEdit && hasTahi && !isTimeTbd ? "Click to assign or change rider" : undefined}
+          onClick={() => !isStorePickup && !isLalamove && hasTahi && !isTimeTbd && handleCellClick(item)}
+          className={`px-1 py-2 text-center text-[11px] font-bold border-r border-slate-300 ${!isStorePickup && !isLalamove ? editableCellClass : ""}`}
+          title={!isStorePickup && !isLalamove && isEdit && hasTahi && !isTimeTbd ? "Click to assign or change rider" : undefined}
         >
           <div className="flex items-center justify-center gap-1">
-            <span
-              className={
-                item.riderName && item.riderName !== "Unassigned"
-                  ? "text-blue-700 font-bold"
-                  : "text-slate-400 italic font-normal"
-              }
-            >
-              {item.riderName || "Unassigned"}
-            </span>
-            {isEdit && hasTahi && !isTimeTbd && (
-              <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
+            {isStorePickup ? (
+              <span className="bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
+                🏪 Store Pickup
+              </span>
+            ) : isLalamove ? (
+              <span className="bg-orange-50 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
+                📦 Lalamove
+              </span>
+            ) : (
+              <>
+                <span
+                  className={
+                    item.riderName && item.riderName !== "Unassigned"
+                      ? "text-blue-700 font-bold"
+                      : "text-slate-400 italic font-normal"
+                  }
+                >
+                  {item.riderName || "Unassigned"}
+                </span>
+                {isEdit && hasTahi && !isTimeTbd && (
+                  <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
+                )}
+              </>
             )}
           </div>
         </td>
@@ -337,13 +371,13 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
             <col className="w-[5%]" />                {/* 4. Priority */}
             <col className="w-[4.5%]" />              {/* 5. Size (Compact: fits "S. Jumbo") */}
             <col className="w-[4.5%]" />              {/* 6. Weight */}
-            <col className="w-[7%]" />                {/* 7. Departure / Pickup */}
-            <col className="w-[8.5%]" />              {/* 8. Customer Name */}
-            <col className="w-[18%]" />               {/* 9. Remarks (Expanded) */}
-            <col className="w-[18%]" />               {/* 10. Location (Expanded) */}
+            <col className="w-[8.5%]" />              {/* 7. Departure / Pickup */}
+            <col className="w-[9%]" />                {/* 8. Customer Name */}
+            <col className="w-[15%]" />               {/* 9. Remarks (Expanded) */}
+            <col className="w-[14.5%]" />             {/* 10. Location (Expanded) */}
             <col className="w-[4%]" />                {/* 11. Add-ons */}
             <col className="w-[5.5%]" />              {/* 12. Delivery Time */}
-            <col className="w-[6.5%]" />              {/* 13. Rider Name */}
+            <col className="w-[11%]" />               {/* 13. Rider Name */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}

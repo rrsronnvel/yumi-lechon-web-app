@@ -313,6 +313,7 @@ export const useRiderSignQrMutation = () => {
       return response.data;
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["riders"] });
       queryClient.invalidateQueries({
         queryKey: ["manifest", "qr-session", data.token],
       });
@@ -332,6 +333,7 @@ export const useRejectRiderSignatureMutation = () => {
       return response.data;
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["riders"] });
       queryClient.invalidateQueries({
         queryKey: ["manifest", "qr-session", data.token],
       });
@@ -361,6 +363,7 @@ export const useStaffValidateQrMutation = () => {
     },
     onSuccess: (data) => {
       return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["riders"] }),
         queryClient.invalidateQueries({
           queryKey: ["manifest", "qr-session", data.token],
         }),
@@ -444,6 +447,7 @@ export const useOwnerApproveQrMutation = () => {
     },
     onSuccess: (data) => {
       return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["riders"] }),
         queryClient.invalidateQueries({
           queryKey: ["manifest", "qr-session", data.token],
         }),

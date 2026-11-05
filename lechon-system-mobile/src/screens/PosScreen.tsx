@@ -35,7 +35,7 @@ import {
 } from '../utils/messengerTemplates';
 import FreebiesSelector from '../components/orders/FreebiesSelector';
 import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from '../utils/similarityHelper';
-import { normalizeDateInput, getPhilippineDateString } from '../utils/dateNormalizer';
+import { normalizeDateInput } from '../utils/dateNormalizer';
 import PaymentChannelPills from '../components/orders/PaymentChannelPills';
 import {
   FreebiesConfig,
@@ -110,14 +110,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const noFreebiesDiscountPerPig =
     deliveryPricing?.noFreebiesDiscountPerPig ?? 2000;
 
-  // Default date = Tomorrow at 11:30
-  const getInitialDateStr = () => getPhilippineDateString();
-  const _oldInitialDateStr = () => {
-    const tmr = new Date();
-    tmr.setDate(tmr.getDate() + 1);
-    return formatLocalYMD(tmr);
-  };
-
   // Form State
   const [isDraft, setIsDraft] = useState(false);
   const [isTimeTbd, setIsTimeTbd] = useState(false);
@@ -131,10 +123,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [debouncedFbName, setDebouncedFbName] = useState('');
   const [source, setSource] = useState<string>('Business FB Page');
   const [eventType, setEventType] = useState<string>('');
+  const [assistedByAdmin, setAssistedByAdmin] = useState('');
+  const [showAssistedByAdmin, setShowAssistedByAdmin] = useState(false);
   const [fulfillment, setFulfillment] = useState<number>(1); // 1 = Delivery, 0 = Pickup, 2 = Lalamove
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [landmark, setLandmark] = useState('');
-  const [targetDate, setTargetDate] = useState(() => getPhilippineDateString());
+  const [targetDate, setTargetDate] = useState('');
   const [targetTime, setTargetTime] = useState('');
   const [targetPeriod, setTargetPeriod] = useState<Meridiem>('AM');
   const [riderDepartureTimeStr, setRiderDepartureTimeStr] = useState('');
@@ -584,6 +578,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       setSource(draft.source);
     }
     setEventType(draft.eventType || '');
+    setAssistedByAdmin(draft.assistedByAdmin || '');
+    setShowAssistedByAdmin(Boolean(draft.assistedByAdmin?.trim()));
 
     const nextFulfillment =
       draft.fulfillment !== undefined && draft.fulfillment !== null
@@ -769,10 +765,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setShowContactNumber2(false);
     setSource('Business FB Page');
     setEventType('');
+    setAssistedByAdmin('');
+    setShowAssistedByAdmin(false);
     setFulfillment(1);
     setDeliveryAddress('');
     setLandmark('');
-    setTargetDate(getPhilippineDateString());
+    setTargetDate('');
     setTargetTime('');
     setTargetPeriod('AM');
     setRiderDepartureTimeStr('');
@@ -936,6 +934,11 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
     const effectiveDraft = isDraft || isTimeTbd;
 
+    if (!effectiveDraft && !targetDate.trim()) {
+      setValidationError('⚠️ Please select a Delivery / Pickup Date before submitting.');
+      return;
+    }
+
     if (effectiveDraft) {
       if (!trimmedName && !trimmedFbName) {
         setValidationError(
@@ -1047,6 +1050,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         contactNumber: combinedContactNumber,
         source: source || 'Business FB Page',
         eventType: isNonLechonMode ? undefined : eventType || undefined,
+        assistedByAdmin: assistedByAdmin.trim() || undefined,
         targetDeliveryTime: isoTargetTime,
         riderDepartureTime: isoDepartureTime,
         fulfillment,
@@ -1461,6 +1465,38 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               })}
             </View>
           </View>}
+
+          {!showAssistedByAdmin ? (
+            <Pressable
+              style={styles.addContactButton}
+              onPress={() => setShowAssistedByAdmin(true)}
+            >
+              <Text style={styles.addContactButtonText}>👤 + Assisted by Admin</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.fieldGroup}>
+              <View style={styles.contactLabelRow}>
+                <Text style={styles.fieldLabel}>Assisted by Admin</Text>
+                <Pressable
+                  style={styles.removeContactButton}
+                  onPress={() => {
+                    setAssistedByAdmin('');
+                    setShowAssistedByAdmin(false);
+                  }}
+                >
+                  <Text style={styles.removeContactButtonText}>Hide</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                style={styles.textInput}
+                maxLength={64}
+                placeholder="Admin name for sales / commission tracking"
+                placeholderTextColor="#A8A29E"
+                value={assistedByAdmin}
+                onChangeText={setAssistedByAdmin}
+              />
+            </View>
+          )}
 
           {/* Tri-Modal Segmented Fulfillment Toggle */}
           <View style={styles.fieldGroup}>

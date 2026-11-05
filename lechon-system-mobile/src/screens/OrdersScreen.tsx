@@ -162,7 +162,10 @@ export default function OrdersScreen({
   const custodyCounts = useMemo(() => {
     if (!rawOrders) return { all: 0, dueToday: 0, drawer: 0, future: 0 };
     const unpaid = rawOrders.filter(
-      (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
+      (o) =>
+        (Number(o.balanceDue || 0) > 0 ||
+          o.settlementCustodyStatus === 'InStaffDrawer') &&
+        !o.isCancelled
     );
     const todayDatePh = philippineDateFromNow();
     let dueToday = 0;
@@ -219,7 +222,10 @@ export default function OrdersScreen({
     }
     if (activePill === 'balance-due') {
       const unpaid = rawOrders.filter(
-        (o) => Number(o.balanceDue || 0) > 0 && !o.isCancelled
+        (o) =>
+          (Number(o.balanceDue || 0) > 0 ||
+            o.settlementCustodyStatus === 'InStaffDrawer') &&
+          !o.isCancelled
       );
       const todayDatePh = philippineDateFromNow();
       if (balanceSubFilter === 'all') return unpaid;
@@ -309,6 +315,15 @@ export default function OrdersScreen({
         </View>
       );
     }
+    if (order.settlementCustodyStatus === 'InStaffDrawer') {
+      return (
+        <View style={[styles.routingBadge, styles.routingDelivered]}>
+          <Text style={styles.routingDeliveredText}>
+            {Number(order.fulfillment) === 0 ? 'Picked Up' : 'Delivered'}
+          </Text>
+        </View>
+      );
+    }
     const status = (order.routingStatus || '').trim();
     if (status === 'Delivered') {
       return (
@@ -388,7 +403,10 @@ export default function OrdersScreen({
     const isNoDp =
       Number(item.downpayment || 0) === 0 &&
       !item.isTrustedCustomer &&
-      balanceDue > 0;
+      balanceDue > 0 &&
+      !['InStaffDrawer', 'Settled'].includes(
+        item.settlementCustodyStatus || 'Uncollected'
+      );
     const isCriticalNoDp = isNoDp && daysUntilDelivery <= 2;
     const isAdvanceNoDp = isNoDp && daysUntilDelivery > 2;
 
@@ -519,6 +537,10 @@ export default function OrdersScreen({
             {isDraft ? (
               <Text style={styles.draftDpText}>
                 ₱{Number(item.downpayment || 0).toLocaleString()} DP
+              </Text>
+            ) : item.settlementCustodyStatus === 'InStaffDrawer' ? (
+              <Text style={styles.custodyPillDrawerText}>
+                🟡 ₱{Number(item.heldByStaffAmount || balanceDue).toLocaleString()} In Drawer ({item.heldPaymentMethod || 'Cash'})
               </Text>
             ) : isPaid ? (
               <Text style={styles.paidFullText}>🟢 Paid in Full</Text>

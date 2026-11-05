@@ -18,6 +18,7 @@ namespace LechonSystem.Api.Models.DTOs
         public string? Remarks { get; set; }
         public string? AssignedRiderName { get; set; }
         public string? UpdatedBy { get; set; }
+        public string? AssistedByAdmin { get; set; }
         public DateTime? TargetDeliveryTime { get; set; }
         public DateTime? RiderDepartureTime { get; set; }
         public FulfillmentType Fulfillment { get; set; }
