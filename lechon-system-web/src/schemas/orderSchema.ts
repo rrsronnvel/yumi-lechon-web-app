@@ -152,6 +152,7 @@ export interface ParsedOrderDraftDto {
   discount?: number | null;
   quotedItemsTotal?: number | null;
   quotedBalanceDue?: number | null;
+  parsedTotalBalance?: number | null;
   downpayment?: number | null;
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
   assistedByAdmin?: string | null;

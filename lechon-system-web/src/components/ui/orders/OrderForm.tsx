@@ -48,6 +48,8 @@ import {
   formatFreebiesSummary,
   FreebiesConfig,
   getPigsWithFreebies,
+  hydrateBellyFreebiesFromOverrides,
+  normalizeFreebiesConfig,
   updatePigsWithFreebies,
 } from "@/utils/freebiesHelper";
 
@@ -73,6 +75,7 @@ import {
   Copy,
   ClipboardPaste,
   RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 
 export interface OrderFormProps {
@@ -109,12 +112,17 @@ export default function OrderForm({
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const [showAssistedByAdmin, setShowAssistedByAdmin] = useState(false);
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
+  const [mathMismatch, setMathMismatch] = useState<{
+    chatBalance: number;
+    expectedBalance: number;
+  } | null>(null);
   const previousWholePigCount = useRef(0);
   const pendingParsedFreebies = useRef<{
     optOut: boolean;
     rawInnards: boolean;
     overrides: Record<string, number>;
     customizationNote: string;
+    bellyItems: { kg: number; quantity: number }[];
   } | null>(null);
 
   // 1. Fetch live inventory categories & CMS delivery pricing
@@ -159,7 +167,7 @@ export default function OrderForm({
       landmark: "",
       targetDeliveryTime: "",
       riderDepartureTime: "",
-      fulfillment: 1, // Default: 🚗 Freelance Delivery
+      fulfillment: 1, // Default: 🛵 Freelance Delivery
       distanceKm: 0,
       address: "",
       remarks: "",
@@ -238,6 +246,7 @@ export default function OrderForm({
     setIsNonLechonMode(false);
     previousWholePigCount.current = 0;
     pendingParsedFreebies.current = null;
+    setMathMismatch(null);
   }, [DEFAULT_ORDER_VALUES, form, replace]);
 
   // Reset form to clean empty state when modal opens
@@ -350,6 +359,21 @@ export default function OrderForm({
     }, 0);
   }, [watchedItems, categories]);
 
+  const bellyItems = useMemo(() => {
+    const grouped = new Map<number, number>();
+    (watchedItems || []).forEach((item) => {
+      const category = categories.find(
+        (candidate: ItemCategory) => candidate.id === Number(item?.itemCategoryId),
+      );
+      if (!category || !/belly/i.test(category.name || "")) return;
+      const nameWeight = Number((category.name || "").match(/([2-5])\s*kg/i)?.[1]);
+      const kg = nameWeight || Number(category.minimumWeightKg);
+      if (kg < 2 || kg > 5) return;
+      grouped.set(kg, (grouped.get(kg) || 0) + (Number(item?.quantity) || 0));
+    });
+    return Array.from(grouped, ([kg, quantity]) => ({ kg, quantity }));
+  }, [watchedItems, categories]);
+
   useEffect(() => {
     const previousCount = previousWholePigCount.current;
     const pending = pendingParsedFreebies.current;
@@ -368,13 +392,21 @@ export default function OrderForm({
             ),
           };
         }
-        const defaults = createDefaultFreebiesConfig(wholePigCount);
+        const defaults = createDefaultFreebiesConfig(wholePigCount, pending.bellyItems);
         if (pending.rawInnards) {
           defaults.rawInnards = true;
           defaults.counts.Dinuguan = 0;
         }
         defaults.counts = { ...defaults.counts, ...pending.overrides };
         defaults.customizationNote = pending.customizationNote;
+        if (pending.bellyItems.length > 0) {
+          defaults.bellyCounts = hydrateBellyFreebiesFromOverrides(
+            pending.overrides,
+            pending.bellyItems,
+            pending.customizationNote,
+          );
+          defaults.bellyCustomizationNote = "";
+        }
         return defaults;
       }
 
@@ -691,10 +723,11 @@ export default function OrderForm({
             freebiesConfig,
             wholePigCount,
             noFreebiesDiscountPerPig,
+            bellyItems,
           ),
       freebiesConfigJson:
-        !isNonLechonMode && wholePigCount > 0
-          ? JSON.stringify(freebiesConfig)
+        !isNonLechonMode && (wholePigCount > 0 || bellyItems.length > 0)
+          ? JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholePigCount, bellyItems))
           : null,
       grandTotal: computedGrandTotal,
       totalAmount: computedGrandTotal,
@@ -708,6 +741,7 @@ export default function OrderForm({
 
   // Hydrate form from ParsedOrderDraftDto (used by both Screenshot Uploader & Paste Chat Text)
   const applyDraftToForm = (draft: ParsedOrderDraftDto, sourceLabel: string) => {
+    setMathMismatch(null);
     form.setValue("customerName", draft.customerName || "", {
       shouldValidate: true,
       shouldDirty: true,
@@ -862,13 +896,25 @@ export default function OrderForm({
           ? total + (Number(item.quantity) || 0)
           : total;
       }, 0);
+      const parsedBellyGroups = new Map<number, number>();
+      mappedItems.forEach((item) => {
+        const category = categories.find(
+          (candidate) => candidate.id === Number(item.itemCategoryId),
+        );
+        if (!category || !/belly/i.test(category.name || "")) return;
+        const kg = Number((category.name || "").match(/([2-5])\s*kg/i)?.[1]) || Number(category.minimumWeightKg);
+        if (kg >= 2 && kg <= 5) {
+          parsedBellyGroups.set(kg, (parsedBellyGroups.get(kg) || 0) + (Number(item.quantity) || 0));
+        }
+      });
+      const parsedBellyItems = Array.from(parsedBellyGroups, ([kg, quantity]) => ({ kg, quantity }));
       const parsedFreebies = {
         optOut: draft.freebiesOptOut === true,
         rawInnards: draft.rawInnards === true,
         overrides: draft.freebieOverrides || {},
         customizationNote: draft.freebiesCustomizationNote || "",
       };
-      const parsedConfig = createDefaultFreebiesConfig(parsedWholePigCount);
+      const parsedConfig = createDefaultFreebiesConfig(parsedWholePigCount, parsedBellyItems);
       if (parsedFreebies.optOut) {
         parsedConfig.optOut = true;
         parsedConfig.pigsWithFreebies = 0;
@@ -884,9 +930,19 @@ export default function OrderForm({
         ...parsedFreebies.overrides,
       };
       parsedConfig.customizationNote = parsedFreebies.customizationNote;
+      if (parsedBellyItems.length > 0) {
+        parsedConfig.bellyCounts = hydrateBellyFreebiesFromOverrides(
+          parsedFreebies.overrides,
+          parsedBellyItems,
+          parsedFreebies.customizationNote,
+        );
+        parsedConfig.bellyCustomizationNote = "";
+      }
       setFreebiesConfig(parsedConfig);
       pendingParsedFreebies.current =
-        parsedWholePigCount !== wholePigCount ? parsedFreebies : null;
+        parsedWholePigCount !== wholePigCount
+          ? { ...parsedFreebies, bellyItems: parsedBellyItems }
+          : null;
       replace(mappedItems);
     } else if (
       draft.freebiesOptOut != null ||
@@ -912,13 +968,46 @@ export default function OrderForm({
       setFreebiesConfig(nextConfig);
     }
 
-    form.setValue(
-      "discount",
-      draft.freebiesOptOut === true
-        ? 0
-        : Math.max(0, Number(draft.discount ?? 0) || 0),
-      { shouldValidate: true, shouldDirty: true },
+    const parsedWholePigCount = (draft.items || []).reduce((total, item) => {
+      const category = categories.find(
+        (candidate) => candidate.id === Number(item.itemCategoryId),
+      );
+      return category && category.minimumWeightKg >= 13
+        ? total + (Number(item.quantity) || 0)
+        : total;
+    }, 0);
+    const explicitDiscount = draft.freebiesOptOut === true
+      ? noFreebiesDiscountPerPig * parsedWholePigCount
+      : Math.max(0, Number(draft.discount ?? 0) || 0);
+    form.setValue("discount", explicitDiscount, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    setAppliedFreebiesDiscount(
+      draft.freebiesOptOut === true ? explicitDiscount : 0,
     );
+
+    const pastedItemsSubtotal = (draft.items || []).reduce((total, item) => {
+      const category = categories.find(
+        (candidate) => candidate.id === Number(item.itemCategoryId),
+      );
+      return total + (category?.basePrice ?? 0) * (Number(item.quantity) || 0);
+    }, 0);
+    const parsedTotalBalance = draft.parsedTotalBalance ?? null;
+    const expectedBalance = Math.max(
+      0,
+      pastedItemsSubtotal + parsedFee - explicitDiscount - parsedDownpayment,
+    );
+    if (
+      parsedTotalBalance !== null &&
+      parsedTotalBalance > 0 &&
+      parsedTotalBalance !== expectedBalance
+    ) {
+      setMathMismatch({
+        chatBalance: parsedTotalBalance,
+        expectedBalance,
+      });
+    }
 
     toast.success(`${sourceLabel} parsed. Please review before saving.`, {
       description:
@@ -928,6 +1017,16 @@ export default function OrderForm({
 
   // Clipboard Chat Text Bridge
   const handlePasteChatText = async () => {
+    form.setValue("discount", 0, { shouldValidate: true, shouldDirty: true });
+    form.setValue("deliveryFee", 0, { shouldValidate: true, shouldDirty: true });
+    form.setValue("downpayment", 0, { shouldValidate: true, shouldDirty: true });
+    form.setValue("downpaymentMethod", "None", { shouldValidate: true, shouldDirty: true });
+    replace([]);
+    setFreebiesConfig(createDefaultFreebiesConfig(0));
+    setAppliedFreebiesDiscount(0);
+    previousWholePigCount.current = 0;
+    pendingParsedFreebies.current = null;
+    setMathMismatch(null);
     try {
       const clipText = await navigator.clipboard.readText();
       if (!clipText || !clipText.trim()) {
@@ -967,6 +1066,16 @@ export default function OrderForm({
 
       if (!isInput || isMessengerFormat) {
         e.preventDefault();
+        form.setValue("discount", 0, { shouldValidate: true, shouldDirty: true });
+        form.setValue("deliveryFee", 0, { shouldValidate: true, shouldDirty: true });
+        form.setValue("downpayment", 0, { shouldValidate: true, shouldDirty: true });
+        form.setValue("downpaymentMethod", "None", { shouldValidate: true, shouldDirty: true });
+        replace([]);
+        setFreebiesConfig(createDefaultFreebiesConfig(0));
+        setAppliedFreebiesDiscount(0);
+        previousWholePigCount.current = 0;
+        pendingParsedFreebies.current = null;
+        setMathMismatch(null);
         const draft = parseChatText(clipText, categories, {
           noFreebiesDiscountPerPig,
         });
@@ -978,7 +1087,7 @@ export default function OrderForm({
     return () => {
       window.removeEventListener("paste", handleGlobalPaste);
     };
-  }, [categories, noFreebiesDiscountPerPig]);
+  }, [categories, form, noFreebiesDiscountPerPig, replace]);
 
   const handleTimeTbdChange = (checked: boolean) => {
     form.setValue("isTimeTbd", checked, { shouldValidate: true, shouldDirty: true });
@@ -1128,7 +1237,7 @@ export default function OrderForm({
               onClick={() => setIsNonLechonMode(true)}
               className={cn("rounded-md px-2 py-2 text-xs font-semibold transition-colors", isNonLechonMode ? "bg-white text-amber-800 shadow-xs" : "text-stone-600")}
             >
-              🍲 Non-Lechon / Extras Only
+              🍔 Non-Lechon / Extras Only
             </button>
           </div>
 
@@ -1140,7 +1249,7 @@ export default function OrderForm({
               className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-xs cursor-pointer flex items-center justify-center gap-2 border border-amber-700/30 rounded-lg transition-colors"
             >
               <ClipboardPaste className="w-5 h-5 text-white" />
-              <span>📋 Paste Messenger Form (Ctrl+V)</span>
+              <span>📋 Paste Messenger Form (Ctrl+V) (Ctrl+V)</span>
             </Button>
           </div>
 
@@ -1429,7 +1538,7 @@ export default function OrderForm({
                         value="1"
                         className="text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-[#C81E1E] data-[state=active]:shadow-xs"
                       >
-                        🚗 Freelance Delivery
+                        🛵 Freelance Delivery
                       </TabsTrigger>
                       <TabsTrigger
                         value="0"
@@ -1468,7 +1577,7 @@ export default function OrderForm({
                     </FormLabel>
                     <label className={cn("inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold", watchedIsTimeTbd ? "border-amber-400 bg-amber-100 text-amber-900" : "border-stone-300 bg-white text-stone-600")}>
                       <input type="checkbox" className="sr-only" checked={watchedIsTimeTbd} onChange={(event) => handleTimeTbdChange(event.target.checked)} />
-                      🕒 Time TBD
+                      ⏰ Time TBD
                     </label>
                   </div>
                   <FormControl>
@@ -1559,7 +1668,7 @@ export default function OrderForm({
               <FormItem className="bg-amber-50/50 border border-amber-200/80 rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <FormLabel className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                    🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)
+                    🛵 Rider Departure Time (Kitchen Zero-Hour Anchor) (Kitchen Zero-Hour Anchor)
                   </FormLabel>
                     {(watchedFulfillment === 0 || watchedIsTimeTbd) && (
                     <Badge
@@ -1726,7 +1835,7 @@ export default function OrderForm({
                     </optgroup>
                   )}
                   {addOnCategories.length > 0 && (
-                    <optgroup label="🥣 Add-Ons & Extras">
+                    <optgroup label="🟣 Add-Ons & Extras">
                       {addOnCategories.map((c: any) => (
                         <option key={c.id} value={c.id}>
                           {c.name} — ₱{c.basePrice?.toLocaleString()}
@@ -1853,6 +1962,7 @@ export default function OrderForm({
             {!isNonLechonMode && (
               <FreebiesSelector
                 wholePigCount={wholePigCount}
+                bellyItems={bellyItems}
                 noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
                 config={freebiesConfig}
                 onChange={setFreebiesConfig}
@@ -1872,6 +1982,64 @@ export default function OrderForm({
 
           {/* Bottom: Settlement Ledger & Handover Callout */}
           <div className="bg-white border border-stone-200/90 rounded-xl p-4 space-y-3.5 shadow-xs">
+            {mathMismatch && (() => {
+              const diff = Math.abs(
+                mathMismatch.expectedBalance - mathMismatch.chatBalance,
+              );
+              const chatIsLower =
+                mathMismatch.chatBalance < mathMismatch.expectedBalance;
+              return (
+                <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3.5 space-y-3 text-amber-950">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-black">Chat Math Mismatch Detected</p>
+                      <p className="text-xs font-medium leading-relaxed">
+                        {chatIsLower
+                          ? `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, but Cart calculation is ₱${mathMismatch.expectedBalance.toLocaleString()} (₱${diff.toLocaleString()} missing in chat total).`
+                          : `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, which is ₱${diff.toLocaleString()} higher than Cart calculation (₱${mathMismatch.expectedBalance.toLocaleString()}).`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setMathMismatch(null)}
+                      className="h-auto min-h-9 whitespace-normal bg-emerald-700 text-white hover:bg-emerald-800"
+                    >
+                      ✓ Use {chatIsLower ? "Accurate " : ""}Cart Total (₱{mathMismatch.expectedBalance.toLocaleString()})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (chatIsLower) {
+                          form.setValue(
+                            "discount",
+                            Math.max(0, Number(form.getValues("discount")) || 0) + diff,
+                            { shouldValidate: true, shouldDirty: true },
+                          );
+                        } else {
+                          form.setValue(
+                            "deliveryFee",
+                            Math.max(0, Number(form.getValues("deliveryFee")) || 0) + diff,
+                            { shouldValidate: true, shouldDirty: true },
+                          );
+                        }
+                        setMathMismatch(null);
+                      }}
+                      className="h-auto min-h-9 whitespace-normal border-amber-500 bg-white text-amber-900 hover:bg-amber-100"
+                    >
+                      {chatIsLower
+                        ? `Apply ₱${diff.toLocaleString()} as Discount (Match ₱${mathMismatch.chatBalance.toLocaleString()})`
+                        : `+ Add ₱${diff.toLocaleString()} to Delivery Fee (Match ₱${mathMismatch.chatBalance.toLocaleString()})`}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex items-center justify-between text-xs font-semibold text-stone-800 pb-2 border-b border-stone-200">
               <span className="flex items-center gap-1.5">
                 <ReceiptText className="w-3.5 h-3.5 text-stone-500" />
@@ -2187,7 +2355,7 @@ export default function OrderForm({
                       ? "🏪 Walk-in Store Pickup"
                       : savedOrderForModal.fulfillment === 2
                         ? "📦 Lalamove Courier (Customer Paid)"
-                        : "🚗 Freelance Delivery"}
+                        : "🛵 Freelance Delivery"}
                   </div>
                 </div>
                 <div className="text-right">

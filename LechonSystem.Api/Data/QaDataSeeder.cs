@@ -367,6 +367,174 @@ public static class QaDataSeeder
 
         await context.SaveChangesAsync();
         logger?.LogInformation("QA Test Data: Successfully seeded 3 targeted test orders (#102926-903, #102926-904, #102926-905).");
+
+        // =========================================================================
+        // Order #110626-921: Piolo Pascual (Nov 6 Delivery, AL Rider, ₱12,000 Uncollected)
+        // =========================================================================
+        var order921 = await context.Orders.Include(o => o.OrderItems).FirstOrDefaultAsync(o => o.OrderReference == "110626-921");
+        if (order921 == null)
+        {
+            var alTrip = await context.DeliveryTrips.FirstOrDefaultAsync(t => t.RiderName == "AL");
+            if (alTrip == null)
+            {
+                alTrip = new DeliveryTrip
+                {
+                    RiderName = "AL",
+                    VehicleType = "Motorcycle",
+                    Status = DeliveryStatus.Assigned,
+                    DispatchTime = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow
+                };
+                context.DeliveryTrips.Add(alTrip);
+                await context.SaveChangesAsync();
+            }
+
+            order921 = new Order
+            {
+                OrderReference = "110626-921",
+                CustomerName = "Piolo Pascual",
+                FacebookName = "Piolo Pascual Official",
+                ContactNumber = "09170000921",
+                Source = "Business FB Page",
+                Fulfillment = FulfillmentType.Delivery,
+                TargetDeliveryTime = new DateTime(2026, 11, 6, 15, 0, 0),
+                RiderDepartureTime = new DateTime(2026, 11, 6, 14, 0, 0),
+                DeliveryAddress = "Bacoor, Cavite",
+                Landmark = "Near Bacoor City Hall",
+                Remarks = "QA Seed Order #110626-921",
+                Price = 13500.00m,
+                DeliveryFee = 350.00m,
+                Downpayment = 1850.00m,
+                DownpaymentMethod = "GCash",
+                GrandTotal = 13850.00m,
+                Discount = 0.00m,
+                IsTrustedCustomer = false,
+                IsDeliveryDetailsConfirmed = true,
+                SettlementCustodyStatus = "Uncollected",
+                RoutingStatus = DeliveryStatus.Assigned,
+                DeliveryTripId = alTrip.Id,
+                FreebiesSummary = "🎁 7 Whole Lechon Freebies",
+                FreebiesConfigJson = "{\"optOut\":false,\"pigsWithFreebies\":1,\"rawInnards\":false,\"counts\":{\"Sarsa\":1,\"1.5L Coke\":1,\"Pancit\":1,\"Palabok\":1,\"Spaghetti\":1,\"Dinuguan\":1,\"Puto\":1},\"customizationNote\":\"\",\"bellyCounts\":{\"Sarsa\":0,\"1.5L Coke\":0,\"Pancit\":0,\"Palabok\":0,\"Spaghetti\":0,\"Dinuguan\":0,\"Puto\":0},\"bellyCustomizationNote\":\"\",\"bellySignature\":\"\"}",
+                CreatedBy = "QA Seed Nov 06",
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Orders.Add(order921);
+            await context.SaveChangesAsync();
+
+            var order921Item = new OrderItem
+            {
+                OrderId = order921.Id,
+                ItemCategoryId = 5, // L Lechon
+                Quantity = 1,
+                Price = 13500.00m,
+                TotalPrice = 13500.00m,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.OrderItems.Add(order921Item);
+            await context.SaveChangesAsync();
+
+            context.OrderItemSchedules.Add(new OrderItemSchedule
+            {
+                OrderItemId = order921Item.Id,
+                TargetDeliveryTime = order921.TargetDeliveryTime.Value,
+                PackagingStartTime = new DateTime(2026, 11, 6, 13, 30, 0),
+                SalangStartTime = new DateTime(2026, 11, 6, 10, 30, 0),
+                TahiStartTime = new DateTime(2026, 11, 6, 9, 30, 0),
+                IsManualOverride = false,
+                CurrentStatus = ProductionStatus.Defrosting,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            context.PaymentLogs.Add(new PaymentLog
+            {
+                OrderId = order921.Id,
+                GatewayReferenceId = "QA-110626-921-DP",
+                Provider = PaymentProvider.ManualGCash,
+                PaymentMethod = "GCash",
+                Amount = 1850.00m,
+                Status = PaymentStatus.Success,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            await context.SaveChangesAsync();
+            logger?.LogInformation("QA Test Data: Successfully seeded order #110626-921 (Piolo Pascual).");
+        }
+
+        // =========================================================================
+        // Order #110626-922: Sam Sam (Nov 7 Lalamove, 1x Belly 5kg, ₱3,200 Uncollected)
+        // =========================================================================
+        var order922 = await context.Orders.Include(o => o.OrderItems).FirstOrDefaultAsync(o => o.OrderReference == "110626-922");
+        if (order922 == null)
+        {
+            order922 = new Order
+            {
+                OrderReference = "110626-922",
+                CustomerName = "Sam Sam",
+                FacebookName = "Sam Sam",
+                ContactNumber = "09170000922",
+                Source = "Business FB Page",
+                Fulfillment = FulfillmentType.Lalamove,
+                TargetDeliveryTime = new DateTime(2026, 11, 7, 12, 0, 0),
+                RiderDepartureTime = new DateTime(2026, 11, 7, 12, 0, 0),
+                DeliveryAddress = "Imus, Cavite",
+                Landmark = "Near Imus Market",
+                Remarks = "QA Seed Order #110626-922",
+                Price = 4200.00m,
+                DeliveryFee = 0.00m,
+                Downpayment = 1000.00m,
+                DownpaymentMethod = "GCash",
+                GrandTotal = 4200.00m,
+                Discount = 0.00m,
+                IsTrustedCustomer = false,
+                IsDeliveryDetailsConfirmed = true,
+                SettlementCustodyStatus = "Uncollected",
+                RoutingStatus = DeliveryStatus.Unassigned,
+                FreebiesSummary = "🎁 Belly Freebies: 1x Sarsa, 1x Pancit",
+                FreebiesConfigJson = "{\"optOut\":false,\"pigsWithFreebies\":0,\"rawInnards\":false,\"counts\":{\"Sarsa\":0,\"1.5L Coke\":0,\"Pancit\":0,\"Palabok\":0,\"Spaghetti\":0,\"Dinuguan\":0,\"Puto\":0},\"customizationNote\":\"\",\"bellyCounts\":{\"Sarsa\":1,\"1.5L Coke\":0,\"Pancit\":1,\"Palabok\":0,\"Spaghetti\":0,\"Dinuguan\":0,\"Puto\":0},\"bellyCustomizationNote\":\"\",\"bellySignature\":\"5x1\"}",
+                CreatedBy = "QA Seed Nov 06",
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Orders.Add(order922);
+            await context.SaveChangesAsync();
+
+            var order922Item = new OrderItem
+            {
+                OrderId = order922.Id,
+                ItemCategoryId = 13, // Belly 5kg
+                Quantity = 1,
+                Price = 4200.00m,
+                TotalPrice = 4200.00m,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.OrderItems.Add(order922Item);
+            await context.SaveChangesAsync();
+
+            context.OrderItemSchedules.Add(new OrderItemSchedule
+            {
+                OrderItemId = order922Item.Id,
+                TargetDeliveryTime = order922.TargetDeliveryTime.Value,
+                PackagingStartTime = new DateTime(2026, 11, 7, 11, 45, 0),
+                SalangStartTime = new DateTime(2026, 11, 7, 9, 30, 0),
+                TahiStartTime = new DateTime(2026, 11, 7, 9, 0, 0),
+                IsManualOverride = false,
+                CurrentStatus = ProductionStatus.Defrosting,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            context.PaymentLogs.Add(new PaymentLog
+            {
+                OrderId = order922.Id,
+                GatewayReferenceId = "QA-110626-922-DP",
+                Provider = PaymentProvider.ManualGCash,
+                PaymentMethod = "GCash",
+                Amount = 1000.00m,
+                Status = PaymentStatus.Success,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            await context.SaveChangesAsync();
+            logger?.LogInformation("QA Test Data: Successfully seeded order #110626-922 (Sam Sam).");
+        }
     }
 
     private static async Task SeedCustomerProfilesAsync(LechonDbContext context)

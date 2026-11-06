@@ -42,6 +42,8 @@ import {
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
   getPigsWithFreebies,
+  hydrateBellyFreebiesFromOverrides,
+  normalizeFreebiesConfig,
   updatePigsWithFreebies,
 } from '../utils/freebiesHelper';
 
@@ -157,6 +159,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   // Feedback & Modals
   const [hydrationBanner, setHydrationBanner] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [mathMismatch, setMathMismatch] = useState<{
+    chatBalance: number;
+    expectedBalance: number;
+  } | null>(null);
   const [sourceChoiceModalVisible, setSourceChoiceModalVisible] =
     useState(false);
   const [createdReceiptOrder, setCreatedReceiptOrder] =
@@ -370,6 +376,17 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       .reduce((sum, item) => sum + item.quantity, 0);
   }, [cartItems, categories]);
 
+  const bellyItems = useMemo(() => {
+    const grouped = new Map<number, number>();
+    cartItems.forEach((item) => {
+      if (!/belly/i.test(item.name || '')) return;
+      const kg = Number((item.name || '').match(/([2-5])\s*kg/i)?.[1]) || Number(item.minimumWeightKg);
+      if (kg < 2 || kg > 5) return;
+      grouped.set(kg, (grouped.get(kg) || 0) + item.quantity);
+    });
+    return Array.from(grouped, ([kg, quantity]) => ({ kg, quantity }));
+  }, [cartItems]);
+
   const addonCount = useMemo(() => {
     return cartItems
       .filter((item) => !item.isRoast)
@@ -465,7 +482,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const modalCategoryData = useMemo(() => {
     if (activeCategoryFilter === 'whole') {
       return {
-        title: '🐖 Whole Lechon Sizes',
+        title: '🐷 Whole Lechon Sizes',
         subtitle: 'Charcoal-roasted whole carcass with crispy skin',
         items: wholeLechonCategories,
       };
@@ -479,7 +496,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     }
     if (activeCategoryFilter === 'addon') {
       return {
-        title: '🥫 Add-Ons & Extras',
+        title: '🟣 Add-Ons & Extras',
         subtitle: 'Signature Sarsa, Dinuguan, and extras (freezer-exempt)',
         items: addOnCategoriesList,
       };
@@ -554,6 +571,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   // Hydrate Form from ParsedOrderDraftDto
   const applyDraftToForm = (draft: ParsedOrderDraftDto) => {
     setValidationError(null);
+    setMathMismatch(null);
 
     setCustomerName(draft.customerName || '');
     setFacebookName(draft.facebookName || '');
@@ -642,7 +660,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     }
 
     // Direct Active Cart Hydration
-    let hydratedCart = cartItems;
+    let hydratedCart: CartItem[] = [];
     if (draft.items && draft.items.length > 0) {
       const nextCart: CartItem[] = [];
       for (const item of draft.items) {
@@ -669,11 +687,26 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       setIsNonLechonMode(
         nextCart.length > 0 && nextCart.every((item) => item.minimumWeightKg === 0)
       );
+    } else {
+      setCartItems([]);
+      setIsNonLechonMode(false);
     }
 
     const hydratedWholePigCount = hydratedCart
       .filter((item) => item.minimumWeightKg >= 13)
       .reduce((sum, item) => sum + item.quantity, 0);
+    const hydratedBellyGroups = new Map<number, number>();
+    hydratedCart.forEach((item) => {
+      if (!/belly/i.test(item.name || '')) return;
+      const kg = Number((item.name || '').match(/([2-5])\s*kg/i)?.[1]) || Number(item.minimumWeightKg);
+      if (kg >= 2 && kg <= 5) {
+        hydratedBellyGroups.set(kg, (hydratedBellyGroups.get(kg) || 0) + item.quantity);
+      }
+    });
+    const hydratedBellyItems = Array.from(
+      hydratedBellyGroups,
+      ([kg, quantity]) => ({ kg, quantity })
+    );
     previousWholePigCount.current = hydratedWholePigCount;
 
     const catalogItemsSubtotal = hydratedCart.reduce(
@@ -683,44 +716,24 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     const parsedDeliveryFee =
       nextFulfillment === 0 || nextFulfillment === 2
         ? 0
-        : Math.max(0, Number(draft.deliveryFee ?? deliveryFee) || 0);
+        : Math.max(0, Number(draft.deliveryFee ?? 0) || 0);
     const parsedDownpayment = Math.max(
       0,
-      Number(draft.downpayment ?? downpayment) || 0
+      Number(draft.downpayment ?? 0) || 0
     );
-    const hasExplicitDiscount =
-      draft.discount !== undefined && draft.discount !== null;
-    let courtesyDiscount: number | null = null;
-    if (
-      draft.freebiesOptOut !== true &&
-      Number(draft.quotedItemsTotal) > 0 &&
-      catalogItemsSubtotal > Number(draft.quotedItemsTotal)
-    ) {
-      courtesyDiscount =
-        catalogItemsSubtotal - Number(draft.quotedItemsTotal);
-    } else if (
-      draft.freebiesOptOut !== true &&
-      !hasExplicitDiscount &&
-      draft.quotedBalanceDue !== undefined &&
-      draft.quotedBalanceDue !== null
-    ) {
-      const preDiscountBalance =
-        catalogItemsSubtotal + parsedDeliveryFee - parsedDownpayment;
-      if (preDiscountBalance > Number(draft.quotedBalanceDue)) {
-        courtesyDiscount =
-          preDiscountBalance - Number(draft.quotedBalanceDue);
-      }
-    }
-
-    const hydratedFreebies = createDefaultFreebiesConfig(hydratedWholePigCount);
+    const hydratedFreebies = createDefaultFreebiesConfig(
+      hydratedWholePigCount,
+      hydratedBellyItems
+    );
+    const explicitDiscount = draft.freebiesOptOut === true
+      ? noFreebiesDiscountPerPig * hydratedWholePigCount
+      : Math.max(0, Number(draft.discount ?? 0) || 0);
     if (draft.freebiesOptOut === true) {
-      const optOutDiscount =
-        noFreebiesDiscountPerPig * hydratedWholePigCount;
       setFreebiesConfig(
         updatePigsWithFreebies(hydratedFreebies, hydratedWholePigCount, 0)
       );
-      setDiscount(String(optOutDiscount));
-      freebiesDiscountApplied.current = optOutDiscount;
+      setDiscount(String(explicitDiscount));
+      freebiesDiscountApplied.current = explicitDiscount;
     } else {
       const rawInnards = draft.rawInnards === true;
       const parsedConfig = rawInnards
@@ -735,17 +748,33 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
         ...(draft.freebieOverrides || {}),
       };
       parsedConfig.customizationNote = draft.freebiesCustomizationNote || '';
+      if (hydratedBellyItems.length > 0) {
+        parsedConfig.bellyCounts = hydrateBellyFreebiesFromOverrides(
+          draft.freebieOverrides || {},
+          hydratedBellyItems,
+          draft.freebiesCustomizationNote || "",
+        );
+        parsedConfig.bellyCustomizationNote = "";
+      }
       setFreebiesConfig(parsedConfig);
       freebiesDiscountApplied.current = 0;
-      setDiscount(
-        String(
-          courtesyDiscount !== null
-            ? Math.max(0, courtesyDiscount)
-            : draft.discount !== undefined && draft.discount !== null
-            ? Math.max(0, Number(draft.discount) || 0)
-            : 0
-        )
-      );
+      setDiscount(String(explicitDiscount));
+    }
+
+    const parsedTotalBalance = draft.parsedTotalBalance ?? null;
+    const expectedBalance = Math.max(
+      0,
+      catalogItemsSubtotal + parsedDeliveryFee - explicitDiscount - parsedDownpayment
+    );
+    if (
+      parsedTotalBalance !== null &&
+      parsedTotalBalance > 0 &&
+      parsedTotalBalance !== expectedBalance
+    ) {
+      setMathMismatch({
+        chatBalance: parsedTotalBalance,
+        expectedBalance,
+      });
     }
 
     setHydrationBanner(
@@ -790,6 +819,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setIsTrustedCustomer(false);
     setHydrationBanner(null);
     setValidationError(null);
+    setMathMismatch(null);
   };
 
   // Screenshot Intake Handlers
@@ -867,6 +897,15 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   // Clipboard Chat Text Intake Handler
   const handlePasteChatText = async () => {
     setValidationError(null);
+    setDiscount('0');
+    setDeliveryFee('0');
+    setDownpayment('0');
+    setDownpaymentMethod('None');
+    setCartItems([]);
+    setFreebiesConfig(createDefaultFreebiesConfig(0));
+    freebiesDiscountApplied.current = 0;
+    previousWholePigCount.current = 0;
+    setMathMismatch(null);
     try {
       const clipText = await Clipboard.getStringAsync();
       if (!clipText || !clipText.trim()) {
@@ -1069,11 +1108,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           : formatFreebiesSummary(
               freebiesConfig,
               wholeLechonCount,
-              noFreebiesDiscountPerPig
+              noFreebiesDiscountPerPig,
+              bellyItems
             ),
         freebiesConfigJson:
-          !isNonLechonMode && wholeLechonCount > 0
-            ? JSON.stringify(freebiesConfig)
+          !isNonLechonMode && (wholeLechonCount > 0 || bellyItems.length > 0)
+            ? JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholeLechonCount, bellyItems))
             : null,
         grandTotal,
         totalAmount: grandTotal,
@@ -1207,7 +1247,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               onPress={() => setIsNonLechonMode(true)}
             >
               <Text style={[styles.triSegmentText, isNonLechonMode && styles.triSegmentTextActive]}>
-                🍲 Non-Lechon / Extras Only
+                🍔 Non-Lechon / Extras Only
               </Text>
             </Pressable>
           </View>
@@ -1515,7 +1555,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                     fulfillment === 1 && styles.triSegmentTextActive,
                   ]}
                 >
-                  🚗 Delivery
+                  🛵 Delivery
                 </Text>
               </Pressable>
 
@@ -1621,7 +1661,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             <View style={styles.scheduleHeaderRow}>
               <Text style={styles.fieldLabel}>Target Date &amp; Time *</Text>
               <View style={styles.timeTbdToggle}>
-                <Text style={styles.timeTbdToggleText}>🕒 Time TBD</Text>
+                <Text style={styles.timeTbdToggleText}>⏰ Time TBD</Text>
                 <Switch
                   value={isTimeTbd}
                   onValueChange={(value) => {
@@ -1734,7 +1774,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           {!isNonLechonMode && <View style={styles.fieldGroup}>
             <View style={styles.scheduleHeaderRow}>
               <Text style={styles.fieldLabel}>
-                🛵 Rider Departure Time (Kitchen Anchor){' '}
+                🛵 Rider Departure Time (Kitchen Zero-Hour Anchor) (Kitchen Anchor){' '}
                 {fulfillment === 0 ? '(Pickup Locked)' : ''}
               </Text>
             </View>
@@ -1933,7 +1973,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               style={styles.categoryPill}
               onPress={() => setActiveCategoryFilter('whole')}
             >
-              <Text style={styles.categoryPillEmoji}>🐖</Text>
+              <Text style={styles.categoryPillEmoji}>🐷</Text>
               <Text style={styles.categoryPillLabel}>Whole Lechon</Text>
               {wholeLechonCount > 0 && (
                 <View style={styles.pillCountBadge}>
@@ -1962,7 +2002,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               style={styles.categoryPill}
               onPress={() => setActiveCategoryFilter('addon')}
             >
-              <Text style={styles.categoryPillEmoji}>🥫</Text>
+              <Text style={styles.categoryPillEmoji}>🟣</Text>
               <Text style={styles.categoryPillLabel}>Add-Ons</Text>
               {addonCount > 0 && (
                 <View style={styles.pillCountBadge}>
@@ -2066,6 +2106,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
           {!isNonLechonMode && <FreebiesSelector
             wholePigCount={wholeLechonCount}
+            bellyItems={bellyItems}
             noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
             config={freebiesConfig}
             onChange={handleFreebiesChange}
@@ -2077,6 +2118,53 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           <Text style={styles.sectionTitle}>
             💰 Financial Adjustments &amp; Deposit
           </Text>
+
+          {mathMismatch && (() => {
+            const diff = Math.abs(
+              mathMismatch.expectedBalance - mathMismatch.chatBalance
+            );
+            const chatIsLower =
+              mathMismatch.chatBalance < mathMismatch.expectedBalance;
+            return (
+              <View style={styles.mathMismatchBanner}>
+                <Text style={styles.mathMismatchTitle}>
+                  ⚠️ Chat Math Mismatch Detected
+                </Text>
+                <Text style={styles.mathMismatchText}>
+                  {chatIsLower
+                    ? `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, but Cart calculation is ₱${mathMismatch.expectedBalance.toLocaleString()} (₱${diff.toLocaleString()} missing in chat total).`
+                    : `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, which is ₱${diff.toLocaleString()} higher than Cart calculation (₱${mathMismatch.expectedBalance.toLocaleString()}).`}
+                </Text>
+                <View style={styles.mathMismatchActions}>
+                  <Pressable
+                    style={[styles.mathMismatchButton, styles.mathMismatchUseCartButton]}
+                    onPress={() => setMathMismatch(null)}
+                  >
+                    <Text style={styles.mathMismatchUseCartText}>
+                      ✓ Use {chatIsLower ? 'Accurate ' : ''}Cart Total (₱{mathMismatch.expectedBalance.toLocaleString()})
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.mathMismatchButton, styles.mathMismatchAdjustButton]}
+                    onPress={() => {
+                      if (chatIsLower) {
+                        setDiscount(String(Math.max(0, Number(discount) || 0) + diff));
+                      } else {
+                        setDeliveryFee(String(Math.max(0, Number(deliveryFee) || 0) + diff));
+                      }
+                      setMathMismatch(null);
+                    }}
+                  >
+                    <Text style={styles.mathMismatchAdjustText}>
+                      {chatIsLower
+                        ? `Apply ₱${diff.toLocaleString()} as Discount (Match ₱${mathMismatch.chatBalance.toLocaleString()})`
+                        : `+ Add ₱${diff.toLocaleString()} to Delivery Fee (Match ₱${mathMismatch.chatBalance.toLocaleString()})`}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })()}
 
           {/* Delivery Fee */}
           <View style={styles.fieldGroup}>
@@ -2704,6 +2792,54 @@ const styles = StyleSheet.create({
     color: '#9F1239',
     fontSize: 12,
     fontWeight: '700',
+  },
+  mathMismatchBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  mathMismatchTitle: {
+    color: '#78350F',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  mathMismatchText: {
+    color: '#78350F',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  mathMismatchActions: {
+    gap: 8,
+  },
+  mathMismatchButton: {
+    borderRadius: 9,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  mathMismatchUseCartButton: {
+    backgroundColor: '#047857',
+  },
+  mathMismatchAdjustButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D97706',
+  },
+  mathMismatchUseCartText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  mathMismatchAdjustText: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   card: {
     backgroundColor: '#FFFFFF',

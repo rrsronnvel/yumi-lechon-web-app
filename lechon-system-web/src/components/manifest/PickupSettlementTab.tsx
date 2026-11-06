@@ -394,12 +394,19 @@ export function PickupSettlementTab({
           orderId={selectedOwnerRemit.orderId}
           customerName={selectedOwnerRemit.customerName}
           expectedAmount={
-            selectedOwnerRemit.heldByStaffAmount ??
-            selectedOwnerRemit.balanceDue
+            Number(selectedOwnerRemit.heldByStaffAmount ?? 0) > 0
+              ? Number(selectedOwnerRemit.heldByStaffAmount)
+              : Number(selectedOwnerRemit.digitalTransferAmount ?? selectedOwnerRemit.balanceDue)
           }
+          totalCollected={selectedOwnerRemit.balanceDue}
+          deliveryFee={0}
           hopStage="StaffToOwner"
           heldByStaffName={selectedOwnerRemit.heldByStaffName}
           heldPaymentMethod={selectedOwnerRemit.heldPaymentMethod}
+          heldByStaffAmount={selectedOwnerRemit.heldByStaffAmount}
+          digitalTransferMethod={selectedOwnerRemit.digitalTransferMethod}
+          digitalTransferAmount={selectedOwnerRemit.digitalTransferAmount}
+          digitalReferenceNote={selectedOwnerRemit.digitalReferenceNote}
           onSuccess={() => {
             handleCloseOwnerRemit();
           }}

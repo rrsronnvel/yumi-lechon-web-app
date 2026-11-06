@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using LechonSystem.Api.Data;
@@ -11,7 +12,9 @@ public static class RiderRegistrationHelper
 {
     private static readonly HashSet<string> ReservedKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Unassigned", "Store Pickup", "Pickup", "Lalamove", "Lalamove Courier", "Walk-in", "None", "TBD", "-"
+        "Unassigned", "Store Pickup", "Pickup", "Lalamove", "Lalamove Courier", "Walk-in", "None", "TBD", "-",
+        "BDO", "BPI", "Metrobank", "UnionBank", "Landbank", "PNB", "RCBC", "Security Bank", "Chinabank",
+        "EastWest", "GCash", "Maya", "Bank", "Bank Transfer"
     };
 
     public static async Task<Rider?> EnsureRiderRegisteredAsync(LechonDbContext context, string? riderName, string? phoneNumber = null)
@@ -20,7 +23,8 @@ public static class RiderRegistrationHelper
             return null;
 
         var cleanName = riderName.Trim();
-        if (ReservedKeywords.Contains(cleanName))
+        if (ReservedKeywords.Any(keyword =>
+                cleanName.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
             return null;
 
         var existing = await context.Riders.FirstOrDefaultAsync(r => r.FullName.ToLower() == cleanName.ToLower());

@@ -16,7 +16,223 @@ export interface FreebiesConfig {
   rawInnards: boolean;
   counts: Record<string, number>;
   customizationNote?: string;
+  bellyCounts?: Record<string, number>;
+  bellyCustomizationNote?: string;
+  bellySignature?: string;
 }
+
+export interface BellyFreebieSource {
+  kg: number;
+  quantity: number;
+  label?: string;
+}
+
+export const getBellySignature = (items: BellyFreebieSource[]): string =>
+  items
+    .filter((item) => item.kg >= 2 && item.kg <= 5 && item.quantity > 0)
+    .map((item) => `${item.kg}x${Math.floor(item.quantity)}`)
+    .sort()
+    .join("|");
+
+export const createDefaultBellyCounts = (
+  items: BellyFreebieSource[],
+): Record<string, number> => {
+  const counts = Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0]));
+  items.forEach(({ kg, quantity }) => {
+    const safeQuantity = Math.max(0, Math.floor(quantity));
+    if (kg < 2 || kg > 5 || safeQuantity === 0) return;
+    counts.Sarsa += safeQuantity;
+    if (kg === 2 || kg === 3) counts.Dinuguan += safeQuantity;
+    if (kg === 4) counts.Puto += safeQuantity;
+    if (kg === 5) counts.Pancit += safeQuantity;
+  });
+  return counts;
+};
+
+export const getBellyDefaultLabel = (kg: number): string => {
+  if (kg === 2 || kg === 3) return "Sarsa + Dinuguan";
+  if (kg === 4) return "Sarsa + Puto";
+  return "Sarsa + Pancit/Palabok";
+};
+
+export interface BellySlotCalculation {
+  slotsUsed: number;
+  totalSlotsAllowed: number;
+  belly5kgCount: number;
+  bilaoSelectedCount: number;
+  swappableBilaoSlotsForCoke: number;
+  cokeSlots: number;
+  nonCokeSlots: number;
+}
+
+export const calculateBellySlotsUsed = (
+  bellyCounts: Record<string, number> = {},
+  bellyItems: BellyFreebieSource[] = [],
+): BellySlotCalculation => {
+  const belly5kgCount = bellyItems
+    .filter((item) => item.kg === 5)
+    .reduce((sum, item) => sum + Math.max(0, Math.floor(item.quantity)), 0);
+
+  const totalBellyCount = bellyItems.reduce(
+    (sum, item) => sum + Math.max(0, Math.floor(item.quantity)),
+    0,
+  );
+  const totalSlotsAllowed = 2 * totalBellyCount;
+
+  const bilaoSelectedCount =
+    (bellyCounts.Pancit || 0) +
+    (bellyCounts.Palabok || 0) +
+    (bellyCounts.Spaghetti || 0);
+
+  const swappableBilaoSlotsForCoke = Math.max(
+    0,
+    belly5kgCount - bilaoSelectedCount,
+  );
+
+  const nonCokeSlots =
+    (bellyCounts.Sarsa || 0) +
+    (bellyCounts.Pancit || 0) +
+    (bellyCounts.Palabok || 0) +
+    (bellyCounts.Spaghetti || 0) +
+    (bellyCounts.Dinuguan || 0) +
+    (bellyCounts.Puto || 0);
+
+  const cokeCount = bellyCounts["1.5L Coke"] || 0;
+  let cokeSlots = 0;
+  if (swappableBilaoSlotsForCoke > 0 && cokeCount > 0) {
+    const maxCokeCovered = 4 * swappableBilaoSlotsForCoke;
+    const cokeCovered = Math.min(cokeCount, maxCokeCovered);
+    const bilaoSlotsForCoke = Math.ceil(cokeCovered / 4);
+    const excessCoke = cokeCount - cokeCovered;
+    cokeSlots = bilaoSlotsForCoke + excessCoke;
+  } else {
+    cokeSlots = cokeCount;
+  }
+
+  const slotsUsed = nonCokeSlots + cokeSlots;
+
+  return {
+    slotsUsed,
+    totalSlotsAllowed,
+    belly5kgCount,
+    bilaoSelectedCount,
+    swappableBilaoSlotsForCoke,
+    cokeSlots,
+    nonCokeSlots,
+  };
+};
+
+export const canIncrementBellyFreebie = (
+  item: string,
+  bellyCounts: Record<string, number> = {},
+  bellyItems: BellyFreebieSource[] = [],
+): boolean => {
+  const nextCounts = {
+    ...bellyCounts,
+    [item]: (bellyCounts[item] ?? 0) + 1,
+  };
+  const { slotsUsed, totalSlotsAllowed } = calculateBellySlotsUsed(
+    nextCounts,
+    bellyItems,
+  );
+  return slotsUsed <= totalSlotsAllowed;
+};
+
+export const createDefaultBellyCokeSwap = (
+  items: BellyFreebieSource[],
+): Record<string, number> => {
+  const counts = Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0]));
+  items.forEach(({ kg, quantity }) => {
+    const safeQuantity = Math.max(0, Math.floor(quantity));
+    if (kg < 2 || kg > 5 || safeQuantity === 0) return;
+    counts.Sarsa += safeQuantity;
+    if (kg === 5) {
+      counts["1.5L Coke"] += 4 * safeQuantity;
+    } else {
+      if (kg === 2 || kg === 3) counts.Dinuguan += safeQuantity;
+      if (kg === 4) counts.Puto += safeQuantity;
+    }
+  });
+  return counts;
+};
+
+export const hydrateBellyFreebiesFromOverrides = (
+  overrides: Record<string, number> = {},
+  bellyItems: BellyFreebieSource[] = [],
+  customizationNote: string = "",
+): Record<string, number> => {
+  if (bellyItems.length === 0) {
+    return Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0]));
+  }
+
+  const { totalSlotsAllowed } = calculateBellySlotsUsed({}, bellyItems);
+  if (totalSlotsAllowed === 0) {
+    return Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0]));
+  }
+
+  const hasOverrides = Object.keys(overrides).length > 0;
+  const hasNoteHint =
+    /liver\s*sauce|sarsa|coke|pancit|palabok|spag|puto|dinuguan/i.test(
+      customizationNote,
+    );
+  if (!hasOverrides && !hasNoteHint) {
+    return createDefaultBellyCounts(bellyItems);
+  }
+
+  const desiredCounts: Record<string, number> = Object.fromEntries(
+    FREEBIE_ITEMS.map((item) => [
+      item,
+      Math.max(0, Math.floor(Number(overrides[item]) || 0)),
+    ]),
+  );
+
+  if (
+    desiredCounts.Sarsa === 0 &&
+    /liver\s*sauce|sarsa/i.test(customizationNote)
+  ) {
+    desiredCounts.Sarsa = 1;
+  }
+
+  if (desiredCounts.Sarsa === 0 && desiredCounts["1.5L Coke"] > 0) {
+    const totalBellyQty = bellyItems.reduce(
+      (s, b) => s + Math.max(0, Math.floor(b.quantity)),
+      0,
+    );
+    desiredCounts.Sarsa = totalBellyQty;
+  }
+
+  const resultCounts: Record<string, number> = Object.fromEntries(
+    FREEBIE_ITEMS.map((item) => [item, 0]),
+  );
+
+  // Allocate non-coke items first (Sarsa, Bilao, Puto, Dinuguan)
+  for (const item of FREEBIE_ITEMS) {
+    if (item === "1.5L Coke") continue;
+    const target = desiredCounts[item] ?? 0;
+    while (
+      resultCounts[item] < target &&
+      canIncrementBellyFreebie(item, resultCounts, bellyItems)
+    ) {
+      resultCounts[item]++;
+    }
+  }
+
+  // Allocate 1.5L Coke (expands up to 4x per unused 5kg Bilao slot)
+  const targetCoke = desiredCounts["1.5L Coke"] ?? 0;
+  while (
+    resultCounts["1.5L Coke"] < targetCoke &&
+    canIncrementBellyFreebie("1.5L Coke", resultCounts, bellyItems)
+  ) {
+    resultCounts["1.5L Coke"]++;
+  }
+
+  const { slotsUsed } = calculateBellySlotsUsed(resultCounts, bellyItems);
+  if (slotsUsed === 0) {
+    return createDefaultBellyCounts(bellyItems);
+  }
+
+  return resultCounts;
+};
 
 export const sanitizeFreebiesSummary = (
   text?: string | null,
@@ -24,7 +240,7 @@ export const sanitizeFreebiesSummary = (
   if (!text) return null;
   return text
     .replace(/Ã°Å¸Å½\s*:?/g, "🎁 ")
-    .replace(/ðŸŽ\s*:?/g, "🎁 ")
+    .replace(/ðŸŽ \s*:?/g, "🎁 ")
     .replace(/Ã°Å¸Å¡Â«/g, "🚫")
     .replace(/ðŸš«/g, "🚫")
     .replace(/Ã°Å¸Â¥Â©/g, "🥩")
@@ -42,12 +258,16 @@ const createCounts = (wholePigCount: number): Record<string, number> => {
 
 export const createDefaultFreebiesConfig = (
   wholePigCount: number,
+  bellyItems: BellyFreebieSource[] = [],
 ): FreebiesConfig => ({
   optOut: false,
   pigsWithFreebies: Math.max(0, Math.floor(wholePigCount)),
   rawInnards: false,
   counts: createCounts(wholePigCount),
   customizationNote: "",
+  bellyCounts: createDefaultBellyCounts(bellyItems),
+  bellyCustomizationNote: "",
+  bellySignature: getBellySignature(bellyItems),
 });
 
 export const getPigsWithFreebies = (
@@ -76,6 +296,7 @@ export const getFreebiesAllowedQuota = (
 export const normalizeFreebiesConfig = (
   config: FreebiesConfig,
   wholePigCount: number,
+  bellyItems: BellyFreebieSource[] = [],
 ): FreebiesConfig => {
   const safeWholePigCount = Math.max(0, Math.floor(wholePigCount));
   const pigsWithFreebies = getPigsWithFreebies(config, safeWholePigCount);
@@ -85,6 +306,32 @@ export const normalizeFreebiesConfig = (
       Math.max(0, Math.floor(Number(config.counts?.[item]) || 0)),
     ]),
   );
+  const bellySignature = getBellySignature(bellyItems);
+  let bellyCounts: Record<string, number>;
+  if (config.bellySignature === bellySignature && config.bellyCounts) {
+    const rawCounts = Object.fromEntries(
+      FREEBIE_ITEMS.map((item) => [
+        item,
+        Math.max(0, Math.floor(Number(config.bellyCounts?.[item]) || 0)),
+      ]),
+    );
+    const { slotsUsed, totalSlotsAllowed } = calculateBellySlotsUsed(
+      rawCounts,
+      bellyItems,
+    );
+    if (slotsUsed <= totalSlotsAllowed) {
+      bellyCounts = rawCounts;
+    } else {
+      bellyCounts = hydrateBellyFreebiesFromOverrides(rawCounts, bellyItems);
+    }
+  } else {
+    bellyCounts = createDefaultBellyCounts(bellyItems);
+  }
+  const bellyFields = {
+    bellyCounts,
+    bellyCustomizationNote: config.bellyCustomizationNote?.trim() || "",
+    bellySignature,
+  };
 
   if (pigsWithFreebies === 0 || safeWholePigCount === 0) {
     return {
@@ -93,6 +340,7 @@ export const normalizeFreebiesConfig = (
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
       customizationNote: config.customizationNote?.trim() || "",
+      ...bellyFields,
     };
   }
 
@@ -106,6 +354,7 @@ export const normalizeFreebiesConfig = (
     rawInnards: Boolean(config.rawInnards),
     counts,
     customizationNote: config.customizationNote?.trim() || "",
+    ...bellyFields,
   };
 };
 
@@ -134,6 +383,9 @@ export const updatePigsWithFreebies = (
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
       customizationNote: inputConfig.customizationNote?.trim() || "",
+      bellyCounts: inputConfig.bellyCounts,
+      bellyCustomizationNote: inputConfig.bellyCustomizationNote,
+      bellySignature: inputConfig.bellySignature,
     };
   }
 
@@ -157,6 +409,9 @@ export const updatePigsWithFreebies = (
     rawInnards: normalized.rawInnards,
     counts,
     customizationNote: inputConfig.customizationNote?.trim() || "",
+    bellyCounts: inputConfig.bellyCounts,
+    bellyCustomizationNote: inputConfig.bellyCustomizationNote,
+    bellySignature: inputConfig.bellySignature,
   };
 };
 
@@ -177,6 +432,9 @@ export const parseFreebiesConfig = (
         rawInnards: Boolean(parsed.rawInnards),
         counts: parsed.counts ?? {},
         customizationNote: parsed.customizationNote ?? "",
+        bellyCounts: parsed.bellyCounts ?? {},
+        bellyCustomizationNote: parsed.bellyCustomizationNote ?? "",
+        bellySignature: parsed.bellySignature ?? "",
       },
       wholePigCount,
     );
@@ -189,58 +447,56 @@ export const formatFreebiesSummary = (
   inputConfig: FreebiesConfig,
   wholePigCount: number,
   noFreebiesDiscountPerPig = 2000,
+  bellyItems: BellyFreebieSource[] = [],
 ): string | null => {
-  if (wholePigCount <= 0) return null;
+  if (wholePigCount <= 0 && bellyItems.length === 0) return null;
 
-  const config = normalizeFreebiesConfig(inputConfig, wholePigCount);
+  const config = normalizeFreebiesConfig(inputConfig, wholePigCount, bellyItems);
+  const summaries: string[] = [];
   const pigsWithFreebies = getPigsWithFreebies(config, wholePigCount);
   const pigsWithDiscount = wholePigCount - pigsWithFreebies;
 
-  if (pigsWithFreebies === 0) return "🚫 No Freebies";
+  if (wholePigCount > 0 && pigsWithFreebies === 0) {
+    summaries.push("🚫 No Whole Lechon Freebies");
+  }
 
-  const quota = 7 * pigsWithFreebies;
-  const baseSummary =
-    pigsWithFreebies === wholePigCount
-      ? `🎁 ${quota} Freebies`
-      : `🎁 ${quota} Freebies (${pigsWithFreebies}p)`;
-  const isStandard = FREEBIE_ITEMS.every((item) => {
-    const expected =
-      item === "Dinuguan" && config.rawInnards ? 0 : pigsWithFreebies;
-    return config.counts[item] === expected;
-  });
+  if (pigsWithFreebies > 0) {
+    const quota = 7 * pigsWithFreebies;
+    const baseSummary = pigsWithFreebies === wholePigCount
+      ? `🎁 ${quota} Whole Lechon Freebies`
+      : `🎁 ${quota} Whole Lechon Freebies (${pigsWithFreebies}p)`;
+    const isStandard = FREEBIE_ITEMS.every((item) => {
+      const expected = item === "Dinuguan" && config.rawInnards ? 0 : pigsWithFreebies;
+      return config.counts[item] === expected;
+    });
 
-  const details: string[] = [];
-  if (isStandard && config.rawInnards) {
-    details.push("🥩 Raw Innards / Walang Dinuguan");
-  } else if (!isStandard) {
-    const modifiedPositive = FREEBIE_ITEMS.filter((item) => {
-      const expected =
-        item === "Dinuguan" && config.rawInnards ? 0 : pigsWithFreebies;
-      const quantity = config.counts[item] ?? 0;
-      return quantity > 0 && quantity !== expected;
-    }).map((item) => `${config.counts[item]} ${item}`);
-    const omitted = FREEBIE_ITEMS.filter(
-      (item) =>
-        (config.counts[item] ?? 0) === 0 &&
-        !(config.rawInnards && item === "Dinuguan"),
-    );
-
-    if (modifiedPositive.length > 0) {
-      details.push(modifiedPositive.join(", "));
+    const details: string[] = [];
+    if (isStandard && config.rawInnards) {
+      details.push("🥩 Raw Innards / Walang Dinuguan");
+    } else if (!isStandard) {
+      const selected = FREEBIE_ITEMS.filter((item) => (config.counts[item] ?? 0) > 0)
+        .map((item) => `${config.counts[item]}x ${item}`);
+      if (selected.length > 0) details.push(selected.join(", "));
+      if (config.rawInnards) details.push("🥩 Raw Innards");
     }
-    if (omitted.length > 0) details.push(`No ${omitted.join(", ")}`);
-    if (config.rawInnards) details.push("🥩 Raw Innards");
-  }
-  if (config.customizationNote) {
-    details.push(`Request: ${config.customizationNote}`);
+    if (config.customizationNote) details.push(`Request: ${config.customizationNote}`);
+
+    let wholeSummary = details.length > 0 ? `${baseSummary}: ${details.join(" | ")}` : baseSummary;
+    if (pigsWithDiscount > 0) {
+      wholeSummary += ` • 🚫 Less ₱${(pigsWithDiscount * noFreebiesDiscountPerPig).toLocaleString()} (${pigsWithDiscount}p)`;
+    }
+    summaries.push(wholeSummary);
   }
 
-  const customizedSummary =
-    details.length > 0 ? `${baseSummary}: ${details.join(" | ")}` : baseSummary;
+  if (bellyItems.length > 0) {
+    const bellySelection = FREEBIE_ITEMS
+      .filter((item) => (config.bellyCounts?.[item] ?? 0) > 0)
+      .map((item) => `${config.bellyCounts?.[item]}x ${item}`);
+    const note = config.bellyCustomizationNote
+      ? ` | Request: ${config.bellyCustomizationNote}`
+      : "";
+    summaries.push(`🎁 Belly Freebies: ${bellySelection.join(", ") || "Custom selection pending"}${note}`);
+  }
 
-  return pigsWithDiscount > 0
-    ? `${customizedSummary} • 🚫 Less ₱${(
-        pigsWithDiscount * noFreebiesDiscountPerPig
-      ).toLocaleString()} (${pigsWithDiscount}p)`
-    : customizedSummary;
+  return summaries.join(" • ") || null;
 };

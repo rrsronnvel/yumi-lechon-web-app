@@ -21,6 +21,7 @@ export interface OrderDirectoryDto {
   itemsCount?: number;
   hasRoastItems?: boolean;
   grandTotal: number;
+  deliveryFee?: number;
   downpayment: number;
   downpaymentMethod: string;
   freebiesSummary?: string | null;
@@ -36,6 +37,9 @@ export interface OrderDirectoryDto {
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   heldByStaffAmount?: number | null;
   heldPaymentMethod?: string | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
   riderName?: string | null;
   isRemittedToOwner?: boolean;
   isOwnerConfirmed: boolean;
@@ -119,6 +123,9 @@ export interface OrderDetailsDto {
   settlementCustodyStatus?: string; // "Uncollected", "InStaffDrawer", "Settled"
   heldByStaffAmount?: number | null;
   heldPaymentMethod?: string | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
   isOwnerConfirmed: boolean;
   ownerConfirmedAt?: string | null;
   ownerConfirmedBy?: string | null;
@@ -135,6 +142,7 @@ export interface PaymentLogDto {
   gatewayReferenceId: string;
   referenceNumber: string;
   createdAt: string;
+  recordedBy?: string | null;
   isVoided: boolean;
   voidedAt?: string | null;
   voidedBy?: string | null;
@@ -225,7 +233,7 @@ export const useRecordManualPaymentMutation = () => {
 
   return useMutation({
     mutationFn: async (payload: RecordManualPaymentPayload) => {
-      const response = await apiClient.post('/internal/payments/manual', {
+      const response = await apiClient.post(`/orders/${payload.orderId}/payments`, {
         orderId: payload.orderId,
         amount: payload.amount,
         paymentMethod: payload.paymentMethod,
@@ -236,9 +244,12 @@ export const useRecordManualPaymentMutation = () => {
       return response.data;
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['orders', 'directory'] });
-      await queryClient.invalidateQueries({ queryKey: ['orders', 'details'] });
-      await queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['manifest'] }),
+        queryClient.invalidateQueries({ queryKey: ['drawer'] }),
+      ]);
     },
   });
 };

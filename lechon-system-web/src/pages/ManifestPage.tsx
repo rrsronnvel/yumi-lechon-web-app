@@ -56,7 +56,14 @@ export default function ManifestPage() {
   const { data: lalamoveDrops = [] } = usePendingLalamoveQuery();
   const revertCustodyMutation = useRevertCustodyMutation();
 
-  const { inDrawerTotal, inDrawerCount, uncollectedTotal, uncollectedCount } =
+  const {
+    inDrawerTotal,
+    inDrawerCount,
+    uncollectedTotal,
+    uncollectedCount,
+    pendingDigitalTotal,
+    pendingDigitalCount,
+  } =
     useMemo(() => {
       return computeCustodyMetrics(drops, pickupDrops);
     }, [drops, pickupDrops]);
@@ -67,16 +74,18 @@ export default function ManifestPage() {
     const riderInDrawer = drops
       .filter((d) => (d.settlementCustodyStatus || d.custodyStatus) === "InStaffDrawer")
       .map((d) => ({
-        amount: Number(d.netRemittance || 0),
+        amount: Number(d.heldByStaffAmount ?? 0),
         custodian: d.heldByStaffName?.trim() || "Staff",
-      }));
+      }))
+      .filter((item) => item.amount > 0);
 
     const pickupInDrawer = pickupDrops
       .filter((p) => (p.settlementCustodyStatus || p.custodyStatus) === "InStaffDrawer")
       .map((p) => ({
-        amount: Number(p.heldByStaffAmount ?? p.balanceDue ?? 0),
+        amount: Number(p.heldByStaffAmount ?? 0),
         custodian: p.heldByStaffName?.trim() || "Staff",
-      }));
+      }))
+      .filter((item) => item.amount > 0);
 
     return [...riderInDrawer, ...pickupInDrawer];
   }, [drops, pickupDrops]);
@@ -151,11 +160,19 @@ export default function ManifestPage() {
     heldByStaffName?: string | null;
     heldPaymentMethod?: string | null;
     riderSignedBy?: string | null;
+    totalCollected: number;
+    deliveryFee: number;
+    heldByStaffAmount?: number | null;
+    digitalTransferMethod?: string | null;
+    digitalTransferAmount?: number | null;
+    digitalReferenceNote?: string | null;
   }>({
     open: false,
     orderId: 0,
     customerName: "",
     expectedAmount: 0,
+    totalCollected: 0,
+    deliveryFee: 0,
     hopStage: "RiderToStaff",
   });
 
@@ -165,11 +182,17 @@ export default function ManifestPage() {
       orderId: drop.orderId || drop.id,
       customerName: drop.customerName,
       expectedAmount: drop.netRemittance,
+      totalCollected: drop.totalCollected,
+      deliveryFee: drop.riderDeliveryFee,
       riderName: drop.riderName,
       hopStage: "RiderToStaff",
       heldByStaffName: drop.heldByStaffName,
       heldPaymentMethod: drop.heldPaymentMethod,
       riderSignedBy: drop.riderSignedBy,
+      heldByStaffAmount: drop.heldByStaffAmount,
+      digitalTransferMethod: drop.digitalTransferMethod,
+      digitalTransferAmount: drop.digitalTransferAmount,
+      digitalReferenceNote: drop.digitalReferenceNote,
     });
   };
 
@@ -178,12 +201,21 @@ export default function ManifestPage() {
       open: true,
       orderId: drop.orderId || drop.id,
       customerName: drop.customerName,
-      expectedAmount: drop.netRemittance,
+      expectedAmount:
+        Number(drop.heldByStaffAmount ?? 0) > 0
+          ? Number(drop.heldByStaffAmount)
+          : Number(drop.digitalTransferAmount ?? drop.netRemittance),
+      totalCollected: drop.totalCollected,
+      deliveryFee: drop.riderDeliveryFee,
       riderName: drop.riderName,
       hopStage: "StaffToOwner",
       heldByStaffName: drop.heldByStaffName,
       heldPaymentMethod: drop.heldPaymentMethod,
       riderSignedBy: drop.riderSignedBy,
+      heldByStaffAmount: drop.heldByStaffAmount,
+      digitalTransferMethod: drop.digitalTransferMethod,
+      digitalTransferAmount: drop.digitalTransferAmount,
+      digitalReferenceNote: drop.digitalReferenceNote,
     });
   };
 
@@ -207,7 +239,7 @@ export default function ManifestPage() {
       </div>
 
       {/* REFINED EXECUTIVE FINANCIAL SCOREBOARD */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Card 1: In Staff Drawer */}
         <div className="bg-gradient-to-br from-[#1C1917] via-[#24201D] to-[#1C1917] border border-amber-500/40 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute -top-12 -right-12 w-44 h-44 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -218,7 +250,7 @@ export default function ManifestPage() {
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
               </span>
               <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                In Staff Drawer
+                Physical Cash in Drawer
               </span>
             </div>
             <span className="text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-mono font-semibold">
@@ -229,7 +261,7 @@ export default function ManifestPage() {
             ₱{inDrawerTotal.toLocaleString()}
           </div>
           <p className="text-xs text-stone-400 relative z-10">
-            Hop 2 • Cash held in store drawer awaiting Business Owner turnover
+            Hop 2 • Physical cash only; digital deposits are excluded
           </p>
           {custodianBreakdown.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-amber-500/20 relative z-10">
@@ -264,7 +296,25 @@ export default function ManifestPage() {
           )}
         </div>
 
-        {/* Card 2: Uncollected */}
+        {/* Card 2: Pending Owner Digital Check */}
+        <div className="bg-gradient-to-br from-sky-950 via-sky-900 to-sky-950 border border-sky-500/40 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between relative z-10">
+            <span className="text-xs font-bold uppercase tracking-wider text-sky-200">
+              Pending Owner Digital Check
+            </span>
+            <span className="text-xs text-sky-100 bg-sky-500/10 border border-sky-400/30 px-2.5 py-0.5 rounded-full font-mono font-semibold">
+              {pendingDigitalCount} {pendingDigitalCount === 1 ? "item" : "items"}
+            </span>
+          </div>
+          <div className="text-3xl sm:text-4xl font-black text-sky-300 font-mono tracking-tight my-1.5 relative z-10">
+            ₱{pendingDigitalTotal.toLocaleString()}
+          </div>
+          <p className="text-xs text-sky-100/70 relative z-10">
+            Bank, Direct GCash, GCash, and Maya awaiting Owner account verification
+          </p>
+        </div>
+
+        {/* Card 3: Uncollected */}
         <div className="bg-gradient-to-br from-[#1C1917] via-[#22201E] to-[#1C1917] border border-stone-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute -top-12 -right-12 w-44 h-44 bg-stone-500/10 rounded-full blur-3xl pointer-events-none" />
           <div className="flex items-center justify-between relative z-10">
@@ -377,7 +427,7 @@ export default function ManifestPage() {
                     )}
                   </div>
                   <p className="text-xs text-stone-500">
-                    Two-Hop Custody Chain: Hop 1 transfers cash to Staff Drawer (Rider QR) • Hop 2 remits drawer cash to Owner.
+                    Two-Hop verification: physical cash enters the Staff Drawer; direct digital payments await Owner account confirmation.
                   </p>
                 </div>
               </div>
@@ -437,6 +487,9 @@ export default function ManifestPage() {
                     ) : (
                       filteredDrops.map((drop: PendingSettlementDrop) => {
                         const isInDrawer = drop.custodyStatus === "InStaffDrawer";
+                        const isAwaitingDigital =
+                          drop.custodyStatus === "AwaitingOwnerDigitalVerification";
+                        const isAwaitingOwner = isInDrawer || isAwaitingDigital;
                         const isUnassignedRider =
                           !drop.riderName?.trim() ||
                           drop.riderName.trim().toLowerCase() === "unassigned";
@@ -461,6 +514,15 @@ export default function ManifestPage() {
                                 <Badge className="bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-50 font-bold px-2 py-0.5 rounded text-xs shadow-2xs">
                                   ⚠️ No Rider
                                 </Badge>
+                              ) : isAwaitingDigital ? (
+                                <div className="flex flex-col items-start gap-1">
+                                  <span className="text-xs font-bold text-sky-900 bg-sky-100 border border-sky-300 px-2 py-0.5 rounded-full">
+                                    🏦 Awaiting Bank Check
+                                  </span>
+                                  <span className="text-[11px] text-sky-800 max-w-[160px] break-words">
+                                    {drop.digitalReferenceNote || "Reference note pending"}
+                                  </span>
+                                </div>
                               ) : (
                                 <span className="font-semibold text-stone-900 block truncate" title={drop.riderName}>
                                   {drop.riderName}
@@ -556,7 +618,7 @@ export default function ManifestPage() {
                             {/* REFINED, COHESIVE ACTIONS COLUMN (UNIFORM ALIGNED WIDTH) */}
                             <td className="px-3.5 py-2.5 text-right whitespace-nowrap text-xs">
                               <div className="w-[152px] flex items-center justify-end gap-1.5 ml-auto">
-                                {isInDrawer ? (
+                                {isAwaitingOwner ? (
                                   <>
                                     <Button
                                       size="sm"
@@ -647,11 +709,17 @@ export default function ManifestPage() {
           orderId={qrModalData.orderId}
           customerName={qrModalData.customerName}
           expectedAmount={qrModalData.expectedAmount}
+          totalCollected={qrModalData.totalCollected}
+          deliveryFee={qrModalData.deliveryFee}
           riderName={qrModalData.riderName}
           hopStage={qrModalData.hopStage}
           heldByStaffName={qrModalData.heldByStaffName}
           heldPaymentMethod={qrModalData.heldPaymentMethod}
           riderSignedBy={qrModalData.riderSignedBy}
+          heldByStaffAmount={qrModalData.heldByStaffAmount}
+          digitalTransferMethod={qrModalData.digitalTransferMethod}
+          digitalTransferAmount={qrModalData.digitalTransferAmount}
+          digitalReferenceNote={qrModalData.digitalReferenceNote}
           onSuccess={() => {
             setQrModalData((prev) => ({ ...prev, open: false }));
           }}

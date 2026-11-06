@@ -9,6 +9,13 @@ import {
   ItemCategory,
 } from "@/hooks/useCms";
 import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
+import {
+  Rider,
+  useCreateRiderMutation,
+  useDeleteRiderMutation,
+  useRidersQuery,
+} from "@/hooks/useRiders";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -58,13 +65,14 @@ import {
   Tag,
   Calculator,
   Save,
+  Trash2,
 } from "lucide-react";
 
 type FilterStatus = "all" | "active" | "hidden";
 
 export default function CmsPage() {
   const { isOwner, user: currentUser } = useAuth();
-  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "staff">("catalog");
+  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "riders" | "staff">("catalog");
   const { data: users = [], isLoading: isLoadingUsers } = useUsersQuery();
   const toggleUserStatusMutation = useToggleUserStatusMutation();
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
@@ -74,6 +82,29 @@ export default function CmsPage() {
     user: UserListItemDto;
     targetActive: boolean;
   } | null>(null);
+  const { data: riders = [], isLoading: isLoadingRiders } = useRidersQuery();
+  const createRiderMutation = useCreateRiderMutation();
+  const deleteRiderMutation = useDeleteRiderMutation();
+  const [newRiderName, setNewRiderName] = useState("");
+  const [newRiderPhone, setNewRiderPhone] = useState("");
+  const [riderToDelete, setRiderToDelete] = useState<Rider | null>(null);
+
+  const handleAddRider = async () => {
+    const fullName = newRiderName.trim();
+    const phoneNumber = newRiderPhone.trim();
+    if (!fullName || !phoneNumber) {
+      toast.error("Rider name and phone number are required.");
+      return;
+    }
+    try {
+      await createRiderMutation.mutateAsync({ fullName, phoneNumber });
+      setNewRiderName("");
+      setNewRiderPhone("");
+      toast.success(`${fullName} added to the rider registry.`);
+    } catch {
+      toast.error("Could not add rider. Check for a duplicate and try again.");
+    }
+  };
 
   const { data: categories = [], isLoading } = useMenuCategories();
   const { data: deliveryPricing } = useDeliveryPricing();
@@ -275,7 +306,7 @@ export default function CmsPage() {
       </div>
 
       {/* Top Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-2">
         <button
           type="button"
           onClick={() => setActiveMainTab("catalog")}
@@ -288,6 +319,24 @@ export default function CmsPage() {
           <UtensilsCrossed className="w-4 h-4" />
           <span>Menu Catalog &amp; Delivery Pricing</span>
         </button>
+
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => setActiveMainTab("riders")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+              activeMainTab === "riders"
+                ? "bg-[#181312] text-amber-400 shadow-sm"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>🛵 Delivery Riders</span>
+            <span className="ml-1 rounded-full border border-amber-400/30 bg-amber-500/20 px-2 py-0.5 font-mono text-xs text-amber-600">
+              {riders.length}
+            </span>
+          </button>
+        )}
 
         <button
           type="button"
@@ -828,6 +877,69 @@ export default function CmsPage() {
         </>
       )}
 
+      {activeMainTab === "riders" && isOwner && (
+        <Card className="overflow-hidden rounded-xl border-stone-200/90 bg-white shadow-sm">
+          <CardHeader className="border-b border-stone-100 pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg font-bold text-stone-900">
+              <Truck className="h-5 w-5 text-amber-700" /> 🛵 Delivery Riders
+            </CardTitle>
+            <CardDescription>
+              Maintain the active rider dropdown. Historical trips keep their saved rider name after registry deletion.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5 p-5">
+            <div className="grid gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-4 sm:grid-cols-[1fr_1fr_auto]">
+              <Input
+                value={newRiderName}
+                onChange={(event) => setNewRiderName(event.target.value)}
+                placeholder="Rider name"
+                className="bg-white"
+              />
+              <Input
+                value={newRiderPhone}
+                onChange={(event) => setNewRiderPhone(event.target.value)}
+                placeholder="Phone number"
+                className="bg-white"
+              />
+              <Button
+                type="button"
+                onClick={handleAddRider}
+                disabled={createRiderMutation.isPending}
+                className="bg-[#C81E1E] text-white hover:bg-[#A81818]"
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Add Rider
+              </Button>
+            </div>
+
+            {isLoadingRiders ? (
+              <p className="py-8 text-center text-sm text-stone-500">Loading riders...</p>
+            ) : riders.length === 0 ? (
+              <p className="py-8 text-center text-sm text-stone-500">No registered riders.</p>
+            ) : (
+              <div className="divide-y divide-stone-100 rounded-xl border border-stone-200">
+                {riders.map((rider) => (
+                  <div key={rider.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-bold text-stone-900">{rider.fullName}</p>
+                      <p className="font-mono text-xs text-stone-500">{rider.phoneNumber}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                      onClick={() => setRiderToDelete(rider)}
+                    >
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Staff & Terminal Accounts Tab */}
       {activeMainTab === "staff" && (
         <Card className="bg-white shadow-sm border-stone-200/90 rounded-xl overflow-hidden">
@@ -1091,6 +1203,40 @@ export default function CmsPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog open={Boolean(riderToDelete)} onOpenChange={(open) => !open && setRiderToDelete(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Rider?</DialogTitle>
+            <DialogDescription>
+              Remove {riderToDelete?.fullName} from future rider dropdowns? Historical delivery trips and their saved rider names will remain unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRiderToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!riderToDelete || deleteRiderMutation.isPending}
+              className="bg-rose-700 text-white hover:bg-rose-800"
+              onClick={async () => {
+                if (!riderToDelete) return;
+                const name = riderToDelete.fullName;
+                try {
+                  await deleteRiderMutation.mutateAsync(riderToDelete.id);
+                  setRiderToDelete(null);
+                  toast.success(`${name} removed from the rider registry.`);
+                } catch {
+                  toast.error("Could not delete rider.");
+                }
+              }}
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" /> Confirm Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Staff Account Management Modals */}
       <CreateUserModal

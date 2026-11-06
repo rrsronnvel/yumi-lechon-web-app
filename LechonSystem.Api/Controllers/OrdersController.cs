@@ -5,6 +5,7 @@ using LechonSystem.Api.DTOs;
 using LechonSystem.Api.Common;
 using LechonSystem.Api.Services;
 using LechonSystem.Api.Models.DTOs;
+using LechonSystem.Api.Models;
 
 namespace LechonSystem.Api.Controllers
 {
@@ -15,15 +16,18 @@ namespace LechonSystem.Api.Controllers
     {
         private readonly IOrderService _orderService;
         private readonly IAiIntakeParserService _aiParserService;
+        private readonly PaymentService _paymentService;
         private readonly ILogger<OrdersController> _logger;
 
         public OrdersController(
             IOrderService orderService,
             IAiIntakeParserService aiParserService,
+            PaymentService paymentService,
             ILogger<OrdersController> logger)
         {
             _orderService = orderService;
             _aiParserService = aiParserService;
+            _paymentService = paymentService;
             _logger = logger;
         }
 
@@ -65,6 +69,42 @@ namespace LechonSystem.Api.Controllers
                 return NotFound($"No pending reservation found for Order ID {id}.");
 
             return Ok(new { Message = "Payment confirmed and inventory locked successfully." });
+        }
+
+        [HttpPost("{id:int}/payments")]
+        public async Task<IActionResult> RecordPayment(int id, [FromBody] ManualPaymentDto request)
+        {
+            try
+            {
+                if (request.Splits is { Count: > 0 })
+                {
+                    await _paymentService.ProcessSplitPaymentAsync(id, request.Splits);
+                }
+                else
+                {
+                    var reference = !string.IsNullOrWhiteSpace(request.ReferenceNumber)
+                        ? request.ReferenceNumber.Trim()
+                        : !string.IsNullOrWhiteSpace(request.ReferenceId)
+                            ? request.ReferenceId.Trim()
+                            : $"MANUAL_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+                    var method = !string.IsNullOrWhiteSpace(request.PaymentMethod)
+                        ? PaymentChannels.Normalize(request.PaymentMethod)
+                        : PaymentChannels.FromProvider(request.Provider ?? PaymentProvider.Cash);
+                    await _paymentService.ProcessPaymentAsync(
+                        id,
+                        request.Amount,
+                        reference,
+                        PaymentChannels.ToProvider(method),
+                        method);
+                }
+
+                var details = await _orderService.GetOrderDetailsAsync(id);
+                return Ok(details);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpPatch("{id}/confirm-delivery")]

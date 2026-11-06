@@ -73,7 +73,8 @@ namespace LechonSystem.Api.Services
                 Provider = provider,
                 PaymentMethod = normalizedPaymentMethod,
                 Amount = amount,
-                Status = PaymentStatus.Success
+                Status = PaymentStatus.Success,
+                RecordedBy = CurrentUser
             };
 
             _context.PaymentLogs.Add(paymentLog);
@@ -85,13 +86,20 @@ namespace LechonSystem.Api.Services
                 order.DownpaymentMethod = normalizedPaymentMethod;
             }
 
+            var remainingBalance = Math.Max(0m, order.GrandTotal - order.Downpayment);
+            if (string.Equals(order.SettlementCustodyStatus, "Uncollected", StringComparison.OrdinalIgnoreCase))
+            {
+                order.SettlementCustodyStatus = remainingBalance == 0m ? "Settled" : "Uncollected";
+            }
+            order.UpdatedAt = DateTime.UtcNow;
+
             // 🚀 THE BLACK BOX: Record the financial event in the Order Audit Trail
             var auditLog = new OrderAuditLog
             {
                 OrderId = orderId,
-                ActionType = "Payment Logged",
+                ActionType = "Payment Recorded",
                 // We use {amount:N2} so it formats the number beautifully (e.g., 3,000.00)
-                Changes = $"Logged payment of ₱{amount:N2} via {normalizedPaymentMethod}",
+                Changes = $"[Payment Recorded] ₱{amount:N2} via {normalizedPaymentMethod} logged by {CurrentUser}. Total Paid: ₱{order.Downpayment:N2}, Remaining Balance: ₱{remainingBalance:N2}.",
                 ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             };
@@ -147,17 +155,24 @@ namespace LechonSystem.Api.Services
                     Provider = PaymentChannels.ToProvider(split.Method),
                     PaymentMethod = split.Method,
                     Amount = split.Amount,
-                    Status = PaymentStatus.Success
+                    Status = PaymentStatus.Success,
+                    RecordedBy = CurrentUser
                 });
             }
 
             order.Downpayment += normalized.Sum(split => split.Amount);
             order.DownpaymentMethod = normalized[^1].Method;
+            var remainingBalance = Math.Max(0m, order.GrandTotal - order.Downpayment);
+            if (string.Equals(order.SettlementCustodyStatus, "Uncollected", StringComparison.OrdinalIgnoreCase))
+            {
+                order.SettlementCustodyStatus = remainingBalance == 0m ? "Settled" : "Uncollected";
+            }
+            order.UpdatedAt = DateTime.UtcNow;
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = orderId,
-                ActionType = "Split Payment Logged",
-                Changes = $"Split payment recorded: ₱{normalized[0].Amount:N2} via {normalized[0].Method} + ₱{normalized[1].Amount:N2} via {normalized[1].Method}.",
+                ActionType = "Payment Recorded",
+                Changes = $"[Payment Recorded] ₱{normalized.Sum(split => split.Amount):N2} split via {normalized[0].Method} and {normalized[1].Method} logged by {CurrentUser}. Total Paid: ₱{order.Downpayment:N2}, Remaining Balance: ₱{remainingBalance:N2}.",
                 ChangedBy = CurrentUser,
                 Timestamp = DateTime.UtcNow
             });

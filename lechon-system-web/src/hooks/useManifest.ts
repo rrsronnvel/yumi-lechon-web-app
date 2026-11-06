@@ -20,6 +20,9 @@ export interface PendingSettlementDrop {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   heldByStaffAmount?: number | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
   createdAt?: string;
   targetDeliveryTime?: string;
   riderDepartureTime?: string | null;
@@ -61,6 +64,9 @@ export interface PendingPickupSettlement {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   heldByStaffAmount?: number | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
 }
 
 export interface PendingLalamoveSettlement {
@@ -498,6 +504,8 @@ export interface CustodyOverviewMetrics {
   inDrawerCount: number;
   uncollectedTotal: number;
   uncollectedCount: number;
+  pendingDigitalTotal: number;
+  pendingDigitalCount: number;
 }
 
 export function computeCustodyMetrics(
@@ -508,30 +516,54 @@ export function computeCustodyMetrics(
   let inDrawerCount = 0;
   let uncollectedTotal = 0;
   let uncollectedCount = 0;
+  let pendingDigitalTotal = 0;
+  let pendingDigitalCount = 0;
 
   for (const r of riderDrops) {
     const status = r.settlementCustodyStatus || r.custodyStatus || "Uncollected";
     const amount = Number(r.netRemittance || 0);
+    const physicalAmount = Number(r.heldByStaffAmount ?? 0);
+    const digitalAmount = Number(r.digitalTransferAmount ?? 0);
 
     if (status === "InStaffDrawer") {
-      inDrawerTotal += amount;
-      inDrawerCount += 1;
+      if (physicalAmount > 0) {
+        inDrawerTotal += physicalAmount;
+        inDrawerCount += 1;
+      }
     } else if (status === "Uncollected" && amount > 0) {
       uncollectedTotal += amount;
       uncollectedCount += 1;
+    }
+    if (
+      (status === "InStaffDrawer" || status === "AwaitingOwnerDigitalVerification") &&
+      digitalAmount > 0
+    ) {
+      pendingDigitalTotal += digitalAmount;
+      pendingDigitalCount += 1;
     }
   }
 
   for (const p of pickupDrops) {
     const status = p.settlementCustodyStatus || p.custodyStatus || "Uncollected";
     const amount = Number(p.heldByStaffAmount ?? p.balanceDue ?? 0);
+    const physicalAmount = Number(p.heldByStaffAmount ?? 0);
+    const digitalAmount = Number(p.digitalTransferAmount ?? 0);
 
     if (status === "InStaffDrawer") {
-      inDrawerTotal += amount;
-      inDrawerCount += 1;
+      if (physicalAmount > 0) {
+        inDrawerTotal += physicalAmount;
+        inDrawerCount += 1;
+      }
     } else if (status === "Uncollected" && amount > 0) {
       uncollectedTotal += amount;
       uncollectedCount += 1;
+    }
+    if (
+      (status === "InStaffDrawer" || status === "AwaitingOwnerDigitalVerification") &&
+      digitalAmount > 0
+    ) {
+      pendingDigitalTotal += digitalAmount;
+      pendingDigitalCount += 1;
     }
   }
 
@@ -540,6 +572,8 @@ export function computeCustodyMetrics(
     inDrawerCount,
     uncollectedTotal,
     uncollectedCount,
+    pendingDigitalTotal,
+    pendingDigitalCount,
   };
 }
 

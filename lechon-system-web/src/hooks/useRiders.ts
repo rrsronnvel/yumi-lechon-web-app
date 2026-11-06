@@ -30,3 +30,15 @@ export const useCreateRiderMutation = () => {
     },
   });
 };
+
+export const useDeleteRiderMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await apiClient.delete(`/riders/${id}`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["riders"] });
+    },
+  });
+};

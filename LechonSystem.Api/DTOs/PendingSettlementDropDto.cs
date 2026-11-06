@@ -20,4 +20,7 @@ public class PendingSettlementDropDto
     public string? HeldByStaffName { get; set; }
     public string? HeldPaymentMethod { get; set; }
     public decimal? HeldByStaffAmount { get; set; }
+    public string? DigitalTransferMethod { get; set; }
+    public decimal? DigitalTransferAmount { get; set; }
+    public string? DigitalReferenceNote { get; set; }
 }

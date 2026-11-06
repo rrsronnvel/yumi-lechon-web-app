@@ -38,6 +38,7 @@ import {
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
   getPigsWithFreebies,
+  normalizeFreebiesConfig,
   parseFreebiesConfig,
   updatePigsWithFreebies,
 } from '../../utils/freebiesHelper';
@@ -644,6 +645,17 @@ export default function EditOrderModal({
     [cartItems]
   );
 
+  const bellyItems = useMemo(() => {
+    const grouped = new Map<number, number>();
+    cartItems.forEach((item) => {
+      if (!/belly/i.test(item.name || '')) return;
+      const kg = Number((item.name || '').match(/([2-5])\s*kg/i)?.[1]) || Number(item.minimumWeightKg);
+      if (kg < 2 || kg > 5) return;
+      grouped.set(kg, (grouped.get(kg) || 0) + item.quantity);
+    });
+    return Array.from(grouped, ([kg, quantity]) => ({ kg, quantity }));
+  }, [cartItems]);
+
   useEffect(() => {
     if (pendingHydratedWholePigCount.current !== null) {
       if (wholeLechonCount === pendingHydratedWholePigCount.current) {
@@ -875,11 +887,12 @@ export default function EditOrderModal({
           : formatFreebiesSummary(
               freebiesConfig,
               wholeLechonCount,
-              noFreebiesDiscountPerPig
+              noFreebiesDiscountPerPig,
+              bellyItems
             ),
-        freebiesConfigJson: isNonLechonMode || wholeLechonCount === 0
+        freebiesConfigJson: isNonLechonMode || (wholeLechonCount === 0 && bellyItems.length === 0)
           ? undefined
-          : JSON.stringify(freebiesConfig),
+          : JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholeLechonCount, bellyItems)),
         discount: effectiveDiscount,
         grandTotal,
         assignedRiderName: assignedRiderName.trim(),
@@ -1724,6 +1737,7 @@ export default function EditOrderModal({
             )}
             {!isNonLechonMode && <FreebiesSelector
               wholePigCount={wholeLechonCount}
+              bellyItems={bellyItems}
               noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
               config={freebiesConfig}
               onChange={handleFreebiesChange}

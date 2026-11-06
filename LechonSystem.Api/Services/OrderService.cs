@@ -41,10 +41,15 @@ namespace LechonSystem.Api.Services
             }
 
             var expectedOutstandingStoreRemittance = Math.Max(0, storeNetTotal - paidAmount);
+            var isAwaitingOwnerVerification =
+                string.Equals(order.SettlementCustodyStatus, "InStaffDrawer", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(order.SettlementCustodyStatus, "AwaitingOwnerDigitalVerification", StringComparison.OrdinalIgnoreCase);
             var staffHasFullNetRemittance =
-                string.Equals(order.SettlementCustodyStatus, "InStaffDrawer", StringComparison.OrdinalIgnoreCase) &&
+                isAwaitingOwnerVerification &&
                 (paidAmount >= storeNetTotal ||
-                 (order.RiderRemittedAmount ?? 0) >= expectedOutstandingStoreRemittance);
+                 (order.RiderRemittedAmount ?? 0) >= expectedOutstandingStoreRemittance ||
+                 (Math.Max(0, order.HeldByStaffAmount ?? 0) +
+                  Math.Max(0, order.DigitalTransferAmount ?? 0)) >= expectedOutstandingStoreRemittance);
 
             return staffHasFullNetRemittance ? 0 : rawBalance;
         }
@@ -74,6 +79,45 @@ namespace LechonSystem.Api.Services
             _httpContextAccessor = httpContextAccessor;
         }
 
+        private static DateTime AsStoreLocal(DateTime value) =>
+            DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+
+        private static DateTime ResolveDepartureTime(
+            DateTime targetDeliveryTime,
+            DateTime? requestedDepartureTime,
+            FulfillmentType fulfillment)
+        {
+            var target = AsStoreLocal(targetDeliveryTime);
+            if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
+            {
+                return target;
+            }
+
+            if (!requestedDepartureTime.HasValue ||
+                requestedDepartureTime.Value.TimeOfDay > target.TimeOfDay)
+            {
+                return target.AddHours(-1);
+            }
+
+            return AsStoreLocal(target.Date.Add(requestedDepartureTime.Value.TimeOfDay));
+        }
+
+        private static DateTime AnchorScheduleClock(
+            DateTime value,
+            DateTime targetDeliveryTime,
+            DateTime? departureTime)
+        {
+            var anchored = AsStoreLocal(targetDeliveryTime.Date.Add(value.TimeOfDay));
+            if (departureTime.HasValue &&
+                departureTime.Value.Hour >= 1 && departureTime.Value.Hour <= 5 &&
+                anchored > departureTime.Value)
+            {
+                anchored = anchored.AddDays(-1);
+            }
+
+            return anchored;
+        }
+
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
         {
             var isDraft = request.IsDraft || !request.TargetDeliveryTime.HasValue;
@@ -81,7 +125,7 @@ namespace LechonSystem.Api.Services
                 ? request.TargetDeliveryTime.Value.Date.AddHours(12)
                 : request.TargetDeliveryTime;
 
-            if (effectiveTargetDeliveryTime.HasValue && effectiveTargetDeliveryTime.Value.Year < 2025)
+            if (!isDraft && effectiveTargetDeliveryTime.HasValue && effectiveTargetDeliveryTime.Value.Year < 2025)
             {
                 effectiveTargetDeliveryTime = PhilippineTime.NormalizeYear(effectiveTargetDeliveryTime.Value);
             }
@@ -102,9 +146,11 @@ namespace LechonSystem.Api.Services
             DateTime? effectiveDepartureTime = null;
             if (!request.IsTimeTbd && effectiveTargetDeliveryTime.HasValue)
             {
-                effectiveDepartureTime = (request.Fulfillment == FulfillmentType.Pickup || request.Fulfillment == FulfillmentType.Lalamove)
-                    ? effectiveTargetDeliveryTime
-                    : (request.RiderDepartureTime ?? effectiveTargetDeliveryTime);
+                effectiveTargetDeliveryTime = AsStoreLocal(effectiveTargetDeliveryTime.Value);
+                effectiveDepartureTime = ResolveDepartureTime(
+                    effectiveTargetDeliveryTime.Value,
+                    request.RiderDepartureTime,
+                    request.Fulfillment);
             }
             else if (!request.IsTimeTbd)
             {
@@ -408,7 +454,7 @@ namespace LechonSystem.Api.Services
         {
             // Safe Data Self-Heal: Auto-heal any active orders accidentally saved with Year < 2025 (e.g. 2016 typo)
             var corruptedOrders = await _context.Orders
-                .Where(o => !o.IsCancelled && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Year < 2025)
+                .Where(o => !o.IsDraft && !o.IsCancelled && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Year < 2025)
                 .ToListAsync();
 
             if (corruptedOrders.Any())
@@ -444,7 +490,7 @@ namespace LechonSystem.Api.Services
             switch (tab)
             {
                 case "drafts":
-                    query = query.Where(o => !o.IsCancelled && (o.TargetDeliveryTime == null || (o.IsDraft && !o.IsTimeTbd)));
+                    query = query.Where(o => !o.IsCancelled && o.IsDraft);
                     query = query.OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt);
                     break;
 
@@ -479,14 +525,18 @@ namespace LechonSystem.Api.Services
 
                 case "all":
                 case "all-time":
-                    query = query.Where(o => !o.IsDraft);
+                    query = query.Where(o => !o.IsCancelled);
                     query = query.OrderByDescending(o => o.TargetDeliveryTime);
                     break;
 
                 case "upcoming":
                 default:
                     var upcomingToday = PhilippineTime.Today;
-                    query = query.Where(o => !o.IsCancelled && o.TargetDeliveryTime != null && o.TargetDeliveryTime >= upcomingToday && (!o.IsDraft || o.IsTimeTbd));
+                    query = query.Where(o =>
+                        !o.IsCancelled &&
+                        o.TargetDeliveryTime.HasValue &&
+                        o.TargetDeliveryTime.Value.Year >= 2025 &&
+                        o.TargetDeliveryTime.Value >= upcomingToday);
                     query = query.OrderBy(o => o.TargetDeliveryTime);
                     break;
             }
@@ -507,7 +557,7 @@ namespace LechonSystem.Api.Services
                 {
                     Id = o.Id,
                     OrderReference = o.OrderReference,
-                    IsDraft = o.IsDraft && (o.TargetDeliveryTime == null || !o.IsTimeTbd),
+                    IsDraft = o.IsDraft,
                     IsTimeTbd = o.IsTimeTbd,
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
@@ -644,7 +694,7 @@ namespace LechonSystem.Api.Services
                 ? request.TargetDeliveryTime.Value.Date.AddHours(12)
                 : request.TargetDeliveryTime;
 
-            if (effectiveTargetDeliveryTime.HasValue && effectiveTargetDeliveryTime.Value.Year < 2025)
+            if (!requestedDraft && effectiveTargetDeliveryTime.HasValue && effectiveTargetDeliveryTime.Value.Year < 2025)
             {
                 effectiveTargetDeliveryTime = PhilippineTime.NormalizeYear(effectiveTargetDeliveryTime.Value);
             }
@@ -697,9 +747,10 @@ namespace LechonSystem.Api.Services
             var effectiveRiderDepartureTime = request.IsTimeTbd || isNonLechonOrder
                 ? null
                 : effectiveTargetDeliveryTime.HasValue
-                ? (isPickupOrLalamove
-                    ? effectiveTargetDeliveryTime
-                    : (request.RiderDepartureTime ?? order.RiderDepartureTime ?? effectiveTargetDeliveryTime))
+                ? ResolveDepartureTime(
+                    effectiveTargetDeliveryTime.Value,
+                    request.RiderDepartureTime ?? order.RiderDepartureTime,
+                    request.Fulfillment)
                 : (request.RiderDepartureTime ?? order.RiderDepartureTime);
 
             if (targetDeliveryTimeChanged &&
@@ -720,11 +771,15 @@ namespace LechonSystem.Api.Services
                 }
             }
 
-            if (effectiveTargetDeliveryTime.HasValue &&
-                effectiveRiderDepartureTime.HasValue &&
-                effectiveRiderDepartureTime.Value > effectiveTargetDeliveryTime.Value)
+            if (effectiveTargetDeliveryTime.HasValue)
             {
-                effectiveRiderDepartureTime = effectiveTargetDeliveryTime;
+                effectiveTargetDeliveryTime = AsStoreLocal(effectiveTargetDeliveryTime.Value);
+                effectiveRiderDepartureTime = request.IsTimeTbd || isNonLechonOrder
+                    ? null
+                    : ResolveDepartureTime(
+                        effectiveTargetDeliveryTime.Value,
+                        effectiveRiderDepartureTime,
+                        request.Fulfillment);
             }
 
             // --- Tracking ALL Master Order Fields ---
@@ -1153,7 +1208,21 @@ namespace LechonSystem.Api.Services
                         continue;
                     }
 
-                    // When order delivery/departure time changes, clear manual override so Tahi & Salang dynamically shift!
+                    // A master-order time edit must not silently erase production times that
+                    // the kitchen explicitly overrode. Re-anchor those clock values to the
+                    // order's target date while preserving genuine previous-day early jobs.
+                    if (oldSchedule?.IsManualOverride == true)
+                    {
+                        var target = AsStoreLocal(order.TargetDeliveryTime.Value);
+                        var departure = order.RiderDepartureTime ?? target;
+                        oldSchedule.TargetDeliveryTime = target;
+                        oldSchedule.TahiStartTime = AnchorScheduleClock(oldSchedule.TahiStartTime, target, departure);
+                        oldSchedule.SalangStartTime = AnchorScheduleClock(oldSchedule.SalangStartTime, target, departure);
+                        oldSchedule.PackagingStartTime = AnchorScheduleClock(oldSchedule.PackagingStartTime, target, departure);
+                        oldSchedule.CustomWeightDisplay = customWeightDisplay;
+                        continue;
+                    }
+
                     if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
 
                     var newSchedule = await _schedulingService.CalculateScheduleAsync(
@@ -1201,6 +1270,7 @@ namespace LechonSystem.Api.Services
                     .ThenInclude(i => i.ItemCategory)
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.FulfilledItemCategory)
+                .Include(o => o.DeliveryTrip)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -1257,9 +1327,13 @@ namespace LechonSystem.Api.Services
                 Fulfillment = (int)order.Fulfillment,
                 RoutingStatus = order.RoutingStatus.ToString(),
                 DeliveryTripId = order.DeliveryTripId,
+                AssignedRiderName = order.DeliveryTrip?.RiderName ?? order.RiderSignedBy,
                 SettlementCustodyStatus = order.SettlementCustodyStatus ?? "Uncollected",
                 HeldByStaffAmount = order.HeldByStaffAmount,
                 HeldPaymentMethod = order.HeldByStaffMethod,
+                DigitalTransferMethod = order.DigitalTransferMethod,
+                DigitalTransferAmount = order.DigitalTransferAmount,
+                DigitalReferenceNote = order.DigitalReferenceNote,
                 IsOwnerConfirmed = order.IsOwnerConfirmed,
                 OwnerConfirmedAt = order.OwnerConfirmedAt,
                 OwnerConfirmedBy = order.OwnerConfirmedBy,
@@ -1307,6 +1381,7 @@ namespace LechonSystem.Api.Services
                     GatewayReferenceId = p.GatewayReferenceId,
                     ReferenceNumber = p.GatewayReferenceId,
                     CreatedAt = p.CreatedAt,
+                    RecordedBy = p.RecordedBy,
                     IsVoided = p.IsVoided,
                     VoidedAt = p.VoidedAt,
                     VoidedBy = p.VoidedBy,
@@ -1487,6 +1562,9 @@ namespace LechonSystem.Api.Services
                 order.StaffValidatedAt = null;
                 order.HeldByStaffMethod = null;
                 order.HeldByStaffAmount = 0m;
+                order.DigitalTransferMethod = null;
+                order.DigitalTransferAmount = null;
+                order.DigitalReferenceNote = null;
             }
             var newBalance = restoredToUncollected
                 ? CalculateOperationalBalanceDue(order, order.Downpayment)

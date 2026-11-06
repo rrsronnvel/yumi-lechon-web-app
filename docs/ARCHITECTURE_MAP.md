@@ -551,6 +551,63 @@
 
 - GET /daily-sheets -> renders (Hosts KitchenViewTab and RiderViewTab)
 
+### Direct Digital Settlement State Flow (2026-11-05)
+
+```text
+Customer -> Owner Bank/Wallet
+  -> Hop 1 Staff Log (required Bank/Reference Note)
+  -> SettlementCustodyStatus = AwaitingOwnerDigitalVerification
+     HeldByStaffAmount = 0
+     DigitalTransferAmount = credited amount reported
+  -> Hop 2 Owner verifies account credit
+  -> PaymentLog + Downpayment update -> Settled
+```
+
+* `LogisticsService` owns the cash/digital split, custody transitions, revert guard, and final payment-log creation. `Program.cs` creates the three digital columns only through idempotent `IF COL_LENGTH(...) IS NULL ALTER TABLE ...` checks.
+* Manifest/Drawer metrics expose physical cash and pending digital checks separately. `ManifestPage.tsx` + `QrSettlementModal.tsx` and `DrawerScreen.tsx` + `OrderDossierModal.tsx` are the Web/Mobile presentation pairs.
+* A full Owner-directed digital Delivery payment with a positive delivery fee raises the Owner-to-Rider GCash payout reminder in both hops and the dossier.
+
+### Messenger Paste Math Flow (2026-11-05)
+
+```text
+Paste -> reset financial/cart state -> parse explicit fields
+      -> hydrate explicit promo discount only
+      -> compare parsedTotalBalance with live cart balance
+      -> match: no warning
+      -> lower: keep cart / explicitly apply difference as discount
+      -> higher: keep cart / explicitly add difference to delivery fee
+```
+
+The Web and Mobile `messengerTextParser.ts` files remain behaviorally synchronized and preserve a blank Total Balance as `null`.
+
+### 2026-11-06 Operational Integrity Additions
+
+```text
+Directory slice
+  Drafts   = all IsDraft rows
+  Upcoming = non-cancelled + valid target year >= 2025 + target >= PH today
+             (dated drafts intentionally included)
+
+Dossier payment
+  POST /api/orders/{id}/payments
+    -> append PaymentLog (RecordedBy)
+    -> increment Order.Downpayment
+    -> derive remaining balance
+    -> append OrderAuditLog
+    -> invalidate order/directory/audit/dashboard caches
+
+Belly item(s)
+  -> derive weight defaults
+  -> FreebiesSelector custom zero-cost swaps
+  -> FreebiesConfigJson + FreebiesSummary
+  -> Kitchen / Dossier / Receipt
+```
+
+* `SchedulingService` treats operational timestamps as Philippine wall-clock `DateTimeKind.Unspecified`. `OverrideScheduleItemAsync` anchors every submitted `HH:mm` to `Order.TargetDeliveryTime.Date`; previous-day anchoring is reserved for genuine 01:00–05:00 departures. `OrderService` preserves `IsManualOverride` rows, and the web editor recalculates only on the explicit Auto-Compute action or stock substitution.
+* `Program.cs` owns idempotent `PaymentLogs.RecordedBy` creation plus non-destructive payment/schedule repair. Repairs update cached fields and append audit evidence; they never purge rows.
+* `FreebiesSelector.tsx` and `freebiesHelper.ts` remain paired across Web/Mobile. Belly defaults are 2/3kg Sarsa+Dinuguan, 4kg Sarsa+Puto, and 5kg Sarsa+Pancit/Palabok; selections persist through the existing order freebie fields.
+* `DELETE /api/riders/{id}` is Owner-only. `DeliveryTrip` has no rider-registry FK and retains its historical `RiderName`, so registry cleanup is isolated from order/trip history. `useDeleteRiderMutation` invalidates `['riders']`.
+
 ### 5. Whole Lechon Freebies & Confirmation Extension
 
 #### Backend Contracts and Endpoints

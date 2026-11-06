@@ -95,6 +95,15 @@ export function SettlePickupModal({
       setErrorMessage(`Cash and Digital amounts must both be positive and total ₱${order.balanceDue.toLocaleString()}.`);
       return;
     }
+    const isFullDigital = paymentMethod !== "Cash" && paymentMethod !== "Split";
+    if (isFullDigital && !referenceNumber.trim()) {
+      setErrorMessage("Bank Name / Reference Note is required for a digital transfer.");
+      return;
+    }
+    if (paymentMethod === "Split" && !digitalReference.trim()) {
+      setErrorMessage("Bank Name / Reference Note is required for the digital portion.");
+      return;
+    }
 
     setErrorMessage(null);
 
@@ -113,13 +122,12 @@ export function SettlePickupModal({
       },
       {
         onSuccess: () => {
-          const methodLabel =
-            paymentMethod === "Cash"
-              ? "Physical Cash (Store Drawer)"
-              : paymentMethod;
-
           toast.success(`Counter Collection Recorded for Order #${order.orderId}!`, {
-            description: `₱${order.balanceDue.toLocaleString()} collected from ${order.customerName} via ${methodLabel} and placed into Staff Drawer custody.`,
+            description: isFullDigital
+              ? `₱${order.balanceDue.toLocaleString()} via ${paymentMethod} logged for Owner account verification; physical drawer remains ₱0.`
+              : paymentMethod === "Split"
+                ? `Cash and digital portions were logged separately for ${order.customerName}.`
+                : `₱${order.balanceDue.toLocaleString()} collected from ${order.customerName} as physical cash and placed into Staff Drawer custody.`,
           });
           handleClose();
           onSuccess?.();
@@ -167,7 +175,7 @@ export function SettlePickupModal({
             )}
           </DialogTitle>
           <DialogDescription className="text-stone-500">
-            Collect walk-in customer handover payment and place into staff drawer custody.
+            Collect walk-in payment, separating physical drawer cash from Owner-account digital transfers.
           </DialogDescription>
         </DialogHeader>
 
@@ -222,7 +230,7 @@ export function SettlePickupModal({
                   💵 Physical Cash (To Store Drawer)
                 </SelectItem>
                 <SelectItem value="GCash">
-                  📱 Store GCash QR
+                  📱 Direct GCash
                 </SelectItem>
                 <SelectItem value="Maya">
                   💚 Maya
@@ -271,15 +279,17 @@ export function SettlePickupModal({
               <Input
                 value={digitalReference}
                 onChange={(event) => setDigitalReference(event.target.value)}
-                placeholder="Digital reference # (optional)"
+                placeholder="Bank Name / Reference Note *"
               />
             </div>
           )}
 
-          {/* Optional Reference Number */}
+          {/* Reference Number */}
           <div className="space-y-2">
             <Label htmlFor="ref-num" className="text-sm font-medium text-stone-700">
-              Reference / Receipt # (Optional)
+              {paymentMethod !== "Cash" && paymentMethod !== "Split"
+                ? "Bank Name / Reference Note *"
+                : "Reference / Receipt # (Optional)"}
             </Label>
             <Input
               id="ref-num"
@@ -314,7 +324,9 @@ export function SettlePickupModal({
           >
             {collectMutation.isPending
               ? "Recording..."
-              : "Confirm & Receive into Drawer"}
+              : paymentMethod !== "Cash" && paymentMethod !== "Split"
+                ? "✓ Log Digital Transfer for Owner Check"
+                : "Confirm & Receive into Drawer"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -15,7 +15,7 @@ export function useLogPayment() {
             splits?: Array<{ amount: number; paymentMethod: string; referenceNumber?: string }>;
         }) => {
            
-            const response = await apiClient.post(`/internal/payments/manual`, {
+            const response = await apiClient.post(`/orders/${paymentData.orderId}/payments`, {
                 orderId: paymentData.orderId,
                 amount: paymentData.amount,
                 paymentMethod: paymentData.paymentProvider,
@@ -33,6 +33,8 @@ export function useLogPayment() {
             await queryClient.invalidateQueries({ queryKey: ["Orders"] }); // Capital O
             await queryClient.invalidateQueries({ queryKey: ["order"] });  // Singular
             await queryClient.invalidateQueries({ queryKey: ["dashboard"] }); 
+            await queryClient.invalidateQueries({ queryKey: ["manifest"] });
+            await queryClient.invalidateQueries({ queryKey: ["orders", "audit-logs"] });
         },
         onError: (error: any) => {
             const errorMsg = typeof error.response?.data === 'string'

@@ -129,24 +129,21 @@ export function InlineScheduleEditorModal({
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  const handleDepartureChange = (newDeparture: string) => {
-    const oldMin = timeToMinutes(departureTime);
-    const newMin = timeToMinutes(newDeparture);
-    setDepartureTime(newDeparture);
+  const autoComputeProductionTimes = () => {
+    const effectiveCatId = fulfilledCategoryId ?? item?.bookedItemCategoryId;
+    const targetCategory = menuCategories.find((category) => category.id === effectiveCatId);
+    const anchorMinutes = timeToMinutes(
+      departureTime || formatToHHMM(item?.riderDepartureTime ?? item?.targetDeliveryTime)
+    );
+    if (anchorMinutes === null) return;
 
-    if (oldMin !== null && newMin !== null && newDeparture.length === 5) {
-      const delta = newMin - oldMin;
-      if (delta !== 0) {
-        const curTahi = timeToMinutes(tahiTime);
-        if (curTahi !== null) {
-          setTahiTime(minutesToTime(curTahi + delta));
-        }
-        const curSalang = timeToMinutes(salangTime);
-        if (curSalang !== null) {
-          setSalangTime(minutesToTime(curSalang + delta));
-        }
-      }
-    }
+    const packagingDuration = 30;
+    const salangDuration = targetCategory?.salangDurationMinutes ?? 180;
+    const tahiDuration = targetCategory?.tahiDurationMinutes ?? 60;
+    const packagingMinutes = anchorMinutes - packagingDuration;
+    const newSalangMinutes = packagingMinutes - salangDuration;
+    setSalangTime(minutesToTime(newSalangMinutes));
+    setTahiTime(minutesToTime(newSalangMinutes - tahiDuration));
   };
 
   const handleSubstitutionChange = (newCatId: number | null, fallbackBookedCatId?: number) => {
@@ -207,7 +204,7 @@ export function InlineScheduleEditorModal({
     e.preventDefault();
 
     try {
-      const refDate = item.targetDeliveryTime || item.tahiStartTime;
+      const refDate = item.targetDeliveryTime || undefined;
       const formattedDeparture = buildIsoTime(refDate, departureTime);
 
       await overrideMutation.mutateAsync({
@@ -308,6 +305,17 @@ export function InlineScheduleEditorModal({
 
         {/* Form Inputs */}
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 border-amber-300 bg-amber-50 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+              onClick={autoComputeProductionTimes}
+            >
+              🔄 Auto-Compute Tahi &amp; Salang from Departure
+            </Button>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="tahiTime" className="text-xs font-semibold text-slate-700">
@@ -343,7 +351,7 @@ export function InlineScheduleEditorModal({
                 id="departureTime"
                 type="time"
                 value={departureTime}
-                onChange={(e) => handleDepartureChange(e.target.value)}
+                onChange={(e) => setDepartureTime(e.target.value)}
                 className="font-mono text-sm border-amber-300"
               />
             </div>

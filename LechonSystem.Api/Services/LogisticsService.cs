@@ -30,6 +30,14 @@ namespace LechonSystem.Api.Services
 
         private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
 
+        private static bool IsOwnerDigitalPayment(string? paymentMethod)
+        {
+            var normalized = (paymentMethod ?? string.Empty)
+                .Replace(" ", string.Empty, StringComparison.Ordinal)
+                .ToLowerInvariant();
+            return normalized is "banktransfer" or "directgcash" or "gcash" or "manualgcash" or "maya";
+        }
+
         // 1. Fetching unassigned orders (Returns all tomorrow orders so UI can flag non-delivery with badges)
         public async Task<IEnumerable<Order>> GetUnassignedDeliveryOrdersAsync()
         {
@@ -242,15 +250,20 @@ namespace LechonSystem.Api.Services
                         ? o.GrandTotal
                         : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment,
                     RiderDeliveryFee = o.DeliveryFee,
-                    NetRemittance = o.HeldByStaffAmount ?? o.RiderRemittedAmount ?? Math.Max(0,
-                        ((o.GrandTotal > 0
-                            ? o.GrandTotal
-                            : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) - o.DeliveryFee),
+                    NetRemittance = (o.DigitalTransferAmount ?? 0m) > 0m
+                        ? Math.Max(0m, (o.HeldByStaffAmount ?? 0m) + (o.DigitalTransferAmount ?? 0m))
+                        : o.HeldByStaffAmount ?? o.RiderRemittedAmount ?? Math.Max(0,
+                            ((o.GrandTotal > 0
+                                ? o.GrandTotal
+                                : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) - o.DeliveryFee),
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
                     HeldPaymentMethod = o.HeldByStaffMethod,
-                    HeldByStaffAmount = o.HeldByStaffAmount
+                    HeldByStaffAmount = o.HeldByStaffAmount,
+                    DigitalTransferMethod = o.DigitalTransferMethod,
+                    DigitalTransferAmount = o.DigitalTransferAmount,
+                    DigitalReferenceNote = o.DigitalReferenceNote
                 })
                 .ToListAsync();
         }
@@ -288,7 +301,10 @@ namespace LechonSystem.Api.Services
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
                     HeldPaymentMethod = o.HeldByStaffMethod,
-                    HeldByStaffAmount = o.HeldByStaffAmount
+                    HeldByStaffAmount = o.HeldByStaffAmount,
+                    DigitalTransferMethod = o.DigitalTransferMethod,
+                    DigitalTransferAmount = o.DigitalTransferAmount,
+                    DigitalReferenceNote = o.DigitalReferenceNote
                 })
                 .ToListAsync();
         }
@@ -378,8 +394,16 @@ namespace LechonSystem.Api.Services
             if (string.Equals(request.HopStage, "StaffToOwner", StringComparison.OrdinalIgnoreCase) &&
                 order.HeldByStaffAmount.HasValue)
             {
-                request.ExpectedAmount = order.HeldByStaffAmount.Value;
-                request.PaymentMethod = PaymentChannels.Normalize(order.HeldByStaffMethod, "Cash");
+                var heldCash = Math.Max(0m, order.HeldByStaffAmount.Value);
+                var digitalAmount = Math.Max(0m, order.DigitalTransferAmount ?? 0m);
+                var isFullyDigital = heldCash <= 0m && digitalAmount > 0m;
+                request.ExpectedAmount = isFullyDigital ? digitalAmount : heldCash;
+                request.PaymentMethod = isFullyDigital
+                    ? order.DigitalTransferMethod ?? order.HeldByStaffMethod ?? "DirectGCash"
+                    : "Cash";
+                request.ReferenceNumber = isFullyDigital
+                    ? order.DigitalReferenceNote
+                    : request.ReferenceNumber;
             }
 
             var existingSession = await _context.SettlementQrSessions
@@ -400,6 +424,10 @@ namespace LechonSystem.Api.Services
                 if (request.ExpectedAmount > 0)
                 {
                     existingSession.ExpectedAmount = request.ExpectedAmount;
+                }
+                if (!string.IsNullOrWhiteSpace(request.ReferenceNumber))
+                {
+                    existingSession.ReferenceNumber = request.ReferenceNumber.Trim();
                 }
                 await _context.SaveChangesAsync();
                 return MapToStatusDto(existingSession, existingSession.Order ?? order);
@@ -567,12 +595,30 @@ namespace LechonSystem.Api.Services
                 throw new InvalidOperationException("This QR session has expired.");
             }
 
-            // If rider's phone is dead, manual counter override supplies details
-            if (!string.IsNullOrWhiteSpace(request?.ManualOverrideRiderName))
+            var requestedCash = Math.Max(0m, request?.CashAmount ?? 0m);
+            var requestedDigital = Math.Max(0m, request?.DigitalAmount ?? 0m);
+            var isSplit = requestedCash > 0m && requestedDigital > 0m;
+            var isFullOwnerDigital = !isSplit && IsOwnerDigitalPayment(session.PaymentMethod);
+
+            // Direct-to-owner digital channels do not require a physical rider QR handshake.
+            if (isFullOwnerDigital)
+            {
+                session.RiderSignedBy = session.Order.DeliveryTrip?.RiderName
+                    ?? request?.ManualOverrideRiderName?.Trim()
+                    ?? session.RiderSignedBy
+                    ?? "Unassigned";
+                // The rider physically collected/remitted ₱0; the customer paid the Owner account.
+                session.RiderRemittedAmount = 0m;
+                session.RiderSignedAt = DateTime.UtcNow;
+            }
+            // If rider's phone is dead, manual counter override supplies details.
+            else if (!string.IsNullOrWhiteSpace(request?.ManualOverrideRiderName))
             {
                 session.RiderSignedBy = request.ManualOverrideRiderName.Trim();
                 await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, session.RiderSignedBy);
-                session.RiderRemittedAmount = request.ManualOverrideAmount ?? session.ExpectedAmount;
+                session.RiderRemittedAmount = isSplit
+                    ? session.ExpectedAmount
+                    : request.ManualOverrideAmount ?? session.ExpectedAmount;
                 session.RiderSignedAt = DateTime.UtcNow;
             }
             else if (session.Status != "SignedByRider")
@@ -586,21 +632,24 @@ namespace LechonSystem.Api.Services
             session.IsUsed = true;
 
             var order = session.Order;
-            var isSplit = (request?.CashAmount ?? 0m) > 0m || (request?.DigitalAmount ?? 0m) > 0m;
             var cashAmount = isSplit
-                ? Math.Max(0m, request?.CashAmount ?? 0m)
-                : (session.RiderRemittedAmount ?? session.ExpectedAmount);
-            var digitalAmount = isSplit ? Math.Max(0m, request?.DigitalAmount ?? 0m) : 0m;
-            if (isSplit && (cashAmount <= 0m || digitalAmount <= 0m))
+                ? requestedCash
+                : isFullOwnerDigital
+                    ? 0m
+                    : (session.RiderRemittedAmount ?? session.ExpectedAmount);
+            var digitalAmount = isSplit
+                ? requestedDigital
+                : isFullOwnerDigital
+                    ? (requestedDigital > 0m ? requestedDigital : session.ExpectedAmount)
+                    : 0m;
+            if ((isSplit || isFullOwnerDigital) && cashAmount + digitalAmount != session.ExpectedAmount)
             {
-                throw new ArgumentException("Split handover requires positive Cash and Digital amounts.");
-            }
-            if (isSplit && cashAmount + digitalAmount != session.ExpectedAmount)
-            {
-                throw new ArgumentException($"Split amounts must equal the expected remittance of ₱{session.ExpectedAmount:N2}.");
+                throw new ArgumentException($"Cash and digital amounts must equal the expected remittance of ₱{session.ExpectedAmount:N2}.");
             }
 
-            order.SettlementCustodyStatus = "InStaffDrawer";
+            order.SettlementCustodyStatus = isFullOwnerDigital
+                ? "AwaitingOwnerDigitalVerification"
+                : "InStaffDrawer";
             order.HeldByStaffMethod = isSplit ? "Cash" : session.PaymentMethod;
             order.HeldByStaffAmount = cashAmount;
             order.RiderSignedBy = session.RiderSignedBy;
@@ -615,29 +664,40 @@ namespace LechonSystem.Api.Services
 
             if (digitalAmount > 0m)
             {
-                var digitalMethod = PaymentChannels.Normalize(request?.DigitalMethod, "GCash");
+                var digitalMethod = isFullOwnerDigital
+                    ? session.PaymentMethod
+                    : request?.DigitalMethod ?? "DirectGCash";
                 var digitalReference = !string.IsNullOrWhiteSpace(request?.DigitalReferenceNumber)
                     ? request.DigitalReferenceNumber.Trim()
-                    : $"SPLIT_DIGITAL_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
-                order.Downpayment += digitalAmount;
-                _context.PaymentLogs.Add(new PaymentLog
+                    : string.Empty;
+                if (string.IsNullOrWhiteSpace(digitalReference))
                 {
-                    OrderId = order.Id,
-                    GatewayReferenceId = digitalReference,
-                    Provider = PaymentChannels.ToProvider(digitalMethod),
-                    PaymentMethod = digitalMethod,
-                    Amount = digitalAmount,
-                    Status = PaymentStatus.Success
-                });
+                    throw new ArgumentException("Bank Name / Reference Note is required for a digital transfer.");
+                }
+
+                order.DigitalTransferMethod = digitalMethod;
+                order.DigitalTransferAmount = digitalAmount;
+                order.DigitalReferenceNote = digitalReference;
+                session.ReferenceNumber = digitalReference;
+            }
+            else
+            {
+                order.DigitalTransferMethod = null;
+                order.DigitalTransferAmount = null;
+                order.DigitalReferenceNote = null;
             }
 
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = order.Id,
-                ActionType = "Custody: In Staff Drawer",
-                Changes = isSplit
-                    ? $"Split handover validated: ₱{cashAmount:N2} Cash placed in drawer + ₱{digitalAmount:N2} via {PaymentChannels.Normalize(request?.DigitalMethod, "GCash")}. Validated by {staffUsername}."
-                    : $"Rider {session.RiderSignedBy} remitted ₱{session.RiderRemittedAmount:N2} via {session.PaymentMethod}. Validated into drawer by {staffUsername}.",
+                ActionType = isFullOwnerDigital
+                    ? "Digital Transfer: Awaiting Owner Verification"
+                    : "Custody: In Staff Drawer",
+                Changes = isFullOwnerDigital
+                    ? $"Staff logged ₱{digitalAmount:N2} via {session.PaymentMethod} for Owner account verification. Ref: {order.DigitalReferenceNote}. Physical drawer received ₱0.00."
+                    : isSplit
+                        ? $"Split handover validated: ₱{cashAmount:N2} Cash placed in drawer + ₱{digitalAmount:N2} via {request?.DigitalMethod}. Digital ref: {order.DigitalReferenceNote}. Validated by {staffUsername}."
+                        : $"Rider {session.RiderSignedBy} remitted ₱{session.RiderRemittedAmount:N2} via {session.PaymentMethod}. Validated into drawer by {staffUsername}.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow
             });
@@ -658,8 +718,13 @@ namespace LechonSystem.Api.Services
             var balance = (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment;
             var collectedAmount = amount ?? balance;
             var isSplit = (cashAmount ?? 0m) > 0m || (digitalAmount ?? 0m) > 0m;
-            var physicalCash = isSplit ? Math.Max(0m, cashAmount ?? 0m) : collectedAmount;
-            var digitalTransfer = isSplit ? Math.Max(0m, digitalAmount ?? 0m) : 0m;
+            var isFullOwnerDigital = !isSplit && IsOwnerDigitalPayment(paymentMethod);
+            var physicalCash = isSplit
+                ? Math.Max(0m, cashAmount ?? 0m)
+                : isFullOwnerDigital ? 0m : collectedAmount;
+            var digitalTransfer = isSplit
+                ? Math.Max(0m, digitalAmount ?? 0m)
+                : isFullOwnerDigital ? collectedAmount : 0m;
             if (isSplit && (physicalCash <= 0m || digitalTransfer <= 0m))
             {
                 throw new ArgumentException("Split handover requires positive Cash and Digital amounts.");
@@ -669,7 +734,9 @@ namespace LechonSystem.Api.Services
                 throw new ArgumentException($"Split amounts must equal the collection amount of ₱{collectedAmount:N2}.");
             }
 
-            order.SettlementCustodyStatus = "InStaffDrawer";
+            order.SettlementCustodyStatus = isFullOwnerDigital
+                ? "AwaitingOwnerDigitalVerification"
+                : "InStaffDrawer";
             order.HeldByStaffMethod = isSplit ? "Cash" : paymentMethod;
             order.HeldByStaffAmount = physicalCash;
             order.StaffValidatedBy = staffUsername;
@@ -677,26 +744,32 @@ namespace LechonSystem.Api.Services
 
             if (digitalTransfer > 0m)
             {
-                var normalizedDigitalMethod = PaymentChannels.Normalize(digitalMethod, "GCash");
+                var normalizedDigitalMethod = isFullOwnerDigital
+                    ? paymentMethod
+                    : digitalMethod ?? "DirectGCash";
                 var digitalRef = !string.IsNullOrWhiteSpace(digitalReferenceNumber)
                     ? digitalReferenceNumber.Trim()
-                    : $"COUNTER_SPLIT_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
-                order.Downpayment += digitalTransfer;
-                _context.PaymentLogs.Add(new PaymentLog
+                    : referenceNumber?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(digitalRef))
                 {
-                    OrderId = order.Id,
-                    GatewayReferenceId = digitalRef,
-                    Provider = PaymentChannels.ToProvider(normalizedDigitalMethod),
-                    PaymentMethod = normalizedDigitalMethod,
-                    Amount = digitalTransfer,
-                    Status = PaymentStatus.Success
-                });
+                    throw new ArgumentException("Bank Name / Reference Note is required for a digital transfer.");
+                }
+
+                order.DigitalTransferMethod = normalizedDigitalMethod;
+                order.DigitalTransferAmount = digitalTransfer;
+                order.DigitalReferenceNote = digitalRef;
+            }
+            else
+            {
+                order.DigitalTransferMethod = null;
+                order.DigitalTransferAmount = null;
+                order.DigitalReferenceNote = null;
             }
 
             // When collecting payment for a Lalamove order:
             // Courier orders must be paid in full prior to release. Update Downpayment so BalanceDue evaluates to ₱0
             // and GateStatus evaluates to ClearToRelease (🟢 CLEAR TO RELEASE).
-            if (order.Fulfillment == FulfillmentType.Lalamove && !isSplit)
+            if (order.Fulfillment == FulfillmentType.Lalamove && !isSplit && !isFullOwnerDigital)
             {
                 order.Downpayment += collectedAmount;
 
@@ -722,9 +795,11 @@ namespace LechonSystem.Api.Services
             {
                 OrderId = order.Id,
                 ActionType = order.Fulfillment == FulfillmentType.Lalamove ? "Lalamove Payment Collected" : "Counter Pickup Collected",
-                Changes = isSplit
-                    ? $"Split counter handover: ₱{physicalCash:N2} Cash held in drawer + ₱{digitalTransfer:N2} via {PaymentChannels.Normalize(digitalMethod, "GCash")}. Collected by {staffUsername}."
-                    : $"Store counter collected ₱{collectedAmount:N2} via {paymentMethod}. Held in drawer by {staffUsername}.",
+                Changes = isFullOwnerDigital
+                    ? $"Store counter logged ₱{digitalTransfer:N2} via {paymentMethod} for Owner verification. Ref: {order.DigitalReferenceNote}. Physical drawer received ₱0.00."
+                    : isSplit
+                        ? $"Split counter handover: ₱{physicalCash:N2} Cash held in drawer + ₱{digitalTransfer:N2} via {digitalMethod}. Digital ref: {order.DigitalReferenceNote}. Collected by {staffUsername}."
+                        : $"Store counter collected ₱{collectedAmount:N2} via {paymentMethod}. Held in drawer by {staffUsername}.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow
             });
@@ -751,9 +826,15 @@ namespace LechonSystem.Api.Services
             session.IsUsed = true;
 
             var order = session.Order;
-            order.SettlementCustodyStatus = "InStaffDrawer";
+            var isFullOwnerDigital = IsOwnerDigitalPayment(session.PaymentMethod);
+            order.SettlementCustodyStatus = isFullOwnerDigital
+                ? "AwaitingOwnerDigitalVerification"
+                : "InStaffDrawer";
             order.HeldByStaffMethod = session.PaymentMethod;
-            order.HeldByStaffAmount = session.ExpectedAmount;
+            order.HeldByStaffAmount = isFullOwnerDigital ? 0m : session.ExpectedAmount;
+            order.DigitalTransferMethod = isFullOwnerDigital ? session.PaymentMethod : null;
+            order.DigitalTransferAmount = isFullOwnerDigital ? session.ExpectedAmount : null;
+            order.DigitalReferenceNote = isFullOwnerDigital ? session.ReferenceNumber : null;
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
 
@@ -801,9 +882,10 @@ namespace LechonSystem.Api.Services
                 throw new KeyNotFoundException($"Order #{orderId} not found.");
             }
 
-            if (order.SettlementCustodyStatus != "InStaffDrawer")
+            if (order.SettlementCustodyStatus != "InStaffDrawer" &&
+                order.SettlementCustodyStatus != "AwaitingOwnerDigitalVerification")
             {
-                throw new InvalidOperationException($"Cannot revert custody: Order #{orderId} status is '{order.SettlementCustodyStatus}', expected 'InStaffDrawer'.");
+                throw new InvalidOperationException($"Cannot revert custody: Order #{orderId} status is '{order.SettlementCustodyStatus}', expected an owner-verification state.");
             }
 
             // RBAC Guard: Ensure isOwner || string.Equals(order.StaffValidatedBy, currentUser, StringComparison.OrdinalIgnoreCase)
@@ -817,6 +899,9 @@ namespace LechonSystem.Api.Services
             order.StaffValidatedAt = null;
             order.HeldByStaffMethod = null;
             order.HeldByStaffAmount = 0m;
+            order.DigitalTransferMethod = null;
+            order.DigitalTransferAmount = null;
+            order.DigitalReferenceNote = null;
             order.RiderSignedBy = null;
             order.RiderRemittedAmount = null;
             order.RiderSignedAt = null;
@@ -904,7 +989,11 @@ namespace LechonSystem.Api.Services
             if (request == null || request.CountedAmount != session.ExpectedAmount)
             {
                 var counted = request?.CountedAmount ?? 0m;
-                throw new ArgumentException($"Counted bills (₱{counted:N2}) do not match expected remittance (₱{session.ExpectedAmount:N2}). Recount envelope before closing.");
+                var isDigitalDeposit = Math.Max(0m, session.Order.HeldByStaffAmount ?? 0m) <= 0m &&
+                    Math.Max(0m, session.Order.DigitalTransferAmount ?? 0m) > 0m;
+                throw new ArgumentException(isDigitalDeposit
+                    ? $"Verified account credit (₱{counted:N2}) does not match the expected digital deposit (₱{session.ExpectedAmount:N2}). Recheck the bank or wallet credit before closing."
+                    : $"Counted bills (₱{counted:N2}) do not match expected remittance (₱{session.ExpectedAmount:N2}). Recount envelope before closing.");
             }
 
             if (DateTime.UtcNow > session.ExpiresAt && session.Status != "SignedByRider" && session.Status != "ValidatedByStaff")
@@ -924,40 +1013,83 @@ namespace LechonSystem.Api.Services
             order.OwnerApprovedBy = verifiedOwnerUsername;
             order.OwnerApprovedAt = DateTime.UtcNow;
 
-            decimal amountToSettle = order.HeldByStaffAmount ??
-                (session.ExpectedAmount > 0
-                    ? session.ExpectedAmount
-                    : Math.Max(0, (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment));
+            var heldCashAmount = Math.Max(0m, order.HeldByStaffAmount ?? 0m);
+            var pendingDigitalAmount = Math.Max(0m, order.DigitalTransferAmount ?? 0m);
+            var hasStructuredDigitalHandover = order.DigitalTransferAmount.HasValue;
+            decimal amountToSettle = hasStructuredDigitalHandover
+                ? heldCashAmount + pendingDigitalAmount
+                : order.HeldByStaffAmount ??
+                    (session.ExpectedAmount > 0
+                        ? session.ExpectedAmount
+                        : Math.Max(0, (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment));
 
             if (amountToSettle > 0)
             {
                 order.Downpayment += amountToSettle;
 
-                var normalizedPaymentMethod = PaymentChannels.Normalize(session.PaymentMethod);
-                var provider = PaymentChannels.ToProvider(normalizedPaymentMethod);
-
-                var refId = session.ReferenceNumber;
-                if (string.IsNullOrWhiteSpace(refId))
+                if (hasStructuredDigitalHandover)
                 {
-                    refId = $"QR_SETTLE_{session.Token[..Math.Min(8, session.Token.Length)].ToUpperInvariant()}_{Guid.NewGuid().ToString()[..4]}";
+                    if (heldCashAmount > 0m)
+                    {
+                        _context.PaymentLogs.Add(new PaymentLog
+                        {
+                            OrderId = order.Id,
+                            GatewayReferenceId = $"OWNER_CASH_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}",
+                            Provider = PaymentProvider.Cash,
+                            PaymentMethod = "Cash",
+                            Amount = heldCashAmount,
+                            Status = PaymentStatus.Success
+                        });
+                    }
+
+                    if (pendingDigitalAmount > 0m)
+                    {
+                        var digitalMethod = order.DigitalTransferMethod ?? session.PaymentMethod;
+                        var digitalRef = !string.IsNullOrWhiteSpace(order.DigitalReferenceNote)
+                            ? order.DigitalReferenceNote
+                            : !string.IsNullOrWhiteSpace(session.ReferenceNumber)
+                                ? session.ReferenceNumber
+                                : $"OWNER_DIGITAL_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+                        _context.PaymentLogs.Add(new PaymentLog
+                        {
+                            OrderId = order.Id,
+                            // Reference notes need not be globally unique (for example, "BDO from Customer").
+                            // Keep the note on Order while giving the payment ledger an order-scoped key.
+                            GatewayReferenceId = $"{digitalRef}_ORDER_{order.Id}",
+                            Provider = PaymentChannels.ToProvider(digitalMethod),
+                            PaymentMethod = PaymentChannels.Normalize(digitalMethod),
+                            Amount = pendingDigitalAmount,
+                            Status = PaymentStatus.Success
+                        });
+                    }
                 }
-
-                var paymentLog = new PaymentLog
+                else
                 {
-                    OrderId = order.Id,
-                    GatewayReferenceId = refId,
-                    Provider = provider,
-                    PaymentMethod = normalizedPaymentMethod,
-                    Amount = amountToSettle,
-                    Status = PaymentStatus.Success
-                };
-                _context.PaymentLogs.Add(paymentLog);
+                    var normalizedPaymentMethod = PaymentChannels.Normalize(session.PaymentMethod);
+                    var refId = session.ReferenceNumber;
+                    if (string.IsNullOrWhiteSpace(refId))
+                    {
+                        refId = $"QR_SETTLE_{session.Token[..Math.Min(8, session.Token.Length)].ToUpperInvariant()}_{Guid.NewGuid().ToString()[..4]}";
+                    }
+
+                    _context.PaymentLogs.Add(new PaymentLog
+                    {
+                        OrderId = order.Id,
+                        GatewayReferenceId = refId,
+                        Provider = PaymentChannels.ToProvider(normalizedPaymentMethod),
+                        PaymentMethod = normalizedPaymentMethod,
+                        Amount = amountToSettle,
+                        Status = PaymentStatus.Success
+                    });
+                }
 
                 _context.OrderAuditLogs.Add(new OrderAuditLog
                 {
                     OrderId = order.Id,
                     ActionType = "Custody: Settled by Owner",
-                    Changes = $"Owner {verifiedOwnerUsername} verified and approved custody settlement of ₱{amountToSettle:N2} via {session.PaymentMethod}. Order marked Settled.",
+                    Changes = hasStructuredDigitalHandover
+                        ? $"Owner {verifiedOwnerUsername} verified settlement of ₱{heldCashAmount:N2} physical cash and ₱{pendingDigitalAmount:N2} digital transfer. Ref: {order.DigitalReferenceNote}. Order marked Settled."
+                        : $"Owner {verifiedOwnerUsername} verified and approved custody settlement of ₱{amountToSettle:N2} via {session.PaymentMethod}. Order marked Settled.",
                     ChangedBy = verifiedOwnerUsername,
                     Timestamp = DateTime.UtcNow
                 });
@@ -981,7 +1113,7 @@ namespace LechonSystem.Api.Services
             return MapToStatusDto(session, order);
         }
 
-        // 7. Direct Store GCash Bypass Settlement
+        // 7. Legacy Direct Store GCash endpoint: log Hop 1 only; Owner still performs Hop 2.
         public async Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername)
         {
             var order = await _context.Orders
@@ -992,45 +1124,28 @@ namespace LechonSystem.Api.Services
                 throw new ArgumentException($"Order #{orderId} not found.");
             }
 
-            order.SettlementCustodyStatus = "Settled";
-            order.HeldByStaffMethod = "GCash";
-            order.StaffValidatedBy = staffUsername;
-            order.StaffValidatedAt = DateTime.UtcNow;
-            order.OwnerApprovedBy = staffUsername;
-            order.OwnerApprovedAt = DateTime.UtcNow;
-            order.Downpayment += amount;
-
-            var storeNetTotal = Math.Max(0, order.GrandTotal - order.DeliveryFee);
-            if (order.Fulfillment == FulfillmentType.Delivery && order.Downpayment >= storeNetTotal)
+            if (string.IsNullOrWhiteSpace(referenceNumber))
             {
-                order.RoutingStatus = DeliveryStatus.Delivered;
-                if (order.DeliveryTrip != null)
-                {
-                    order.DeliveryTrip.Status = DeliveryStatus.Delivered;
-                    order.DeliveryTrip.ActualReturnTime = DateTime.UtcNow;
-                }
+                throw new ArgumentException("Bank Name / Reference Note is required for Direct GCash.");
             }
 
-            var refId = !string.IsNullOrWhiteSpace(referenceNumber)
-                ? referenceNumber
-                : $"GCASH_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
-
-            var paymentLog = new PaymentLog
-            {
-                OrderId = order.Id,
-                GatewayReferenceId = refId,
-                Provider = PaymentProvider.GCash,
-                PaymentMethod = "GCash",
-                Amount = amount,
-                Status = PaymentStatus.Success
-            };
-            _context.PaymentLogs.Add(paymentLog);
+            order.SettlementCustodyStatus = "AwaitingOwnerDigitalVerification";
+            order.HeldByStaffMethod = "DirectGCash";
+            order.HeldByStaffAmount = 0m;
+            order.DigitalTransferMethod = "DirectGCash";
+            order.DigitalTransferAmount = amount;
+            order.DigitalReferenceNote = referenceNumber.Trim();
+            // Direct-to-Owner means the rider physically remitted nothing.
+            order.RiderRemittedAmount = 0m;
+            order.RiderSignedBy = order.DeliveryTrip?.RiderName ?? order.RiderSignedBy;
+            order.StaffValidatedBy = staffUsername;
+            order.StaffValidatedAt = DateTime.UtcNow;
 
             _context.OrderAuditLogs.Add(new OrderAuditLog
             {
                 OrderId = order.Id,
-                ActionType = "Direct GCash Settlement",
-                Changes = $"Direct Store GCash payment of ₱{amount:N2} settled with Ref #{refId}. Verified by {staffUsername}.",
+                ActionType = "Digital Transfer: Awaiting Owner Verification",
+                Changes = $"Direct Store GCash payment of ₱{amount:N2} logged with Ref: {referenceNumber.Trim()}. Physical drawer received ₱0.00. Awaiting Owner verification.",
                 ChangedBy = staffUsername,
                 Timestamp = DateTime.UtcNow
             });

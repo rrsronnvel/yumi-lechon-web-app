@@ -159,7 +159,7 @@ The POS and Logistics engines enforce strict boundary rules across three distinc
 - **Tier 1 — Date-Less Draft Inquiry:** `IsDraft = true` and `TargetDeliveryTime = null`. These tentative quotes live only in `[ 📝 Drafts ]`, ordered by `UpdatedAt ?? CreatedAt`, and may omit venue and item size. The purple Draft control requires at least `CustomerName` or `FacebookName`; no freezer reservation or kitchen clock is created.
 - **Tier 2 — Dated Incomplete Order:** `IsDraft = true` and `TargetDeliveryTime != null`. These records are intentionally included chronologically in `[ 📅 Upcoming ]` and rendered with an amber left border plus `[ ⚠️ Incomplete Draft ]`. Missing-detail tags identify `⚠️ Time TBD`, `⚠️ Venue TBD`, and `⚠️ Size TBD` without extra dossier queries.
 - **Time TBD contract:** All Web/Mobile create and edit forms keep the event date active beside `[ 🕒 Time TBD ]`. Enabling it forces `IsDraft = true`, persists `TargetDeliveryTime` at local `12:00:00` for the selected date, sets `IsTimeTbd = true`, clears `RiderDepartureTime`, and suppresses all backward schedule generation. A concrete time must be supplied before finalization.
-- **Master Directory slicing & 3-Tier Alert Badges:** `filterTab=drafts` is strictly `!IsCancelled && (TargetDeliveryTime == null || (IsDraft && !IsTimeTbd))`; `filterTab=upcoming` is `!IsCancelled && TargetDeliveryTime != null && TargetDeliveryTime >= Today && (!IsDraft || IsTimeTbd)`, ensuring all active dated advance bookings appear chronologically in Upcoming with the 3-Tier Alert Badges Matrix:
+- **Master Directory slicing & 3-Tier Alert Badges:** `filterTab=drafts` is strictly `!IsCancelled && IsDraft` and therefore contains every dated and dateless draft. `filterTab=upcoming` is `!IsCancelled && TargetDeliveryTime != null && TargetDeliveryTime.Year >= 2025 && TargetDeliveryTime >= PhilippineTime.Today`, intentionally including dated incomplete drafts while excluding sentinel/dateless drafts. All Time also includes drafts. Search by customer, phone, or order reference applies inside the active slice.
   - *Tier 1 (Schedule/Logistics Gap - Soft Amber):* `isTimeTbd === true || !targetDeliveryTime || !deliveryAddress` -> `⏳ TIME TBD`.
   - *Tier 2 (Advance Deposit Follow-up - Soft Orange):* `downpayment === 0 && !isTrustedCustomer && balanceDue > 0 && daysUntilDelivery > 2` -> `⚠️ NO DP • PENDING DEPOSIT`.
   - *Tier 3 (Critical Urgent Follow-up - Crimson Pulse):* `downpayment === 0 && !isTrustedCustomer && balanceDue > 0 && daysUntilDelivery <= 2` -> `🚨 URGENT: NO DP (CONFIRM OR CANCEL)`.
@@ -931,7 +931,7 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 
 ### 17.3 Philippine-Date Directory and No-DP Safety
 
-* `Upcoming` uses the `Asia/Manila` calendar boundary and contains only non-cancelled, non-draft orders dated today or later. Earlier dates belong in `Past 30 Days`; explicit drafts remain exclusively in `Drafts` even when dated.
+* `Upcoming` uses the `Asia/Manila` calendar boundary and contains every non-cancelled order with a valid year-2025-or-later target dated today or later, including incomplete drafts. Dateless/sentinel drafts remain in Drafts and All Time only; the Drafts slice still contains both dated and dateless drafts.
 * Active zero-DP, non-trusted bookings remain visible in Upcoming/Today/Tomorrow and carry `⚠️ NO DP • FOR CONFIRMATION`. Daily Kitchen and Rider sheets include the same orders with `[⚠️ NO DP - CONFIRM FIRST]` instead of hiding them behind Owner confirmation.
 * Lalamove Gate cards expose `View / Cancel Order`, opening the same dossier and audited cancellation workflow used by the master directory.
 
@@ -959,7 +959,7 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 
 * **Strict Philippine Time (`UTC+8`) Calendar Boundaries:** All backend queries and business services evaluate "Today", "Tomorrow", and date comparisons using `PhilippineTime.Today` (`UTC+8`) rather than server-local `DateTime.Today` or `DateTime.UtcNow.Date`. Frontend dates use `getPhilippineDateString(date)` (`Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' })`), eliminating `.toISOString().slice(0, 10)` UTC rollback bugs that cause local morning orders to disappear on cloud hosting (SmarterASP).
 * **Past-Year Typo Guard & Startup Self-Heal:** Any date input from intake forms, edit payloads, or chat parsers where `year < 2025` is automatically normalized to `PhilippineTime.Today.Year` (`2026`). On startup and within `GetOrderDirectoryAsync`, SQL Server executes a self-healing repair (`DATEADD(year, 2026 - YEAR(TargetDeliveryTime), TargetDeliveryTime)`) to recover any active orders saved with an accidental past-year typo (e.g., `#102926-004 Jenah M. Chavez` with year `2016`).
-* **Dynamic Roasting Schedule Recalculation:** When updating an existing order's `TargetDeliveryTime` or `RiderDepartureTime`, `OrderService.UpdateOrderAsync` resets `IsManualOverride = false` and removes previous `OrderItemSchedules`, newly calculating `Tahi` (`TahiStartTime`) and `Salang` (`RoastingStartTime`) clocks. For Store Pickups (0) and Lalamove (2), `RiderDepartureTime` strictly synchronizes with `TargetDeliveryTime`. In `InlineScheduleEditorModal`, changing Departure auto-shifts Tahi and Salang by the minute delta.
+* **Local-Wall-Clock Schedule Integrity:** Target, departure, packaging, Salang, and Tahi timestamps are treated as Philippine `DateTimeKind.Unspecified`; no UTC conversion or +8-hour addition is permitted. A missing or later-than-target Delivery departure is repaired to target minus one hour, while Pickup/Lalamove stays equal to target. Manual Tahi/Salang overrides survive order edits and changing Departure in `InlineScheduleEditorModal`; recalculation occurs only through `[ 🔄 Auto-Compute Tahi & Salang from Departure ]` or a freezer-stock size substitution. Startup non-destructively repairs future telltale +8-hour rows and records an audit entry.
 
 ### 17.7 3-Row Financials Card Layout (`EditOrderModal.tsx` & `EditOrderForm.tsx`)
 
@@ -968,3 +968,48 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
   - **Row 2 (Courtesy Discount — Full width):** Clean numeric input `Courtesy Discount (₱)`.
   - **Row 3 (Locked Downpayment Banner — Full width read-only):** Sleek read-only container (`bg-stone-100 border border-stone-200 rounded-xl p-3.5 flex items-center justify-between`): Left: `🔒 Downpayment / Total Paid (Locked)` + `Log or void payments via Order Dossier`; Right: `₱{lockedDownpayment.toLocaleString()}` + read-only Payment Channel badge (pill, NOT 4 toggle buttons).
 * **Cash Lock Enforcement:** Eliminates interactive payment channel pills from edit order workflows, reinforcing the locked-cash rule that payments can only be appended or voided with audit logs.
+
+---
+
+## 18. 2026-11-05 Direct Digital Remittance and POS Math Safety
+
+### 18.1 Direct Digital Two-Hop Verification
+
+* Full `BankTransfer`, `DirectGCash`, `GCash`, or `Maya` customer payments go directly to the Owner account. Hop 1 records `DigitalTransferMethod`, `DigitalTransferAmount`, and the required `DigitalReferenceNote`, then moves the order to `AwaitingOwnerDigitalVerification`; it never adds that amount to `HeldByStaffAmount` or the physical Staff Drawer KPI.
+* Full digital Hop 1 hides the rider QR/envelope workflow, keeps the assigned delivery rider read-only, and records the full customer transfer (or the applicable net remittance). Hop 2 is explicitly an Owner Digital Deposit Verification and closes the order only after the credited account amount matches the expected amount.
+* Split payments retain strict separation: `HeldByStaffAmount` is only the cash portion, while the digital portion and its reference are shown alongside it. Owner approval writes the portions to their correct payment channels. Revert custody remains available for both full digital and split handovers.
+* `RiderRegistrationHelper` rejects common bank/wallet names as riders. Startup non-destructively deactivates an existing active rider named `Bdo`; it never deletes the record.
+
+### 18.2 Owner-to-Rider GCash Fee Payout
+
+* When a Delivery order with `DeliveryFee > 0` is paid in full directly to the Owner, the rider collected no road cash and could not retain the fee. Hop 1, Hop 2, and order dossiers must prominently remind the Owner to send that delivery fee to the assigned rider via GCash.
+* This reminder is operational guidance only: the digital customer payment remains outside the physical drawer, and Owner verification still confirms the full credited amount.
+
+### 18.3 Bidirectional Messenger Math Validation
+
+* Every new Messenger paste resets cart items, discount, delivery fee, downpayment state, and prior mismatch state before hydration. A blank `Total Balance :` remains `parsedTotalBalance = null`, produces no alert, and lets live cart math determine the balance.
+* Parsers never infer a discount from a difference between chat balance and cart math. Discount is populated only from an explicit `Discount` line or the explicit `Less 2k` / `Less 2,000` / `No Freebies` promotion.
+* When a positive parsed chat balance differs from `(items subtotal - explicit discount + delivery fee) - downpayment`, Web and Mobile show a high-visibility two-way warning. A lower chat value can be explicitly accepted as an added discount; a higher chat value can be explicitly added to delivery fee. Dismissing either case preserves the accurate cart total.
+
+---
+
+## 19. 2026-11-06 Directory, Scheduling, Ledger, Belly, and Rider Governance
+
+### 19.1 Upcoming Drafts and Responsive Directory
+
+* `hasValidTargetDate` requires a non-null target with year `>= 2025`. Upcoming includes valid future/today targets regardless of draft status; Drafts includes every draft. Web renders the seven-column table from `md` upward and a full-width mobile card below `md`, preserving address wrapping, item pills, status/NO-DP flags, schedule, total, and balance.
+
+### 19.2 Dossier Payment Ledger Contract
+
+* Dossiers call `POST /api/orders/{id}/payments`, which appends a successful `PaymentLog`, stamps `RecordedBy`, increments `Order.Downpayment`, derives remaining balance as `max(0, GrandTotal - Downpayment)`, and writes `[Payment Recorded]` with amount, method, user, total paid, and remaining balance. It never creates `InStaffDrawer` custody; only the custody workflow may do that.
+* Startup reconciliation is strictly additive/non-destructive: when active successful non-voided payment logs exceed the cached downpayment, it raises the cached value to the ledger sum and appends a reconciliation audit entry. Future partial orders with zero held cash that were falsely marked `InStaffDrawer` return to `Uncollected`. Payment rows, orders, and customer records are never deleted.
+* Web/Mobile dossiers list every transaction with timestamp and recorder, invalidate order/directory/audit caches immediately, and show the physical-custody warning only for actual `InStaffDrawer` state.
+
+### 19.3 Lechon Belly Freebies and Parser Intake
+
+* Belly defaults are independent of the Whole Lechon seven-item engine: 2kg/3kg = Sarsa + Dinuguan; 4kg = Sarsa + Puto; 5kg = Sarsa + Pancit (Palabok is an allowed swap). Web and Mobile create/edit forms expose Belly steppers for Sarsa, Coke, Pancit, Palabok, Spaghetti, Dinuguan, and Puto plus a custom swap note. Custom swaps remain ₱0 and persist in `FreebiesConfigJson` and `FreebiesSummary`, which feeds kitchen remarks, dossiers, and receipts.
+* The synchronized parsers accept `Lechon/Letchon belly`, `nov 7, / 12pm` with 2026 default year, address/resort text and following lines under `Pickup or Deliver`, and emoji-heavy `FREEBIES` lines such as `4PCS 1.5COKE AND LIVER SAUCE`. `Delivery Charge: lalamove rate` selects Lalamove.
+
+### 19.4 Owner Rider Registry Management
+
+* Owner CMS exposes Delivery Riders with add and confirmed delete actions. `DELETE /api/riders/{id}` is Owner-only and removes only the dropdown registry row; `DeliveryTrip.RiderName` remains immutable historical text, so no delivery/order history is removed or orphaned. Rider query caches invalidate immediately.

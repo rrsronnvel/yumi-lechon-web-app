@@ -58,9 +58,14 @@ public class Order : BaseEntity
     public int? DeliveryTripId { get; set; }
     public DeliveryTrip? DeliveryTrip { get; set; }
 
-    public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected" | "InStaffDrawer" | "Settled"
-    public string? HeldByStaffMethod { get; set; } // "Cash" | "ManualGCash" | "GCash"
+    public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected" | "InStaffDrawer" | "AwaitingOwnerDigitalVerification" | "Settled"
+    public string? HeldByStaffMethod { get; set; } // Physical custody method, or the full-digital channel while awaiting owner verification
     public decimal? HeldByStaffAmount { get; set; }
+    [MaxLength(50)]
+    public string? DigitalTransferMethod { get; set; }
+    public decimal? DigitalTransferAmount { get; set; }
+    [MaxLength(256)]
+    public string? DigitalReferenceNote { get; set; }
     public string? RiderSignedBy { get; set; }
     public decimal? RiderRemittedAmount { get; set; }
     public DateTime? RiderSignedAt { get; set; }

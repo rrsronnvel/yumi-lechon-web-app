@@ -78,6 +78,13 @@ const formatPhilippineDateKey = (value: Date | string): string => {
 const philippineDateFromNow = (days = 0): string =>
   formatPhilippineDateKey(new Date(Date.now() + days * 86_400_000));
 
+const hasValidTargetDate = (order: Pick<OrderDirectoryDto, 'targetDeliveryTime'>): boolean => {
+  if (!order.targetDeliveryTime) return false;
+  const dateKey = formatPhilippineDateKey(order.targetDeliveryTime);
+  const year = Number(dateKey.slice(0, 4));
+  return Boolean(dateKey) && Number.isFinite(year) && year >= 2025;
+};
+
 const getDaysUntilDelivery = (targetDeliveryTime?: string | Date | null): number => {
   if (!targetDeliveryTime) return 999;
   const targetKey = formatPhilippineDateKey(targetDeliveryTime);
@@ -216,7 +223,7 @@ export default function OrdersScreen({
       return rawOrders.filter(
         (order) =>
           !order.isCancelled &&
-          Boolean(order.targetDeliveryTime) &&
+          hasValidTargetDate(order) &&
           formatPhilippineDateKey(order.targetDeliveryTime!) >= todayDatePh
       );
     }
@@ -301,7 +308,7 @@ export default function OrdersScreen({
 
   const renderRoutingBadge = (order: OrderDirectoryDto) => {
     if (order.isDraft) {
-      const isDatedDraft = Boolean(order.targetDeliveryTime);
+      const isDatedDraft = hasValidTargetDate(order);
       return (
         <View style={[styles.routingBadge, isDatedDraft ? styles.routingDatedDraft : styles.routingDraft]}>
           <Text style={isDatedDraft ? styles.routingDatedDraftText : styles.routingDraftText}>⚠️ Incomplete Draft</Text>
@@ -393,7 +400,7 @@ export default function OrdersScreen({
     const balanceDue = Number(item.balanceDue || 0);
     const isPaid = balanceDue <= 0;
     const isDraft = Boolean(item.isDraft);
-    const isDatedDraft = isDraft && Boolean(item.targetDeliveryTime);
+    const isDatedDraft = isDraft && hasValidTargetDate(item);
     const isTimeAlert = Boolean(
       item.isTimeTbd ||
       !item.targetDeliveryTime ||

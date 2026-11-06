@@ -32,6 +32,7 @@ export interface ParsedOrderDraftDto {
   discount?: number | null;
   quotedItemsTotal?: number | null;
   quotedBalanceDue?: number | null;
+  parsedTotalBalance: number | null;
   downpayment?: number | null;
   downpaymentMethod?: "Cash" | "GCash" | "Maya" | "Bank Transfer" | null;
   assistedByAdmin?: string | null;
@@ -59,11 +60,12 @@ const CULINARY_PREP_PATTERN =
   /\b(?:liver\s*sauce(?:\s*only)?|sarsa\s*lang|sauce\s*lang|walang\s*dinuguan|raw\s*innards?|hilaw\s*na\s*(?:laman\s*loob|innards?)|extra\s*crispy|crispy\s*skin|crispy|chopped|hiwain|chop|shoutout|print|happy\s*birthday|dedication|walang\s*betsin|less\s*salt|spicy)\b/i;
 
 const FREEBIE_ITEM_PATTERN =
-  /\b(?:palabok|pancit|pansit|bihon|canton|spaghetti|spag|puto|biko|coke|pepsi|mountain\s*dew|7\s*up|mirinda|softdrinks?)\b/i;
+  /\b(?:palabok|pancit|pansit|bihon|canton|spaghetti|spag|puto|biko|sarsa|liver\s+sauce|coke|pepsi|mountain\s*dew|7\s*up|mirinda|softdrinks?)\b/i;
 
 function cleanNoteText(str: string): string {
   if (!str) return "";
   return str
+    .replace(/✅|❗️?/gu, " ")
     .replace(/^[\s✅❗👉•\-*#:!?]+/gu, "")
     .replace(/[\s✅❗👉•\-*#:!?]+$/gu, "")
     .trim();
@@ -104,7 +106,10 @@ function extractNonFreebieRemarks(value: string): string[] {
 }
 
 const FIELD_LABEL_PATTERN =
-  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)\s*[:\-]/i;
+  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|promo(?:\s*\([^)]*\))?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)[^\S\r\n]*[:\-]/i;
+
+const SINGLE_LINE_HEADER_PATTERN =
+  /^(?:total\s*balance|balance\s*due|price|discount|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|dp\s*payment\s*method(?:\s*\([^)]*\))?|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|assisted\s*by\s*admin)$/i;
 
 function findFieldSeparator(line: string): number {
   let parenthesisDepth = 0;
@@ -114,7 +119,7 @@ function findFieldSeparator(line: string): number {
     else if (char === ")") parenthesisDepth = Math.max(0, parenthesisDepth - 1);
     else if (parenthesisDepth === 0 && char === ":") return index;
   }
-  const spacedDash = line.search(/\s[-â€“â€”]\s/);
+  const spacedDash = line.search(/\s[-–—]\s/);
   return spacedDash;
 }
 
@@ -169,20 +174,37 @@ const parseWordNumber = (str: string): number => {
   return !isNaN(num) && num > 0 ? num : 1;
 };
 
-const parsePesoNumber = (raw: string): number => {
-  const cleaned = (raw || "").replace(/,/g, "").replace(/[^0-9.\-]/g, "");
-  const value = Number.parseFloat(cleaned);
-  return Number.isFinite(value) ? Math.max(0, value) : 0;
+export const extractSingleLineNumber = (
+  raw: string | null | undefined,
+): number | null => {
+  if (!raw) return null;
+  const firstLine = raw.split(/\r?\n/)[0] ?? "";
+  const withoutParens = firstLine.replace(/\([^)]*\)/g, " ").trim();
+  if (!withoutParens) return null;
+  const match = withoutParens.match(/(\d[\d,]*(?:\.\d+)?)/);
+  if (!match || !match[1]) return null;
+  const num = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(num) ? num : null;
 };
 
-const parsePriceExpression = (raw: string): number => {
-  const expression = (raw || "").replace(/[₱,\s]/g, "");
-  if (!/^\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*$/.test(expression)) {
-    return parsePesoNumber(raw);
+export const parseSingleLinePrice = (
+  raw: string | null | undefined,
+): number | null => {
+  if (!raw) return null;
+  const firstLine = raw.split(/\r?\n/)[0] ?? "";
+  const withoutParens = firstLine.replace(/\([^)]*\)/g, " ").trim();
+  if (!withoutParens) return null;
+  const cleanExpr = withoutParens.replace(/[₱,\s]/g, "");
+  if (!cleanExpr) return null;
+  if (/^\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)+$/.test(cleanExpr)) {
+    return cleanExpr
+      .split("+")
+      .reduce((sum, part) => sum + (Number.parseFloat(part) || 0), 0);
   }
-  return expression
-    .split("+")
-    .reduce((sum, part) => sum + (Number.parseFloat(part) || 0), 0);
+  const match = withoutParens.match(/(\d[\d,]*(?:\.\d+)?)/);
+  if (!match || !match[1]) return null;
+  const num = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(num) ? num : null;
 };
 
 const normalizePhone = (raw: string): string => {
@@ -235,11 +257,11 @@ const FREEBIE_ALIASES: { item: string; pattern: string }[] = [
   { item: "Pancit", pattern: "pancit|pansit|bihon|canton" },
   { item: "Spaghetti", pattern: "spaghetti|spag" },
   { item: "Puto", pattern: "puto" },
-  { item: "Sarsa", pattern: "sarsa|sauce" },
+  { item: "Sarsa", pattern: "sarsa|sauce|liver\\s*sauce" },
   { item: "Dinuguan", pattern: "dinuguan" },
   {
     item: "1.5L Coke",
-    pattern: "coke|pepsi|mountain\\s+dew|7\\s*up|mirinda|softdrinks?",
+    pattern: "(?:1\\.5\\s*l?\\s*)?(?:coke|pepsi|mountain\\s+dew|7\\s*up|mirinda|softdrinks?)",
   },
 ];
 
@@ -261,6 +283,13 @@ const parseFreebieOverrides = (value: string): Record<string, number> => {
     );
     if (quantityMatch) {
       overrides[alias.item] = parseWordNumber(quantityMatch[1]);
+    } else if (
+      new RegExp(`(?:^|[^a-z0-9])(?:${alias.pattern})(?:$|[^a-z0-9])`, "i").test(
+        value,
+      ) &&
+      !/\b(?:with\s+7\s+freebies|standard|default)\b/i.test(value)
+    ) {
+      overrides[alias.item] = 1;
     }
   }
   return overrides;
@@ -365,7 +394,7 @@ const parseFlexibleDateTimeAndTbd = (
 ): { targetDeliveryTime: string | null; isTimeTbd: boolean } => {
   if (!source) return { targetDeliveryTime: null, isTimeTbd: false };
 
-  const clean = source.replace(/\s+/g, " ").trim();
+  const clean = source.replace(/,?\s*\/\s*/g, " ").replace(/\s+/g, " ").trim();
   const lower = clean.toLowerCase();
 
   const isExplicitTbd =
@@ -601,11 +630,19 @@ export function parseMessengerTextToDraft(
       // Floating culinary notes isolation: never let non-remarks headers swallow kitchen instructions
       const cleanedLine = cleanNoteText(line);
       const isCulinaryNote = CULINARY_PREP_PATTERN.test(cleanedLine);
+      const isSingleLineHeader =
+        currentHeader !== null && SINGLE_LINE_HEADER_PATTERN.test(currentHeader);
+      const isFreebiesHeaderWithContent =
+        currentHeader !== null &&
+        /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|promo(?:\s*\([^)]*\))?)$/i.test(
+          currentHeader,
+        ) &&
+        currentLines.length > 0;
 
       if (
-        isCulinaryNote &&
+        (isCulinaryNote || isSingleLineHeader || isFreebiesHeaderWithContent) &&
         currentHeader !== null &&
-        !/^(?:special\s*requests?|remarks?|notes?|bilin|instructions?)$/i.test(
+        !/^(?:special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?)$/i.test(
           currentHeader,
         )
       ) {
@@ -700,6 +737,8 @@ export function parseMessengerTextToDraft(
     ) {
       contactNumber = contactNumber || extractPhone(value);
     } else if (/^(?:pickup\s*or\s*deliver|fulfillment)$/i.test(header)) {
+      const cleanValue = value.replace(/\r?\n/g, ", ").replace(/\s*,\s*/g, ", ").trim();
+      const pureFulfillment = /^(?:pick\s*-?\s*up|deliver(?:y)?|lalamove)$/i.test(cleanValue);
       if (/pick\s*-?\s*up/i.test(value)) {
         fulfillment = 0;
         fulfillmentExplicit = true;
@@ -709,6 +748,11 @@ export function parseMessengerTextToDraft(
       } else if (/deliver/i.test(value)) {
         fulfillment = 1;
         fulfillmentExplicit = true;
+      }
+      if (!pureFulfillment) {
+        fulfillment = /lalamove/i.test(value) ? 2 : 1;
+        fulfillmentExplicit = true;
+        deliveryAddress = deliveryAddress ? `${deliveryAddress}, ${cleanValue}` : cleanValue;
       }
     } else if (
       /^(?:del\s*add|deliver|delivery|address|location|delivery\s*address|drop[\s-]*off|venue)$/i.test(
@@ -733,7 +777,7 @@ export function parseMessengerTextToDraft(
     } else if (/^(?:order\s*\/\s*size|order(?:\s*size)?|size)$/i.test(header)) {
       orderSources.push(value);
     } else if (
-      /^(?:freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?)$/i.test(
+      /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|promo(?:\s*\([^)]*\))?)$/i.test(
         header,
       )
     ) {
@@ -744,7 +788,7 @@ export function parseMessengerTextToDraft(
       const match = header.match(/^additional\s+(.+)$/i);
       if (match) additionalAddOns.push(`${match[1]}\u0000${value}`);
     } else if (
-      /^(?:special\s*requests?|remarks?|notes?|bilin|instructions?)$/i.test(
+      /^(?:special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?)$/i.test(
         header,
       )
     ) {
@@ -780,11 +824,7 @@ export function parseMessengerTextToDraft(
         }
       }
     } else if (/^(?:delivery\s*)?distance(?:\s*\([^)]*\)|\s*km)?$/i.test(header)) {
-      const lines = value
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      const firstLine = lines[0] || "";
+      const firstLine = (value || "").split(/\r?\n/)[0]?.trim() || "";
       if (firstLine) {
         // Reject if followed by hour/hours/oras/min/mins/minutes/pm/am/%
         const hasRejectedUnit =
@@ -792,15 +832,7 @@ export function parseMessengerTextToDraft(
             firstLine,
           );
         if (!hasRejectedUnit) {
-          const kmMatch = firstLine.match(
-            /(\d+(?:\.\d+)?)\s*(?:km\b|kilometers?\b)?/i,
-          );
-          if (kmMatch && kmMatch[1]) {
-            const parsedVal = Number(kmMatch[1]);
-            if (Number.isFinite(parsedVal)) {
-              distanceKm = parsedVal;
-            }
-          }
+          distanceKm = extractSingleLineNumber(firstLine);
         }
       }
     } else if (/^dp\s*payment\s*method(?:\s*\([^)]*\))?$/i.test(header)) {
@@ -810,22 +842,22 @@ export function parseMessengerTextToDraft(
         header,
       )
     ) {
-      downpayment = parsePesoNumber(value);
-      downpaymentMethod = sniffPaymentMethod(value, downpayment);
+      downpayment = extractSingleLineNumber(value);
+      downpaymentMethod = sniffPaymentMethod(value, downpayment ?? 0);
     } else if (
       /^(?:delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df)$/i.test(
         header,
       )
     ) {
-      deliveryFee = parsePesoNumber(value);
+      deliveryFee = extractSingleLineNumber(value);
     } else if (/^assisted\s*by\s*admin$/i.test(header)) {
       assistedByAdmin = value.replace(/^[:\s]+/, "").trim() || null;
     } else if (/^discount$/i.test(header)) {
-      discount = parsePesoNumber(value);
+      discount = extractSingleLineNumber(value);
     } else if (/^price$/i.test(header)) {
-      quotedItemsTotal = parsePriceExpression(value);
+      quotedItemsTotal = parseSingleLinePrice(value);
     } else if (/^(?:total\s*balance|balance\s*due)$/i.test(header)) {
-      quotedBalanceDue = parsePesoNumber(value);
+      quotedBalanceDue = extractSingleLineNumber(value);
     }
   }
 
@@ -909,6 +941,13 @@ export function parseMessengerTextToDraft(
 
   // Freebies / Less 2k
   for (const fVal of freebieValues) {
+    const cleanedFreebies = cleanNoteText(fVal).replace(/\s+/g, " ").trim();
+    const overrides = parseFreebieOverrides(cleanedFreebies);
+    if (Object.keys(overrides).length > 0 || FREEBIE_ITEM_PATTERN.test(cleanedFreebies)) {
+      freebiesMode = "custom";
+      Object.assign(freebieOverrides, overrides);
+      if (cleanedFreebies) freebiesCustomizationNotes.push(cleanedFreebies);
+    }
     if (
       /less\s*2\s*k|less\s*2,?000|cash\s*discount|no\s*freebie|walang\s*freebie/i.test(
         fVal,
@@ -957,7 +996,7 @@ export function parseMessengerTextToDraft(
 
       // Check Belly
       const bellyKgMatch = lower.match(
-        /\b([2-6])\s*(?:kgs?|kls?|kilos?)\s*(?:lechon\s*)?belly\b|\b(?:lechon\s*)?belly\s*([2-6])\s*(?:kgs?|kls?|kilos?)\b|\b([2-6])\s*(?:kgs?|kls?|kilos?)\b/i,
+        /\b([2-6])\s*(?:kgs?|kls?|kilos?)\s*(?:le(?:t)?chon\s*)?belly\b|\b(?:le(?:t)?chon\s*)?belly\s*([2-6])\s*(?:kgs?|kls?|kilos?)\b|\b([2-6])\s*(?:kgs?|kls?|kilos?)\b/i,
       );
       const isBellyMention = /belly/i.test(lower);
       if (isBellyMention || bellyKgMatch) {
@@ -975,7 +1014,7 @@ export function parseMessengerTextToDraft(
         if (bellyCategory) {
           let qty = 1;
           const qm = lower.match(
-            /(\d+|isang?|dalawang?|tatlong?|apat|lima)\s*(?:x|pcs?|orders?)?\s*(?:(?:lechon\s*)?belly|[2-6]\s*(?:kgs?|kls?|kilos?))/i,
+            /(\d+|isang?|dalawang?|tatlong?|apat|lima)\s*(?:x|pcs?|orders?)?\s*(?:(?:le(?:t)?chon\s*)?belly|[2-6]\s*(?:kgs?|kls?|kilos?))/i,
           );
           if (qm) qty = parseWordNumber(qm[1]);
           addItem(bellyCategory, qty);
@@ -1123,6 +1162,7 @@ export function parseMessengerTextToDraft(
     discount,
     quotedItemsTotal,
     quotedBalanceDue,
+    parsedTotalBalance: quotedBalanceDue,
     downpayment,
     downpaymentMethod,
     assistedByAdmin,

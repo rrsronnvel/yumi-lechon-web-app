@@ -171,9 +171,19 @@ export default function OrderDossierModal({
     fallbackOrder?.settlementCustodyStatus ||
     'Uncollected'
   ).trim();
-  const isPhysicalCustodyActive =
-    custodyStatus === 'InStaffDrawer' ||
-    (computedBalanceDue > 0 && custodyStatus === 'Uncollected');
+  const digitalTransferAmount = Number(
+    orderDetails?.digitalTransferAmount ?? fallbackOrder?.digitalTransferAmount ?? 0
+  );
+  const heldByStaffAmount = Number(
+    orderDetails?.heldByStaffAmount ?? fallbackOrder?.heldByStaffAmount ?? 0
+  );
+  const isDigitalCustodyActive =
+    custodyStatus === 'AwaitingOwnerDigitalVerification';
+  const isPhysicalCustodyActive = custodyStatus === 'InStaffDrawer';
+  const showOwnerRiderFeePayout =
+    isDigitalCustodyActive &&
+    heldByStaffAmount <= 0 &&
+    Number(orderDetails?.deliveryFee ?? fallbackOrder?.deliveryFee ?? 0) > 0;
 
   const handleAssignRider = async () => {
     if (!orderId || !assignedRiderInput.trim()) {
@@ -312,6 +322,7 @@ export default function OrderDossierModal({
               referenceNumber: referenceNumber.trim() || undefined,
             }
       );
+      await refetchDetails();
       setPaymentFeedback({
         type: 'success',
         message: `₱${parsedAmount.toLocaleString()} (${paymentMethod}) logged to ledger!`,
@@ -727,6 +738,31 @@ export default function OrderDossierModal({
                     Physical cash custody is active. Settle via Owner Drawer tab.
                   </Text>
                 </View>
+              </View>
+            )}
+
+            {isDigitalCustodyActive && (
+              <View style={styles.digitalCustodyBanner}>
+                <Text style={styles.physicalCustodyBannerIcon}>🏦</Text>
+                <View style={styles.physicalCustodyBannerContent}>
+                  <Text style={styles.digitalCustodyBannerTitle}>
+                    Awaiting Owner Digital Deposit Verification
+                  </Text>
+                  <Text style={styles.digitalCustodyBannerSubtitle}>
+                    {orderDetails?.digitalTransferMethod || fallbackOrder?.digitalTransferMethod || 'Digital transfer'} • ₱{digitalTransferAmount.toLocaleString()}
+                  </Text>
+                  <Text style={styles.digitalReferenceNote}>
+                    Bank / Reference Note: {orderDetails?.digitalReferenceNote || fallbackOrder?.digitalReferenceNote || 'Not recorded'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {showOwnerRiderFeePayout && (
+              <View style={styles.riderFeePayoutBanner}>
+                <Text style={styles.riderFeePayoutBannerText}>
+                  💸 Rider Fee Payout: Owner to send ₱{Number(orderDetails?.deliveryFee ?? fallbackOrder?.deliveryFee ?? 0).toLocaleString()} to {orderDetails?.assignedRiderName || fallbackOrder?.riderName || 'Assigned Rider'} via GCash (Customer paid full balance digitally)
+                </Text>
               </View>
             )}
 
@@ -1248,10 +1284,26 @@ export default function OrderDossierModal({
                     </Text>
                     <Text style={styles.downpaymentValue}>
                       - ₱{Number(
-                        orderDetails?.heldByStaffAmount ||
-                          fallbackOrder?.heldByStaffAmount ||
-                          computedBalanceDue
+                        orderDetails?.heldByStaffAmount ??
+                          fallbackOrder?.heldByStaffAmount ??
+                          0
                       ).toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+
+                {digitalTransferAmount > 0 && (
+                  <View style={styles.ledgerRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.downpaymentLabel}>
+                        Digital Transfer {isDigitalCustodyActive ? 'Awaiting Owner Check' : 'Verified'} ({orderDetails?.digitalTransferMethod || fallbackOrder?.digitalTransferMethod || 'Digital'})
+                      </Text>
+                      <Text style={styles.paymentChannelBadge}>
+                        {orderDetails?.digitalReferenceNote || fallbackOrder?.digitalReferenceNote || 'No reference note'}
+                      </Text>
+                    </View>
+                    <Text style={styles.downpaymentValue}>
+                      - ₱{digitalTransferAmount.toLocaleString()}
                     </Text>
                   </View>
                 )}
@@ -1300,6 +1352,7 @@ export default function OrderDossierModal({
                             ]}
                           >
                             {new Date(payment.createdAt).toLocaleString('en-PH')}
+                            {payment.recordedBy ? ` • by @${payment.recordedBy.replace(/^@/, '')}` : ''}
                           </Text>
                           {(payment.referenceNumber || payment.gatewayReferenceId) && (
                             <Text
@@ -1350,12 +1403,14 @@ export default function OrderDossierModal({
                   <Text
                     style={[
                       styles.balanceHighlightValue,
-                      custodyStatus === 'InStaffDrawer' || computedBalanceDue <= 0
+                      custodyStatus === 'InStaffDrawer' || isDigitalCustodyActive || computedBalanceDue <= 0
                         ? styles.balanceZeroText
                         : styles.balancePositiveText,
                     ]}
                   >
-                    {custodyStatus === 'InStaffDrawer'
+                    {isDigitalCustodyActive
+                      ? '₱0 (Awaiting Owner Digital Check)'
+                      : custodyStatus === 'InStaffDrawer'
                       ? '₱0 (Awaiting Owner Verification)'
                       : computedBalanceDue <= 0
                       ? '🟢 ₱0 (Paid in Full)'
@@ -1367,6 +1422,13 @@ export default function OrderDossierModal({
                   <View style={styles.financialCustodyNotice}>
                     <Text style={styles.financialCustodyNoticeText}>
                       ⚠️ Physical cash custody is active. Settle via Owner Drawer tab.
+                    </Text>
+                  </View>
+                )}
+                {isDigitalCustodyActive && (
+                  <View style={styles.digitalFinancialNotice}>
+                    <Text style={styles.digitalFinancialNoticeText}>
+                      🏦 Digital funds are with the Owner account, not the physical Staff Drawer. Complete Hop 2 in the Owner Drawer tab.
                     </Text>
                   </View>
                 )}
@@ -2200,6 +2262,46 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#B45309',
   },
+  digitalCustodyBanner: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  digitalCustodyBannerTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#1E3A8A',
+    marginBottom: 2,
+  },
+  digitalCustodyBannerSubtitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  digitalReferenceNote: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1E40AF',
+    marginTop: 3,
+  },
+  riderFeePayoutBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 12,
+  },
+  riderFeePayoutBannerText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#92400E',
+    lineHeight: 18,
+  },
   financialCustodyNotice: {
     backgroundColor: '#FFFBEB',
     borderWidth: 1,
@@ -2212,6 +2314,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#B45309',
+  },
+  digitalFinancialNotice: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  digitalFinancialNoticeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E40AF',
   },
   card: {
     backgroundColor: '#FFFFFF',

@@ -31,16 +31,27 @@ namespace LechonSystem.Api.Services
             int itemCategoryId,
             DateTime? riderDepartureTime = null)
         {
+            FulfillmentType? fulfillment = null;
             if (orderItemId > 0)
             {
-                var effectiveCategoryId = await _context.OrderItems
+                var orderContext = await _context.OrderItems
                     .AsNoTracking()
                     .Where(item => item.Id == orderItemId)
-                    .Select(item => item.FulfilledItemCategoryId ?? item.ItemCategoryId)
+                    .Select(item => new
+                    {
+                        EffectiveCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId,
+                        DepartureTime = item.Order != null ? item.Order.RiderDepartureTime : null,
+                        Fulfillment = item.Order != null ? (FulfillmentType?)item.Order.Fulfillment : null
+                    })
                     .FirstOrDefaultAsync();
-                if (effectiveCategoryId > 0)
+                if (orderContext != null)
                 {
-                    itemCategoryId = effectiveCategoryId;
+                    if (orderContext.EffectiveCategoryId > 0)
+                    {
+                        itemCategoryId = orderContext.EffectiveCategoryId;
+                    }
+                    riderDepartureTime ??= orderContext.DepartureTime;
+                    fulfillment = orderContext.Fulfillment;
                 }
             }
 
@@ -51,17 +62,23 @@ namespace LechonSystem.Api.Services
             int salangDuration = profile?.SalangDurationMinutes ?? 180;
             int packagingDuration = profile?.PackagingDurationMinutes ?? 30;
 
-            if (!riderDepartureTime.HasValue && orderItemId > 0)
+            var target = NormalizeToLocalStoreTime(targetDeliveryTime);
+            DateTime anchorTime;
+            if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
             {
-                var orderDeparture = await _context.OrderItems
-                    .AsNoTracking()
-                    .Where(oi => oi.Id == orderItemId && oi.Order != null)
-                    .Select(oi => oi.Order!.RiderDepartureTime)
-                    .FirstOrDefaultAsync();
-                riderDepartureTime = orderDeparture;
+                anchorTime = target;
+            }
+            else if (!riderDepartureTime.HasValue ||
+                     riderDepartureTime.Value.TimeOfDay > target.TimeOfDay)
+            {
+                anchorTime = target.AddHours(-1);
+            }
+            else
+            {
+                anchorTime = target.Date.Add(riderDepartureTime.Value.TimeOfDay);
             }
 
-            var anchorTime = riderDepartureTime ?? targetDeliveryTime;
+            anchorTime = NormalizeToLocalStoreTime(anchorTime);
 
             DateTime packagingStart = anchorTime.AddMinutes(-packagingDuration);
             DateTime salangStart = packagingStart.AddMinutes(-salangDuration);
@@ -70,7 +87,7 @@ namespace LechonSystem.Api.Services
             var schedule = new OrderItemSchedule
             {
                 OrderItemId = orderItemId,
-                TargetDeliveryTime = targetDeliveryTime,
+                TargetDeliveryTime = target,
                 PackagingStartTime = packagingStart,
                 SalangStartTime = salangStart,
                 TahiStartTime = tahiStart
@@ -556,43 +573,24 @@ namespace LechonSystem.Api.Services
             };
         }
 
-        private static readonly TimeZoneInfo PhilippineTimeZone = GetPhilippineTimeZone();
-
-        private static TimeZoneInfo GetPhilippineTimeZone()
-        {
-            try
-            {
-                return TimeZoneInfo.FindSystemTimeZoneById("Singapore Standard Time"); // Windows ID for UTC+8
-            }
-            catch
-            {
-                try
-                {
-                    return TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila"); // Linux / IANA ID
-                }
-                catch
-                {
-                    return TimeZoneInfo.CreateCustomTimeZone("PST", TimeSpan.FromHours(8), "Philippine Standard Time", "Philippine Standard Time");
-                }
-            }
-        }
-
         private static DateTime NormalizeToLocalStoreTime(DateTime dt)
+            => DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+
+        private static DateTime AnchorClockToTargetDate(
+            DateTime value,
+            DateTime targetDeliveryTime,
+            DateTime? departureTime = null)
         {
-            if (dt.Kind == DateTimeKind.Utc)
+            var target = NormalizeToLocalStoreTime(targetDeliveryTime);
+            var anchored = NormalizeToLocalStoreTime(target.Date.Add(value.TimeOfDay));
+            if (departureTime.HasValue &&
+                departureTime.Value.Hour >= 1 && departureTime.Value.Hour <= 5 &&
+                anchored > departureTime.Value)
             {
-                var localTime = TimeZoneInfo.ConvertTimeFromUtc(dt, PhilippineTimeZone);
-                return DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified);
+                anchored = anchored.AddDays(-1);
             }
 
-            if (dt.Kind == DateTimeKind.Local)
-            {
-                var utcTime = dt.ToUniversalTime();
-                var localTime = TimeZoneInfo.ConvertTimeFromUtc(utcTime, PhilippineTimeZone);
-                return DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified);
-            }
-
-            return DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+            return anchored;
         }
 
         public Task<OrderItemSchedule> OverrideScheduleAsync(int orderItemId, OverrideScheduleRequest request)
@@ -631,6 +629,19 @@ namespace LechonSystem.Api.Services
 
             if (schedule == null)
                 throw new KeyNotFoundException($"Schedule for OrderItem #{orderItemId} not found.");
+
+            var scheduleOrder = schedule.OrderItem?.Order
+                ?? throw new InvalidOperationException("Schedule is not linked to an order.");
+            var targetDeliveryTime = NormalizeToLocalStoreTime(
+                scheduleOrder.TargetDeliveryTime ?? schedule.TargetDeliveryTime);
+            var requestedDeparture = request.DepartureTime ?? request.RiderDepartureTime;
+            var normalizedRequestedDeparture = requestedDeparture.HasValue
+                ? AnchorClockToTargetDate(requestedDeparture.Value, targetDeliveryTime)
+                : (DateTime?)null;
+            var effectiveDepartureForAnchoring = normalizedRequestedDeparture
+                ?? (scheduleOrder.RiderDepartureTime.HasValue
+                    ? AnchorClockToTargetDate(scheduleOrder.RiderDepartureTime.Value, targetDeliveryTime)
+                    : targetDeliveryTime);
 
             if (request.CustomWeightDisplay != null)
             {
@@ -676,10 +687,9 @@ namespace LechonSystem.Api.Services
                         _context.OrderItems.Add(splitItem);
                         await _context.SaveChangesAsync();
 
-                        var reqDeparture = request.DepartureTime ?? request.RiderDepartureTime;
-                        var anchorTime = reqDeparture 
-                            ?? schedule.OrderItem.Order?.RiderDepartureTime 
-                            ?? schedule.TargetDeliveryTime;
+                        var anchorTime = normalizedRequestedDeparture
+                            ?? schedule.OrderItem.Order?.RiderDepartureTime
+                            ?? targetDeliveryTime;
 
                         var splitSchedule = await CalculateScheduleAsync(
                             splitItem.Id,
@@ -747,12 +757,11 @@ namespace LechonSystem.Api.Services
                             int salangDuration = profile?.SalangDurationMinutes ?? 180;
                             int packagingDuration = profile?.PackagingDurationMinutes ?? 30;
 
-                            var reqDeparture = request.DepartureTime ?? request.RiderDepartureTime;
-                            var anchorTime = reqDeparture 
-                                ?? schedule.OrderItem.Order?.RiderDepartureTime 
-                                ?? schedule.TargetDeliveryTime;
+                            var anchorTime = normalizedRequestedDeparture
+                                ?? schedule.OrderItem.Order?.RiderDepartureTime
+                                ?? targetDeliveryTime;
 
-                            var normalizedAnchor = NormalizeToLocalStoreTime(anchorTime);
+                            var normalizedAnchor = AnchorClockToTargetDate(anchorTime, targetDeliveryTime);
                             schedule.PackagingStartTime = normalizedAnchor.AddMinutes(-packagingDuration);
                             schedule.SalangStartTime = schedule.PackagingStartTime.AddMinutes(-salangDuration);
                             schedule.TahiStartTime = schedule.SalangStartTime.AddMinutes(-tahiDuration);
@@ -762,23 +771,30 @@ namespace LechonSystem.Api.Services
             }
 
             if (request.TahiStartTime.HasValue)
-                schedule.TahiStartTime = NormalizeToLocalStoreTime(request.TahiStartTime.Value);
+                schedule.TahiStartTime = AnchorClockToTargetDate(
+                    request.TahiStartTime.Value,
+                    targetDeliveryTime,
+                    effectiveDepartureForAnchoring);
 
             if (request.SalangStartTime.HasValue)
-                schedule.SalangStartTime = NormalizeToLocalStoreTime(request.SalangStartTime.Value);
+                schedule.SalangStartTime = AnchorClockToTargetDate(
+                    request.SalangStartTime.Value,
+                    targetDeliveryTime,
+                    effectiveDepartureForAnchoring);
 
             if (request.PackagingStartTime.HasValue)
-                schedule.PackagingStartTime = NormalizeToLocalStoreTime(request.PackagingStartTime.Value);
+                schedule.PackagingStartTime = AnchorClockToTargetDate(
+                    request.PackagingStartTime.Value,
+                    targetDeliveryTime,
+                    effectiveDepartureForAnchoring);
 
-            var effectiveDeparture = request.DepartureTime ?? request.RiderDepartureTime;
-            if (effectiveDeparture.HasValue && schedule.OrderItem?.Order != null)
+            if (normalizedRequestedDeparture.HasValue)
             {
-                var normalizedDeparture = NormalizeToLocalStoreTime(effectiveDeparture.Value);
-                schedule.OrderItem.Order.RiderDepartureTime = normalizedDeparture;
-                if (schedule.OrderItem.Order.Fulfillment == FulfillmentType.Pickup || schedule.OrderItem.Order.Fulfillment == FulfillmentType.Lalamove)
+                scheduleOrder.RiderDepartureTime = normalizedRequestedDeparture.Value;
+                if (scheduleOrder.Fulfillment == FulfillmentType.Pickup || scheduleOrder.Fulfillment == FulfillmentType.Lalamove)
                 {
-                    schedule.OrderItem.Order.TargetDeliveryTime = normalizedDeparture;
-                    schedule.TargetDeliveryTime = normalizedDeparture;
+                    scheduleOrder.TargetDeliveryTime = normalizedRequestedDeparture.Value;
+                    schedule.TargetDeliveryTime = normalizedRequestedDeparture.Value;
                 }
             }
 

@@ -26,7 +26,6 @@ import {
   useOwnerApproveQrMutation,
   useRevertCustodyMutation,
   useCounterCollectPickupMutation,
-  useDirectGcashSettlementMutation,
   useReleaseLalamoveMutation,
   useSettleManualPaymentMutation,
   PendingLalamoveSettlement,
@@ -45,6 +44,12 @@ interface ActiveModalState {
   riderSignedBy?: string | null;
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
+  heldByStaffAmount?: number | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
+  totalCollected?: number;
+  deliveryFee?: number;
   isTrustedCustomer?: boolean;
 }
 
@@ -149,7 +154,6 @@ export default function DrawerScreen() {
   const ownerApproveMutation = useOwnerApproveQrMutation();
   const revertCustodyMutation = useRevertCustodyMutation();
   const counterCollectMutation = useCounterCollectPickupMutation();
-  const directGcashMutation = useDirectGcashSettlementMutation();
   const releaseLalamoveMutation = useReleaseLalamoveMutation();
   const manualPaymentMutation = useSettleManualPaymentMutation();
 
@@ -179,7 +183,7 @@ export default function DrawerScreen() {
 
   // Workflow B (Hop 1 Rider-to-Staff) State
   const [riderPayMethod, setRiderPayMethod] = useState<
-    'Cash' | 'ManualGCash' | 'GCash' | 'Bank Transfer' | 'Split'
+    'Cash' | 'ManualGCash' | 'DirectGCash' | 'Maya' | 'BankTransfer' | 'Split'
   >('Cash');
   const [directGcashRef, setDirectGcashRef] = useState('');
   const [showManualOverride, setShowManualOverride] = useState(false);
@@ -193,6 +197,20 @@ export default function DrawerScreen() {
   const [splitDigitalAmount, setSplitDigitalAmount] = useState('');
   const [splitDigitalMethod, setSplitDigitalMethod] = useState('GCash');
   const [splitDigitalRef, setSplitDigitalRef] = useState('');
+  const normalizedRiderPayMethod = riderPayMethod.replace(/\s+/g, '').toLowerCase();
+  const isDigitalHop1 = [
+    'directgcash',
+    'gcash',
+    'manualgcash',
+    'maya',
+    'banktransfer',
+  ].includes(normalizedRiderPayMethod);
+  const isDirectOwnerHop1 = ['directgcash', 'banktransfer'].includes(
+    normalizedRiderPayMethod
+  );
+  const selectedHop1ExpectedAmount = isDirectOwnerHop1
+    ? Number(modalState?.totalCollected ?? modalState?.expectedAmount ?? 0)
+    : Number(modalState?.expectedAmount ?? 0);
 
   // Poll QR Session Status when Hop 1 or Hop 2 QR token is active
   const shouldPollQr =
@@ -206,14 +224,16 @@ export default function DrawerScreen() {
   const {
     inStaffDrawerTotal,
     inStaffDrawerCount,
-    uncollectedTotal,
-    uncollectedCount,
+    pendingDigitalTotal,
+    pendingDigitalCount,
     hop2CombinedItems,
   } = useMemo(() => {
     let drawerSum = 0;
     let drawerCnt = 0;
     let uncollSum = 0;
     let uncollCnt = 0;
+    let digitalSum = 0;
+    let digitalCnt = 0;
 
     const combined: {
       key: string;
@@ -228,14 +248,31 @@ export default function DrawerScreen() {
       riderSignedBy?: string | null;
       heldByStaffName: string;
       heldPaymentMethod?: string | null;
+      heldByStaffAmount?: number | null;
+      digitalTransferMethod?: string | null;
+      digitalTransferAmount?: number | null;
+      digitalReferenceNote?: string | null;
+      totalCollected: number;
+      deliveryFee: number;
+      custodyStatus: string;
       targetDeliveryTime?: string | null;
     }[] = [];
 
     for (const r of riderDrops) {
-      const amt = Number(r.netRemittance || 0);
-      if (r.custodyStatus === 'InStaffDrawer') {
-        drawerSum += amt;
+      const physicalAmount = Number(r.heldByStaffAmount ?? 0);
+      const digitalAmount = Number(r.digitalTransferAmount ?? 0);
+      const isAwaitingOwner =
+        r.custodyStatus === 'InStaffDrawer' ||
+        r.custodyStatus === 'AwaitingOwnerDigitalVerification';
+      if (r.custodyStatus === 'InStaffDrawer' && physicalAmount > 0) {
+        drawerSum += physicalAmount;
         drawerCnt += 1;
+      }
+      if (isAwaitingOwner && digitalAmount > 0) {
+        digitalSum += digitalAmount;
+        digitalCnt += 1;
+      }
+      if (isAwaitingOwner) {
         combined.push({
           key: `rider-${r.orderId || r.id}`,
           sourceType: 'Rider Delivery',
@@ -244,24 +281,41 @@ export default function DrawerScreen() {
           facebookName: r.facebookName,
           source: r.source,
           isTrustedCustomer: r.isTrustedCustomer,
-          amount: amt,
+          amount: physicalAmount > 0 ? physicalAmount : digitalAmount,
           riderName: r.riderName || 'Freelance Rider',
           riderSignedBy: r.riderSignedBy,
           heldByStaffName: r.heldByStaffName || 'Cashier',
           heldPaymentMethod: r.heldPaymentMethod,
+          heldByStaffAmount: r.heldByStaffAmount,
+          digitalTransferMethod: r.digitalTransferMethod,
+          digitalTransferAmount: r.digitalTransferAmount,
+          digitalReferenceNote: r.digitalReferenceNote,
+          totalCollected: r.totalCollected,
+          deliveryFee: r.riderDeliveryFee,
+          custodyStatus: r.custodyStatus || 'Uncollected',
           targetDeliveryTime: r.targetDeliveryTime,
         });
-      } else {
-        uncollSum += amt;
+      } else if (r.custodyStatus === 'Uncollected') {
+        uncollSum += Number(r.netRemittance || 0);
         uncollCnt += 1;
       }
     }
 
     for (const p of pickupDrops) {
-      const amt = Number(p.heldByStaffAmount ?? p.balanceDue ?? 0);
-      if (p.custodyStatus === 'InStaffDrawer') {
-        drawerSum += amt;
+      const physicalAmount = Number(p.heldByStaffAmount ?? 0);
+      const digitalAmount = Number(p.digitalTransferAmount ?? 0);
+      const isAwaitingOwner =
+        p.custodyStatus === 'InStaffDrawer' ||
+        p.custodyStatus === 'AwaitingOwnerDigitalVerification';
+      if (p.custodyStatus === 'InStaffDrawer' && physicalAmount > 0) {
+        drawerSum += physicalAmount;
         drawerCnt += 1;
+      }
+      if (isAwaitingOwner && digitalAmount > 0) {
+        digitalSum += digitalAmount;
+        digitalCnt += 1;
+      }
+      if (isAwaitingOwner) {
         combined.push({
           key: `pickup-${p.orderId}`,
           sourceType: 'Walk-in Pickup',
@@ -270,15 +324,22 @@ export default function DrawerScreen() {
           facebookName: p.facebookName,
           source: p.source,
           isTrustedCustomer: p.isTrustedCustomer,
-          amount: amt,
+          amount: physicalAmount > 0 ? physicalAmount : digitalAmount,
           riderName: 'Walk-in Store Pickup',
           riderSignedBy: p.riderSignedBy || 'Walk-in Customer',
           heldByStaffName: p.heldByStaffName || 'Cashier',
           heldPaymentMethod: p.heldPaymentMethod,
+          heldByStaffAmount: p.heldByStaffAmount,
+          digitalTransferMethod: p.digitalTransferMethod,
+          digitalTransferAmount: p.digitalTransferAmount,
+          digitalReferenceNote: p.digitalReferenceNote,
+          totalCollected: p.balanceDue,
+          deliveryFee: 0,
+          custodyStatus: p.custodyStatus || 'Uncollected',
           targetDeliveryTime: p.targetDeliveryTime,
         });
-      } else {
-        uncollSum += amt;
+      } else if (p.custodyStatus === 'Uncollected') {
+        uncollSum += Number(p.balanceDue ?? 0);
         uncollCnt += 1;
       }
     }
@@ -288,6 +349,8 @@ export default function DrawerScreen() {
       inStaffDrawerCount: drawerCnt,
       uncollectedTotal: uncollSum,
       uncollectedCount: uncollCnt,
+      pendingDigitalTotal: digitalSum,
+      pendingDigitalCount: digitalCnt,
       hop2CombinedItems: combined,
     };
   }, [riderDrops, pickupDrops]);
@@ -295,9 +358,11 @@ export default function DrawerScreen() {
   const custodianBreakdown = useMemo(() => {
     const map = new Map<string, { name: string; amount: number; count: number }>();
     for (const item of hop2CombinedItems) {
+      const physicalAmount = Number(item.heldByStaffAmount ?? 0);
+      if (physicalAmount <= 0) continue;
       const name = item.heldByStaffName || 'Cashier';
       const existing = map.get(name) || { name, amount: 0, count: 0 };
-      existing.amount += item.amount;
+      existing.amount += physicalAmount;
       existing.count += 1;
       map.set(name, existing);
     }
@@ -314,14 +379,20 @@ export default function DrawerScreen() {
   const visibleRiderDrops = useMemo(() => {
     if (!selectedCustodian) return riderDrops;
     return riderDrops.filter(
-      (d) => d.custodyStatus === 'InStaffDrawer' && (d.heldByStaffName || 'Cashier') === selectedCustodian
+      (d) =>
+        (d.custodyStatus === 'InStaffDrawer' ||
+          d.custodyStatus === 'AwaitingOwnerDigitalVerification') &&
+        (d.heldByStaffName || 'Cashier') === selectedCustodian
     );
   }, [riderDrops, selectedCustodian]);
 
   const visiblePickupDrops = useMemo(() => {
     if (!selectedCustodian) return pickupDrops;
     return pickupDrops.filter(
-      (p) => p.custodyStatus === 'InStaffDrawer' && (p.heldByStaffName || 'Cashier') === selectedCustodian
+      (p) =>
+        (p.custodyStatus === 'InStaffDrawer' ||
+          p.custodyStatus === 'AwaitingOwnerDigitalVerification') &&
+        (p.heldByStaffName || 'Cashier') === selectedCustodian
     );
   }, [pickupDrops, selectedCustodian]);
 
@@ -354,16 +425,12 @@ export default function DrawerScreen() {
         }
       );
     } else if (modalState.workflow === 'hop1_rider') {
-      if (riderPayMethod === 'GCash') {
-        setSessionToken(null);
-        return;
-      }
       createQrMutation.mutate(
         {
           orderId: modalState.orderId,
           hopStage: 'RiderToStaff',
           paymentMethod: riderPayMethod,
-          expectedAmount: modalState.expectedAmount,
+          expectedAmount: selectedHop1ExpectedAmount,
         },
         {
           onSuccess: (data) => {
@@ -373,7 +440,7 @@ export default function DrawerScreen() {
               !resolvedRider.trim() || resolvedRider.trim().toLowerCase() === 'unassigned';
             setOverrideRiderName(isUnassigned ? '' : resolvedRider);
             setShowManualOverride(isUnassigned);
-            setOverrideAmount(String(data.expectedAmount || modalState.expectedAmount));
+            setOverrideAmount(String(data.expectedAmount || selectedHop1ExpectedAmount));
           },
           onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -386,7 +453,7 @@ export default function DrawerScreen() {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalState?.orderId, modalState?.workflow, riderPayMethod]);
+  }, [modalState?.orderId, modalState?.workflow, riderPayMethod, selectedHop1ExpectedAmount]);
 
   const closeActiveModal = () => {
     setModalState(null);
@@ -500,8 +567,15 @@ export default function DrawerScreen() {
   const handleHop1StaffValidate = async (useOverride: boolean) => {
     if (!modalState || !sessionToken) return;
     setModalError(null);
+    const digitalReference = riderPayMethod === 'Split'
+      ? splitDigitalRef.trim()
+      : directGcashRef.trim();
+    if ((riderPayMethod === 'Split' || isDigitalHop1) && !digitalReference) {
+      setModalError('Bank Name / Reference Note is required for the digital transfer.');
+      return;
+    }
 
-    if (useOverride) {
+    if (useOverride && !isDigitalHop1) {
       const amt = parseFloat(overrideAmount);
       if (!overrideRiderName.trim() || isNaN(amt) || amt < 0) {
         setModalError('Please enter valid Rider Name and Counted Peso Amount.');
@@ -512,19 +586,38 @@ export default function DrawerScreen() {
     try {
       await staffValidateMutation.mutateAsync({
         token: sessionToken,
-        manualOverrideRiderName: useOverride ? overrideRiderName.trim() : undefined,
-        manualOverrideAmount: useOverride ? (riderPayMethod === 'Split' ? Number(splitCashAmount) : parseFloat(overrideAmount)) : undefined,
+        manualOverrideRiderName:
+          useOverride || isDigitalHop1 ? overrideRiderName.trim() : undefined,
+        manualOverrideAmount:
+          useOverride || isDigitalHop1
+            ? (riderPayMethod === 'Split'
+                ? Number(splitCashAmount)
+                : selectedHop1ExpectedAmount)
+            : undefined,
         staffName: receivedByStaff.trim() || undefined,
-        cashAmount: riderPayMethod === 'Split' ? Number(splitCashAmount) : undefined,
-        digitalAmount: riderPayMethod === 'Split' ? Number(splitDigitalAmount) : undefined,
-        digitalMethod: riderPayMethod === 'Split' ? splitDigitalMethod : undefined,
+        cashAmount:
+          riderPayMethod === 'Split'
+            ? Number(splitCashAmount)
+            : isDigitalHop1 ? 0 : undefined,
+        digitalAmount:
+          riderPayMethod === 'Split'
+            ? Number(splitDigitalAmount)
+            : isDigitalHop1 ? selectedHop1ExpectedAmount : undefined,
+        digitalMethod:
+          riderPayMethod === 'Split'
+            ? splitDigitalMethod
+            : isDigitalHop1 ? riderPayMethod : undefined,
         digitalReferenceNumber:
-          riderPayMethod === 'Split' ? splitDigitalRef.trim() || undefined : undefined,
+          riderPayMethod === 'Split'
+            ? splitDigitalRef.trim() || undefined
+            : isDigitalHop1 ? directGcashRef.trim() || undefined : undefined,
       });
       const id = modalState.orderId;
       closeActiveModal();
       showSuccessFeedback(
-        `🟡 Order #${id} cash validated and placed into Staff Drawer custody!`
+        isDigitalHop1
+          ? `🏦 Order #${id} digital transfer logged for Owner check; physical drawer remains ₱0.`
+          : `🟡 Order #${id} cash validated and placed into Staff Drawer custody!`
       );
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -548,37 +641,18 @@ export default function DrawerScreen() {
     }
   };
 
-  // Workflow B: Direct Store GCash Bypass
-  const handleHop1DirectGcash = async () => {
-    if (!modalState) return;
-    if (!directGcashRef.trim()) {
-      setModalError('Please enter the GCash Reference Number.');
-      return;
-    }
-    setModalError(null);
-    try {
-      await directGcashMutation.mutateAsync({
-        orderId: modalState.orderId,
-        amount: modalState.expectedAmount,
-        referenceNumber: directGcashRef.trim(),
-      });
-      const id = modalState.orderId;
-      closeActiveModal();
-      showSuccessFeedback(
-        `📱 Order #${id} settled directly via Store GCash (Ref: ${directGcashRef.trim()})!`
-      );
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } } };
-      setModalError(
-        axiosErr.response?.data?.message || 'Failed to record Direct Store GCash.'
-      );
-    }
-  };
-
   // Workflow C: Walk-in Store Pickup Collection
   const handlePickupCounterCollect = async () => {
     if (!modalState) return;
     setModalError(null);
+    if (counterMethod === 'GCash' && !counterRef.trim()) {
+      setModalError('Bank Name / Reference Note is required for Direct GCash.');
+      return;
+    }
+    if (counterMethod === 'Split' && !splitDigitalRef.trim()) {
+      setModalError('Bank Name / Reference Note is required for the digital portion.');
+      return;
+    }
     try {
       await counterCollectMutation.mutateAsync({
         orderId: modalState.orderId,
@@ -595,7 +669,11 @@ export default function DrawerScreen() {
       const id = modalState.orderId;
       closeActiveModal();
       showSuccessFeedback(
-        `🏪 Pickup Order #${id} collected (₱${modalState.expectedAmount.toLocaleString()}) into Staff Drawer!`
+        counterMethod === 'GCash'
+          ? `🏦 Pickup Order #${id} digital transfer logged for Owner check; physical drawer remains ₱0.`
+          : counterMethod === 'Split'
+            ? `🏪 Pickup Order #${id} split settlement logged with cash and digital portions separated.`
+            : `🏪 Pickup Order #${id} collected (₱${modalState.expectedAmount.toLocaleString()}) into Staff Drawer!`
       );
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -673,18 +751,26 @@ export default function DrawerScreen() {
   const isCountedEntered = countedAmount.trim() !== '';
   const isCountedExactMatch =
     isCountedEntered && !isNaN(parsedCounted) && parsedCounted === expectedHop2Amount;
-  const normalizedHop2Method = (modalState?.heldPaymentMethod || '')
-    .replace(/\s+/g, '')
-    .toLowerCase();
   const isDigitalHop2 =
     modalState?.workflow === 'hop2_owner' &&
-    ['gcash', 'manualgcash', 'maya', 'banktransfer'].includes(normalizedHop2Method);
+    Number(modalState.digitalTransferAmount ?? 0) > 0 &&
+    Number(modalState.heldByStaffAmount ?? 0) <= 0;
+  const isSplitHop2 =
+    modalState?.workflow === 'hop2_owner' &&
+    Number(modalState.digitalTransferAmount ?? 0) > 0 &&
+    Number(modalState.heldByStaffAmount ?? 0) > 0;
+  const showRiderFeePayout = Number(modalState?.deliveryFee ?? 0) > 0 && (
+    (modalState?.workflow === 'hop1_rider' && isDirectOwnerHop1) ||
+    (isDigitalHop2 &&
+      Number(modalState?.digitalTransferAmount ?? 0) >=
+        Number(modalState?.totalCollected ?? 0))
+  );
 
   // Hop 1 Rider Signature Discrepancy Math
   const isSignedByRider = qrStatus?.status === 'SignedByRider';
   const riderDeclaredAmount = qrStatus?.riderRemittedAmount ?? 0;
   const expectedHop1Amount =
-    qrStatus?.expectedAmount ?? modalState?.expectedAmount ?? 0;
+    qrStatus?.expectedAmount ?? selectedHop1ExpectedAmount;
   const riderDiff = Math.abs(expectedHop1Amount - riderDeclaredAmount);
   const isRiderExact = riderDeclaredAmount === expectedHop1Amount;
   const isRiderShort = riderDeclaredAmount < expectedHop1Amount;
@@ -693,87 +779,101 @@ export default function DrawerScreen() {
     <View style={styles.container}>
       {/* 1. Top Custody Summary Banner */}
       <View style={styles.summaryBanner}>
-        <Pressable
-          style={[
-            styles.summaryCard,
-            styles.summaryCardDrawer,
-            activeTab === 'hop2' && styles.summaryCardActiveBorder,
-          ]}
-          onPress={() => setActiveTab('hop2')}
-        >
-          <View style={styles.summaryTopRow}>
-            <Text style={styles.summaryBadgeDrawer}>🟡 In Staff Drawer</Text>
-            <Text style={styles.summaryCountText}>{inStaffDrawerCount} items</Text>
-          </View>
-          <Text style={styles.summaryAmountDrawer}>
-            ₱{inStaffDrawerTotal.toLocaleString()}
-          </Text>
-          <Text style={styles.summaryCaption}>Awaiting Owner Turnover (Hop 2)</Text>
-          {custodianBreakdown.length > 0 && (
-            <ScrollView
-              horizontal={true}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.custodianScrollContent}
-              style={styles.custodianScrollRow}
+        <View style={styles.summaryCardsRow}>
+          {/* Card 1: 💵 Physical Cash in Drawer */}
+          <Pressable
+            style={[
+              styles.summaryCard,
+              styles.summaryCardDrawer,
+              activeTab === 'hop2' && styles.summaryCardActiveBorder,
+            ]}
+            onPress={() => setActiveTab('hop2')}
+          >
+            <View style={styles.summaryTopRow}>
+              <Text style={styles.summaryBadgeDrawer} numberOfLines={2}>
+                💵 Physical Cash in Drawer
+              </Text>
+              <View style={styles.summaryCountPill}>
+                <Text style={styles.summaryCountText}>{inStaffDrawerCount} items</Text>
+              </View>
+            </View>
+            <Text style={styles.summaryAmountDrawer}>
+              ₱{inStaffDrawerTotal.toLocaleString()}
+            </Text>
+            <Text style={styles.summaryCaption}>Digital deposits excluded</Text>
+          </Pressable>
+
+          {/* Card 2: 🏦 Pending Owner Digital Check */}
+          <Pressable
+            style={[
+              styles.summaryCard,
+              styles.summaryCardDigital,
+              activeTab === 'hop2' && styles.summaryCardActiveBorder,
+            ]}
+            onPress={() => setActiveTab('hop2')}
+          >
+            <View style={styles.summaryTopRow}>
+              <Text style={styles.summaryBadgeDigital} numberOfLines={2}>
+                🏦 Pending Owner Digital Check
+              </Text>
+              <View style={styles.summaryCountPill}>
+                <Text style={styles.summaryCountText}>{pendingDigitalCount} items</Text>
+              </View>
+            </View>
+            <Text style={styles.summaryAmountDigital}>
+              ₱{pendingDigitalTotal.toLocaleString()}
+            </Text>
+            <Text style={styles.summaryCaption}>Awaiting Account Verification</Text>
+          </Pressable>
+        </View>
+
+        {/* Full-width Horizontal Custodian Filter Pills */}
+        {custodianBreakdown.length > 0 && (
+          <ScrollView
+            horizontal={true}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.custodianScrollContent}
+            style={styles.custodianScrollRow}
+          >
+            <Pressable
+              style={[
+                styles.custodianPill,
+                selectedCustodian === null && styles.custodianPillActive,
+              ]}
+              onPress={() => setSelectedCustodian(null)}
             >
+              <Text
+                style={[
+                  styles.custodianPillText,
+                  selectedCustodian === null && styles.custodianPillTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                All Custodians ({inStaffDrawerCount})
+              </Text>
+            </Pressable>
+            {custodianBreakdown.map((cust) => (
               <Pressable
+                key={cust.name}
                 style={[
                   styles.custodianPill,
-                  selectedCustodian === null && styles.custodianPillActive,
+                  selectedCustodian === cust.name && styles.custodianPillActive,
                 ]}
-                onPress={() => setSelectedCustodian(null)}
+                onPress={() => setSelectedCustodian(selectedCustodian === cust.name ? null : cust.name)}
               >
                 <Text
                   style={[
                     styles.custodianPillText,
-                    selectedCustodian === null && styles.custodianPillTextActive,
+                    selectedCustodian === cust.name && styles.custodianPillTextActive,
                   ]}
                   numberOfLines={1}
                 >
-                  All Custodians ({inStaffDrawerCount})
+                  👤 {cust.name}: ₱{cust.amount.toLocaleString()} ({cust.count})
                 </Text>
               </Pressable>
-              {custodianBreakdown.map((cust) => (
-                <Pressable
-                  key={cust.name}
-                  style={[
-                    styles.custodianPill,
-                    selectedCustodian === cust.name && styles.custodianPillActive,
-                  ]}
-                  onPress={() => setSelectedCustodian(selectedCustodian === cust.name ? null : cust.name)}
-                >
-                  <Text
-                    style={[
-                      styles.custodianPillText,
-                      selectedCustodian === cust.name && styles.custodianPillTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    👤 {cust.name}: ₱{cust.amount.toLocaleString()} ({cust.count})
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-        </Pressable>
-
-        <Pressable
-          style={[
-            styles.summaryCard,
-            styles.summaryCardUncollected,
-            activeTab === 'riders' && styles.summaryCardActiveBorder,
-          ]}
-          onPress={() => setActiveTab('riders')}
-        >
-          <View style={styles.summaryTopRow}>
-            <Text style={styles.summaryBadgeUncollected}>⚪ Uncollected</Text>
-            <Text style={styles.summaryCountText}>{uncollectedCount} items</Text>
-          </View>
-          <Text style={styles.summaryAmountUncollected}>
-            ₱{uncollectedTotal.toLocaleString()}
-          </Text>
-          <Text style={styles.summaryCaption}>Road Riders &amp; Counter Pickups</Text>
-        </Pressable>
+            ))}
+          </ScrollView>
+        )}
       </View>
 
       {/* 2. 4-Mode Segmented Filter Bar */}
@@ -868,10 +968,10 @@ export default function DrawerScreen() {
           <>
             <View style={styles.sectionBannerBox}>
               <Text style={styles.sectionBannerTitle}>
-                👑 Hop 2: Staff Drawer to Owner Remittance
+                👑 Hop 2: Owner Settlement Verification Queue
               </Text>
               <Text style={styles.sectionBannerSub}>
-                Count physical bills inside each order&apos;s cash envelope before closing the ledger.
+                Count physical cash envelopes or verify digital credits in the Owner account before closing each order.
               </Text>
             </View>
 
@@ -884,12 +984,12 @@ export default function DrawerScreen() {
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '✨'}</Text>
                 <Text style={styles.emptyTitle}>
-                  {selectedCustodian ? 'No Matches for Custodian' : 'Staff Drawer is Clear!'}
+                  {selectedCustodian ? 'No Matches for Custodian' : 'Owner Verification Queue is Clear!'}
                 </Text>
                 <Text style={styles.emptySub}>
                   {selectedCustodian
-                    ? `No cash envelopes in drawer held by ${selectedCustodian}.`
-                    : 'No cash envelopes are currently waiting in staff drawer custody.'}
+                    ? `No cash or digital handovers are logged by ${selectedCustodian}.`
+                    : 'No cash envelopes or digital deposits are waiting for Owner verification.'}
                 </Text>
               </View>
             ) : (
@@ -922,11 +1022,18 @@ export default function DrawerScreen() {
 
                   <View style={styles.custodyMetaBox}>
                     <Text style={styles.custodyMetaLine}>
-                      🟡 Held in Drawer by:{' '}
+                      {item.custodyStatus === 'AwaitingOwnerDigitalVerification'
+                        ? '🏦 Awaiting Bank Check • Logged by: '
+                        : '🟡 Held in Drawer by: '}
                       <Text style={styles.custodyMetaStrong}>
                         {item.heldByStaffName}
                       </Text>
                     </Text>
+                    {item.digitalReferenceNote ? (
+                      <Text style={styles.custodyMetaLine}>
+                        Bank / Reference: {item.digitalReferenceNote}
+                      </Text>
+                    ) : null}
                     <Text style={styles.custodyMetaLine}>
                       🛵 Origin:{' '}
                       <Text style={styles.custodyMetaStrong}>
@@ -954,6 +1061,12 @@ export default function DrawerScreen() {
                           riderSignedBy: item.riderSignedBy,
                           heldByStaffName: item.heldByStaffName,
                           heldPaymentMethod: item.heldPaymentMethod,
+                          heldByStaffAmount: item.heldByStaffAmount,
+                          digitalTransferMethod: item.digitalTransferMethod,
+                          digitalTransferAmount: item.digitalTransferAmount,
+                          digitalReferenceNote: item.digitalReferenceNote,
+                          totalCollected: item.totalCollected,
+                          deliveryFee: item.deliveryFee,
                         });
                       }}
                     >
@@ -1019,6 +1132,9 @@ export default function DrawerScreen() {
             ) : (
               visibleRiderDrops.map((drop) => {
                 const isInDrawer = drop.custodyStatus === 'InStaffDrawer';
+                const isAwaitingDigital =
+                  drop.custodyStatus === 'AwaitingOwnerDigitalVerification';
+                const isAwaitingOwner = isInDrawer || isAwaitingDigital;
                 const targetOrderId = drop.orderId || drop.id;
                 const isUnassignedRider =
                   !drop.riderName?.trim() ||
@@ -1055,6 +1171,15 @@ export default function DrawerScreen() {
                         <View style={styles.custodyPillDrawer}>
                           <Text style={styles.custodyPillDrawerText}>
                             🟡 In Drawer • Held by {drop.heldByStaffName || 'Cashier'}
+                          </Text>
+                        </View>
+                      ) : isAwaitingDigital ? (
+                        <View style={styles.custodyPillDigital}>
+                          <Text style={styles.custodyPillDigitalText}>
+                            🏦 Awaiting Bank Check
+                          </Text>
+                          <Text style={styles.custodyReferenceText}>
+                            {drop.digitalReferenceNote || 'Reference pending'}
                           </Text>
                         </View>
                       ) : (
@@ -1101,7 +1226,7 @@ export default function DrawerScreen() {
 
                     {/* Action Row */}
                     <View style={styles.cardActionRow}>
-                      {isInDrawer ? (
+                      {isAwaitingOwner ? (
                         <>
                           <Pressable
                             style={({ pressed }) => [
@@ -1116,11 +1241,20 @@ export default function DrawerScreen() {
                                 workflow: 'hop2_owner',
                                 orderId: targetOrderId,
                                 customerName: drop.customerName,
-                                expectedAmount: drop.netRemittance,
+                                expectedAmount:
+                                  Number(drop.heldByStaffAmount ?? 0) > 0
+                                    ? Number(drop.heldByStaffAmount)
+                                    : Number(drop.digitalTransferAmount ?? drop.netRemittance),
                                 riderName: drop.riderName,
                                 riderSignedBy: drop.riderSignedBy,
                                 heldByStaffName: drop.heldByStaffName,
                                 heldPaymentMethod: drop.heldPaymentMethod,
+                                heldByStaffAmount: drop.heldByStaffAmount,
+                                digitalTransferMethod: drop.digitalTransferMethod,
+                                digitalTransferAmount: drop.digitalTransferAmount,
+                                digitalReferenceNote: drop.digitalReferenceNote,
+                                totalCollected: drop.totalCollected,
+                                deliveryFee: drop.riderDeliveryFee,
                               });
                             }}
                           >
@@ -1165,6 +1299,8 @@ export default function DrawerScreen() {
                               customerName: drop.customerName,
                               expectedAmount: drop.netRemittance,
                               riderName: drop.riderName,
+                              totalCollected: drop.totalCollected,
+                              deliveryFee: drop.riderDeliveryFee,
                             });
                           }}
                         >
@@ -1517,7 +1653,9 @@ export default function DrawerScreen() {
             <View style={{ flex: 1, marginRight: 10 }}>
               <Text style={styles.modalHeaderBadge}>
                 {modalState?.workflow === 'hop2_owner'
-                  ? '👑 HOP 2: OWNER ENVELOPE VERIFICATION'
+                  ? isDigitalHop2
+                    ? '🏦 HOP 2: OWNER DIGITAL DEPOSIT VERIFICATION'
+                    : '👑 HOP 2: OWNER ENVELOPE VERIFICATION'
                   : modalState?.workflow === 'hop1_rider'
                   ? '🛵 HOP 1: RIDER-TO-STAFF HANDOVER'
                   : modalState?.workflow === 'pickup_collect'
@@ -1570,14 +1708,18 @@ export default function DrawerScreen() {
                     </Text>
                   </View>
                   <View style={styles.chainRow}>
-                    <Text style={styles.chainLabel}>Held in Drawer by:</Text>
+                    <Text style={styles.chainLabel}>
+                      {isDigitalHop2 ? 'Logged for Owner Check by:' : 'Held in Drawer by:'}
+                    </Text>
                     <Text style={styles.chainValStaff}>
-                      🟡 {modalState.heldByStaffName || 'Cashier'}
+                      {isDigitalHop2 ? '🏦' : '🟡'} {modalState.heldByStaffName || 'Cashier'}
                     </Text>
                   </View>
                   <View style={[styles.chainRow, styles.chainDivider]}>
                     <Text style={styles.chainExpectedLabel}>
-                      Expected Turnover Amount:
+                      {isDigitalHop2
+                        ? 'Expected Account Credit:'
+                        : 'Expected Turnover Amount:'}
                     </Text>
                     <Text style={styles.chainExpectedVal}>
                       ₱{expectedHop2Amount.toLocaleString()}
@@ -1585,12 +1727,36 @@ export default function DrawerScreen() {
                   </View>
                 </View>
 
+                {(isDigitalHop2 || isSplitHop2) && (
+                  <View style={styles.digitalReferenceCard}>
+                    <Text style={styles.digitalReferenceTitle}>
+                      🏦 Bank / Reference Note
+                    </Text>
+                    <Text style={styles.digitalReferenceValue}>
+                      {modalState.digitalReferenceNote || 'No reference recorded'}
+                    </Text>
+                    {isSplitHop2 && (
+                      <Text style={styles.digitalReferenceMeta}>
+                        Split settlement: ₱{Number(modalState.heldByStaffAmount ?? 0).toLocaleString()} physical cash + ₱{Number(modalState.digitalTransferAmount ?? 0).toLocaleString()} via {modalState.digitalTransferMethod || 'digital transfer'}
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {showRiderFeePayout && (
+                  <View style={styles.riderFeePayoutCard}>
+                    <Text style={styles.riderFeePayoutText}>
+                      💸 Rider Fee Due: Send ₱{Number(modalState.deliveryFee ?? 0).toLocaleString()} via GCash to Rider {modalState.riderName || 'Assigned Rider'}
+                    </Text>
+                  </View>
+                )}
+
                 {/* Safeguard 4: Mandatory Counted Bills Speed Bump */}
                 <View style={styles.speedBumpCard}>
                   <View style={styles.speedBumpHeader}>
                     <Text style={styles.speedBumpTitle}>
                       {isDigitalHop2
-                        ? `📱 Digital Transfer Verification (${modalState.heldPaymentMethod}) (₱)`
+                        ? 'Verified Amount Credited to Account (₱)'
                         : '💵 Physical Bills Counted in Envelope (₱)'} *
                     </Text>
                     <Pressable
@@ -1598,7 +1764,7 @@ export default function DrawerScreen() {
                       onPress={() => setCountedAmount(String(expectedHop2Amount))}
                     >
                       <Text style={styles.matchExactChipText}>
-                        Match ₱{expectedHop2Amount.toLocaleString()}
+                        [ Match ₱{expectedHop2Amount.toLocaleString()} ]
                       </Text>
                     </Pressable>
                   </View>
@@ -1607,7 +1773,7 @@ export default function DrawerScreen() {
                     style={styles.speedBumpInput}
                     placeholder={
                       isDigitalHop2
-                        ? 'Confirm digital amount received on phone...'
+                        ? 'Enter the amount credited to the Owner account...'
                         : `Count physical envelope bills (Expect ₱${expectedHop2Amount.toLocaleString()})`
                     }
                     placeholderTextColor="#A8A29E"
@@ -1622,7 +1788,7 @@ export default function DrawerScreen() {
                         ⚠️ {isDigitalHop2 ? 'Verified digital amount' : 'Counted bills'} (₱
                         {(isNaN(parsedCounted) ? 0 : parsedCounted).toLocaleString()}
                         ) does not match expected remittance (₱
-                        {expectedHop2Amount.toLocaleString()}). Recount envelope before closing.
+                        {expectedHop2Amount.toLocaleString()}). {isDigitalHop2 ? 'Recheck the bank or wallet credit before closing.' : 'Recount envelope before closing.'}
                       </Text>
                     </View>
                   )}
@@ -1630,7 +1796,7 @@ export default function DrawerScreen() {
                   {!isOwner && (
                     <View style={styles.ownerAuthBox}>
                       <Text style={styles.ownerAuthTitle}>
-                        🔐 Owner Authorization Required (Logged in as Cashier)
+                        🔒 Owner Authorization Required (Logged in as Cashier)
                       </Text>
                       <TextInput
                         style={styles.modalInput}
@@ -1673,7 +1839,7 @@ export default function DrawerScreen() {
                     ) : (
                       <Text style={styles.ownerApproveBtnText}>
                         {isDigitalHop2
-                          ? `👑 Verify ${modalState.heldPaymentMethod} & Close Order #${modalState.orderId}`
+                          ? `👑 Confirm Digital Deposit & Close Order #${modalState.orderId}`
                           : `👑 Confirm & Close Order #${modalState.orderId}`}
                       </Text>
                     )}
@@ -1684,7 +1850,9 @@ export default function DrawerScreen() {
                 {canUserRevertCustody(modalState.heldByStaffName) && (
                   <View style={styles.revertFooterBox}>
                     <Text style={styles.revertFooterHint}>
-                      Envelope mistake or recount discrepancy?
+                      {isDigitalHop2
+                        ? 'Wrong channel, reference, or credited amount?'
+                        : 'Envelope mistake or recount discrepancy?'}
                     </Text>
                     <Pressable
                       style={styles.revertFullBtn}
@@ -1733,8 +1901,9 @@ export default function DrawerScreen() {
                     [
                       { label: '💵 Cash', value: 'Cash' },
                       { label: '📲 Rider GCash', value: 'ManualGCash' },
-                      { label: '📱 Direct GCash', value: 'GCash' },
-                      { label: '🏦 Bank Transfer', value: 'Bank Transfer' },
+                      { label: '📱 Direct GCash', value: 'DirectGCash' },
+                      { label: '💚 Maya', value: 'Maya' },
+                      { label: '🏦 Bank Transfer', value: 'BankTransfer' },
                       { label: '➕ Split', value: 'Split' },
                     ] as const
                   ).map((m) => {
@@ -1821,7 +1990,7 @@ export default function DrawerScreen() {
                     </View>
                     <TextInput
                       style={styles.modalInput}
-                      placeholder="Digital reference # (optional)"
+                      placeholder="Bank Name / Reference Note *"
                       placeholderTextColor="#A8A29E"
                       value={splitDigitalRef}
                       onChangeText={setSplitDigitalRef}
@@ -1829,32 +1998,57 @@ export default function DrawerScreen() {
                   </View>
                 )}
 
-                {riderPayMethod === 'GCash' ? (
-                  /* 1-Hop Direct Store GCash Bypass */
+                {isDigitalHop1 ? (
+                  /* Digital-to-Owner logging: no physical Rider QR handshake. */
                   <View style={styles.directGcashBox}>
                     <Text style={styles.directGcashInfo}>
-                      📱 Customer sent money directly to the Store&apos;s GCash QR. Rider holds ₱0 of store funds. Enter the GCash Reference Number to settle immediately:
+                      🏦 This payment went directly to the Owner account. It will not be added to the physical Staff Drawer and still requires Hop 2 Owner verification.
+                    </Text>
+                    <Text style={styles.fieldLabel}>Assigned Delivery Rider</Text>
+                    <TextInput
+                      style={[styles.modalInput, styles.readOnlyInput]}
+                      value={overrideRiderName || modalState.riderName || ''}
+                      editable={false}
+                    />
+                    <Text style={styles.fieldLabel}>
+                      Digital Transfer Amount Reported (₱)
                     </Text>
                     <TextInput
+                      style={[styles.modalInput, styles.readOnlyInput]}
+                      value={String(selectedHop1ExpectedAmount)}
+                      editable={false}
+                    />
+                    <Text style={styles.fieldLabel}>Bank Name / Reference Note *</Text>
+                    <TextInput
                       style={styles.modalInput}
-                      placeholder="GCash Reference # (e.g., 9012384912)"
+                      placeholder="e.g., BDO - Ref #4829 or BPI from Customer"
                       placeholderTextColor="#A8A29E"
                       value={directGcashRef}
                       onChangeText={setDirectGcashRef}
                     />
+                    {showRiderFeePayout && (
+                      <View style={styles.riderFeePayoutCard}>
+                        <Text style={styles.riderFeePayoutText}>
+                          💸 Rider Fee Payout: Owner to send ₱{Number(modalState.deliveryFee ?? 0).toLocaleString()} to {modalState.riderName || 'Assigned Rider'} via GCash (Customer paid full balance digitally)
+                        </Text>
+                        <Text style={styles.riderFeePayoutSubtext}>
+                          Customer transferred the full ₱{Number(modalState.totalCollected ?? selectedHop1ExpectedAmount).toLocaleString()} to Owner, including the ₱{Number(modalState.deliveryFee ?? 0).toLocaleString()} rider fee.
+                        </Text>
+                      </View>
+                    )}
                     <Pressable
                       style={[
                         styles.settleGreenBtn,
-                        directGcashMutation.isPending && styles.disabledBtn,
+                        (!sessionToken || staffValidateMutation.isPending) && styles.disabledBtn,
                       ]}
-                      disabled={directGcashMutation.isPending}
-                      onPress={handleHop1DirectGcash}
+                      disabled={!sessionToken || staffValidateMutation.isPending}
+                      onPress={() => handleHop1StaffValidate(true)}
                     >
-                      {directGcashMutation.isPending ? (
+                      {staffValidateMutation.isPending ? (
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
                         <Text style={styles.settleGreenBtnText}>
-                          📱 Confirm Direct Store GCash Settlement
+                          ✓ Log Digital Transfer for Owner Check
                         </Text>
                       )}
                     </Pressable>
@@ -2083,7 +2277,7 @@ export default function DrawerScreen() {
                         counterMethod === 'GCash' && styles.methodSegBtnTextActive,
                       ]}
                     >
-                      📱 Store GCash QR
+                      📱 Direct GCash
                     </Text>
                   </Pressable>
                   <Pressable
@@ -2153,7 +2347,7 @@ export default function DrawerScreen() {
                     </View>
                     <TextInput
                       style={styles.modalInput}
-                      placeholder="Digital reference # (optional)"
+                      placeholder="Bank Name / Reference Note *"
                       placeholderTextColor="#A8A29E"
                       value={splitDigitalRef}
                       onChangeText={setSplitDigitalRef}
@@ -2162,7 +2356,9 @@ export default function DrawerScreen() {
                 )}
 
                 <Text style={styles.fieldLabel}>
-                  Reference / Receipt Number (Optional)
+                  {counterMethod === 'GCash'
+                    ? 'Bank Name / Reference Note *'
+                    : 'Reference / Receipt Number (Optional)'}
                 </Text>
                 <TextInput
                   style={styles.modalInput}
@@ -2195,7 +2391,9 @@ export default function DrawerScreen() {
                   ) : (
                     <Text style={styles.settleGreenBtnText}>
                       {modalState.workflow === 'pickup_collect'
-                        ? '✅ Confirm & Receive into Drawer'
+                        ? counterMethod === 'GCash'
+                          ? '✓ Log Digital Transfer for Owner Check'
+                          : '✅ Confirm & Receive into Drawer'
                         : '✅ Record Payment & Unlock Lalamove Release'}
                     </Text>
                   )}
@@ -2215,15 +2413,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAF6F4',
   },
   summaryBanner: {
-    flexDirection: 'row',
-    gap: 10,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
     backgroundColor: '#181312',
   },
+  summaryCardsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   summaryCard: {
     flex: 1,
+    minWidth: 0,
     borderRadius: 12,
     padding: 12,
     borderWidth: 1.5,
@@ -2236,29 +2437,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#221A18',
     borderColor: '#3D302C',
   },
+  summaryCardDigital: {
+    backgroundColor: '#082F49',
+    borderColor: '#0EA5E9',
+  },
   summaryCardActiveBorder: {
     borderColor: '#FBBF24',
   },
   summaryTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    alignItems: 'flex-start',
+    gap: 4,
+    marginBottom: 6,
   },
   summaryBadgeDrawer: {
-    fontSize: 11,
+    flex: 1,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#FBBF24',
+    lineHeight: 14,
   },
   summaryBadgeUncollected: {
     fontSize: 11,
     fontWeight: '800',
     color: '#E7E5E4',
   },
+  summaryBadgeDigital: {
+    flex: 1,
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#BAE6FD',
+    lineHeight: 14,
+  },
+  summaryCountPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    flexShrink: 0,
+    alignSelf: 'flex-start',
+  },
   summaryCountText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
-    color: '#A8A29E',
+    color: '#D6D3D1',
   },
   summaryAmountDrawer: {
     fontSize: 19,
@@ -2272,17 +2497,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
+  summaryAmountDigital: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#7DD3FC',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
   summaryCaption: {
     fontSize: 10,
     color: '#A8A29E',
     marginTop: 2,
   },
   custodianScrollRow: {
-    marginTop: 8,
+    marginTop: 10,
+    width: '100%',
   },
   custodianScrollContent: {
     gap: 8,
-    paddingVertical: 4,
+    paddingVertical: 2,
     alignItems: 'center',
   },
   custodianPill: {
@@ -2508,6 +2740,25 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#92400E',
+  },
+  custodyPillDigital: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    maxWidth: 180,
+  },
+  custodyPillDigitalText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#075985',
+  },
+  custodyReferenceText: {
+    fontSize: 9,
+    color: '#0369A1',
+    marginTop: 2,
   },
   custodyPillUncollected: {
     backgroundColor: '#F5F5F4',
@@ -2933,6 +3184,54 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: '#1C1917',
+  },
+  readOnlyInput: {
+    backgroundColor: '#F5F5F4',
+    color: '#44403C',
+  },
+  digitalReferenceCard: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    borderRadius: 12,
+    padding: 14,
+    gap: 5,
+  },
+  digitalReferenceTitle: {
+    color: '#1E3A8A',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  digitalReferenceValue: {
+    color: '#172554',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  digitalReferenceMeta: {
+    color: '#1D4ED8',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  riderFeePayoutCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 13,
+    gap: 5,
+  },
+  riderFeePayoutText: {
+    color: '#92400E',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 19,
+  },
+  riderFeePayoutSubtext: {
+    color: '#A16207',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 16,
   },
   ownerApproveBtn: {
     backgroundColor: '#059669',

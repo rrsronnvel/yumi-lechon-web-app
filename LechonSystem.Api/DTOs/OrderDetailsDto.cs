@@ -57,6 +57,9 @@ public class OrderDetailsDto
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected", "InStaffDrawer", "Settled"
     public decimal? HeldByStaffAmount { get; set; }
     public string? HeldPaymentMethod { get; set; }
+    public string? DigitalTransferMethod { get; set; }
+    public decimal? DigitalTransferAmount { get; set; }
+    public string? DigitalReferenceNote { get; set; }
     public bool IsOwnerConfirmed { get; set; }
     public DateTime? OwnerConfirmedAt { get; set; }
     public string? OwnerConfirmedBy { get; set; }
@@ -75,6 +78,7 @@ public class PaymentLogDto
     public string GatewayReferenceId { get; set; } = string.Empty;
     public string ReferenceNumber { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public string? RecordedBy { get; set; }
     public bool IsVoided { get; set; }
     public DateTime? VoidedAt { get; set; }
     public string? VoidedBy { get; set; }

@@ -403,7 +403,7 @@ These rules must remain aligned across `LechonSystem.Api`, `lechon-system-web`, 
 * **Owner-Only Payment Voiding:** `PaymentLog.cs`, `VoidPaymentRequest.cs`, `OrderService.VoidPaymentAsync`, both dossier UIs, and `useVoidPaymentMutation` must remain synchronized. Cashiers can append only; Owners can void with a reason; the original transaction and `OrderAuditLogs` evidence are permanent. Successful mutations invalidate `['orders']`, `['order', orderId]`, `['dashboard']`, and `['manifest']`.
 * **Mobile Alerts:** `src/hooks/useNotifications.ts` owns permission/channel setup, daily 9:00 AM deposit reminders, daily 4:00 PM defrost reminders, Owner queue increase alerts, Rush Defrost alerts, and the Floor Action test trigger.
 * **Daily Sheets:** `SchedulingService` projects `FreebiesSummary`; Kitchen and Rider views render the semantic badge above ordinary remarks.
-* **Directory/Draft parity:** `Order.IsTimeTbd`, explicit draft slicing, and date-filter query semantics must remain identical across API, Web, and Mobile. Any record explicitly saved as `IsDraft` / `RoutingStatus = Draft` belongs exclusively in Drafts, even when dated. Every other non-cancelled booking dated today or later belongs in Upcoming regardless of DP or trusted-customer status.
+* **Directory/Draft parity:** `Order.IsTimeTbd`, explicit draft slicing, and date-filter query semantics must remain identical across API, Web, and Mobile. Drafts contains every draft. Upcoming also contains dated drafts when `TargetDeliveryTime.Year >= 2025` and the Philippine calendar date is today or later; dateless/sentinel drafts stay out of Upcoming. All Time includes drafts.
 * **Non-Lechon parity:** `MinimumWeightKg === 0` is the extras-only boundary. These sales retain customer/routing/payment fields but must not create inventory reservations, roast schedules, or daily-sheet rows.
 * **Mobile time parity:** `PosScreen.tsx` and `EditOrderModal.tsx` display 12-hour inputs but always convert to 24-hour local ISO values before API submission.
 
@@ -455,3 +455,23 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
 * **Rider assignment:** Delivery dossiers and edit forms call `/api/logistics/assign-rider`, permit registered or custom names, and invalidate order, schedules, manifest, and logistics caches.
 * **Audit normalization:** Add-Ons, Remarks, Delivery Address, and Landmark must be trimmed and normalized to `""` before update comparisons so null/blank transitions do not create phantom audit entries.
 * **Data safety:** `QaDataSeeder` is opt-in only through `EnableQaDataSeeder=true`; do not enable it during routine builds, restarts, or operational support.
+
+### 2026-11-05 Digital Custody and Paste-Math Contract
+
+* **Physical drawer integrity:** `HeldByStaffAmount` contains physical cash only. Full Bank Transfer/Direct GCash/GCash/Maya payments use `AwaitingOwnerDigitalVerification` plus `DigitalTransferMethod`, `DigitalTransferAmount`, and `DigitalReferenceNote`; the physical drawer KPI must exclude them.
+* **Two-hop digital close:** Staff log the transfer and required reference in Hop 1 without a rider QR. The Owner verifies the credited account amount in Hop 2. Split payments display and verify physical cash separately from their digital portion. The custody revert action remains enabled in both modes.
+* **Rider fee payout:** For a full direct-to-Owner digital Delivery payment with `DeliveryFee > 0`, show the Owner reminder to send that fee to the assigned rider through GCash in Hop 1, Hop 2, and dossier views.
+* **Rider-name hygiene:** Bank/wallet/channel names must never auto-register as riders. Existing `Bdo` is made inactive only; records are never purged.
+* **Paste reset:** A new Messenger paste clears the prior cart, discount, delivery fee, downpayment, and mismatch alert before applying the parsed draft.
+* **No inferred discounts:** Only explicit Discount or `Less 2k` / `Less 2,000` / `No Freebies` text may set a discount. Preserve raw chat Total Balance as nullable `parsedTotalBalance` and require an explicit user action for either mismatch direction.
+* **Schema safety:** Any future order columns must follow the existing idempotent `IF COL_LENGTH(...) IS NULL ALTER TABLE ...` startup pattern in `Program.cs`. Never use purge, drop, truncate, or destructive reset scripts against operational data.
+
+### 2026-11-06 Operations Integrity Contract
+
+* **Dated drafts:** Upcoming includes non-cancelled valid targets (year 2025+) dated today/future even when `IsDraft`; Drafts continues to include all drafts. Web Orders must retain both the desktop seven-column table and the `< md` card layout.
+* **Schedule wall-clock rule:** Never call `ToUniversalTime`, convert from UTC, or add eight hours to target/departure/Tahi/Salang timestamps. Treat them as Philippine `DateTimeKind.Unspecified`, anchor override clock values to the target date, and preserve manual Tahi/Salang when Departure changes. Auto-computation is explicit; freezer-size substitution may still auto-adjust.
+* **Dossier payments:** `POST /api/orders/{id}/payments` must append `PaymentLog`, set `RecordedBy`, update `Order.Downpayment`, derive remaining balance, and append the full `[Payment Recorded]` audit entry. Ordinary partial payments stay `Uncollected`; they must never create `InStaffDrawer`. Both dossier clients invalidate detail, directory, and audit queries.
+* **Belly freebies:** 2/3kg receive Sarsa+Dinuguan, 4kg Sarsa+Puto, and 5kg Sarsa+Pancit/Palabok. Staff may swap quantities/items at zero cost. Persist the Belly selection and note through `FreebiesConfigJson`/`FreebiesSummary`; keep Web/Mobile helpers and parsers synchronized.
+* **Parser additions:** Preserve multiline addresses under `Pickup or Deliver`, accept `Letchon belly`, normalize `nov 7, / 12pm` to the current 2026 year, and strip emoji markers from FREEBIES lines while retaining the custom selection/note.
+* **Rider deletion:** Only Owners may call `DELETE /api/riders/{id}`. Registry deletion must never mutate historical `DeliveryTrip.RiderName` or remove orders/trips. CMS add/delete actions invalidate `['riders']` immediately.
+* **Repair safety:** Startup payment and schedule repair is update/append-only. Never delete operational payments, orders, customer data, audit logs, or schedules while reconciling cached state.

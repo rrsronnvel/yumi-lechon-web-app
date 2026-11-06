@@ -5,7 +5,6 @@ import {
   useQrSessionStatusQuery,
   useStaffValidateQrMutation,
   useOwnerApproveQrMutation,
-  useDirectGcashSettlementMutation,
   useRejectRiderSignatureMutation,
   useRevertCustodyMutation,
 } from "@/hooks/useManifest";
@@ -48,11 +47,17 @@ export interface QrSettlementModalProps {
   orderId: number;
   customerName: string;
   expectedAmount: number;
+  totalCollected: number;
+  deliveryFee: number;
   riderName?: string;
   hopStage: "RiderToStaff" | "StaffToOwner";
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   riderSignedBy?: string | null;
+  heldByStaffAmount?: number | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
   onSuccess?: () => void;
 }
 
@@ -62,28 +67,53 @@ export function QrSettlementModal({
   orderId,
   customerName,
   expectedAmount,
+  totalCollected,
+  deliveryFee,
   riderName,
   hopStage,
   heldByStaffName,
   heldPaymentMethod,
   riderSignedBy,
+  heldByStaffAmount,
+  digitalTransferMethod,
+  digitalTransferAmount,
+  digitalReferenceNote,
   onSuccess,
 }: QrSettlementModalProps) {
   const { user, isOwner } = useAuth();
   const isUnassignedRider =
     !riderName?.trim() || riderName.trim().toLowerCase() === "unassigned";
-  const normalizedHeldMethod = (heldPaymentMethod || "")
-    .replace(/\s+/g, "")
-    .toLowerCase();
   const isDigitalHop2 =
     hopStage === "StaffToOwner" &&
-    ["gcash", "manualgcash", "maya", "banktransfer"].includes(
-      normalizedHeldMethod,
-    );
+    Number(digitalTransferAmount ?? 0) > 0 &&
+    Number(heldByStaffAmount ?? 0) <= 0;
+  const isSplitHop2 =
+    hopStage === "StaffToOwner" &&
+    Number(digitalTransferAmount ?? 0) > 0 &&
+    Number(heldByStaffAmount ?? 0) > 0;
 
   // Payment channel for Hop 1
   const [paymentMethod, setPaymentMethod] = useState<string>(
     heldPaymentMethod || "Cash"
+  );
+  const normalizedPaymentMethod = paymentMethod.replace(/\s+/g, "").toLowerCase();
+  const isDigitalPayment = [
+    "directgcash",
+    "gcash",
+    "manualgcash",
+    "maya",
+    "banktransfer",
+  ].includes(normalizedPaymentMethod);
+  const isDirectOwnerPayment = ["directgcash", "banktransfer"].includes(
+    normalizedPaymentMethod,
+  );
+  const hop1ExpectedAmount = isDirectOwnerPayment
+    ? totalCollected
+    : expectedAmount;
+  const showRiderFeePayout = deliveryFee > 0 && (
+    (hopStage === "RiderToStaff" && isDirectOwnerPayment) ||
+    (hopStage === "StaffToOwner" && isDigitalHop2 &&
+      Number(digitalTransferAmount ?? 0) >= totalCollected)
   );
   const [directGcashRef, setDirectGcashRef] = useState<string>("");
   const [cashAmount, setCashAmount] = useState<number>(expectedAmount);
@@ -111,13 +141,13 @@ export function QrSettlementModal({
   useEffect(() => {
     if (open) {
       setReceivedByStaff(defaultStaffLabel);
-      setCashAmount(expectedAmount);
+      setCashAmount(hop1ExpectedAmount);
       setDigitalAmount(0);
       setDigitalReference("");
       setShowOverride(isUnassignedRider);
       if (isUnassignedRider) setOverrideRiderName("");
     }
-  }, [open, defaultStaffLabel, expectedAmount, isUnassignedRider]);
+  }, [open, defaultStaffLabel, hop1ExpectedAmount, isUnassignedRider]);
 
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -125,7 +155,6 @@ export function QrSettlementModal({
   const createSessionMutation = useCreateQrSessionMutation();
   const staffValidateMutation = useStaffValidateQrMutation();
   const ownerApproveMutation = useOwnerApproveQrMutation();
-  const directGcashMutation = useDirectGcashSettlementMutation();
   const rejectRiderMutation = useRejectRiderSignatureMutation();
   const revertCustodyMutation = useRevertCustodyMutation();
 
@@ -144,18 +173,13 @@ export function QrSettlementModal({
   // Initialize or recreate QR Session when modal opens or payment method changes (Hop 1)
   useEffect(() => {
     if (open && orderId > 0) {
-      if (paymentMethod === "GCash" && hopStage === "RiderToStaff") {
-        // Direct GCash skips QR generation
-        setSessionToken(null);
-        return;
-      }
-
       createSessionMutation.mutate(
         {
           orderId,
           hopStage,
           paymentMethod,
-          expectedAmount,
+          expectedAmount:
+            hopStage === "RiderToStaff" ? hop1ExpectedAmount : expectedAmount,
         },
         {
           onSuccess: (data) => {
@@ -166,7 +190,7 @@ export function QrSettlementModal({
                 ? ""
                 : resolvedRider,
             );
-            setOverrideAmount(data.expectedAmount || expectedAmount);
+            setOverrideAmount(data.expectedAmount || hop1ExpectedAmount);
           },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           onError: (err: any) => {
@@ -185,7 +209,7 @@ export function QrSettlementModal({
       setCountedBills("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, orderId, hopStage, paymentMethod]);
+  }, [open, orderId, hopStage, paymentMethod, hop1ExpectedAmount]);
 
   const handleClose = () => {
     onOpenChange(false);
@@ -197,6 +221,10 @@ export function QrSettlementModal({
   // Staff validates bills received into drawer
   const handleStaffValidate = (isManualOverride: boolean = false) => {
     if (!sessionToken) return;
+    if (paymentMethod === "Split" && digitalAmount > 0 && !digitalReference.trim()) {
+      toast.error("Please enter the Bank Name / Reference Note for the digital portion.");
+      return;
+    }
 
     setErrorMessage(null);
     staffValidateMutation.mutate(
@@ -209,18 +237,32 @@ export function QrSettlementModal({
           ? Number(overrideAmount)
           : undefined,
         staffName: receivedByStaff.trim() || undefined,
-        cashAmount: paymentMethod === "Split" ? (isManualOverride && typeof overrideAmount === "number" ? overrideAmount : cashAmount) : undefined,
-        digitalAmount: paymentMethod === "Split" ? digitalAmount : undefined,
-        digitalMethod: paymentMethod === "Split" ? digitalMethod : undefined,
+        cashAmount: paymentMethod === "Split"
+          ? (isManualOverride && typeof overrideAmount === "number" ? overrideAmount : cashAmount)
+          : isDigitalPayment ? 0 : undefined,
+        digitalAmount: paymentMethod === "Split"
+          ? digitalAmount
+          : isDigitalPayment ? hop1ExpectedAmount : undefined,
+        digitalMethod: paymentMethod === "Split"
+          ? digitalMethod
+          : isDigitalPayment ? paymentMethod : undefined,
         digitalReferenceNumber:
-          paymentMethod === "Split" ? digitalReference.trim() || undefined : undefined,
+          paymentMethod === "Split"
+            ? digitalReference.trim() || undefined
+            : isDigitalPayment ? directGcashRef.trim() || undefined : undefined,
       },
       {
         onSuccess: (res) => {
-          toast.success(`Custody updated: In Staff Drawer!`, {
-            description: `Order #${orderId} cash (₱${(
-              res.riderRemittedAmount ?? expectedAmount
-            ).toLocaleString()}) officially received into drawer custody.`,
+          toast.success(
+            isDigitalPayment
+              ? "Digital transfer logged for Owner check!"
+              : "Custody updated: In Staff Drawer!",
+          {
+            description: isDigitalPayment
+              ? `Order #${orderId} reported ₱${hop1ExpectedAmount.toLocaleString()} via ${paymentMethod}; physical drawer remains ₱0.`
+              : `Order #${orderId} cash (₱${(
+                  res.riderRemittedAmount ?? expectedAmount
+                ).toLocaleString()}) officially received into drawer custody.`,
           });
           handleClose();
           onSuccess?.();
@@ -236,36 +278,12 @@ export function QrSettlementModal({
     );
   };
 
-  // Direct Store GCash Settle (Hop 1 bypass)
-  const handleDirectGcashSettle = () => {
+  const handleDigitalTransferLog = () => {
     if (!directGcashRef.trim()) {
-      toast.error("Please enter the GCash Reference Number.");
+      toast.error("Please enter the Bank Name / Reference Note.");
       return;
     }
-
-    setErrorMessage(null);
-    directGcashMutation.mutate(
-      {
-        orderId,
-        amount: expectedAmount,
-        referenceNumber: directGcashRef.trim(),
-      },
-      {
-        onSuccess: () => {
-          toast.success(`Order #${orderId} settled via Direct Store GCash!`, {
-            description: `₱${expectedAmount.toLocaleString()} recorded with Ref #${directGcashRef.trim()}.`,
-          });
-          handleClose();
-          onSuccess?.();
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onError: (err: any) => {
-          const msg =
-            err?.response?.data?.message || "Failed to record Direct GCash.";
-          setErrorMessage(msg);
-        },
-      }
-    );
+    handleStaffValidate(true);
   };
 
   // Owner Quick-Approve via PC shortcut (Logged In as Owner) with Counted-Amount Speed Bump
@@ -386,13 +404,17 @@ export function QrSettlementModal({
           </div>
           <DialogTitle className="text-xl font-bold text-stone-900 break-words">
             {hopStage === "RiderToStaff"
-              ? "Cash Custody Handover Handshake"
-              : "Owner Custody Verification & Ledger Close"}
+              ? isDigitalPayment
+                ? "Digital Transfer Log for Owner Check"
+                : "Cash Custody Handover Handshake"
+              : isDigitalHop2
+                ? "🏦 HOP 2: OWNER DIGITAL DEPOSIT VERIFICATION"
+                : "Owner Custody Verification & Ledger Close"}
           </DialogTitle>
           <DialogDescription className="text-stone-600 break-words">
-            {customerName} • Net Remittance:{" "}
+            {customerName} • {isDigitalPayment || isDigitalHop2 ? "Digital Amount" : "Net Remittance"}:{" "}
             <strong className="text-emerald-700 font-mono">
-              ₱{expectedAmount.toLocaleString()}
+              ₱{(hopStage === "RiderToStaff" ? hop1ExpectedAmount : expectedAmount).toLocaleString()}
             </strong>
           </DialogDescription>
         </DialogHeader>
@@ -435,13 +457,13 @@ export function QrSettlementModal({
                   <SelectItem value="ManualGCash">
                     📲 Rider GCash Remittance (Rider Sent to Store)
                   </SelectItem>
-                  <SelectItem value="GCash">
+                  <SelectItem value="DirectGCash">
                     📱 Direct Store GCash (Customer Paid Store Directly)
                   </SelectItem>
                   <SelectItem value="Maya">
                     💚 Maya Remittance
                   </SelectItem>
-                  <SelectItem value="Bank Transfer">
+                  <SelectItem value="BankTransfer">
                     🏦 Bank Transfer
                   </SelectItem>
                   <SelectItem value="Split">
@@ -486,42 +508,62 @@ export function QrSettlementModal({
                 <Input
                   value={digitalReference}
                   onChange={(event) => setDigitalReference(event.target.value)}
-                  placeholder="Digital reference # (optional)"
+                  placeholder="Bank Name / Reference Note *"
                 />
               </div>
             )}
 
-            {/* Direct Store GCash Branch */}
-            {paymentMethod === "GCash" ? (
+            {/* Digital-to-Owner branch: no physical rider handshake */}
+            {isDigitalPayment ? (
               <div className="w-full min-w-0 break-words p-4 bg-sky-50 border border-sky-200 rounded-xl space-y-3">
                 <div className="flex items-start gap-2.5 text-xs text-sky-900">
                   <Smartphone className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
                   <p className="min-w-0 break-words">
-                    <strong>Direct Store GCash:</strong> The customer paid directly to the store&apos;s main GCash number/QR. The freelance rider holds ₱0 of store funds. Skip the Rider QR handshake and record the reference number below.
+                    <strong>Digital-to-Owner:</strong> The customer paid the Owner account directly. The assigned delivery rider hands over ₱0 physical cash, so no Rider QR handshake is needed.
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-sky-900">
+                    Assigned Delivery Rider
+                  </Label>
+                  <Input value={riderName || "Unassigned"} readOnly className="h-10 bg-white" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-sky-900">
+                    Digital Transfer Amount Reported (₱)
+                  </Label>
+                  <Input value={hop1ExpectedAmount} readOnly className="h-10 bg-white font-mono font-bold" />
+                </div>
+
+                <div className="space-y-1.5">
                   <Label htmlFor="direct-ref" className="text-xs font-semibold text-sky-900">
-                    GCash Reference Number <span className="text-rose-500">*</span>
+                    Bank Name / Reference Note <span className="text-rose-500">*</span>
                   </Label>
                   <Input
                     id="direct-ref"
                     value={directGcashRef}
                     onChange={(e) => setDirectGcashRef(e.target.value)}
-                    placeholder="e.g., 901238491823"
+                    placeholder="e.g., BDO - Ref #4829 or BPI from Customer"
                     className="h-10 font-mono bg-white border-sky-200"
                   />
                 </div>
 
+                {isDirectOwnerPayment && deliveryFee > 0 && (
+                  <div className="rounded-lg border border-amber-400 bg-amber-100 p-3 text-xs font-bold text-amber-950">
+                    💸 Rider Fee Payout: Owner to send ₱{deliveryFee.toLocaleString()} to {riderName || "the assigned rider"} via GCash (Customer paid full balance digitally). Full transfer reported: ₱{totalCollected.toLocaleString()}.
+                  </div>
+                )}
+
                 <Button
-                  onClick={handleDirectGcashSettle}
-                  disabled={directGcashMutation.isPending}
+                  onClick={handleDigitalTransferLog}
+                  disabled={!sessionToken || staffValidateMutation.isPending}
                   className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm"
                 >
-                  {directGcashMutation.isPending
-                    ? "Recording Settlement..."
-                    : "📱 Confirm Direct GCash Settlement"}
+                  {staffValidateMutation.isPending
+                    ? "Logging Digital Transfer..."
+                    : "✓ Log Digital Transfer for Owner Check"}
                 </Button>
               </div>
             ) : (
@@ -748,9 +790,11 @@ export function QrSettlementModal({
                 {/* Custody Summary Card */}
                 <div className="w-full p-4 bg-stone-50 border border-stone-200/90 rounded-2xl space-y-2.5 text-xs shadow-2xs">
                   <div className="flex justify-between items-center gap-2">
-                    <span className="text-stone-600 font-medium">Held in Drawer by:</span>
+                    <span className="text-stone-600 font-medium">
+                      {isDigitalHop2 ? "Logged for Owner Check by:" : "Held in Drawer by:"}
+                    </span>
                     <span className="font-bold text-amber-900 bg-amber-100/90 border border-amber-300/80 px-2.5 py-0.5 rounded-md text-xs">
-                      🟡 {heldByStaffName || "Store Cashier"}
+                      {isDigitalHop2 ? "🏦" : "🟡"} {heldByStaffName || "Store Cashier"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center gap-2">
@@ -767,6 +811,26 @@ export function QrSettlementModal({
                   </div>
                 </div>
 
+                {(isDigitalHop2 || isSplitHop2) && (
+                  <div className="rounded-2xl border border-sky-300 bg-sky-50 p-4 text-xs text-sky-950 space-y-1">
+                    <p className="font-black">🏦 Bank / Reference Note</p>
+                    <p className="font-mono font-bold break-words">
+                      {digitalReferenceNote || "No reference note recorded"}
+                    </p>
+                    {isSplitHop2 && (
+                      <p className="pt-1 text-sky-800">
+                        Digital portion: ₱{Number(digitalTransferAmount ?? 0).toLocaleString()} via {digitalTransferMethod || "Digital Transfer"}. Physical envelope verification remains ₱{expectedAmount.toLocaleString()}.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {showRiderFeePayout && (
+                  <div className="rounded-2xl border-2 border-amber-500 bg-amber-100 p-4 text-sm font-black text-amber-950 shadow-sm">
+                    💸 Rider Fee Due: Send ₱{deliveryFee.toLocaleString()} via GCash to Rider {riderName || riderSignedBy || "Unassigned"}
+                  </div>
+                )}
+
                 {/* Owner PC Verification (Active when logged in as Owner) */}
                 {isOwner && !isApproved && (
                   <div className="space-y-3 p-4 bg-amber-50/70 border border-amber-200 rounded-2xl shadow-2xs">
@@ -779,7 +843,7 @@ export function QrSettlementModal({
                       <div className="flex items-center justify-between text-xs">
                         <Label htmlFor="owner-counted-bills" className="font-semibold text-stone-800">
                           {isDigitalHop2
-                            ? `📱 Digital Transfer Verification (${heldPaymentMethod}) (₱)`
+                            ? "Verified Amount Credited to Account (₱)"
                             : "💵 Physical Bills Counted in Envelope (₱)"}{" "}
                           <span className="text-rose-500">*</span>
                         </Label>
@@ -788,7 +852,7 @@ export function QrSettlementModal({
                           onClick={() => setCountedBills(String(sessionStatus?.expectedAmount ?? expectedAmount))}
                           className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
                         >
-                          Match ₱{expectedAmount.toLocaleString()}
+                          [ Match ₱{expectedAmount.toLocaleString()} ]
                         </button>
                       </div>
                       <Input
@@ -825,7 +889,7 @@ export function QrSettlementModal({
                       {ownerApproveMutation.isPending
                         ? "Closing Ledger..."
                         : isDigitalHop2
-                          ? `👑 Verify ${heldPaymentMethod} & Close Order #${orderId}`
+                          ? `👑 Confirm Digital Deposit & Close Order #${orderId}`
                           : `👑 Confirm & Close Order #${orderId}`}
                     </Button>
                   </div>
@@ -834,7 +898,9 @@ export function QrSettlementModal({
                 {/* Custody Reversion Action Link */}
                 {canRevertCustody && (
                   <div className="pt-2 border-t border-stone-200 flex items-center justify-between gap-2 text-xs">
-                    <span className="text-stone-500">Drawer custody error?</span>
+                    <span className="text-stone-500">
+                      {isDigitalHop2 ? "Digital channel or reference mistake?" : "Drawer custody error?"}
+                    </span>
                     <Button
                       type="button"
                       variant="outline"

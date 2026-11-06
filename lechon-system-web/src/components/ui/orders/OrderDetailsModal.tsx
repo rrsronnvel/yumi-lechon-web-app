@@ -112,6 +112,7 @@ export default function OrderDetailsModal({
       queryClient.invalidateQueries({ queryKey: ["manifest"] }),
       queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
       queryClient.invalidateQueries({ queryKey: ["riders"] }),
+      queryClient.invalidateQueries({ queryKey: ["orders", orderId, "audit-logs"] }),
     ]);
   };
 
@@ -582,6 +583,26 @@ export default function OrderDetailsModal({
                       </span>
                     </div>
                   )}
+                  {Number(orderDetails.digitalTransferAmount || 0) > 0 &&
+                    orderDetails.settlementCustodyStatus !== "Settled" && (
+                    <div className="space-y-1 rounded-lg border border-sky-300 bg-sky-50 p-2 text-sky-950">
+                      <div className="flex justify-between font-bold gap-3">
+                        <span>🏦 Awaiting Owner Digital Check ({orderDetails.digitalTransferMethod || orderDetails.heldPaymentMethod || "Digital"}):</span>
+                        <span className="font-mono shrink-0">
+                          ₱{Number(orderDetails.digitalTransferAmount).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-mono break-words">
+                        Bank / Reference Note: {orderDetails.digitalReferenceNote || "Not recorded"}
+                      </p>
+                    </div>
+                  )}
+                  {orderDetails.settlementCustodyStatus === "AwaitingOwnerDigitalVerification" &&
+                    Number(orderDetails.deliveryFee || 0) > 0 && (
+                    <div className="rounded-lg border-2 border-amber-400 bg-amber-100 p-2.5 text-xs font-black text-amber-950">
+                      💸 Rider Fee Payout: Owner to send ₱{Number(orderDetails.deliveryFee).toLocaleString()} to {orderDetails.assignedRiderName || "the assigned rider"} via GCash (Customer paid full balance digitally)
+                    </div>
+                  )}
                   <div className="flex justify-between text-base font-black text-stone-900 border-t border-stone-200 pt-1.5">
                     <span>Customer Balance Due:</span>
                     <span className={`font-mono ${Number(orderDetails.balanceDue || 0) > 0 ? "text-rose-700" : "text-emerald-700"}`}>
@@ -613,7 +634,7 @@ export default function OrderDetailsModal({
                                 day: "numeric",
                                 hour: "numeric",
                                 minute: "2-digit",
-                              })}
+                              })}{p.recordedBy ? ` • by @${String(p.recordedBy).replace(/^@/, "")}` : ""}
                             </span>
                           </div>
                           <div>
@@ -651,7 +672,9 @@ export default function OrderDetailsModal({
                       <div key={log.id} className="text-xs border-b border-stone-100 pb-1">
                         <span className="font-semibold text-stone-900">{log.actionType}</span>
                         <span className="text-stone-500 text-[11px] ml-1.5">by {log.changedBy || "system"}</span>
-                        <p className="text-stone-600 text-[11px] font-mono mt-0.5">{log.details}</p>
+                        <p className="text-stone-600 text-[11px] font-mono mt-0.5">
+                          {log.changeDescription || log.changes || log.details || log.actionType}
+                        </p>
                       </div>
                     ))}
                   </div>

@@ -17,6 +17,7 @@ public class ParsedOrderDraftDto
     public bool? RawInnards { get; set; }
     public decimal? DistanceKm { get; set; }
     public decimal? Discount { get; set; }
+    public decimal? ParsedTotalBalance { get; set; }
     public decimal? DeliveryFee { get; set; }
     public decimal? Downpayment { get; set; }
     public string? DownpaymentMethod { get; set; }

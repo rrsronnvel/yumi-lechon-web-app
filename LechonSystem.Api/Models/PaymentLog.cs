@@ -37,6 +37,8 @@ namespace LechonSystem.Api.Models
         
         public PaymentStatus Status { get; set; }
 
+        public string? RecordedBy { get; set; }
+
         public bool IsVoided { get; set; } = false;
         public DateTime? VoidedAt { get; set; }
         public string? VoidedBy { get; set; }

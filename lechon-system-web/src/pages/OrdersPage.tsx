@@ -102,6 +102,13 @@ const formatPhilippineDateKey = (value: Date | string): string => {
 const philippineDateFromNow = (days = 0): string =>
   formatPhilippineDateKey(new Date(Date.now() + days * 86_400_000));
 
+const hasValidTargetDate = (order: Pick<OrderDirectoryDto, "targetDeliveryTime">): boolean => {
+  if (!order.targetDeliveryTime) return false;
+  const dateKey = formatPhilippineDateKey(order.targetDeliveryTime);
+  const year = Number(dateKey.slice(0, 4));
+  return Boolean(dateKey) && Number.isFinite(year) && year >= 2025;
+};
+
 const getDaysUntilDelivery = (targetDeliveryTime?: string | Date | null): number => {
   if (!targetDeliveryTime) return 999;
   const targetKey = formatPhilippineDateKey(targetDeliveryTime);
@@ -198,7 +205,7 @@ export default function OrdersPage() {
       return orders.filter(
         (order) =>
           !order.isCancelled &&
-          Boolean(order.targetDeliveryTime) &&
+          hasValidTargetDate(order) &&
           formatPhilippineDateKey(order.targetDeliveryTime!) >= todayDatePh,
       );
     }
@@ -720,7 +727,7 @@ export default function OrdersPage() {
           variant="outline"
           className={cn(
             "font-medium",
-            order.targetDeliveryTime
+            hasValidTargetDate(order)
               ? "bg-amber-100 text-amber-900 border-amber-300"
               : "bg-purple-100 text-purple-800 border-purple-300",
           )}
@@ -806,7 +813,112 @@ export default function OrdersPage() {
           orders
         </div>
       </CardHeader>
-      <CardContent className="w-full overflow-x-auto p-0 [-webkit-overflow-scrolling:touch]">
+      <CardContent className="w-full p-0">
+        <div className="block space-y-3 p-3 md:hidden">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-stone-500">
+              <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-[#C81E1E]" />
+              Loading orders...
+            </div>
+          ) : displayedOrders.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="font-medium text-stone-700">No orders found.</p>
+              <p className="mt-1 text-xs text-stone-400">Try adjusting your search terms or active tab filter.</p>
+            </div>
+          ) : (
+            displayedOrders.map((order: OrderDirectoryDto) => {
+              const daysUntilDelivery = getDaysUntilDelivery(order.targetDeliveryTime);
+              const isNoDp =
+                Number(order.downpayment || 0) === 0 &&
+                !order.isTrustedCustomer &&
+                Number(order.balanceDue || 0) > 0 &&
+                !["InStaffDrawer", "Settled"].includes(order.settlementCustodyStatus || "Uncollected");
+              const isCriticalNoDp = isNoDp && daysUntilDelivery <= 2;
+              const isTimeAlert = Boolean(
+                order.isTimeTbd ||
+                !hasValidTargetDate(order) ||
+                (Number(order.fulfillment) === 1 && !order.deliveryAddress?.trim()),
+              );
+              const location = Number(order.fulfillment) === 0
+                ? "🏪 Store Pickup"
+                : `${Number(order.fulfillment) === 2 ? "📦 Lalamove • " : "📍 "}${order.deliveryAddress?.trim() || "Venue TBD / Unset"}`;
+
+              return (
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => handleRowClick(order)}
+                  className={cn(
+                    "w-full rounded-xl border bg-white p-4 text-left shadow-sm transition-colors",
+                    isCriticalNoDp
+                      ? "border-rose-400 bg-rose-50/50"
+                      : isNoDp
+                        ? "border-orange-300 bg-orange-50/30"
+                        : isTimeAlert
+                          ? "border-amber-300 bg-amber-50/30"
+                          : "border-stone-200",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="font-mono text-sm font-black text-stone-950">
+                        #{order.orderReference || order.id}
+                      </span>
+                      {renderStatus(order)}
+                      {isNoDp && (
+                        <span className={cn(
+                          "rounded border px-2 py-0.5 text-[10px] font-black",
+                          isCriticalNoDp
+                            ? "border-rose-500 bg-rose-100 text-rose-950"
+                            : "border-orange-300 bg-orange-100 text-orange-950",
+                        )}>
+                          ⚠️ NO DP
+                        </span>
+                      )}
+                    </div>
+                    {order.hasRecentEdits && (
+                      <span className="shrink-0 text-[10px] font-bold text-amber-800">✏️ Edited</span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-base font-black text-stone-950">{order.customerName}</span>
+                      {order.isTrustedCustomer && <span className="text-xs font-bold text-amber-800">👑 VIP</span>}
+                    </div>
+                    <p className="font-mono text-xs text-stone-600">📞 {order.contactNumber || "N/A"}</p>
+                    {order.facebookName && <p className="text-xs text-blue-700">💬 {order.facebookName}</p>}
+                    <div className="pt-1 [&>div]:max-w-none">{renderOrderItemsSummary(order)}</div>
+                  </div>
+
+                  <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-stone-500">Location</p>
+                    <p className="mt-1 whitespace-normal break-words text-sm leading-5 text-stone-800">{location}</p>
+                    {order.landmark && <p className="mt-1 whitespace-normal break-words text-xs text-amber-800">🧭 {order.landmark}</p>}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-stone-200 pt-3">
+                    <div className="min-w-0">{renderTargetSchedule(order)}</div>
+                    <div className="min-w-0 text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-stone-500">Total / Balance</p>
+                      <p className="mt-1 font-mono text-sm font-black text-stone-950">₱{Number(order.grandTotal || 0).toLocaleString()}</p>
+                      <p className={cn(
+                        "font-mono text-xs font-bold",
+                        Number(order.balanceDue || 0) > 0 ? "text-rose-700" : "text-emerald-700",
+                      )}>
+                        {Number(order.balanceDue || 0) > 0
+                          ? `₱${Number(order.balanceDue).toLocaleString()} Due`
+                          : "Paid in Full"}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden w-full overflow-x-auto [-webkit-overflow-scrolling:touch] md:block">
         <Table className="table-fixed w-full border-collapse">
           <colgroup>
             <col className="w-[13%]" />
@@ -994,7 +1106,7 @@ export default function OrdersPage() {
                   <TableCell className="whitespace-normal break-words align-top px-2.5 py-2.5">
                     <div className="flex flex-col items-start gap-1.5">
                       {renderStatus(order)}
-                      {order.isDraft && order.targetDeliveryTime && (
+                      {order.isDraft && hasValidTargetDate(order) && (
                         <div className="flex flex-wrap gap-1">
                           {order.isTimeTbd && (
                             <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900">
@@ -1037,6 +1149,7 @@ export default function OrdersPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -2085,7 +2198,7 @@ export default function OrdersPage() {
                         <div className="flex justify-between text-amber-700">
                           <span>Rider Fee (Collected by Rider):</span>
                           <span className="font-mono">
-                            - â‚±{Number(orderDetails.riderFeeSettledAtDoor).toLocaleString()}
+                            - ₱{Number(orderDetails.riderFeeSettledAtDoor).toLocaleString()}
                           </span>
                         </div>
                       )}

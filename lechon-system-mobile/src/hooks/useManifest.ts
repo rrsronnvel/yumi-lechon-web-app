@@ -18,6 +18,9 @@ export interface PendingSettlementDrop {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   heldByStaffAmount?: number | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
   createdAt?: string;
   targetDeliveryTime?: string;
   riderDepartureTime?: string | null;
@@ -44,6 +47,9 @@ export interface PendingPickupSettlement {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   heldByStaffAmount?: number | null;
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalReferenceNote?: string | null;
 }
 
 export interface PendingLalamoveSettlement {

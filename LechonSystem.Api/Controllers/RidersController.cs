@@ -69,4 +69,22 @@ public class RidersController : ControllerBase
 
         return StatusCode(201, dto);
     }
+
+    // DELETE /api/riders/{id}
+    // DeliveryTrip stores its historical RiderName as text, so removing the
+    // registry entry cannot erase or orphan any past delivery assignment.
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Owner")]
+    public async Task<IActionResult> DeleteRider(int id)
+    {
+        var rider = await _context.Riders.FindAsync(id);
+        if (rider == null)
+        {
+            return NotFound(new { message = "Rider not found." });
+        }
+
+        _context.Riders.Remove(rider);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
 }

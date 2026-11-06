@@ -40,6 +40,7 @@ import {
   formatFreebiesSummary,
   FreebiesConfig,
   getPigsWithFreebies,
+  normalizeFreebiesConfig,
   parseFreebiesConfig,
   updatePigsWithFreebies,
 } from "@/utils/freebiesHelper";
@@ -563,6 +564,20 @@ export default function EditOrderForm({
     [watchedItems, categories],
   );
 
+  const bellyItems = useMemo(() => {
+    const grouped = new Map<number, number>();
+    (watchedItems || []).forEach((item: any) => {
+      const category = categories.find(
+        (candidate: any) => candidate.id === Number(item?.itemCategoryId),
+      );
+      if (!category || !/belly/i.test(category.name || "")) return;
+      const kg = Number((category.name || "").match(/([2-5])\s*kg/i)?.[1]) || Number(category.minimumWeightKg);
+      if (kg < 2 || kg > 5) return;
+      grouped.set(kg, (grouped.get(kg) || 0) + (Number(item?.quantity) || 0));
+    });
+    return Array.from(grouped, ([kg, quantity]) => ({ kg, quantity }));
+  }, [watchedItems, categories]);
+
   useEffect(() => {
     if (pendingHydratedWholePigCount.current !== null) {
       if (pendingHydratedWholePigCount.current === wholePigCount) {
@@ -814,10 +829,11 @@ export default function EditOrderForm({
             freebiesConfig,
             wholePigCount,
             noFreebiesDiscountPerPig,
+            bellyItems,
           ),
       freebiesConfigJson:
-        !isNonLechonMode && wholePigCount > 0
-          ? JSON.stringify(freebiesConfig)
+        !isNonLechonMode && (wholePigCount > 0 || bellyItems.length > 0)
+          ? JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholePigCount, bellyItems))
           : null,
       grandTotal: dynamicGrandTotal,
       assignedRiderName: assignedRiderName.trim(),
@@ -1622,6 +1638,7 @@ export default function EditOrderForm({
             <div className="mt-3">
               <FreebiesSelector
                 wholePigCount={wholePigCount}
+                bellyItems={bellyItems}
                 noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
                 config={freebiesConfig}
                 onChange={handleFreebiesChange}
