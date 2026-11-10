@@ -6,6 +6,18 @@
 
 ---
 
+## November 10, 2026 Daily Operations Reliability Invariants
+
+- **Freebies & Sides Prep Sheet (3rd Tab):** In `DailySheetsPage.tsx`, the 3rd tab `"🎁 Freebies & Prep Sheet"` aggregates Whole Lechon freebies (including guaranteed 1x Sarsa for Less ₱2k orders), Belly freebies (with 4x 1.5L Coke per 5kg Belly Bilao Swap), customer paid side-dish Add-Ons, and Store Paluto requests into an 8-card Morning Aggregate Prep Board and Chronological Packing Roster Table. Image export generates `Yumi-Lechon-Freebies-Prep-${dateStr}-4K.png` via direct blob download without `navigator.share`.
+- **Store Paluto / Extra Kitchen Prep Requests:** `KitchenPrepRequest` enables preparation of extra side dishes and freebies for Staff Meryenda, Owner/Family Lunch, VIP Gifts, and Store Buffer without creating fake customer orders, inflating sales revenue, or distorting the cash drawer. Persisted via `KitchenPrepRequests` table with idempotent DDL check; managed via `GET /api/schedules/freebies-prep`, `POST /api/schedules/prep-requests`, and `DELETE /api/schedules/prep-requests/{id}`.
+- **Non-Destructive QA Seeding:** Test data for November 10, 2026 (`#111026-901`, `#111026-902`, and Store Paluto request) uses idempotent, non-destructive upserts in `SeedQaData_20261110.sql` that clean only test references (`-901`, `-902`), strictly preserving all 107 existing customer orders.
+- Web and Mobile Messenger parsers are synchronized and regression-tested for the Richard Hernandez format: optional `Selected Promo`, `(Freebies or Less ₱2K)`, full `Delivery Address`, colonless slash-separated `Date & Time` ranges, and `(paid)` DP suffixes.
+- Chat math warnings compare `parsedTotalBalance` to the current live cart balance. A rounded match auto-hides after discount/freebie state settles; a mismatch reports current balance and absolute difference.
+- All manifest streams are earliest-first by `TargetDeliveryTime` ascending, then order identifier ascending. Mobile Drawer search covers customer, order reference, rider, and delivery address and reports `Showing X of Y`.
+- Lalamove customer target time and courier pickup/departure time are independent. Kitchen backward scheduling always anchors on `RiderDepartureTime` when present. Rider-custody warnings require `InStaffDrawer` plus a positive held physical-cash amount; routing assignment, Lalamove, and Store Pickup alone are never sufficient.
+- Daily Sheet image export always directly downloads a blob-backed 4K PNG named `Yumi-Lechon-{activeTab}-{date}-4K.png`; do not restore `navigator.share` to this action.
+- Historical mojibake cleanup must remain guarded, idempotent, and update-only. Never use purge, delete, drop, truncate, reset, or destructive seed scripts. Web/Mobile `sanitizeMojibake` remains the display fallback for remarks and freebie text.
+
 ## November 4, 2026 Reporting, Parser & POS Invariants
 
 - **Manifest Real-Time Multi-Field Search & In-Modal Order Dossier:** In `ManifestPage.tsx`, `PickupSettlementTab.tsx`, and `LalamoveSettlementTab.tsx`, cash reconciliation provides a real-time multi-field search input (`customerName`, `#orderId`, `riderName` / `No Rider`, `deliveryAddress` / landmark / remarks) with a responsive header counter (`Showing {filtered} of {total} drops/pickups/orders`) and a clear search CTA empty state. Clicking any `#OrderNumber` or customer name, or clicking `[ View Order ]` in Lalamove, triggers `<OrderDetailsModal />` (reusable slide-out customer dossier) without leaving `/manifest` or losing the active tab, search query, or scroll position. All actions (`Assign & Settle`, `Settle Drop`, `Collect at Counter`, `Remit` + `↺`) enforce a uniform aligned 152px bounding box (240px for Lalamove) preventing left/right staggered button misalignment. TanStack Query invalidation on payment logging or voiding refreshes `['manifest']`, `['order']`, `['orders']`, `['dashboard']`, and `['riders']` in real time.
@@ -37,7 +49,7 @@
 - Rider Sheet financial truth is `LechonPrice = lechonSubtotal - Discount`, numeric paid add-ons, Delivery Fee, Downpayment, and `TotalToCollect = max(0, LechonPrice + AddOnsTotal + DeliveryFee - Downpayment)`. Never derive money from the descriptive `AddOns` string.
 - Walk-In detection is global and reusable: `Source` case-insensitively equals `Walk-in`, or Customer/FB Name contains `(WI)`. Render `🚶 WALK-IN (WI)` on screen and `[WI • WALK-IN]` in clean/print sheets across Daily Sheets, Manifest, Orders/dossier, Logistics, Dashboard, and Mobile owner/remittance surfaces.
 - Manifest settlement DTOs must carry `Source`, `TargetDeliveryTime`, and `RiderDepartureTime`; all three Manifest tabs show `DATE / SCHEDULE` immediately after Customer.
-- Daily Sheets PNG export uses `html-to-image` against the hidden Clean View at fixed 1280px width, white background, visible overflow, and pixel ratio 2. Prefer Web Share Level 2 for file-capable mobile browsers and fall back to download using `Yumi-{Kitchen|Rider}-Sheet-{date}.png`.
+- Daily Sheets PNG export uses `html-to-image` against the hidden Clean View with a white background and `pixelRatio = Math.max(3.5, 3840 / element.offsetWidth)`. Always download through a temporary blob URL as `Yumi-Lechon-{activeTab}-{date}-4K.png`; never invoke Web Share for this action.
 - Edit order initialization strictly preserves saved custom discounts (`order.discount`); freebies mode hydration never passively overwrites manual discounts, recalculating only upon explicit clicks of `[ 🚫 No Freebies ]` / `[ 🎁 Standard 7 Freebies ]`.
 - Real user name attribution: All audit logs, `CreatedBy`, `OwnerConfirmedBy`, void logs, and `StaffValidatedBy` record `FullName (@username)` via `UserIdentityHelper` rather than generic role labels. Empty string diff comparisons for Add-Ons and Remarks are normalized to prevent false-positive logs.
 - Daily Manifest upper date ceiling: Settlements for freelance riders, store pickups, and Lalamove releases enforce `o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= PhilippineTime.Today`, hiding future bookings until their delivery date while preserving past unsettled balances (Notebook Rule).
@@ -55,7 +67,7 @@
 - Kitchen Roasting Sheet Time TBD Guard: Kitchen roasting sheets (`KitchenViewTab.tsx` and `RiderViewTab.tsx`) detect `isTimeTbd: true` or missing departure times, suppressing backward time math / midnight calculations and rendering high-visibility `[ ⏳ TIME TBD ]` badges. Confirmed scheduled orders sort chronologically at top (Priority 1, 2, 3...); Time TBD orders group at the bottom under visual divider: `⚠️ AWAITING CUSTOMER SERVING TIME — DO NOT ROAST UNTIL CONFIRMED`.
 - Philippine Time Date Normalization: All "Today", "Tomorrow", and calendar boundaries evaluate via `PhilippineTime.Today` (`UTC+8`) across backend and frontend. Frontend date formatting uses `getPhilippineDateString(date)` (`Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' })`), avoiding `.toISOString().slice(0, 10)` UTC rollback bugs on cloud hosting (SmarterASP).
 - Past-Year Typo Guard & Data Self-Heal: Parsed or submitted years `< 2025` normalize to `PhilippineTime.Today.Year` (`2026`). Startup SQL automatically repairs any active orders where `YEAR(TargetDeliveryTime) < 2025` using `DATEADD(year, 2026 - YEAR(...), ...)`, eliminating disappearing past-year typos (e.g., `#102926-004 Jenah M. Chavez` `2016` bug).
-- Dynamic Roasting Schedule Recalculation: Editing Pickup Time (`TargetDeliveryTime`) or `RiderDepartureTime` resets `IsManualOverride = false` and clears existing schedules to dynamically re-calculate `Tahi` and `Salang` times. Store Pickup and Lalamove departure times strictly match target pickup times. In `InlineScheduleEditorModal`, changing Departure auto-shifts Tahi and Salang by the minute delta.
+- Dynamic Roasting Schedule Recalculation: Editing customer target time (`TargetDeliveryTime`) or pickup/departure time (`RiderDepartureTime`) resets `IsManualOverride = false` and clears existing schedules to dynamically re-calculate `Tahi` and `Salang` from departure when present. Store Pickup may default departure to target; Lalamove explicitly preserves an earlier courier pickup independently from customer serving time. In `InlineScheduleEditorModal`, changing Departure auto-shifts Tahi and Salang by the minute delta.
 - 3-Row Financials Card Layout (`EditOrderModal.tsx` & `EditOrderForm.tsx`): Replaces 2-column imbalance with 3 clean horizontal rows: Row 1 (Transit Pricing — Est. Distance & Delivery Fee with rate subtitle when Delivery), Row 2 (Courtesy Discount full width), Row 3 (Locked Downpayment Banner full-width read-only with amount and payment method badge; removes interactive 4-pill toggles).
 - Rider Assignment Audit Trail & Query Invalidation: Any assignment, change, or unassignment of a delivery rider (via Customer Dossier, Edit Order Form, Daily Dispatch Planner, or Logistics Command Center) immediately records an immutable `OrderAuditLog` entry (`ActionType = "Rider Updated"`, e.g., `Rider assigned: 'AL'`, `Rider changed from 'AL' to 'Aaron'`, `Rider unassigned (previously 'AL')`) and invalidates `['order']`, `['orders']`, `['daily-sheets']`, and `['logistics']` query keys for real-time synchronization.
 - WalkInBadge React 19 Explicit Props Invariant: `<WalkInBadge>` must NEVER spread objects containing `key` (`<WalkInBadge {...item} />` or `<WalkInBadge {...props} />`). Props must always be passed explicitly (`source={item.source} customerName={item.customerName} facebookName={item.facebookName}`), preventing React 19 JSX runtime key-spread exceptions.
@@ -154,12 +166,14 @@ yumi-lechon-web-app/
 │   │   ├── PurchaseOrderItem.cs     # Line items for supplier restocking
 │   │   ├── LowStockAlert.cs         # Stock deficit records below threshold
 │   │   ├── NotificationLog.cs       # SMS/push delivery records
+│   │   ├── KitchenPrepRequest.cs    # Extra kitchen prep requests (Staff Meryenda, VIP, Buffer)
 │   │   ├── SystemSetting.cs         # Configurable system settings (e.g., delivery pricing)
 │   │   ├── User.cs                  # User credentials, roles (Owner/Cashier), active status & timestamps
 │   │   └── LogisticsEnums.cs / ProductionStatus.cs / ReservationStatus.cs / TransactionType.cs
 │   │
 │   └── DTOs/                        # High-speed data contracts & flat projections
 │       ├── CreateOrderRequest.cs    # POS intake payload
+│       ├── FreebiesPrepDtos.cs      # Freebies aggregate summary, roster rows & prep request payloads
 │       ├── CustomerProfileDto.cs    # Customer intelligence & notes update contracts
 │       ├── DailySheetDtos.cs        # DailySheetItemDto for 13-column Kitchen & Rider manifests
 │       ├── ParsedOrderDraftDto.cs   # Vision/text parser structured draft contract
@@ -192,6 +206,8 @@ yumi-lechon-web-app/
     │   │   ├── daily-sheets/        # Daily Dispatch Planner print/screenshot tabs & inline editor
     │   │   │   ├── KitchenViewTab.tsx           # 13-column Kitchen manifest sorted by Tahi time (hides prices)
     │   │   │   ├── RiderViewTab.tsx             # 10-column Rider manifest with Anti-Complacency Guard
+    │   │   │   ├── FreebiesPrepViewTab.tsx      # 8-card aggregate prep board + chronological packing roster
+    │   │   │   ├── StorePalutoModal.tsx         # Extra kitchen prep & meryenda request modal
     │   │   │   └── InlineScheduleEditorModal.tsx# Interactive schedule, departure & rider override modal
     │   │   └── ui/                  # Reusable UI library (shadcn/ui + custom components)
     │   │       ├── RootLayout.tsx   # Global app container with sidebar navigation
@@ -215,6 +231,7 @@ yumi-lechon-web-app/
     │   │   ├── useOrderAuditLogs.ts # Retrieves immutable Black Box timeline
     │   │   ├── useKitchen.ts        # KDS roasting queue & spit state actions
     │   │   ├── useSchedules.ts      # Capacity queries & slot allocations
+    │   │   ├── useFreebiesPrep.ts   # Freebies prep sheet queries & store paluto mutations
     │   │   ├── useInventory.ts      # Live stock balances & ledger adjustments
     │   │   ├── useLogistics.ts      # Driver assignments & delivery dispatches
     │   │   ├── useManifest.ts       # End-of-day reconciliation data

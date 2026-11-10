@@ -12,4 +12,8 @@ public interface ISchedulingService
     Task<DailySheetsResponseDto> GetDailySheetsAsync(DateTime? date = null);
     Task<OrderItemSchedule> OverrideScheduleItemAsync(int orderItemId, OverrideScheduleRequest request);
     Task<OrderItemSchedule> OverrideScheduleAsync(int orderItemId, OverrideScheduleRequest request);
+    Task<FreebiesPrepResponseDto> GetFreebiesPrepSheetAsync(DateTime targetDate);
+    Task<FreebiesPrepResponseDto> GetFreebiesPrepAsync(DateTime? date = null);
+    Task<KitchenPrepRequestDto> CreateKitchenPrepRequestAsync(CreateKitchenPrepRequestDto dto, string createdBy);
+    Task<bool> DeleteKitchenPrepRequestAsync(int id);
 }

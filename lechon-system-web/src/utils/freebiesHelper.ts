@@ -1,3 +1,5 @@
+import { sanitizeMojibake } from "./sanitizeDisplayText.ts";
+
 export const FREEBIE_ITEMS = [
   "Sarsa",
   "1.5L Coke",
@@ -238,7 +240,7 @@ export const sanitizeFreebiesSummary = (
   text?: string | null,
 ): string | null => {
   if (!text) return null;
-  return text
+  return sanitizeMojibake(text)
     .replace(/Ã°Å¸Å½\s*:?/g, "🎁 ")
     .replace(/ðŸŽ \s*:?/g, "🎁 ")
     .replace(/Ã°Å¸Å¡Â«/g, "🚫")

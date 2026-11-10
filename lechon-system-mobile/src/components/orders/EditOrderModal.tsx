@@ -1304,7 +1304,11 @@ export default function EditOrderModal({
 
             {/* Target Date & Time */}
             <View style={styles.scheduleHeaderRow}>
-              <Text style={styles.fieldLabel}>Target Date &amp; Time</Text>
+              <Text style={styles.fieldLabel}>
+                {fulfillment === 2
+                  ? 'Expected Customer / Serving Date & Time'
+                  : 'Target Date & Time'}
+              </Text>
               <View style={styles.timeTbdToggle}>
                 <Text style={styles.timeTbdToggleText}>🕒 Time TBD</Text>
                 <Switch
@@ -1392,7 +1396,9 @@ export default function EditOrderModal({
             {/* Rider Departure Time & Nudge Pills */}
             {!isNonLechonMode && <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>
-                🛵 Rider Departure Time (Kitchen Anchor){' '}
+                {fulfillment === 2
+                  ? '📦 Lalamove Pickup Time (Kitchen Anchor)'
+                  : '🛵 Rider Departure Time (Kitchen Anchor)'}{' '}
                 {fulfillment === 0 ? '(Pickup Locked)' : ''}
               </Text>
               <View style={styles.riderTimeRow}>

@@ -9,6 +9,7 @@ import {
   TemplateOrderData,
 } from "@/utils/messengerTemplates";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
 
@@ -188,6 +189,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
           <tbody className="divide-y divide-slate-300 bg-white">
             {sortedByDelivery.map((item) => {
               const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
+              const sanitizedRemarks = sanitizeMojibake(item.remarks);
               const price = Number(item.lechonPrice ?? item.price) || 0;
               const addOns = Number(item.addOnsTotal) || 0;
               const deliveryFee = Number(item.deliveryFee) || 0;
@@ -380,7 +382,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                   <td
                     onClick={() => handleCellClick(item)}
                     className={`px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words ${editableCellClass}`}
-                    title={[freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
+                    title={[freebiesSummary, sanitizedRemarks].filter(Boolean).join(" • ") || undefined}
                   >
                     <div className="flex items-start justify-between gap-1">
                       <div className="space-y-1">
@@ -398,7 +400,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                             {freebiesSummary}
                           </span>
                         )}
-                        <span className="block break-words">{item.remarks || "-"}</span>
+                        <span className="block break-words">{sanitizedRemarks || "-"}</span>
                       </div>
                       {isEdit && (
                         <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0 mt-0.5" />

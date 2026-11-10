@@ -31,6 +31,7 @@ public class LechonDbContext : DbContext
     public DbSet<SettlementQrSession> SettlementQrSessions => Set<SettlementQrSession>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<CustomerProfile> CustomerProfiles => Set<CustomerProfile>();
+    public DbSet<KitchenPrepRequest> KitchenPrepRequests => Set<KitchenPrepRequest>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

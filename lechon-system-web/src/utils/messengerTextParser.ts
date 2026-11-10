@@ -106,7 +106,7 @@ function extractNonFreebieRemarks(value: string): string[] {
 }
 
 const FIELD_LABEL_PATTERN =
-  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|promo(?:\s*\([^)]*\))?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)[^\S\r\n]*[:\-]/i;
+  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?promo(?:\s*\([^)]*\))?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)[^\S\r\n]*[:\-]/i;
 
 const SINGLE_LINE_HEADER_PATTERN =
   /^(?:total\s*balance|balance\s*due|price|discount|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|dp\s*payment\s*method(?:\s*\([^)]*\))?|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|assisted\s*by\s*admin)$/i;
@@ -504,15 +504,15 @@ const parseFlexibleDateTimeAndTbd = (
     hasTime = true;
   }
 
-  // 2. Range "10-10:30AM" -> use end time
+  // 2. Time ranges use the start as the promised delivery time.
   if (!hasTime) {
     const rangeMatch = clean.match(
-      /\b\d{1,2}(?::\d{2})?\s*[-–]\s*(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?|nn|mn)\b/i,
+      /\b(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?|nn|mn)?\s*(?:to|[-\u2013\u2014])\s*(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?|nn|mn)\b/i,
     );
     if (rangeMatch) {
       hours = Number(rangeMatch[1]);
       minutes = Number(rangeMatch[2] || 0);
-      const mer = rangeMatch[3].replace(/\./g, "").toLowerCase();
+      const mer = (rangeMatch[3] || rangeMatch[6]).replace(/\./g, "").toLowerCase();
       if ((mer === "pm" || mer === "nn") && hours < 12) hours += 12;
       if ((mer === "am" || mer === "mn") && hours === 12) hours = 0;
       hasTime = true;
@@ -614,12 +614,20 @@ export function parseMessengerTextToDraft(
     }
 
     const match = line.match(FIELD_LABEL_PATTERN);
-    if (match) {
+    const separatorlessDateTimeMatch = line.match(
+      /^(date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?)\s+(.+)$/i,
+    );
+    if (match || separatorlessDateTimeMatch) {
       if (currentHeader !== null) {
         sections.push({
           header: currentHeader,
           value: currentLines.join("\n").trim(),
         });
+      }
+      if (separatorlessDateTimeMatch && !match) {
+        currentHeader = separatorlessDateTimeMatch[1].trim().toLowerCase();
+        currentLines = [separatorlessDateTimeMatch[2].trim()];
+        continue;
       }
       const splitIdx = findFieldSeparator(line);
       if (splitIdx < 0) continue;
@@ -634,7 +642,7 @@ export function parseMessengerTextToDraft(
         currentHeader !== null && SINGLE_LINE_HEADER_PATTERN.test(currentHeader);
       const isFreebiesHeaderWithContent =
         currentHeader !== null &&
-        /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|promo(?:\s*\([^)]*\))?)$/i.test(
+        /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?promo(?:\s*\([^)]*\))?)$/i.test(
           currentHeader,
         ) &&
         currentLines.length > 0;
@@ -777,7 +785,7 @@ export function parseMessengerTextToDraft(
     } else if (/^(?:order\s*\/\s*size|order(?:\s*size)?|size)$/i.test(header)) {
       orderSources.push(value);
     } else if (
-      /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|promo(?:\s*\([^)]*\))?)$/i.test(
+      /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?promo(?:\s*\([^)]*\))?)$/i.test(
         header,
       )
     ) {

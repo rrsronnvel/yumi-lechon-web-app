@@ -183,6 +183,29 @@ describe("R2 Messenger Parser Single-Line Numeric Extraction", () => {
       true,
     );
   });
+
+  it("AC 9: Richard Hernandez template parses selected promo, paid DP, address, and range start", () => {
+    const text = [
+      "Name : Richard Hernandez",
+      "Order / Size : large",
+      "Price: 11,500",
+      "Selected Promo (Freebies or Less ₱2K) : Less 2k",
+      "Delivery Address : 8232 konsehales st. Brgy.8 Carmona Cavite",
+      "Date & Time Nov 09/5pm to 6pm",
+      "Down Payment (DP) :5000(paid)",
+      "Total Balance :6,500",
+    ].join("\n");
+
+    const draft = parseMessengerTextToDraft(text, MOCK_CATEGORIES);
+    assert.strictEqual(draft.discount, 2000);
+    assert.strictEqual(draft.downpayment, 5000);
+    assert.strictEqual(draft.parsedTotalBalance, 6500);
+    assert.strictEqual(
+      draft.deliveryAddress,
+      "8232 konsehales st. Brgy.8 Carmona Cavite",
+    );
+    assert.strictEqual(draft.targetDeliveryTime, "2026-11-09T17:00:00");
+  });
 });
 
 describe("Feature 2: Lechon Belly Freebie 2/2 Slot Rules & 5kg Bilao -> 4x Coke Swap", () => {

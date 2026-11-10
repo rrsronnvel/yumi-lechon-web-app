@@ -16,6 +16,7 @@ import { isWalkInOrder } from "@/utils/walkIn";
 import { Store, RotateCcw, HandCoins, Search } from "lucide-react";
 
 export interface PickupSettlementTabProps {
+  pickups?: PendingPickupSettlement[];
   selectedCustodian?: string | null;
   searchQuery?: string;
   onClearSearch?: () => void;
@@ -23,13 +24,15 @@ export interface PickupSettlementTabProps {
 }
 
 export function PickupSettlementTab({
+  pickups: providedPickups,
   selectedCustodian,
   searchQuery = "",
   onClearSearch,
   onSelectOrder,
 }: PickupSettlementTabProps = {}) {
   const { user, isOwner } = useAuth();
-  const { data: pickups = [], isLoading } = usePendingPickupsQuery();
+  const { data: queriedPickups = [], isLoading } = usePendingPickupsQuery();
+  const pickups = providedPickups ?? queriedPickups;
   const visiblePickups = useMemo(() => {
     if (!selectedCustodian) return pickups;
     return pickups.filter((p) => {
@@ -40,25 +43,36 @@ export function PickupSettlementTab({
   }, [pickups, selectedCustodian]);
 
   const filteredPickups = useMemo(() => {
-    if (!searchQuery.trim()) return visiblePickups;
     const q = searchQuery.toLowerCase().trim();
     const cleanQ = q.startsWith("#") ? q.slice(1) : q;
-    return visiblePickups.filter((p) => {
-      const orderIdStr = String(p.orderId || "");
-      const customer = (p.customerName || "").toLowerCase();
-      const phone = (p.contactNumber || "").toLowerCase();
-      const address = (p.address || "").toLowerCase();
-      const landmark = (p.landmark || "").toLowerCase();
-      const remarks = (p.remarks || "").toLowerCase();
+    const list = !searchQuery.trim()
+      ? visiblePickups
+      : visiblePickups.filter((p) => {
+          const orderIdStr = String(p.orderId || "");
+          const orderReference = (p.orderReference || "")
+            .toLowerCase()
+            .replace(/^#/, "");
+          const customer = (p.customerName || "").toLowerCase();
+          const phone = (p.contactNumber || "").toLowerCase();
+          const address = (p.address || "").toLowerCase();
+          const landmark = (p.landmark || "").toLowerCase();
+          const remarks = (p.remarks || "").toLowerCase();
 
-      return (
-        orderIdStr.includes(cleanQ) ||
-        customer.includes(q) ||
-        phone.includes(q) ||
-        address.includes(q) ||
-        landmark.includes(q) ||
-        remarks.includes(q)
-      );
+          return (
+            orderIdStr.includes(cleanQ) ||
+            orderReference.includes(cleanQ) ||
+            customer.includes(q) ||
+            phone.includes(q) ||
+            address.includes(q) ||
+            landmark.includes(q) ||
+            remarks.includes(q)
+          );
+        });
+    return [...list].sort((a, b) => {
+      const timeA = new Date(a.targetDeliveryTime || (a as any).targetDate || 0).getTime();
+      const timeB = new Date(b.targetDeliveryTime || (b as any).targetDate || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return Number(a.orderId ?? 0) - Number(b.orderId ?? 0);
     });
   }, [visiblePickups, searchQuery]);
 

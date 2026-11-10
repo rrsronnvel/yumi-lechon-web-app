@@ -4,6 +4,7 @@ public class PendingLalamoveSettlementDto
 {
     public int Id => OrderId;
     public int OrderId { get; set; }
+    public string OrderReference { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }
     public string Source { get; set; } = string.Empty;

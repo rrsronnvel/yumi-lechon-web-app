@@ -3,6 +3,7 @@ import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
 import { Pencil } from "lucide-react";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
 
@@ -101,6 +102,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
       ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
       : "";
     const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
+    const sanitizedRemarks = sanitizeMojibake(item.remarks);
     const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
     const displayWeight = minW > 0
       ? formatWeightDisplay(item.customWeightDisplay || item.weightRange || item.weight)
@@ -262,7 +264,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         <td
           onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
           className={`px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words ${editableCellClass}`}
-          title={[freebiesSummary, item.remarks].filter(Boolean).join(" • ") || undefined}
+          title={[freebiesSummary, sanitizedRemarks].filter(Boolean).join(" • ") || undefined}
         >
           <div className="flex items-start justify-between gap-1">
             <div className="space-y-1">
@@ -280,7 +282,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
                   {freebiesSummary}
                 </span>
               )}
-              <span className="block break-words">{item.remarks || "-"}</span>
+              <span className="block break-words">{sanitizedRemarks || "-"}</span>
             </div>
             {isEdit && hasTahi && !isTimeTbd && (
               <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0 mt-0.5" />

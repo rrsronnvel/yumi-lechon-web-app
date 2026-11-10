@@ -29,6 +29,7 @@ import { generateBookingConfirmation } from '../../utils/messengerTemplates';
 import EditOrderModal from './EditOrderModal';
 import { useAuth } from '../../context/AuthContext';
 import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
+import { sanitizeMojibake } from '../../utils/sanitizeDisplayText';
 import WalkInBadge from './WalkInBadge';
 import { useAssignRiderMutation, useRiders } from '../../hooks/useRiders';
 
@@ -137,6 +138,12 @@ export default function OrderDossierModal({
   }, [orderId]);
 
   const activeOrder = orderDetails || fallbackOrder;
+  const sanitizedRemarks = sanitizeMojibake(orderDetails?.remarks || fallbackOrder?.remarks);
+  const sanitizedFreebiesSummary = sanitizeMojibake(
+    sanitizeFreebiesSummary(
+      orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary
+    )
+  );
   const isVisible = orderId !== null;
   const contactPhones = (activeOrder?.contactNumber || '')
     .split(',')
@@ -177,9 +184,17 @@ export default function OrderDossierModal({
   const heldByStaffAmount = Number(
     orderDetails?.heldByStaffAmount ?? fallbackOrder?.heldByStaffAmount ?? 0
   );
+  const heldPaymentMethod = String(
+    orderDetails?.heldPaymentMethod ?? fallbackOrder?.heldPaymentMethod ?? ''
+  ).trim().toLowerCase();
   const isDigitalCustodyActive =
     custodyStatus === 'AwaitingOwnerDigitalVerification';
-  const isPhysicalCustodyActive = custodyStatus === 'InStaffDrawer';
+  const isPhysicalCashMethod =
+    heldPaymentMethod === '' || heldPaymentMethod === 'cash';
+  const isPhysicalCustodyActive =
+    custodyStatus === 'InStaffDrawer' &&
+    heldByStaffAmount > 0 &&
+    isPhysicalCashMethod;
   const showOwnerRiderFeePayout =
     isDigitalCustodyActive &&
     heldByStaffAmount <= 0 &&
@@ -730,9 +745,7 @@ export default function OrderDossierModal({
                 <Text style={styles.physicalCustodyBannerIcon}>🟡</Text>
                 <View style={styles.physicalCustodyBannerContent}>
                   <Text style={styles.physicalCustodyBannerTitle}>
-                    {custodyStatus === 'InStaffDrawer'
-                      ? 'In Staff Drawer — Awaiting Owner Turnover'
-                      : 'In Rider Custody'}
+                    In Staff Drawer — Awaiting Owner Turnover
                   </Text>
                   <Text style={styles.physicalCustodyBannerSubtitle}>
                     Physical cash custody is active. Settle via Owner Drawer tab.
@@ -844,10 +857,10 @@ export default function OrderDossierModal({
                   </View>
                 )}
 
-                {Boolean(orderDetails?.remarks) && (
+                {Boolean(sanitizedRemarks) && (
                   <View style={styles.remarksBox}>
                     <Text style={styles.remarksLabel}>📝 KITCHEN &amp; PREP INSTRUCTIONS</Text>
-                    <Text style={styles.remarksText}>{orderDetails?.remarks}</Text>
+                    <Text style={styles.remarksText}>{sanitizedRemarks}</Text>
                   </View>
                 )}
               </View>
@@ -1202,10 +1215,10 @@ export default function OrderDossierModal({
                     <Text style={styles.addOnsValue}>{orderDetails?.addOns}</Text>
                   </View>
                 )}
-                {Boolean(sanitizeFreebiesSummary(orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary)) && (
+                {Boolean(sanitizedFreebiesSummary) && (
                   <View style={styles.freebiesBadge}>
                     <Text style={styles.freebiesBadgeText}>
-                      {sanitizeFreebiesSummary(orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary)}
+                      {sanitizedFreebiesSummary}
                     </Text>
                   </View>
                 )}
@@ -1276,7 +1289,7 @@ export default function OrderDossierModal({
                   </View>
                 </View>
 
-                {custodyStatus === 'InStaffDrawer' && (
+                {isPhysicalCustodyActive && (
                   <View style={styles.ledgerRow}>
                     <Text style={styles.downpaymentLabel}>
                       Collected by Staff (In Drawer •{' '}
@@ -1403,14 +1416,14 @@ export default function OrderDossierModal({
                   <Text
                     style={[
                       styles.balanceHighlightValue,
-                      custodyStatus === 'InStaffDrawer' || isDigitalCustodyActive || computedBalanceDue <= 0
+                      isPhysicalCustodyActive || isDigitalCustodyActive || computedBalanceDue <= 0
                         ? styles.balanceZeroText
                         : styles.balancePositiveText,
                     ]}
                   >
                     {isDigitalCustodyActive
                       ? '₱0 (Awaiting Owner Digital Check)'
-                      : custodyStatus === 'InStaffDrawer'
+                      : isPhysicalCustodyActive
                       ? '₱0 (Awaiting Owner Verification)'
                       : computedBalanceDue <= 0
                       ? '🟢 ₱0 (Paid in Full)'

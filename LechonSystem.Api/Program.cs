@@ -123,6 +123,80 @@ using (var scope = app.Services.CreateScope())
 
         IF COL_LENGTH('PaymentLogs', 'RecordedBy') IS NULL
             ALTER TABLE PaymentLogs ADD RecordedBy nvarchar(128) NULL;
+
+        IF OBJECT_ID('KitchenPrepRequests', 'U') IS NULL
+        BEGIN
+            CREATE TABLE KitchenPrepRequests (
+                Id INT IDENTITY(1,1) PRIMARY KEY,
+                TargetDate DATETIME2 NOT NULL,
+                TargetTime DATETIME2 NOT NULL,
+                Category NVARCHAR(64) NOT NULL,
+                RecipientOrLabel NVARCHAR(150) NOT NULL,
+                ItemsJson NVARCHAR(MAX) NOT NULL,
+                Remarks NVARCHAR(500) NULL,
+                CreatedBy NVARCHAR(100) NOT NULL,
+                CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+            );
+        END
+    ");
+
+    // Idempotent text repair only: correct known historical UTF-8/Windows-1252
+    // mojibake without deleting records or changing unrelated order data.
+    await context.Database.ExecuteSqlRawAsync(@"
+        DECLARE @BadGift nvarchar(8) = NCHAR(240) + NCHAR(376) + NCHAR(381) + NCHAR(129);
+        DECLARE @BadGiftC1 nvarchar(8) = NCHAR(240) + NCHAR(159) + NCHAR(142) + NCHAR(129);
+        DECLARE @Gift nvarchar(8) = N'🎁';
+        DECLARE @BadPeso nvarchar(8) = NCHAR(226) + NCHAR(8218) + NCHAR(177);
+        DECLARE @BadPesoC1 nvarchar(8) = NCHAR(226) + NCHAR(130) + NCHAR(177);
+        DECLARE @Peso nvarchar(8) = N'₱';
+
+        IF COL_LENGTH('Orders', 'Remarks') IS NOT NULL
+            EXEC sys.sp_executesql N'
+                UPDATE Orders
+                SET Remarks = REPLACE(REPLACE(REPLACE(REPLACE(Remarks,
+                    @BadGift, @Gift), @BadGiftC1, @Gift), @BadPeso, @Peso), @BadPesoC1, @Peso)
+                WHERE Remarks LIKE N''%'' + @BadGift + N''%''
+                   OR Remarks LIKE N''%'' + @BadGiftC1 + N''%''
+                   OR Remarks LIKE N''%'' + @BadPeso + N''%''
+                   OR Remarks LIKE N''%'' + @BadPesoC1 + N''%'';',
+                N'@BadGift nvarchar(8), @BadGiftC1 nvarchar(8), @Gift nvarchar(8), @BadPeso nvarchar(8), @BadPesoC1 nvarchar(8), @Peso nvarchar(8)',
+                @BadGift, @BadGiftC1, @Gift, @BadPeso, @BadPesoC1, @Peso;
+
+        IF COL_LENGTH('Orders', 'KitchenInstructions') IS NOT NULL
+            EXEC sys.sp_executesql N'
+                UPDATE Orders
+                SET KitchenInstructions = REPLACE(REPLACE(REPLACE(REPLACE(KitchenInstructions,
+                    @BadGift, @Gift), @BadGiftC1, @Gift), @BadPeso, @Peso), @BadPesoC1, @Peso)
+                WHERE KitchenInstructions LIKE N''%'' + @BadGift + N''%''
+                   OR KitchenInstructions LIKE N''%'' + @BadGiftC1 + N''%''
+                   OR KitchenInstructions LIKE N''%'' + @BadPeso + N''%''
+                   OR KitchenInstructions LIKE N''%'' + @BadPesoC1 + N''%'';',
+                N'@BadGift nvarchar(8), @BadGiftC1 nvarchar(8), @Gift nvarchar(8), @BadPeso nvarchar(8), @BadPesoC1 nvarchar(8), @Peso nvarchar(8)',
+                @BadGift, @BadGiftC1, @Gift, @BadPeso, @BadPesoC1, @Peso;
+
+        IF COL_LENGTH('Orders', 'FreebiesSummary') IS NOT NULL
+            EXEC sys.sp_executesql N'
+                UPDATE Orders
+                SET FreebiesSummary = REPLACE(REPLACE(REPLACE(REPLACE(FreebiesSummary,
+                    @BadGift, @Gift), @BadGiftC1, @Gift), @BadPeso, @Peso), @BadPesoC1, @Peso)
+                WHERE FreebiesSummary LIKE N''%'' + @BadGift + N''%''
+                   OR FreebiesSummary LIKE N''%'' + @BadGiftC1 + N''%''
+                   OR FreebiesSummary LIKE N''%'' + @BadPeso + N''%''
+                   OR FreebiesSummary LIKE N''%'' + @BadPesoC1 + N''%'';',
+                N'@BadGift nvarchar(8), @BadGiftC1 nvarchar(8), @Gift nvarchar(8), @BadPeso nvarchar(8), @BadPesoC1 nvarchar(8), @Peso nvarchar(8)',
+                @BadGift, @BadGiftC1, @Gift, @BadPeso, @BadPesoC1, @Peso;
+
+        IF COL_LENGTH('OrderItemSchedules', 'Remarks') IS NOT NULL
+            EXEC sys.sp_executesql N'
+                UPDATE OrderItemSchedules
+                SET Remarks = REPLACE(REPLACE(REPLACE(REPLACE(Remarks,
+                    @BadGift, @Gift), @BadGiftC1, @Gift), @BadPeso, @Peso), @BadPesoC1, @Peso)
+                WHERE Remarks LIKE N''%'' + @BadGift + N''%''
+                   OR Remarks LIKE N''%'' + @BadGiftC1 + N''%''
+                   OR Remarks LIKE N''%'' + @BadPeso + N''%''
+                   OR Remarks LIKE N''%'' + @BadPesoC1 + N''%'';',
+                N'@BadGift nvarchar(8), @BadGiftC1 nvarchar(8), @Gift nvarchar(8), @BadPeso nvarchar(8), @BadPesoC1 nvarchar(8), @Peso nvarchar(8)',
+                @BadGift, @BadGiftC1, @Gift, @BadPeso, @BadPesoC1, @Peso;
     ");
 
     // Non-destructive ledger reconciliation: preserve every payment record and
@@ -232,13 +306,17 @@ using (var scope = app.Services.CreateScope())
         var target = DateTime.SpecifyKind(order.TargetDeliveryTime!.Value, DateTimeKind.Unspecified);
         var isPickupOrCourier = order.Fulfillment == FulfillmentType.Pickup ||
                                 order.Fulfillment == FulfillmentType.Lalamove;
-        var departureWasCorrupt = !order.RiderDepartureTime.HasValue ||
-                                  order.RiderDepartureTime.Value.TimeOfDay > target.TimeOfDay;
-        var departure = isPickupOrCourier
-            ? target
-            : departureWasCorrupt
-                ? target.AddHours(-1)
-                : target.Date.Add(order.RiderDepartureTime!.Value.TimeOfDay);
+        var existingDeparture = order.RiderDepartureTime.HasValue
+            ? DateTime.SpecifyKind(order.RiderDepartureTime.Value, DateTimeKind.Unspecified)
+            : (DateTime?)null;
+        var departureWasCorrupt = !existingDeparture.HasValue ||
+                                  existingDeparture.Value > target ||
+                                  existingDeparture.Value < target.AddDays(-1);
+        var departure = !departureWasCorrupt
+            ? existingDeparture!.Value
+            : isPickupOrCourier
+                ? target
+                : target.AddHours(-1);
         departure = DateTime.SpecifyKind(departure, DateTimeKind.Unspecified);
         var departureChanged = order.RiderDepartureTime != departure;
         order.RiderDepartureTime = departure;
@@ -256,15 +334,17 @@ using (var scope = app.Services.CreateScope())
                 (schedule.TahiStartTime.TimeOfDay > target.TimeOfDay ||
                  schedule.SalangStartTime.TimeOfDay > target.TimeOfDay ||
                  schedule.PackagingStartTime.TimeOfDay > target.TimeOfDay);
-            if (!departureWasCorrupt && !hasImpossibleAfternoonDrift) continue;
-            if (schedule.IsManualOverride && !hasImpossibleAfternoonDrift) continue;
-
             var item = order.OrderItems.First(orderItem => orderItem.Id == schedule.OrderItemId);
             var categoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
             cookingProfiles.TryGetValue(categoryId, out var profile);
             var packagingMinutes = profile?.PackagingDurationMinutes ?? 30;
             var salangMinutes = profile?.SalangDurationMinutes ?? 180;
             var tahiMinutes = profile?.TahiDurationMinutes ?? 60;
+            var isNotDepartureAnchored = !schedule.IsManualOverride &&
+                schedule.PackagingStartTime != departure.AddMinutes(-packagingMinutes);
+            if (!departureWasCorrupt && !hasImpossibleAfternoonDrift && !isNotDepartureAnchored) continue;
+            if (schedule.IsManualOverride && !hasImpossibleAfternoonDrift) continue;
+
             schedule.TargetDeliveryTime = target;
             schedule.PackagingStartTime = departure.AddMinutes(-packagingMinutes);
             schedule.SalangStartTime = schedule.PackagingStartTime.AddMinutes(-salangMinutes);

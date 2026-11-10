@@ -114,7 +114,6 @@ export default function OrderForm({
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
   const [mathMismatch, setMathMismatch] = useState<{
     chatBalance: number;
-    expectedBalance: number;
   } | null>(null);
   const previousWholePigCount = useRef(0);
   const pendingParsedFreebies = useRef<{
@@ -270,6 +269,9 @@ export default function OrderForm({
       form.setValue("riderDepartureTime", "", { shouldValidate: true });
       return;
     }
+    // Lalamove pickup is an independent kitchen anchor entered by staff.
+    // Do not overwrite it when the customer's serving time changes.
+    if (Number(watchedFulfillment) === 2) return;
     if (!watchedTargetTime) {
       form.setValue("riderDepartureTime", "", { shouldValidate: true });
       return;
@@ -472,6 +474,14 @@ export default function OrderForm({
     cartSubtotal + effectiveDeliveryFee - effectiveDiscount,
   );
   const balanceDue = grandTotal - effectiveDownpayment;
+  const liveMathMismatch =
+    mathMismatch &&
+    Math.round(balanceDue) !== Math.round(mathMismatch.chatBalance)
+      ? {
+          chatBalance: Math.round(mathMismatch.chatBalance),
+          expectedBalance: Math.round(balanceDue),
+        }
+      : null;
 
   // Stepper quantity update helper using useFieldArray.update
   const updateQuantity = (index: number, newQty: number) => {
@@ -987,25 +997,10 @@ export default function OrderForm({
       draft.freebiesOptOut === true ? explicitDiscount : 0,
     );
 
-    const pastedItemsSubtotal = (draft.items || []).reduce((total, item) => {
-      const category = categories.find(
-        (candidate) => candidate.id === Number(item.itemCategoryId),
-      );
-      return total + (category?.basePrice ?? 0) * (Number(item.quantity) || 0);
-    }, 0);
     const parsedTotalBalance = draft.parsedTotalBalance ?? null;
-    const expectedBalance = Math.max(
-      0,
-      pastedItemsSubtotal + parsedFee - explicitDiscount - parsedDownpayment,
-    );
-    if (
-      parsedTotalBalance !== null &&
-      parsedTotalBalance > 0 &&
-      parsedTotalBalance !== expectedBalance
-    ) {
+    if (parsedTotalBalance !== null) {
       setMathMismatch({
         chatBalance: parsedTotalBalance,
-        expectedBalance,
       });
     }
 
@@ -1572,7 +1567,7 @@ export default function OrderForm({
                       {watchedFulfillment === 0
                         ? "Target Pickup Time"
                         : watchedFulfillment === 2
-                          ? "Target Courier Pickup Time"
+                          ? "Expected Customer / Serving Time"
                           : "Target Delivery Time"}
                     </FormLabel>
                     <label className={cn("inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold", watchedIsTimeTbd ? "border-amber-400 bg-amber-100 text-amber-900" : "border-stone-300 bg-white text-stone-600")}>
@@ -1668,7 +1663,9 @@ export default function OrderForm({
               <FormItem className="bg-amber-50/50 border border-amber-200/80 rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <FormLabel className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                    🛵 Rider Departure Time (Kitchen Zero-Hour Anchor) (Kitchen Zero-Hour Anchor)
+                    {watchedFulfillment === 2
+                      ? "📦 Lalamove Pickup Time (Kitchen Zero-Hour Anchor)"
+                      : "🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)"}
                   </FormLabel>
                     {(watchedFulfillment === 0 || watchedIsTimeTbd) && (
                     <Badge
@@ -1691,7 +1688,7 @@ export default function OrderForm({
                 {watchedFulfillment !== 0 && !watchedIsTimeTbd && (
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[10px] text-amber-800 font-semibold mr-1">
-                      Quick Nudge from Delivery:
+                      Quick Nudge from {watchedFulfillment === 2 ? "Serving Time" : "Delivery"}:
                     </span>
                     {RIDER_DEPARTURE_NUDGE_PILLS.map((pill) => (
                       <button
@@ -1982,12 +1979,12 @@ export default function OrderForm({
 
           {/* Bottom: Settlement Ledger & Handover Callout */}
           <div className="bg-white border border-stone-200/90 rounded-xl p-4 space-y-3.5 shadow-xs">
-            {mathMismatch && (() => {
+            {liveMathMismatch && (() => {
               const diff = Math.abs(
-                mathMismatch.expectedBalance - mathMismatch.chatBalance,
+                liveMathMismatch.expectedBalance - liveMathMismatch.chatBalance,
               );
               const chatIsLower =
-                mathMismatch.chatBalance < mathMismatch.expectedBalance;
+                liveMathMismatch.chatBalance < liveMathMismatch.expectedBalance;
               return (
                 <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3.5 space-y-3 text-amber-950">
                   <div className="flex items-start gap-2">
@@ -1996,8 +1993,8 @@ export default function OrderForm({
                       <p className="text-sm font-black">Chat Math Mismatch Detected</p>
                       <p className="text-xs font-medium leading-relaxed">
                         {chatIsLower
-                          ? `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, but Cart calculation is ₱${mathMismatch.expectedBalance.toLocaleString()} (₱${diff.toLocaleString()} missing in chat total).`
-                          : `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, which is ₱${diff.toLocaleString()} higher than Cart calculation (₱${mathMismatch.expectedBalance.toLocaleString()}).`}
+                          ? `Chat text says Total Balance is ₱${liveMathMismatch.chatBalance.toLocaleString()}, but Cart calculation is ₱${liveMathMismatch.expectedBalance.toLocaleString()} (₱${diff.toLocaleString()} missing in chat total).`
+                          : `Chat text says Total Balance is ₱${liveMathMismatch.chatBalance.toLocaleString()}, which is ₱${diff.toLocaleString()} higher than Cart calculation (₱${liveMathMismatch.expectedBalance.toLocaleString()}).`}
                       </p>
                     </div>
                   </div>
@@ -2008,7 +2005,7 @@ export default function OrderForm({
                       onClick={() => setMathMismatch(null)}
                       className="h-auto min-h-9 whitespace-normal bg-emerald-700 text-white hover:bg-emerald-800"
                     >
-                      ✓ Use {chatIsLower ? "Accurate " : ""}Cart Total (₱{mathMismatch.expectedBalance.toLocaleString()})
+                      ✓ Use {chatIsLower ? "Accurate " : ""}Cart Total (₱{liveMathMismatch.expectedBalance.toLocaleString()})
                     </Button>
                     <Button
                       type="button"
@@ -2033,8 +2030,8 @@ export default function OrderForm({
                       className="h-auto min-h-9 whitespace-normal border-amber-500 bg-white text-amber-900 hover:bg-amber-100"
                     >
                       {chatIsLower
-                        ? `Apply ₱${diff.toLocaleString()} as Discount (Match ₱${mathMismatch.chatBalance.toLocaleString()})`
-                        : `+ Add ₱${diff.toLocaleString()} to Delivery Fee (Match ₱${mathMismatch.chatBalance.toLocaleString()})`}
+                        ? `Apply ₱${diff.toLocaleString()} as Discount (Match ₱${liveMathMismatch.chatBalance.toLocaleString()})`
+                        : `+ Add ₱${diff.toLocaleString()} to Delivery Fee (Match ₱${liveMathMismatch.chatBalance.toLocaleString()})`}
                     </Button>
                   </div>
                 </div>

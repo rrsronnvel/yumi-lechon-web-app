@@ -1,5 +1,40 @@
 **
 
+## 9. 2026-11-10 Daily Operations Reliability
+
+### Backend
+
+- `LechonSystem.Api/Models/KitchenPrepRequest.cs`: POCO domain entity capturing extra kitchen prep requests (`Id`, `TargetDate`, `TargetTime`, `Category`, `RecipientOrLabel`, `ItemsJson`, `Remarks`, `CreatedBy`, `CreatedAt`).
+- `LechonSystem.Api/Data/LechonDbContext.cs`: Registered `DbSet<KitchenPrepRequest> KitchenPrepRequests`.
+- `LechonSystem.Api/Program.cs`: Startup idempotent SQL check creating `KitchenPrepRequests` table if not present, alongside column-guarded mojibake repairs. No purge, drop, truncate, reset, or row deletion.
+- `LechonSystem.Api/DTOs/FreebiesPrepDtos.cs`: Type contracts for Section 1 (8 high-contrast cards: `SarsaSummaryDto`, `FreebieItemSummaryDto`, `DinuguanSummaryDto`, `CokeSummaryDto`, `RawInnardsSummaryDto`), Section 2 (`FreebiePrepRosterRowDto`, `PackItemPillDto`), and CRUD operations (`KitchenPrepRequestDto`, `CreateKitchenPrepRequestDto`).
+- `LechonSystem.Api/Controllers/SchedulesController.cs` & `Services/SchedulingService.cs`:
+  - `GET /api/schedules/freebies-prep?date=YYYY-MM-DD`: Multi-source aggregation across Whole Lechon freebies (including guaranteed 1x Sarsa for Less ₱2k orders), Belly freebies, paid Add-Ons, and Store Paluto requests, returning grand totals and a chronological packing roster sorted by `TimeNeeded`.
+  - `POST /api/schedules/prep-requests`: Creates a new `KitchenPrepRequest` with user attribution and JSON item dictionary serialization.
+  - `DELETE /api/schedules/prep-requests/{id}`: Deletes a `KitchenPrepRequest` by ID.
+  - Roasting backward calculation anchors on `RiderDepartureTime ?? TargetDeliveryTime` as its production zero-hour.
+- `LechonSystem.Api/Services/OrderService.cs`: Preserves independent customer target and Lalamove pickup timestamps.
+- `LechonSystem.Api/Services/LogisticsService.cs`: Settlement/manifest streams order by target delivery ascending (earliest first), then order ID ascending.
+
+### Web
+
+- `DailySheetsPage.tsx`: Integrated 3rd tab (`🎁 Freebies & Prep Sheet`) in TabsList and clean switcher; direct 4K UHD PNG export with filename `Yumi-Lechon-Freebies-Prep-${selectedDate}-4K.png` via direct blob URL download.
+- `FreebiesPrepViewTab.tsx`:
+  - Section 1: Morning Aggregate Prep Board with 8 high-contrast summary cards (Sarsa, Pancit, Palabok, Spaghetti, Dinuguan, Puto, 1.5L Coke, 🥩 Raw Innards Hilaw) displaying grand totals and breakdown subtitles.
+  - Section 2: Chronological Kitchen Packing & Prep Roster Table with columns (Time Needed, Order/Recipient, Type/Item, Route, Checklist Pills, Remarks) and delete actions.
+- `StorePalutoModal.tsx`: Dialog for creating extra prep requests (Category pills, Recipient label, Time Needed picker with quick presets, 7 item steppers, remarks).
+- `useFreebiesPrep.ts`: TanStack Query hooks `useFreebiesPrep`, `useCreatePrepRequestMutation`, `useDeletePrepRequestMutation` with cache invalidations.
+- `OrderForm.tsx` and `messengerTextParser.ts`: Live balance mismatch reconciliation plus Richard Hernandez template variants; parser regression tests lock the behavior.
+- `ManifestPage.tsx`: Earliest-first chronological ordering across all manifest streams.
+- `sanitizeDisplayText.ts`, Kitchen/Rider sheets, and `OrderDetailsModal.tsx`: Repair known mojibake at the final display boundary.
+
+### Mobile
+
+- `PosScreen.tsx` and `messengerTextParser.ts`: Match Web live-balance and template parsing behavior.
+- `DrawerScreen.tsx`: Cross-field active-stream search with clear/count feedback and target-date/order descending sorting.
+- `EditOrderModal.tsx` and `OrderDossierModal.tsx`: Preserve Lalamove pickup separately and require actual held physical cash before rendering rider-custody warnings.
+- `sanitizeDisplayText.ts`: Final display repair for dossier remarks/freebies.
+
 ## 8. 2026-11-04 Owner Reports, Intake Attribution & Custody Safety
 
 ### Backend
@@ -261,7 +296,7 @@
 - lechon-system-web/src/pages/LoginPage.tsx: Warm Culinary Enterprise shift login screen featuring prominent `/yumi-logo.png` emblem, warm espresso-to-terracotta gradient backdrop, Yumi's Lechon Crimson (`#C81E1E`) sign-in trigger, and 1-click demo credential hydration.  
 - lechon-system-web/src/pages/DashboardPage.tsx: Widescreen operational command center with balanced 3-card KPI grid, `#OrderReference` badges, collapsible zero-inbox alert feeds, `[ 📋 Copy Defrost List ]` 1-click Messenger clipboard generator on the Operations Roster header, Defrost Roster Carcass Bouncer (`carcassOnlyDefrost` using `minimumWeightKg > 0` and non-carcass regex filters), and direct POS quick-launch triggers.  
 - lechon-system-web/src/pages/OrdersPage.tsx: Master Order Directory with search-adjacent previous/next/native date controls, Today/Tomorrow/Clear shortcuts, date-scoped BIR payment-channel totals, Tier-1 dateless drafts in `[ 📝 Drafts ]`, and amber Tier-2 dated incomplete rows in `[ 📅 Upcoming ]` with Time/Venue/Size TBD micro-tags. The slide-out dossier retains cancellation, payment, rider telemetry, and Messenger-sharing workflows.
-- lechon-system-web/src/pages/DailySheetsPage.tsx: Print-friendly operational sheet with a 1280px off-screen Clean View renderer. `html-to-image` exports the active Kitchen/Rider sheet at pixel ratio 2 to a white PNG, then uses Web Share Level 2 or direct download for mobile-safe full-table sharing.
+- lechon-system-web/src/pages/DailySheetsPage.tsx: Print-friendly operational sheet with an off-screen Clean View renderer. `html-to-image` exports the active Kitchen/Rider sheet at UHD density to a white PNG, then always performs a blob-backed direct file download so staff can manually upload with Messenger HD enabled.
 - lechon-system-web/src/pages/LogisticsPage.tsx: Dedicated single-view Live Operations (Today) command center for monitoring active dispatches, executing emergency rider swaps, and confirming deliveries, with direct primary launcher for the 13-column Daily Dispatch Planner (`/daily-sheets`).
 - lechon-system-web/src/pages/ManifestPage.tsx: 3-tab Daily Settlement Center hosting Freelance Riders, Store Pickups, and Lalamove Couriers; every table carries the Walk-In badge and a two-line `DATE / SCHEDULE` column after Customer.
 - lechon-system-web/src/pages/InventoryPage.tsx: Multi-tab page containing Dual-Balance Forecasting Scoreboard (Physical, Locked 14d, Available, Safety Level, Status), Ledger Audit Trail, and Low-Stock Procurement boards.  

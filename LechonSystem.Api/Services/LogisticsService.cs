@@ -229,11 +229,13 @@ namespace LechonSystem.Api.Services
                                   ? o.GrandTotal
                                   : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0
                              || o.SettlementCustodyStatus == "InStaffDrawer"))
-                .OrderByDescending(o => o.CreatedAt)
+                .OrderBy(o => o.TargetDeliveryTime)
+                .ThenBy(o => o.Id)
                 .Select(o => new PendingSettlementDropDto
                 {
                     Id = o.Id,
                     OrderId = o.Id,
+                    OrderReference = o.OrderReference,
                     RiderName = o.DeliveryTrip != null
                         && !string.IsNullOrWhiteSpace(o.DeliveryTrip.RiderName)
                         && o.DeliveryTrip.RiderName != "Unassigned"
@@ -281,10 +283,12 @@ namespace LechonSystem.Api.Services
                          && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
                          && (((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0
                              || o.SettlementCustodyStatus == "InStaffDrawer"))
-                .OrderByDescending(o => o.TargetDeliveryTime)
+                .OrderBy(o => o.TargetDeliveryTime)
+                .ThenBy(o => o.Id)
                 .Select(o => new PendingPickupSettlementDto
                 {
                     OrderId = o.Id,
+                    OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
                     Source = o.Source,
@@ -320,9 +324,11 @@ namespace LechonSystem.Api.Services
                          && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
                          && o.RoutingStatus != DeliveryStatus.Delivered)
                 .OrderBy(o => o.TargetDeliveryTime)
+                .ThenBy(o => o.Id)
                 .Select(o => new PendingLalamoveSettlementDto
                 {
                     OrderId = o.Id,
+                    OrderReference = o.OrderReference,
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
                     Source = o.Source,

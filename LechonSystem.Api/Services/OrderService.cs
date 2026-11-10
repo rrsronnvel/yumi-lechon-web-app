@@ -88,18 +88,21 @@ namespace LechonSystem.Api.Services
             FulfillmentType fulfillment)
         {
             var target = AsStoreLocal(targetDeliveryTime);
+
+            // An explicitly supplied pickup/departure time is an independent kitchen
+            // anchor. This is especially important for Lalamove orders where the
+            // courier may collect the order well before the customer's serving time.
+            if (requestedDepartureTime.HasValue)
+            {
+                return AsStoreLocal(requestedDepartureTime.Value);
+            }
+
             if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
             {
                 return target;
             }
 
-            if (!requestedDepartureTime.HasValue ||
-                requestedDepartureTime.Value.TimeOfDay > target.TimeOfDay)
-            {
-                return target.AddHours(-1);
-            }
-
-            return AsStoreLocal(target.Date.Add(requestedDepartureTime.Value.TimeOfDay));
+            return target.AddHours(-1);
         }
 
         private static DateTime AnchorScheduleClock(

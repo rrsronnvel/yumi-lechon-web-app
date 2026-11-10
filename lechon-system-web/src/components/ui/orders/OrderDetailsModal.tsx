@@ -11,6 +11,7 @@ import { useRidersQuery } from "@/hooks/useRiders";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { generateBookingConfirmation } from "@/utils/messengerTemplates";
 import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import apiClient from "@/services/apiClient";
 import { toast } from "sonner";
@@ -232,6 +233,15 @@ export default function OrderDetailsModal({
     if (!orderDetails) return "";
     return sanitizeFreebiesSummary(orderDetails.freebiesSummary);
   }, [orderDetails]);
+  const sanitizedRemarks = sanitizeMojibake(orderDetails?.remarks);
+  const heldByStaffAmount = Number(orderDetails?.heldByStaffAmount || 0);
+  const heldPaymentMethod = String(orderDetails?.heldPaymentMethod || "")
+    .trim()
+    .toLowerCase();
+  const hasPhysicalStaffCustody =
+    orderDetails?.settlementCustodyStatus === "InStaffDrawer" &&
+    heldByStaffAmount > 0 &&
+    (heldPaymentMethod === "" || heldPaymentMethod === "cash");
 
   return (
     <>
@@ -484,10 +494,10 @@ export default function OrderDetailsModal({
                   )}
                 </div>
 
-                {orderDetails.remarks && (
+                {sanitizedRemarks && (
                   <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-lg text-xs">
                     <p className="font-bold text-amber-900 uppercase tracking-wide text-[10px]">Prep Remarks</p>
-                    <p className="text-stone-800 mt-0.5">{orderDetails.remarks}</p>
+                    <p className="text-stone-800 mt-0.5">{sanitizedRemarks}</p>
                   </div>
                 )}
               </div>
@@ -501,7 +511,7 @@ export default function OrderDetailsModal({
 
                 {freebiesSummary && (
                   <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
-                    🎁 {freebiesSummary}
+                    {freebiesSummary}
                   </Badge>
                 )}
 
@@ -575,11 +585,11 @@ export default function OrderDetailsModal({
                     <span>Downpayment Logged:</span>
                     <span className="font-mono">- ₱{Number(orderDetails.downpayment || 0).toLocaleString()}</span>
                   </div>
-                  {orderDetails.settlementCustodyStatus === "InStaffDrawer" && (
+                  {hasPhysicalStaffCustody && (
                     <div className="flex justify-between text-amber-800 font-bold bg-amber-50 p-1.5 rounded">
                       <span>Held in Staff Drawer ({orderDetails.heldPaymentMethod || "Cash"}):</span>
                       <span className="font-mono">
-                        ₱{Number(orderDetails.heldByStaffAmount || orderDetails.balanceDue || 0).toLocaleString()}
+                        ₱{heldByStaffAmount.toLocaleString()}
                       </span>
                     </div>
                   )}

@@ -27,18 +27,21 @@ import { isWalkInOrder } from "@/utils/walkIn";
 import { Package, Eye, CheckCircle2, AlertCircle, Search } from "lucide-react";
 
 export interface LalamoveSettlementTabProps {
+  orders?: PendingLalamoveSettlement[];
   searchQuery?: string;
   onClearSearch?: () => void;
   onSelectOrder?: (orderId: number) => void;
 }
 
 export function LalamoveSettlementTab({
+  orders: providedOrders,
   searchQuery = "",
   onClearSearch,
   onSelectOrder,
 }: LalamoveSettlementTabProps = {}) {
   const navigate = useNavigate();
-  const { data: lalamoveOrders = [], isLoading } = usePendingLalamoveQuery();
+  const { data: queriedOrders = [], isLoading } = usePendingLalamoveQuery();
+  const lalamoveOrders = providedOrders ?? queriedOrders;
   const [selectedOrderForPayment, setSelectedOrderForPayment] =
     useState<PendingLalamoveSettlement | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
@@ -47,21 +50,32 @@ export function LalamoveSettlementTab({
   const releaseMutation = useReleaseLalamoveMutation();
 
   const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return lalamoveOrders;
     const q = searchQuery.toLowerCase().trim();
     const cleanQ = q.startsWith("#") ? q.slice(1) : q;
-    return lalamoveOrders.filter((order) => {
-      const orderIdStr = String(order.id ?? order.orderId ?? "");
-      const customer = (order.customerName || "").toLowerCase();
-      const phone = (order.contactNumber || "").toLowerCase();
-      const address = (order.deliveryAddress || "").toLowerCase();
+    const list = !searchQuery.trim()
+      ? lalamoveOrders
+      : lalamoveOrders.filter((order) => {
+          const orderIdStr = String(order.id ?? order.orderId ?? "");
+          const orderReference = (order.orderReference || "")
+            .toLowerCase()
+            .replace(/^#/, "");
+          const customer = (order.customerName || "").toLowerCase();
+          const phone = (order.contactNumber || "").toLowerCase();
+          const address = (order.deliveryAddress || "").toLowerCase();
 
-      return (
-        orderIdStr.includes(cleanQ) ||
-        customer.includes(q) ||
-        phone.includes(q) ||
-        address.includes(q)
-      );
+          return (
+            orderIdStr.includes(cleanQ) ||
+            orderReference.includes(cleanQ) ||
+            customer.includes(q) ||
+            phone.includes(q) ||
+            address.includes(q)
+          );
+        });
+    return [...list].sort((a, b) => {
+      const timeA = new Date(a.targetDeliveryTime || (a as any).targetDate || 0).getTime();
+      const timeB = new Date(b.targetDeliveryTime || (b as any).targetDate || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return Number((a as any).id ?? a.orderId ?? 0) - Number((b as any).id ?? b.orderId ?? 0);
     });
   }, [lalamoveOrders, searchQuery]);
 

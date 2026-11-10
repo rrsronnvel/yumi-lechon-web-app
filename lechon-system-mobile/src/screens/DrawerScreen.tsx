@@ -35,6 +35,75 @@ import OrderDossierModal from '../components/orders/OrderDossierModal';
 
 type DrawerTabKey = 'hop2' | 'riders' | 'pickups' | 'lalamove';
 
+interface ManifestListItem {
+  orderId?: number | null;
+  id?: number | null;
+  orderReference?: string | null;
+  targetDeliveryTime?: string | null;
+}
+
+function sortManifestItemsByDateAscending<T extends ManifestListItem>(items: readonly T[]) {
+  return [...items].sort((a, b) => {
+    const aTimestamp = a.targetDeliveryTime || (a as any).targetDate
+      ? new Date((a.targetDeliveryTime || (a as any).targetDate)!).getTime()
+      : Number.POSITIVE_INFINITY;
+    const bTimestamp = b.targetDeliveryTime || (b as any).targetDate
+      ? new Date((b.targetDeliveryTime || (b as any).targetDate)!).getTime()
+      : Number.POSITIVE_INFINITY;
+    const safeATimestamp = Number.isNaN(aTimestamp)
+      ? Number.POSITIVE_INFINITY
+      : aTimestamp;
+    const safeBTimestamp = Number.isNaN(bTimestamp)
+      ? Number.POSITIVE_INFINITY
+      : bTimestamp;
+
+    if (safeATimestamp !== safeBTimestamp) {
+      return safeATimestamp - safeBTimestamp; // Ascending: earliest first
+    }
+
+    return Number(a.orderId ?? a.id ?? 0) - Number(b.orderId ?? b.id ?? 0);
+  });
+}
+
+function matchesManifestSearch(
+  item: ManifestListItem & {
+    customerName?: string | null;
+    riderName?: string | null;
+    riderSignedBy?: string | null;
+    deliveryAddress?: string | null;
+    address?: string | null;
+  },
+  query: string
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const orderId = item.orderId ?? item.id;
+  const normalizedOrderQuery = normalizedQuery.startsWith('#')
+    ? normalizedQuery.slice(1)
+    : normalizedQuery;
+  const orderReference = String(item.orderReference ?? '')
+    .toLowerCase()
+    .replace(/^#/, '');
+  const textValues = [
+    item.customerName,
+    item.riderName,
+    item.riderSignedBy,
+    item.deliveryAddress,
+    item.address,
+  ];
+
+  return (
+    (orderId != null && String(orderId).includes(normalizedOrderQuery)) ||
+    orderReference.includes(normalizedOrderQuery) ||
+    textValues.some((value) =>
+      String(value ?? '')
+        .toLowerCase()
+        .includes(normalizedQuery)
+    )
+  );
+}
+
 interface ActiveModalState {
   workflow: 'hop2_owner' | 'hop1_rider' | 'pickup_collect' | 'lalamove_pay';
   orderId: number;
@@ -126,6 +195,7 @@ export default function DrawerScreen() {
   const [activeTab, setActiveTab] = useState<DrawerTabKey>(
     isOwner ? 'hop2' : 'riders'
   );
+  const [searchQuery, setSearchQuery] = useState('');
 
   const {
     data: riderDrops = [],
@@ -147,6 +217,19 @@ export default function DrawerScreen() {
     isRefetching: isRefetchingLalamove,
     refetch: refetchLalamove,
   } = usePendingLalamoveSettlements();
+
+  const sortedRiderDrops = useMemo(
+    () => sortManifestItemsByDateAscending(riderDrops),
+    [riderDrops]
+  );
+  const sortedPickupDrops = useMemo(
+    () => sortManifestItemsByDateAscending(pickupDrops),
+    [pickupDrops]
+  );
+  const sortedLalamoveDrops = useMemo(
+    () => sortManifestItemsByDateAscending(lalamoveDrops),
+    [lalamoveDrops]
+  );
 
   const createQrMutation = useCreateQrSessionMutation();
   const staffValidateMutation = useStaffValidateQrMutation();
@@ -239,6 +322,7 @@ export default function DrawerScreen() {
       key: string;
       sourceType: 'Rider Delivery' | 'Walk-in Pickup';
       orderId: number;
+      orderReference: string;
       customerName: string;
       facebookName?: string | null;
       source?: string;
@@ -256,9 +340,10 @@ export default function DrawerScreen() {
       deliveryFee: number;
       custodyStatus: string;
       targetDeliveryTime?: string | null;
+      deliveryAddress?: string | null;
     }[] = [];
 
-    for (const r of riderDrops) {
+    for (const r of sortedRiderDrops) {
       const physicalAmount = Number(r.heldByStaffAmount ?? 0);
       const digitalAmount = Number(r.digitalTransferAmount ?? 0);
       const isAwaitingOwner =
@@ -277,6 +362,7 @@ export default function DrawerScreen() {
           key: `rider-${r.orderId || r.id}`,
           sourceType: 'Rider Delivery',
           orderId: r.orderId || r.id,
+          orderReference: r.orderReference,
           customerName: r.customerName,
           facebookName: r.facebookName,
           source: r.source,
@@ -294,6 +380,7 @@ export default function DrawerScreen() {
           deliveryFee: r.riderDeliveryFee,
           custodyStatus: r.custodyStatus || 'Uncollected',
           targetDeliveryTime: r.targetDeliveryTime,
+          deliveryAddress: r.deliveryAddress,
         });
       } else if (r.custodyStatus === 'Uncollected') {
         uncollSum += Number(r.netRemittance || 0);
@@ -301,7 +388,7 @@ export default function DrawerScreen() {
       }
     }
 
-    for (const p of pickupDrops) {
+    for (const p of sortedPickupDrops) {
       const physicalAmount = Number(p.heldByStaffAmount ?? 0);
       const digitalAmount = Number(p.digitalTransferAmount ?? 0);
       const isAwaitingOwner =
@@ -320,6 +407,7 @@ export default function DrawerScreen() {
           key: `pickup-${p.orderId}`,
           sourceType: 'Walk-in Pickup',
           orderId: p.orderId,
+          orderReference: p.orderReference,
           customerName: p.customerName,
           facebookName: p.facebookName,
           source: p.source,
@@ -337,6 +425,7 @@ export default function DrawerScreen() {
           deliveryFee: 0,
           custodyStatus: p.custodyStatus || 'Uncollected',
           targetDeliveryTime: p.targetDeliveryTime,
+          deliveryAddress: p.address,
         });
       } else if (p.custodyStatus === 'Uncollected') {
         uncollSum += Number(p.balanceDue ?? 0);
@@ -351,9 +440,9 @@ export default function DrawerScreen() {
       uncollectedCount: uncollCnt,
       pendingDigitalTotal: digitalSum,
       pendingDigitalCount: digitalCnt,
-      hop2CombinedItems: combined,
+      hop2CombinedItems: sortManifestItemsByDateAscending(combined),
     };
-  }, [riderDrops, pickupDrops]);
+  }, [sortedRiderDrops, sortedPickupDrops]);
 
   const custodianBreakdown = useMemo(() => {
     const map = new Map<string, { name: string; amount: number; count: number }>();
@@ -369,32 +458,82 @@ export default function DrawerScreen() {
     return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
   }, [hop2CombinedItems]);
 
-  const visibleHop2Items = useMemo(() => {
+  const custodianHop2Items = useMemo(() => {
     if (!selectedCustodian) return hop2CombinedItems;
     return hop2CombinedItems.filter(
       (item) => (item.heldByStaffName || 'Cashier') === selectedCustodian
     );
   }, [hop2CombinedItems, selectedCustodian]);
 
-  const visibleRiderDrops = useMemo(() => {
-    if (!selectedCustodian) return riderDrops;
-    return riderDrops.filter(
+  const visibleHop2Items = useMemo(
+    () =>
+      custodianHop2Items.filter((item) =>
+        matchesManifestSearch(item, searchQuery)
+      ),
+    [custodianHop2Items, searchQuery]
+  );
+
+  const custodianRiderDrops = useMemo(() => {
+    if (!selectedCustodian) return sortedRiderDrops;
+    return sortedRiderDrops.filter(
       (d) =>
         (d.custodyStatus === 'InStaffDrawer' ||
           d.custodyStatus === 'AwaitingOwnerDigitalVerification') &&
         (d.heldByStaffName || 'Cashier') === selectedCustodian
     );
-  }, [riderDrops, selectedCustodian]);
+  }, [sortedRiderDrops, selectedCustodian]);
 
-  const visiblePickupDrops = useMemo(() => {
-    if (!selectedCustodian) return pickupDrops;
-    return pickupDrops.filter(
+  const visibleRiderDrops = useMemo(
+    () =>
+      custodianRiderDrops.filter((drop) =>
+        matchesManifestSearch(drop, searchQuery)
+      ),
+    [custodianRiderDrops, searchQuery]
+  );
+
+  const custodianPickupDrops = useMemo(() => {
+    if (!selectedCustodian) return sortedPickupDrops;
+    return sortedPickupDrops.filter(
       (p) =>
         (p.custodyStatus === 'InStaffDrawer' ||
           p.custodyStatus === 'AwaitingOwnerDigitalVerification') &&
         (p.heldByStaffName || 'Cashier') === selectedCustodian
     );
-  }, [pickupDrops, selectedCustodian]);
+  }, [sortedPickupDrops, selectedCustodian]);
+
+  const visiblePickupDrops = useMemo(
+    () =>
+      custodianPickupDrops.filter((pickup) =>
+        matchesManifestSearch(pickup, searchQuery)
+      ),
+    [custodianPickupDrops, searchQuery]
+  );
+
+  const visibleLalamoveDrops = useMemo(
+    () =>
+      sortedLalamoveDrops.filter((item) =>
+        matchesManifestSearch(item, searchQuery)
+      ),
+    [sortedLalamoveDrops, searchQuery]
+  );
+
+  const activeListCount =
+    activeTab === 'hop2'
+      ? visibleHop2Items.length
+      : activeTab === 'riders'
+        ? visibleRiderDrops.length
+        : activeTab === 'pickups'
+          ? visiblePickupDrops.length
+          : visibleLalamoveDrops.length;
+  const activeListTotal =
+    activeTab === 'hop2'
+      ? custodianHop2Items.length
+      : activeTab === 'riders'
+        ? custodianRiderDrops.length
+        : activeTab === 'pickups'
+          ? custodianPickupDrops.length
+          : sortedLalamoveDrops.length;
+  const isSearching = searchQuery.trim().length > 0;
 
   // Mint or Resume QR Session when Hop 1 or Hop 2 modal opens
   useEffect(() => {
@@ -941,6 +1080,40 @@ export default function DrawerScreen() {
         </ScrollView>
       </View>
 
+      <View style={styles.searchPanel}>
+        <View style={styles.searchInputShell}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search customer, #order, rider, address..."
+            placeholderTextColor="#A8A29E"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            style={styles.searchInput}
+            accessibilityLabel="Search manifest orders"
+          />
+          {searchQuery.length > 0 && (
+            <Pressable
+              onPress={() => setSearchQuery('')}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.searchClearButton,
+                pressed && styles.btnPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Clear manifest search"
+            >
+              <Text style={styles.searchClearText}>✕</Text>
+            </Pressable>
+          )}
+        </View>
+        <Text style={styles.searchCountText}>
+          Showing {activeListCount} of {activeListTotal}
+        </Text>
+      </View>
+
       {/* Feedback Banner */}
       {feedbackBanner && (
         <View style={styles.feedbackBanner}>
@@ -982,12 +1155,18 @@ export default function DrawerScreen() {
               </View>
             ) : visibleHop2Items.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '✨'}</Text>
+                <Text style={styles.emptyEmoji}>{isSearching || selectedCustodian ? '🔍' : '✨'}</Text>
                 <Text style={styles.emptyTitle}>
-                  {selectedCustodian ? 'No Matches for Custodian' : 'Owner Verification Queue is Clear!'}
+                  {isSearching
+                    ? 'No Matching Drawer Handovers'
+                    : selectedCustodian
+                      ? 'No Matches for Custodian'
+                      : 'Owner Verification Queue is Clear!'}
                 </Text>
                 <Text style={styles.emptySub}>
-                  {selectedCustodian
+                  {isSearching
+                    ? `No drawer handovers match “${searchQuery.trim()}”.`
+                    : selectedCustodian
                     ? `No cash or digital handovers are logged by ${selectedCustodian}.`
                     : 'No cash envelopes or digital deposits are waiting for Owner verification.'}
                 </Text>
@@ -1119,12 +1298,18 @@ export default function DrawerScreen() {
               </View>
             ) : visibleRiderDrops.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '🎉'}</Text>
+                <Text style={styles.emptyEmoji}>{isSearching || selectedCustodian ? '🔍' : '🎉'}</Text>
                 <Text style={styles.emptyTitle}>
-                  {selectedCustodian ? 'No Matches for Custodian' : 'All Rider Trips Settled!'}
+                  {isSearching
+                    ? 'No Matching Rider Drops'
+                    : selectedCustodian
+                      ? 'No Matches for Custodian'
+                      : 'All Rider Trips Settled!'}
                 </Text>
                 <Text style={styles.emptySub}>
-                  {selectedCustodian
+                  {isSearching
+                    ? `No rider drops match “${searchQuery.trim()}”.`
+                    : selectedCustodian
                     ? `No rider remittances in drawer held by ${selectedCustodian}.`
                     : 'No pending freelance rider remittances at the moment.'}
                 </Text>
@@ -1340,12 +1525,18 @@ export default function DrawerScreen() {
               </View>
             ) : visiblePickupDrops.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>{selectedCustodian ? '🔍' : '🎉'}</Text>
+                <Text style={styles.emptyEmoji}>{isSearching || selectedCustodian ? '🔍' : '🎉'}</Text>
                 <Text style={styles.emptyTitle}>
-                  {selectedCustodian ? 'No Matches for Custodian' : 'No Pending Pickup Balances!'}
+                  {isSearching
+                    ? 'No Matching Store Pickups'
+                    : selectedCustodian
+                      ? 'No Matches for Custodian'
+                      : 'No Pending Pickup Balances!'}
                 </Text>
                 <Text style={styles.emptySub}>
-                  {selectedCustodian
+                  {isSearching
+                    ? `No store pickups match “${searchQuery.trim()}”.`
+                    : selectedCustodian
                     ? `No walk-in pickup orders in drawer held by ${selectedCustodian}.`
                     : 'All walk-in store pickup orders have been settled.'}
                 </Text>
@@ -1519,16 +1710,22 @@ export default function DrawerScreen() {
                 <ActivityIndicator size="large" color="#C81E1E" />
                 <Text style={styles.loadingText}>Loading Lalamove gate...</Text>
               </View>
-            ) : lalamoveDrops.length === 0 ? (
+            ) : visibleLalamoveDrops.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>🎉</Text>
-                <Text style={styles.emptyTitle}>No Pending Lalamove Releases!</Text>
+                <Text style={styles.emptyEmoji}>{searchQuery.trim() ? '🔍' : '🎉'}</Text>
+                <Text style={styles.emptyTitle}>
+                  {searchQuery.trim()
+                    ? 'No Matching Lalamove Orders'
+                    : 'No Pending Lalamove Releases!'}
+                </Text>
                 <Text style={styles.emptySub}>
-                  All customer-booked courier orders have been released.
+                  {searchQuery.trim()
+                    ? `No courier orders match “${searchQuery.trim()}”.`
+                    : 'All customer-booked courier orders have been released.'}
                 </Text>
               </View>
             ) : (
-              lalamoveDrops.map((item) => {
+              visibleLalamoveDrops.map((item) => {
                 const isCleared = item.isClearedForRelease || item.balanceDue <= 0;
 
                 return (
@@ -2570,6 +2767,56 @@ const styles = StyleSheet.create({
   },
   tabPillTextActive: {
     color: '#FBBF24',
+  },
+  searchPanel: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E7E5E4',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 9,
+    gap: 6,
+  },
+  searchInputShell: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    borderRadius: 12,
+    backgroundColor: '#FAFAF9',
+    paddingHorizontal: 11,
+  },
+  searchIcon: {
+    color: '#78716C',
+    fontSize: 14,
+    marginRight: 7,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#1C1917',
+    fontSize: 13,
+    paddingVertical: 9,
+  },
+  searchClearButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#E7E5E4',
+    marginLeft: 6,
+  },
+  searchClearText: {
+    color: '#57534E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  searchCountText: {
+    color: '#78716C',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'right',
   },
   feedbackBanner: {
     backgroundColor: '#065F46',

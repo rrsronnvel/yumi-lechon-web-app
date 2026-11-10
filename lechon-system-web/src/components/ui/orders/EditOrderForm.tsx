@@ -640,17 +640,19 @@ export default function EditOrderForm({
     const normalizedRiderDepartureTime = data.riderDepartureTime
       ? normalizeLocalDateTimeInput(data.riderDepartureTime)
       : "";
+    const fulfillmentNum = Number(data.fulfillment);
 
     data.targetDeliveryTime = normalizedTargetDeliveryTime;
     data.riderDepartureTime =
       normalizedTargetDeliveryTime && normalizedRiderDepartureTime
-        ? syncDatePart(
+        ? fulfillmentNum === 2
+          ? normalizedRiderDepartureTime
+          : syncDatePart(
             normalizedRiderDepartureTime,
             normalizedTargetDeliveryTime.slice(0, 10),
           )
         : normalizedRiderDepartureTime;
     const isDraft = Boolean(form.watch("isDraft") || form.watch("isTimeTbd"));
-    const fulfillmentNum = Number(data.fulfillment);
     const validLechonItems = (data.items || []).flatMap((item: any) => {
       const itemCategoryId = Number(item.itemCategoryId);
       const quantity = Number(item.quantity);
@@ -1237,7 +1239,9 @@ export default function EditOrderForm({
                 <FormItem>
                   <div className="flex items-center justify-between gap-2">
                     <FormLabel className="text-xs font-semibold text-stone-700">
-                      Target Delivery / Pickup Time
+                      {Number(fulfillment) === 2
+                        ? "Expected Customer / Serving Time"
+                        : "Target Delivery / Pickup Time"}
                     </FormLabel>
                     <label className={cn("inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold", watchedIsTimeTbd ? "border-amber-400 bg-amber-100 text-amber-900" : "border-stone-300 bg-white text-stone-600")}>
                       <input type="checkbox" className="sr-only" checked={watchedIsTimeTbd} onChange={(event) => handleTimeTbdChange(event.target.checked)} />
@@ -1252,7 +1256,9 @@ export default function EditOrderForm({
                         const val = normalizeLocalDateTimeInput(e.target.value);
                         field.onChange(watchedIsTimeTbd && val ? `${val}T12:00` : val);
                         if (watchedIsTimeTbd) return;
-                        if (val) {
+                        // Lalamove's courier pickup is an independent kitchen
+                        // anchor; editing the customer time must not overwrite it.
+                        if (val && Number(fulfillment) !== 2) {
                           const dt = new Date(val);
                           if (!isNaN(dt.getTime())) {
                             const dep = calculateRiderDepartureTime(
@@ -1282,7 +1288,9 @@ export default function EditOrderForm({
                 <FormItem className="col-span-1 sm:col-span-2 bg-amber-50/50 border border-amber-200/80 rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <FormLabel className="text-xs font-bold text-amber-950">
-                      🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)
+                      {Number(fulfillment) === 2
+                        ? "📦 Lalamove Pickup Time (Kitchen Zero-Hour Anchor)"
+                        : "🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)"}
                     </FormLabel>
                     {(Number(fulfillment) === 0 || watchedIsTimeTbd) && (
                       <Badge
@@ -1304,7 +1312,7 @@ export default function EditOrderForm({
                   {Number(fulfillment) !== 0 && !watchedIsTimeTbd && (
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[10px] text-amber-800 font-semibold mr-1">
-                        Quick Nudge from Delivery:
+                        Quick Nudge from Customer Time:
                       </span>
                       {RIDER_DEPARTURE_NUDGE_PILLS.map((pill) => (
                         <button

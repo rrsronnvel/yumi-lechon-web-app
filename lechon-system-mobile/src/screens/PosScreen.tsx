@@ -161,7 +161,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [mathMismatch, setMathMismatch] = useState<{
     chatBalance: number;
-    expectedBalance: number;
   } | null>(null);
   const [sourceChoiceModalVisible, setSourceChoiceModalVisible] =
     useState(false);
@@ -215,6 +214,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
   useEffect(() => {
     if (isTimeTbd || isNonLechonMode) return;
+    // Lalamove pickup is an independent kitchen anchor entered by staff.
+    // Do not overwrite it when the customer's serving time changes.
+    if (fulfillment === 2) return;
     const targetTime24 = to24HourTime(targetTime, targetPeriod);
     if (!targetTime.trim()) {
       setRiderDepartureTimeStr('');
@@ -567,6 +569,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     cartSubtotal + effectiveDeliveryFee - effectiveDiscount
   );
   const balanceDue = grandTotal - effectiveDownpayment;
+  const liveMathMismatch =
+    mathMismatch &&
+    Math.round(balanceDue) !== Math.round(mathMismatch.chatBalance)
+      ? {
+          chatBalance: Math.round(mathMismatch.chatBalance),
+          expectedBalance: Math.round(balanceDue),
+        }
+      : null;
 
   // Hydrate Form from ParsedOrderDraftDto
   const applyDraftToForm = (draft: ParsedOrderDraftDto) => {
@@ -709,18 +719,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     );
     previousWholePigCount.current = hydratedWholePigCount;
 
-    const catalogItemsSubtotal = hydratedCart.reduce(
-      (total, item) => total + item.unitPrice * item.quantity,
-      0
-    );
-    const parsedDeliveryFee =
-      nextFulfillment === 0 || nextFulfillment === 2
-        ? 0
-        : Math.max(0, Number(draft.deliveryFee ?? 0) || 0);
-    const parsedDownpayment = Math.max(
-      0,
-      Number(draft.downpayment ?? 0) || 0
-    );
     const hydratedFreebies = createDefaultFreebiesConfig(
       hydratedWholePigCount,
       hydratedBellyItems
@@ -762,18 +760,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     }
 
     const parsedTotalBalance = draft.parsedTotalBalance ?? null;
-    const expectedBalance = Math.max(
-      0,
-      catalogItemsSubtotal + parsedDeliveryFee - explicitDiscount - parsedDownpayment
-    );
-    if (
-      parsedTotalBalance !== null &&
-      parsedTotalBalance > 0 &&
-      parsedTotalBalance !== expectedBalance
-    ) {
+    if (parsedTotalBalance !== null) {
       setMathMismatch({
         chatBalance: parsedTotalBalance,
-        expectedBalance,
       });
     }
 
@@ -1659,7 +1648,11 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           {/* Schedule Input */}
           <View style={styles.fieldGroup}>
             <View style={styles.scheduleHeaderRow}>
-              <Text style={styles.fieldLabel}>Target Date &amp; Time *</Text>
+              <Text style={styles.fieldLabel}>
+                {fulfillment === 2
+                  ? 'Expected Customer / Serving Date & Time *'
+                  : 'Target Date & Time *'}
+              </Text>
               <View style={styles.timeTbdToggle}>
                 <Text style={styles.timeTbdToggleText}>⏰ Time TBD</Text>
                 <Switch
@@ -1774,7 +1767,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           {!isNonLechonMode && <View style={styles.fieldGroup}>
             <View style={styles.scheduleHeaderRow}>
               <Text style={styles.fieldLabel}>
-                🛵 Rider Departure Time (Kitchen Zero-Hour Anchor) (Kitchen Anchor){' '}
+                {fulfillment === 2
+                  ? '📦 Lalamove Pickup Time (Kitchen Zero-Hour Anchor)'
+                  : '🛵 Rider Departure Time (Kitchen Zero-Hour Anchor)'}{' '}
                 {fulfillment === 0 ? '(Pickup Locked)' : ''}
               </Text>
             </View>
@@ -2119,12 +2114,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
             💰 Financial Adjustments &amp; Deposit
           </Text>
 
-          {mathMismatch && (() => {
+          {liveMathMismatch && (() => {
             const diff = Math.abs(
-              mathMismatch.expectedBalance - mathMismatch.chatBalance
+              liveMathMismatch.expectedBalance - liveMathMismatch.chatBalance
             );
             const chatIsLower =
-              mathMismatch.chatBalance < mathMismatch.expectedBalance;
+              liveMathMismatch.chatBalance < liveMathMismatch.expectedBalance;
             return (
               <View style={styles.mathMismatchBanner}>
                 <Text style={styles.mathMismatchTitle}>
@@ -2132,8 +2127,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                 </Text>
                 <Text style={styles.mathMismatchText}>
                   {chatIsLower
-                    ? `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, but Cart calculation is ₱${mathMismatch.expectedBalance.toLocaleString()} (₱${diff.toLocaleString()} missing in chat total).`
-                    : `Chat text says Total Balance is ₱${mathMismatch.chatBalance.toLocaleString()}, which is ₱${diff.toLocaleString()} higher than Cart calculation (₱${mathMismatch.expectedBalance.toLocaleString()}).`}
+                    ? `Chat text says Total Balance is ₱${liveMathMismatch.chatBalance.toLocaleString()}, but Cart calculation is ₱${liveMathMismatch.expectedBalance.toLocaleString()} (₱${diff.toLocaleString()} missing in chat total).`
+                    : `Chat text says Total Balance is ₱${liveMathMismatch.chatBalance.toLocaleString()}, which is ₱${diff.toLocaleString()} higher than Cart calculation (₱${liveMathMismatch.expectedBalance.toLocaleString()}).`}
                 </Text>
                 <View style={styles.mathMismatchActions}>
                   <Pressable
@@ -2141,7 +2136,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                     onPress={() => setMathMismatch(null)}
                   >
                     <Text style={styles.mathMismatchUseCartText}>
-                      ✓ Use {chatIsLower ? 'Accurate ' : ''}Cart Total (₱{mathMismatch.expectedBalance.toLocaleString()})
+                      ✓ Use {chatIsLower ? 'Accurate ' : ''}Cart Total (₱{liveMathMismatch.expectedBalance.toLocaleString()})
                     </Text>
                   </Pressable>
                   <Pressable
@@ -2157,8 +2152,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                   >
                     <Text style={styles.mathMismatchAdjustText}>
                       {chatIsLower
-                        ? `Apply ₱${diff.toLocaleString()} as Discount (Match ₱${mathMismatch.chatBalance.toLocaleString()})`
-                        : `+ Add ₱${diff.toLocaleString()} to Delivery Fee (Match ₱${mathMismatch.chatBalance.toLocaleString()})`}
+                        ? `Apply ₱${diff.toLocaleString()} as Discount (Match ₱${liveMathMismatch.chatBalance.toLocaleString()})`
+                        : `+ Add ₱${diff.toLocaleString()} to Delivery Fee (Match ₱${liveMathMismatch.chatBalance.toLocaleString()})`}
                     </Text>
                   </Pressable>
                 </View>

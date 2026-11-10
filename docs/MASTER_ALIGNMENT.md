@@ -8,6 +8,19 @@ Location: Cavite, Philippines
 
 Architecture Phase: Phase 5 (Advanced Logistics & Cash Reconciliation)
 
+### Daily Operations Reliability — November 10, 2026
+
+- **Freebies & Sides Prep Sheet (3rd Daily Sheet Tab):** `DailySheetsPage.tsx` integrates the third operational tab `"🎁 Freebies & Prep Sheet"` alongside Kitchen and Rider sheets. Backed by `FreebiesPrepViewTab.tsx`, it delivers a consolidated preparation view combining customer Whole Lechon freebies, Belly freebies, customer paid side-dish Add-Ons, and Store Paluto requests. Image export produces a direct 4K UHD download named `Yumi-Lechon-Freebies-Prep-${dateStr}-4K.png` without `navigator.share`.
+- **Morning Aggregate Prep Board (8 Cards):** Section 1 of the Freebies & Sides Prep Sheet summarizes total preparation across the day into 8 high-contrast cards: `Sarsa (Liver Sauce)` (total tubs/bottles; guaranteed 1x Liver Sauce included even for whole lechons with "No Freebies / Less ₱2k"), `Pancit`, `Palabok`, `Spaghetti`, `Dinuguan (Cooked)` (automatically excluding orders requesting raw innards), `Puto`, `1.5L Coke` (including 4x 1.5L Coke per 5kg Belly Bilao Swap), and `🥩 Raw Innards (Hilaw)` bags (for whole lechon orders requesting `Walang Dinuguan`).
+- **Chronological Packing & Prep Roster Table:** Section 2 renders a unified table sorted chronologically by `TimeNeeded` (`RiderDepartureTime ?? TargetDeliveryTime` for orders, `TargetTime` for Paluto requests) with columns for `TIME NEEDED`, `ORDER / RECIPIENT`, `TYPE / ITEM`, `FULFILLMENT / ROUTE`, `FREEBIES & SIDES TO PACK (CHECKLIST)` (with distinct visual pills for No Freebies 1x Sarsa, Raw Innards, Bilao Swaps, Paid Add-Ons, and Paluto), and `REMARKS / SPECIAL REQUESTS` (sanitized with `sanitizeMojibake`). Unconfirmed `⏳ TIME TBD` orders group under a bottom divider.
+- **Store Paluto / Extra Kitchen Prep Segregation:** `KitchenPrepRequest` allows kitchen staff and coordinators to prepare side dishes and freebies for Staff Meryenda, Owner / Family Lunch, VIP Gifts, and Store Buffer via `StorePalutoModal.tsx`. It persists in `KitchenPrepRequests` table without creating customer order numbers, inflating cash balances, or distorting sales revenue. Endpoints: `GET /api/schedules/freebies-prep`, `POST /api/schedules/prep-requests`, and `DELETE /api/schedules/prep-requests/{id}`.
+- **Reactive Messenger balance reconciliation:** Web and Mobile retain the pasted `parsedTotalBalance`, but compare it against the current live cart balance after catalog pricing, Less-2k/freebie opt-out discounts, delivery fee, and downpayment have settled. Matching rounded values hide the warning automatically; genuine mismatches always show the live balance and live absolute difference.
+- **Richard Hernandez template compatibility:** Both `messengerTextParser.ts` implementations accept optional `Selected Promo`, parenthetical `₱2K` label hints, `Delivery Address`, colonless `Date & Time` lines with slash-separated time ranges (using the range start), and paid annotations such as `5000(paid)`. Web and Mobile keep an identical regression fixture.
+- **Newest-first manifest operations:** Every Drawer Handover, Freelance Rider, Store Pickup, and Lalamove list sorts by `TargetDeliveryTime DESC`, then order identifier descending. Mobile Drawer adds the same real-time customer/order/rider/address search, clear action, and `Showing X of Y` feedback as Web.
+- **Independent Lalamove clocks:** `TargetDeliveryTime` remains the customer serving/arrival expectation while `RiderDepartureTime` is the courier pickup and kitchen anchor. Whenever a departure exists, Tahi, Salang, and packaging are calculated backward from it. Lalamove and Store Pickup never gain a rider-custody warning merely from routing; the warning requires positive physical cash held in an `InStaffDrawer` custody state.
+- **Direct 4K PNG download:** Daily Sheets always exports a UHD PNG with `pixelRatio = Math.max(3.5, 3840 / element.offsetWidth)` and downloads `Yumi-Lechon-{activeTab}-{date}-4K.png` through a temporary blob URL. It never invokes `navigator.share`, preserving the staff workflow for manually choosing Messenger's HD upload option.
+- **Non-destructive mojibake repair:** API startup performs guarded, idempotent `UPDATE ... REPLACE(...)` repairs for the known gift and peso corruption in available order/schedule text columns; it never deletes or resets records. `sanitizeMojibake` provides a final Web/Mobile rendering boundary for gift, peso, en-dash, and em-dash artifacts in remarks and freebie displays.
+
 ### Daily Operations & Owner Reporting — November 4, 2026
 
 - **Manifest Real-Time Multi-Field Search & In-Modal Order Dossier:** In `ManifestPage.tsx`, `PickupSettlementTab.tsx`, and `LalamoveSettlementTab.tsx`, cash reconciliation provides a real-time multi-field search input (`customerName`, `#orderId`, `riderName` / `No Rider`, `deliveryAddress` / landmark / remarks) with a responsive header counter (`Showing {filtered} of {total} drops/pickups/orders`) and a clear search CTA empty state. Clicking any `#OrderNumber` or customer name, or clicking `[ View Order ]` in Lalamove, triggers `<OrderDetailsModal />` (reusable slide-out customer dossier) without leaving `/manifest` or losing the active tab, search query, or scroll position. All actions (`Assign & Settle`, `Settle Drop`, `Collect at Counter`, `Remit` + `↺`) enforce a uniform aligned 152px bounding box (240px for Lalamove) preventing left/right staggered button misalignment. TanStack Query invalidation on payment logging or voiding refreshes `['manifest']`, `['order']`, `['orders']`, `['dashboard']`, and `['riders']` in real time.
@@ -40,7 +53,7 @@ Architecture Phase: Phase 5 (Advanced Logistics & Cash Reconciliation)
 - Rider Sheet cash truth: the financial columns are `PRICE` (net lechon after discount), `ADD-ONS`, `DEL FEE`, `DOWN PAYMENT`, and `TO COLLECT`. `TO COLLECT` and the footer use `BalanceDue = max(0, LechonPrice + AddOnsTotal + DeliveryFee - Downpayment)`.
 - Walk-in paper-folder signal: an order is Walk-In when `Source == "Walk-in"` (case-insensitive) or Customer/FB Name contains `(WI)`. The prominent `🚶 WALK-IN (WI)` / print `[WI • WALK-IN]` marker appears across Daily Sheets, Manifest, Orders/dossiers, Logistics, Dashboard, and Mobile order/owner/remittance views.
 - Manifest scheduling: Freelance Rider, Store Pickup, and Lalamove tables show `DATE / SCHEDULE` immediately after the customer, with delivery date and time on separate lines. Settlement DTOs carry both target delivery and rider departure timestamps.
-- Mobile-friendly image export: Daily Dispatch Planner provides `📸 Save as Image`, backed by a hidden 1280px clean-sheet renderer and `html-to-image` at pixel ratio 2 with a white background. It exports the complete active Kitchen/Rider table without mobile clipping, uses native file sharing when supported, and otherwise downloads `Yumi-{Kitchen|Rider}-Sheet-{date}.png`.
+- Mobile-friendly image export: Daily Dispatch Planner provides `📸 Save as Image`, backed by the hidden clean-sheet renderer and `html-to-image` at UHD density on a white background. It exports the complete active Kitchen/Rider table without mobile clipping and always downloads `Yumi-Lechon-{activeTab}-{date}-4K.png`; native sharing is intentionally bypassed so Messenger cannot skip its HD upload toggle.
 - Saved custom discount preservation: Hydration and form reset in `EditOrderForm.tsx` (Web) and `EditOrderModal.tsx` (Mobile) strictly preserve `order.discount`. The freebies mode watcher does not passively overwrite saved manual discounts upon opening. Freebie discount auto-calculation is strictly isolated to explicit user clicks of `[ 🚫 No Freebies ]` or `[ 🎁 Standard 7 Freebies ]`.
 - Real user account attribution: User actions across the system stamp `FullName (@username)` (e.g. `Cristel May Alinas (@ishtel)`, `Robi Alinas (@alinas)`, `Store Cashier (@cashier)`) into `Order.CreatedBy`, `Order.OwnerConfirmedBy`, `OrderAuditLogs.ChangedBy`, `PaymentLog.VoidedBy`, and `SettlementQrSession.StaffValidatedBy`. Roles remain strictly for authorization policies. Empty diff comparisons for Add-Ons and Remarks are normalized to prevent false-positive audit logs.
 - Daily Manifest upper date ceiling: Freelance Rider (`GetPendingSettlementDropsAsync`), Store Pickup (`GetPendingPickupSettlementsAsync`), and Lalamove Pre-Release (`GetPendingLalamoveSettlementsAsync`) enforce `o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= PhilippineTime.Today`. Advance bookings (`> PhilippineTime.Today`) are excluded until their delivery date, preventing uncollected total inflation while preserving today's and past unsettled orders (Notebook Rule). VIP (`isTrustedCustomer`) and Walk-in markers are projected across all 3 settlement tabs.
@@ -446,7 +459,7 @@ To eliminate this ambiguity, the Master Order Directory features granular second
 
 3. **In-Dossier Manifest Deep-Link & Active Custody Warnings:**
    When inspecting an individual order in the Customer Dossier (`<Sheet>` on Web or modal on Mobile):
-   - If physical cash custody is active (`SettlementCustodyStatus === "InStaffDrawer"` or `RoutingStatus === "Assigned"`), a prominent amber notice warns dispatchers and cashiers that physical cash custody is active.
+   - If physical cash custody is active (`SettlementCustodyStatus === "InStaffDrawer"` with `HeldByStaffAmount > 0`), a prominent amber notice warns dispatchers and cashiers that physical cash custody is active. Routing assignment alone is never custody, and uncollected Lalamove/Store Pickup orders never show this warning.
    - On Web, an actionable `[View in Manifest ➔]` shortcut navigates directly to `/manifest` for immediate settlement and reconciliation.
    - On Mobile, cashiers are explicitly directed to settle via the dedicated `👑 Drawer` tab.
 
@@ -959,7 +972,7 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 
 * **Strict Philippine Time (`UTC+8`) Calendar Boundaries:** All backend queries and business services evaluate "Today", "Tomorrow", and date comparisons using `PhilippineTime.Today` (`UTC+8`) rather than server-local `DateTime.Today` or `DateTime.UtcNow.Date`. Frontend dates use `getPhilippineDateString(date)` (`Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' })`), eliminating `.toISOString().slice(0, 10)` UTC rollback bugs that cause local morning orders to disappear on cloud hosting (SmarterASP).
 * **Past-Year Typo Guard & Startup Self-Heal:** Any date input from intake forms, edit payloads, or chat parsers where `year < 2025` is automatically normalized to `PhilippineTime.Today.Year` (`2026`). On startup and within `GetOrderDirectoryAsync`, SQL Server executes a self-healing repair (`DATEADD(year, 2026 - YEAR(TargetDeliveryTime), TargetDeliveryTime)`) to recover any active orders saved with an accidental past-year typo (e.g., `#102926-004 Jenah M. Chavez` with year `2016`).
-* **Local-Wall-Clock Schedule Integrity:** Target, departure, packaging, Salang, and Tahi timestamps are treated as Philippine `DateTimeKind.Unspecified`; no UTC conversion or +8-hour addition is permitted. A missing or later-than-target Delivery departure is repaired to target minus one hour, while Pickup/Lalamove stays equal to target. Manual Tahi/Salang overrides survive order edits and changing Departure in `InlineScheduleEditorModal`; recalculation occurs only through `[ 🔄 Auto-Compute Tahi & Salang from Departure ]` or a freezer-stock size substitution. Startup non-destructively repairs future telltale +8-hour rows and records an audit entry.
+* **Local-Wall-Clock Schedule Integrity:** Target, departure, packaging, Salang, and Tahi timestamps are treated as Philippine `DateTimeKind.Unspecified`; no UTC conversion or +8-hour addition is permitted. A missing or later-than-target Delivery departure is repaired to target minus one hour. Store Pickup may default departure to target, while Lalamove preserves an explicitly earlier courier pickup independently from customer serving time. Manual Tahi/Salang overrides survive order edits and changing Departure in `InlineScheduleEditorModal`; recalculation occurs only through `[ 🔄 Auto-Compute Tahi & Salang from Departure ]` or a freezer-stock size substitution. Startup non-destructively repairs future telltale +8-hour rows and records an audit entry.
 
 ### 17.7 3-Row Financials Card Layout (`EditOrderModal.tsx` & `EditOrderForm.tsx`)
 
@@ -1013,3 +1026,54 @@ Renders all pig carcasses scheduled for tomorrow's roasting batches sorted stric
 ### 19.4 Owner Rider Registry Management
 
 * Owner CMS exposes Delivery Riders with add and confirmed delete actions. `DELETE /api/riders/{id}` is Owner-only and removes only the dropdown registry row; `DeliveryTrip.RiderName` remains immutable historical text, so no delivery/order history is removed or orphaned. Rider query caches invalidate immediately.
+
+---
+
+## 20. 2026-11-10 Daily Operations: Freebies & Sides Prep Sheet, Store Paluto & Kitchen Requests
+
+### 20.1 3rd Daily Sheet Tab: "🎁 Freebies & Prep Sheet"
+* **Navigation & Tab Integration:** In `DailySheetsPage.tsx`, the daily dispatch operations workspace exposes three dedicated tabs: `Kitchen Sheet` (production, roasting, and spit kanban), `Rider Sheet` (logistics, address, anti-complacency collection checklist), and `🎁 Freebies & Prep Sheet` (sides, freebie bilao preparation, sauces, and extra kitchen paluto).
+* **High-Resolution 4K Export:** When the Freebies tab is active, clicking `[ 📸 Save as Image ]` renders the hidden clean view (`FreebiesPrepViewTab.tsx` in clean mode) and exports a razor-sharp 4K PNG file named `Yumi-Lechon-Freebies-Prep-${dateStr}-4K.png` via direct blob URL download. Native `navigator.share` is bypassed to maintain manual selection of HD image upload in Messenger group chats.
+* **Store Paluto Modal Launcher:** A prominent toolbar CTA `[ 🍲 + Add Store Paluto / Extra Prep ]` opens `StorePalutoModal.tsx`, allowing staff and owners to add extra kitchen prep requests without opening a mock POS order.
+
+### 20.2 Morning Aggregate Prep Board (8 High-Contrast Summary Cards)
+Section 1 computes grand preparation totals across all active orders and store requests for the selected dispatch date, summing:
+$$\text{Total} = \text{Customer Whole Freebies} + \text{Customer Belly Freebies} + \text{Customer Paid Add-Ons} + \text{Store Paluto Requests}$$
+The 8 high-contrast cards display:
+1. **Sarsa (Liver Sauce):** Total bottles/tubs. Guarantees 1x Liver Sauce per whole lechon head even when the customer selects the "No Freebies / Less ₱2k" discount option (`noFreebiesSarsaGuaranteed`).
+2. **Pancit:** Total bilaos, displaying breakdown subtitles of Freebies + Paid Add-Ons + Store Paluto.
+3. **Palabok:** Total bilaos, with detailed multi-source breakdown.
+4. **Spaghetti:** Total bilaos/tubs, with multi-source breakdown.
+5. **Dinuguan (Cooked):** Total tubs. Automatically suppresses cooked dinuguan for whole lechon orders marked with `rawInnards: true` ("Walang Dinuguan"), displaying an explicit exclusion tag (`excludedRawInnardsOrders`).
+6. **Puto:** Total packs, summing Whole Lechon freebies, 4kg Belly defaults, paid add-ons, and paluto requests.
+7. **1.5L Coke:** Total bottles, summing standard Whole Lechon bottles, paid add-ons, paluto requests, and specifically **4x 1.5L Coke bottles per 5kg Belly Bilao Swap** (`bellySwaps`).
+8. **🥩 Raw Innards (Hilaw):** Total bags of fresh uncooked lamang-loob reserved for whole lechon customers who explicitly requested `Walang Dinuguan / Hilaw` (1 bag per whole pig), plus raw innards paid add-on items.
+
+### 20.3 Chronological Kitchen Packing & Prep Roster Table
+Section 2 provides a chronological kitchen checklist merging customer orders and store paluto requests, sorted ascending by `TimeNeeded` (`RiderDepartureTime ?? TargetDeliveryTime` for customer orders, and `TargetTime` for store paluto requests):
+* **Columns:** `TIME NEEDED` (e.g. `08:30 AM`, `10:30 AM`), `ORDER / RECIPIENT` (order reference + customer name, or recipient label), `TYPE / ITEM` (`1x XL`, `1x Belly 5kg`, or category badge), `FULFILLMENT / ROUTE` (`🛵 Rider Name`, `🏪 Store Pickup`, `📦 Lalamove`, `🏠 Internal Kitchen`), `FREEBIES & SIDES TO PACK (CHECKLIST)` (distinct color-coded pills), and `REMARKS / SPECIAL REQUESTS` (sanitized against mojibake artifacts).
+* **Checklist Pill Visual Rules:**
+  - `🚫 NO FREEBIES (Less ₱2k) • 1x Sarsa Only`: Prominent rose/amber pill ensuring the kitchen packs the guaranteed liver sauce while omitting the other 6 dishes.
+  - `🥩 1x Raw Innards (Hilaw - Do NOT Cook Dinuguan)`: Distinctive purple badge preventing kitchen cooks from accidentally stewing the customer's reserved raw innards.
+  - `4x 1.5L Coke (Bilao Swapped)`: Crimson pill highlighting 5kg belly bilao swaps.
+  - `+ {Qty}x {Item} (Paid Add-On)`: Emerald green badge distinguishing paid customer add-ons from complimentary items.
+  - `{Qty}x {Item} (Paluto)`: Indigo badge for internal store preparation items.
+* **Time TBD Guard:** Orders with `IsTimeTbd: true` or missing target times sort to the bottom under a high-visibility cautionary divider: `⚠️ AWAITING CUSTOMER SERVING TIME — DO NOT PACK UNTIL CONFIRMED`.
+
+### 20.4 Store Paluto / Extra Kitchen Prep Model & API Contracts
+* **Purpose & Financial Safety:** Extra kitchen cooking for staff meals, owner lunch, VIP gifts, or counter buffer runs through `KitchenPrepRequest` rather than pseudo-orders. This guarantees zero ghost receivables in the cash drawer, zero fake revenue on owner analytics, and zero distortion of daily sales reconciliation.
+* **Database Entity (`KitchenPrepRequest`):**
+  - `Id` (INT, IDENTITY PK)
+  - `TargetDate` (DATETIME2, dispatch date)
+  - `TargetTime` (DATETIME2, needed time)
+  - `Category` (NVARCHAR(64), "Staff Meryenda", "Owner / Family", "VIP Gift", "Store Buffer")
+  - `RecipientOrLabel` (NVARCHAR(150), e.g. "Kitchen & Riders Meryenda")
+  - `ItemsJson` (NVARCHAR(MAX), JSON dictionary e.g. `{"Pancit": 2, "Puto": 3, "1.5L Coke": 2}`)
+  - `Remarks` (NVARCHAR(500), optional kitchen notes)
+  - `CreatedBy` (NVARCHAR(100), full user attribution)
+  - `CreatedAt` (DATETIME2, UTC default)
+* **API Endpoints (`SchedulesController`):**
+  - `GET /api/schedules/freebies-prep?date=YYYY-MM-DD`: Returns consolidated `FreebiesPrepResponseDto` with 8-card summary, chronological roster, and store paluto list.
+  - `POST /api/schedules/prep-requests`: Validates category and item dictionary, serializes JSON, stamps `FullName (@username)`, and returns 201 Created.
+  - `DELETE /api/schedules/prep-requests/{id}`: Deletes the prep request and returns 204 NoContent.
+

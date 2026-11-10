@@ -7,6 +7,8 @@ import PrintLayout from "@/components/daily-sheets/PrintLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KitchenViewTab } from "@/components/daily-sheets/KitchenViewTab";
 import { RiderViewTab } from "@/components/daily-sheets/RiderViewTab";
+import { FreebiesPrepViewTab } from "@/components/daily-sheets/FreebiesPrepViewTab";
+import { StorePalutoModal } from "@/components/daily-sheets/StorePalutoModal";
 import { Button } from "@/components/ui/button";
 import { useDailySheets } from "@/hooks/useSchedules";
 import { useAuth } from "@/context/AuthContext";
@@ -15,6 +17,7 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  Gift,
   Pencil,
   Printer,
   Sparkles,
@@ -54,6 +57,7 @@ export default function DailySheetsPage() {
   const isOwner = user?.role === "Owner";
   const [mode, setMode] = useState<"edit" | "clean">("edit");
   const [activeTab, setActiveTab] = useState<string>("kitchen");
+  const [isStorePalutoOpen, setIsStorePalutoOpen] = useState(false);
   const [isSavingImage, setIsSavingImage] = useState(false);
   const exportSheetRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -91,7 +95,8 @@ export default function DailySheetsPage() {
     const exportNode = exportSheetRef.current;
     if (!exportNode || isSavingImage) return;
 
-    const fileName = `Yumi-${activeTab === "kitchen" ? "Kitchen-Roster" : "Rider-Manifest"}-${selectedDate}.png`;
+    const tabSlug = activeTab === "freebies" ? "Freebies-Prep" : activeTab;
+    const fileName = `Yumi-Lechon-${tabSlug}-${selectedDate}-4K.png`;
     setIsSavingImage(true);
 
     try {
@@ -121,27 +126,14 @@ export default function DailySheetsPage() {
         } as any,
       });
       const blob = await (await fetch(dataUrl)).blob();
-      const file = new File([blob], fileName, { type: "image/png" });
-
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: fileName,
-            text: `Yumi Lechon ${activeTab === "kitchen" ? "Kitchen" : "Rider"} Sheet for ${selectedDate}`,
-          });
-          return;
-        } catch (shareError) {
-          if (shareError instanceof DOMException && shareError.name === "AbortError") {
-            return;
-          }
-        }
-      }
-
+      const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.download = fileName;
-      link.href = dataUrl;
+      link.href = blobUrl;
+      document.body.appendChild(link);
       link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000);
       toast.success("Daily sheet PNG saved.");
     } catch (error) {
       toast.error("Could not save the daily sheet image.", {
@@ -212,6 +204,17 @@ export default function DailySheetsPage() {
                   }`}
                 >
                   <Truck className="h-3.5 w-3.5" /> Rider Sheet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("freebies")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                    activeTab === "freebies"
+                      ? "border border-stone-200 bg-white text-stone-900 shadow-xs"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  <Gift className="h-3.5 w-3.5" /> Freebies Sheet
                 </button>
               </div>
             )}
@@ -338,7 +341,11 @@ export default function DailySheetsPage() {
                   YUMI LECHON
                 </span>
                 <h1 className="text-xl font-black uppercase tracking-tight text-black sm:text-2xl">
-                  {activeTab === "kitchen" ? "Kitchen Production Roster" : "Rider Logistics & Settlement Manifest"}
+                  {activeTab === "kitchen"
+                    ? "Kitchen Production Roster"
+                    : activeTab === "rider"
+                    ? "Rider Logistics & Settlement Manifest"
+                    : "Freebies & Sides Prep Sheet"}
                 </h1>
               </div>
               <p className="mt-1 text-xs font-bold text-slate-700">
@@ -347,7 +354,11 @@ export default function DailySheetsPage() {
             </div>
             <div className="text-right">
               <span className="inline-block border-2 border-black bg-slate-50 px-2.5 py-1 text-xs font-black uppercase tracking-wide text-black">
-                {activeTab === "kitchen" ? "Roasting Pit Copy" : "Logistics Settlement Copy"}
+                {activeTab === "kitchen"
+                  ? "Roasting Pit Copy"
+                  : activeTab === "rider"
+                  ? "Logistics Settlement Copy"
+                  : "Kitchen Prep & Packing Copy"}
               </span>
             </div>
           </div>
@@ -368,7 +379,7 @@ export default function DailySheetsPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           {mode === "edit" && (
-            <TabsList className="mx-auto mb-4 grid h-auto w-full max-w-md grid-cols-2 gap-1.5 rounded-xl bg-stone-200/60 p-1.5">
+            <TabsList className="mx-auto mb-4 grid h-auto w-full max-w-2xl grid-cols-3 gap-1.5 rounded-xl bg-stone-200/60 p-1.5">
               <TabsTrigger
                 value="kitchen"
                 className="min-w-0 px-2 py-1.5 text-[11px] font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm sm:px-4 sm:text-xs"
@@ -381,6 +392,12 @@ export default function DailySheetsPage() {
               >
                 <Truck className="h-3.5 w-3.5" /> Rider View (Cash Splits)
               </TabsTrigger>
+              <TabsTrigger
+                value="freebies"
+                className="min-w-0 px-2 py-1.5 text-[11px] font-semibold text-stone-600 transition-all data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm sm:px-4 sm:text-xs"
+              >
+                <Gift className="h-3.5 w-3.5" /> 🎁 Freebies & Prep Sheet
+              </TabsTrigger>
             </TabsList>
           )}
 
@@ -390,6 +407,15 @@ export default function DailySheetsPage() {
 
           <TabsContent value="rider" className="mt-0 focus-visible:outline-none">
             <RiderViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} />
+          </TabsContent>
+
+          <TabsContent value="freebies" className="mt-0 focus-visible:outline-none">
+            <FreebiesPrepViewTab
+              mode={mode}
+              selectedDate={selectedDate}
+              canEdit={isOwner}
+              onAddStorePaluto={() => setIsStorePalutoOpen(true)}
+            />
           </TabsContent>
         </Tabs>
       </div>
@@ -413,7 +439,9 @@ export default function DailySheetsPage() {
                 <h1 className="text-2xl font-black uppercase tracking-tight text-black">
                   {activeTab === "kitchen"
                     ? "Kitchen Production Roster"
-                    : "Rider Logistics & Settlement Manifest"}
+                    : activeTab === "rider"
+                    ? "Rider Logistics & Settlement Manifest"
+                    : "Freebies & Sides Prep Sheet"}
                 </h1>
               </div>
               <p className="mt-1 text-xs font-bold text-slate-700">
@@ -421,16 +449,31 @@ export default function DailySheetsPage() {
               </p>
             </div>
             <span className="inline-block border-2 border-black bg-slate-50 px-2.5 py-1 text-xs font-black uppercase tracking-wide text-black">
-              {activeTab === "kitchen" ? "Roasting Pit Copy" : "Logistics Settlement Copy"}
+              {activeTab === "kitchen"
+                ? "Roasting Pit Copy"
+                : activeTab === "rider"
+                ? "Logistics Settlement Copy"
+                : "Kitchen Prep & Packing Copy"}
             </span>
           </div>
           {activeTab === "kitchen" ? (
             <KitchenViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
-          ) : (
+          ) : activeTab === "rider" ? (
             <RiderViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
+          ) : (
+            <FreebiesPrepViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
           )}
         </div>
       </div>
+
+      <StorePalutoModal
+        isOpen={isStorePalutoOpen}
+        open={isStorePalutoOpen}
+        onClose={() => setIsStorePalutoOpen(false)}
+        onOpenChange={setIsStorePalutoOpen}
+        selectedDate={selectedDate}
+        targetDate={selectedDate}
+      />
     </PrintLayout>
   );
 }

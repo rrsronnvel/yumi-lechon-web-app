@@ -4,6 +4,7 @@ public class PendingSettlementDropDto
 {
     public int Id { get; set; }
     public int OrderId { get; set; }
+    public string OrderReference { get; set; } = string.Empty;
     public string RiderName { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public string? FacebookName { get; set; }

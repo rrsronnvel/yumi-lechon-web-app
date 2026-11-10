@@ -49,12 +49,54 @@ const formatSchedule = (value?: string | null) => {
   };
 };
 
+const sortManifestItemsByDateAscending = <
+  T extends {
+    targetDeliveryTime?: string | null;
+    targetDate?: string | null;
+    orderId?: number | null;
+    id?: number | null;
+  },
+>(items: readonly T[]) =>
+  [...items].sort((a, b) => {
+    const aTimestamp = a.targetDeliveryTime || (a as any).targetDate
+      ? new Date((a.targetDeliveryTime || (a as any).targetDate)!).getTime()
+      : Number.POSITIVE_INFINITY;
+    const bTimestamp = b.targetDeliveryTime || (b as any).targetDate
+      ? new Date((b.targetDeliveryTime || (b as any).targetDate)!).getTime()
+      : Number.POSITIVE_INFINITY;
+    const safeATimestamp = Number.isNaN(aTimestamp)
+      ? Number.POSITIVE_INFINITY
+      : aTimestamp;
+    const safeBTimestamp = Number.isNaN(bTimestamp)
+      ? Number.POSITIVE_INFINITY
+      : bTimestamp;
+
+    if (safeATimestamp !== safeBTimestamp) {
+      return safeATimestamp - safeBTimestamp; // Ascending: earliest first
+    }
+
+    return Number(a.orderId ?? a.id ?? 0) - Number(b.orderId ?? b.id ?? 0);
+  });
+
 export default function ManifestPage() {
   const { user, isOwner } = useAuth();
-  const { data: drops = [], isLoading: isLoadingRiders } = usePendingSettlements();
-  const { data: pickupDrops = [] } = usePendingPickupsQuery();
-  const { data: lalamoveDrops = [] } = usePendingLalamoveQuery();
+  const { data: unsortedDrops = [], isLoading: isLoadingRiders } = usePendingSettlements();
+  const { data: unsortedPickupDrops = [] } = usePendingPickupsQuery();
+  const { data: unsortedLalamoveDrops = [] } = usePendingLalamoveQuery();
   const revertCustodyMutation = useRevertCustodyMutation();
+
+  const drops = useMemo(
+    () => sortManifestItemsByDateAscending(unsortedDrops),
+    [unsortedDrops]
+  );
+  const pickupDrops = useMemo(
+    () => sortManifestItemsByDateAscending(unsortedPickupDrops),
+    [unsortedPickupDrops]
+  );
+  const lalamoveDrops = useMemo(
+    () => sortManifestItemsByDateAscending(unsortedLalamoveDrops),
+    [unsortedLalamoveDrops]
+  );
 
   const {
     inDrawerTotal,
@@ -115,26 +157,32 @@ export default function ManifestPage() {
   const [selectedDossierOrderId, setSelectedDossierOrderId] = useState<number | null>(null);
 
   const filteredDrops = useMemo(() => {
-    if (!searchQuery.trim()) return visibleDrops;
     const q = searchQuery.toLowerCase().trim();
     const cleanQ = q.startsWith("#") ? q.slice(1) : q;
-    return visibleDrops.filter((drop) => {
-      const orderIdStr = String(drop.orderId || drop.id || "");
-      const customer = (drop.customerName || "").toLowerCase();
-      const rider = (drop.riderName || "").toLowerCase();
-      const address = (drop.deliveryAddress || "").toLowerCase();
-      const isNoRider =
-        !drop.riderName?.trim() ||
-        drop.riderName.trim().toLowerCase() === "unassigned";
+    const list = !searchQuery.trim()
+      ? visibleDrops
+      : visibleDrops.filter((drop) => {
+          const orderIdStr = String(drop.orderId || drop.id || "");
+          const orderReference = (drop.orderReference || "")
+            .toLowerCase()
+            .replace(/^#/, "");
+          const customer = (drop.customerName || "").toLowerCase();
+          const rider = (drop.riderName || "").toLowerCase();
+          const address = (drop.deliveryAddress || "").toLowerCase();
+          const isNoRider =
+            !drop.riderName?.trim() ||
+            drop.riderName.trim().toLowerCase() === "unassigned";
 
-      return (
-        orderIdStr.includes(cleanQ) ||
-        customer.includes(q) ||
-        rider.includes(q) ||
-        address.includes(q) ||
-        (isNoRider && (q.includes("no rider") || q.includes("unassigned")))
-      );
-    });
+          return (
+            orderIdStr.includes(cleanQ) ||
+            orderReference.includes(cleanQ) ||
+            customer.includes(q) ||
+            rider.includes(q) ||
+            address.includes(q) ||
+            (isNoRider && (q.includes("no rider") || q.includes("unassigned")))
+          );
+        });
+    return sortManifestItemsByDateAscending(list);
   }, [visibleDrops, searchQuery]);
 
   const handleRevertCustody = (orderId: number) => {
@@ -682,6 +730,7 @@ export default function ManifestPage() {
         {/* Tab 2: Walk-in Store Pickup Handovers */}
         <TabsContent value="pickups" className="space-y-4">
           <PickupSettlementTab
+            pickups={pickupDrops}
             selectedCustodian={selectedCustodian}
             searchQuery={searchQuery}
             onClearSearch={() => setSearchQuery("")}
@@ -692,6 +741,7 @@ export default function ManifestPage() {
         {/* Tab 3: Lalamove Courier Gate */}
         <TabsContent value="lalamove" className="space-y-4">
           <LalamoveSettlementTab
+            orders={lalamoveDrops}
             searchQuery={searchQuery}
             onClearSearch={() => setSearchQuery("")}
             onSelectOrder={setSelectedDossierOrderId}

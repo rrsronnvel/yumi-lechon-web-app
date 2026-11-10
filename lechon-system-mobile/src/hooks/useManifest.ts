@@ -4,6 +4,7 @@ import apiClient from '../services/apiClient';
 export interface PendingSettlementDrop {
   id: number;
   orderId: number;
+  orderReference: string;
   riderName: string;
   customerName: string;
   facebookName?: string | null;
@@ -29,6 +30,7 @@ export interface PendingSettlementDrop {
 
 export interface PendingPickupSettlement {
   orderId: number;
+  orderReference: string;
   customerName: string;
   facebookName?: string | null;
   source?: string;
@@ -55,6 +57,7 @@ export interface PendingPickupSettlement {
 export interface PendingLalamoveSettlement {
   id?: number;
   orderId: number;
+  orderReference: string;
   customerName: string;
   facebookName?: string | null;
   source?: string;

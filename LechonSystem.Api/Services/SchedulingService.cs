@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -64,18 +67,19 @@ namespace LechonSystem.Api.Services
 
             var target = NormalizeToLocalStoreTime(targetDeliveryTime);
             DateTime anchorTime;
-            if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
+            if (riderDepartureTime.HasValue)
+            {
+                // RiderDepartureTime is the kitchen zero-hour whenever it is present.
+                // TargetDeliveryTime remains the independent customer serving time.
+                anchorTime = NormalizeToLocalStoreTime(riderDepartureTime.Value);
+            }
+            else if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
             {
                 anchorTime = target;
             }
-            else if (!riderDepartureTime.HasValue ||
-                     riderDepartureTime.Value.TimeOfDay > target.TimeOfDay)
-            {
-                anchorTime = target.AddHours(-1);
-            }
             else
             {
-                anchorTime = target.Date.Add(riderDepartureTime.Value.TimeOfDay);
+                anchorTime = target.AddHours(-1);
             }
 
             anchorTime = NormalizeToLocalStoreTime(anchorTime);
@@ -791,11 +795,6 @@ namespace LechonSystem.Api.Services
             if (normalizedRequestedDeparture.HasValue)
             {
                 scheduleOrder.RiderDepartureTime = normalizedRequestedDeparture.Value;
-                if (scheduleOrder.Fulfillment == FulfillmentType.Pickup || scheduleOrder.Fulfillment == FulfillmentType.Lalamove)
-                {
-                    scheduleOrder.TargetDeliveryTime = normalizedRequestedDeparture.Value;
-                    schedule.TargetDeliveryTime = normalizedRequestedDeparture.Value;
-                }
             }
 
             schedule.IsManualOverride = true;
@@ -894,6 +893,655 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
             return schedule;
+        }
+
+        public Task<FreebiesPrepResponseDto> GetFreebiesPrepAsync(DateTime? date = null)
+        {
+            var targetDate = (date ?? PhilippineTime.Today).Date;
+            targetDate = PhilippineTime.NormalizeYear(targetDate);
+            return GetFreebiesPrepSheetAsync(targetDate);
+        }
+
+        public async Task<FreebiesPrepResponseDto> GetFreebiesPrepSheetAsync(DateTime targetDate)
+        {
+            targetDate = PhilippineTime.NormalizeYear(targetDate).Date;
+
+            // 1. Fetch active customer orders for targetDate (non-cancelled, non-draft, with target time on date)
+            var activeOrders = await _context.Orders
+                .AsNoTracking()
+                .Include(o => o.DeliveryTrip)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.FulfilledItemCategory)
+                .Where(o => !o.IsCancelled
+                         && !o.IsDraft
+                         && o.TargetDeliveryTime.HasValue
+                         && o.TargetDeliveryTime.Value.Date == targetDate)
+                .ToListAsync();
+
+            // 2. Fetch KitchenPrepRequests for targetDate
+            var prepRequests = await _context.KitchenPrepRequests
+                .AsNoTracking()
+                .Where(p => p.TargetDate.Date == targetDate)
+                .OrderBy(p => p.TargetTime)
+                .ToListAsync();
+
+            var summary = new FreebiesPrepSummaryDto();
+            var roster = new List<FreebiePrepRosterRowDto>();
+            var prepRequestDtos = new List<KitchenPrepRequestDto>();
+
+            // 3. Process each customer order
+            foreach (var order in activeOrders)
+            {
+                var row = ProcessOrderFreebies(order, summary);
+                roster.Add(row);
+            }
+
+            // 4. Process each KitchenPrepRequest (Store Paluto)
+            foreach (var prep in prepRequests)
+            {
+                var itemsDict = DeserializePrepItems(prep.ItemsJson);
+                prepRequestDtos.Add(new KitchenPrepRequestDto
+                {
+                    Id = prep.Id,
+                    TargetDate = prep.TargetDate,
+                    TargetTime = prep.TargetTime,
+                    TargetTimeDisplay = prep.TargetTime.ToString("hh:mm tt"),
+                    Category = prep.Category,
+                    RecipientOrLabel = prep.RecipientOrLabel,
+                    ItemsJson = prep.ItemsJson,
+                    Items = itemsDict,
+                    Remarks = prep.Remarks,
+                    CreatedBy = prep.CreatedBy,
+                    CreatedAt = prep.CreatedAt
+                });
+
+                var pills = new List<PackItemPillDto>();
+                foreach (var (itemName, qty) in itemsDict)
+                {
+                    if (qty <= 0) continue;
+                    var normalized = NormalizeSideItemName(itemName);
+                    switch (normalized)
+                    {
+                        case "Sarsa":
+                            summary.Sarsa.Paluto += qty;
+                            break;
+                        case "Pancit":
+                            summary.Pancit.Paluto += qty;
+                            break;
+                        case "Palabok":
+                            summary.Palabok.Paluto += qty;
+                            break;
+                        case "Spaghetti":
+                            summary.Spaghetti.Paluto += qty;
+                            break;
+                        case "Dinuguan":
+                            summary.Dinuguan.Paluto += qty;
+                            break;
+                        case "Puto":
+                            summary.Puto.Paluto += qty;
+                            break;
+                        case "1.5L Coke":
+                            summary.Coke15L.Paluto += qty;
+                            break;
+                        case "Raw Innards":
+                            summary.RawInnardsHilaw.Paluto += qty;
+                            break;
+                    }
+
+                    pills.Add(new PackItemPillDto
+                    {
+                        ItemName = normalized,
+                        Quantity = qty,
+                        BadgeType = "Paluto",
+                        Label = $"{qty}x {normalized} (Paluto)"
+                    });
+                }
+
+                string categoryBadge = prep.Category switch
+                {
+                    "Staff Meryenda" => "👥 Staff Meryenda",
+                    "Owner / Family" => "👑 Owner / Family",
+                    "VIP Gift" => "🎁 VIP Gift",
+                    "Store Buffer" => "🏪 Store Buffer",
+                    _ => prep.Category.Contains("Staff", StringComparison.OrdinalIgnoreCase) ? "👥 Staff Meryenda" :
+                         prep.Category.Contains("Owner", StringComparison.OrdinalIgnoreCase) || prep.Category.Contains("Family", StringComparison.OrdinalIgnoreCase) ? "👑 Owner / Family" :
+                         prep.Category.Contains("VIP", StringComparison.OrdinalIgnoreCase) ? "🎁 VIP Gift" :
+                         prep.Category.Contains("Buffer", StringComparison.OrdinalIgnoreCase) ? "🏪 Store Buffer" :
+                         $"🏠 {prep.Category}"
+                };
+
+                roster.Add(new FreebiePrepRosterRowDto
+                {
+                    Id = $"prep-{prep.Id}",
+                    RowType = "Paluto",
+                    PrepRequestId = prep.Id,
+                    IsPrepRequest = true,
+                    OrderRef = $"PALUTO-{prep.Id}",
+                    OrderReference = $"PALUTO-{prep.Id}",
+                    Recipient = prep.RecipientOrLabel,
+                    TypeItem = categoryBadge,
+                    Category = prep.Category,
+                    FulfillmentType = "Internal",
+                    RouteDisplay = "🏠 Internal Kitchen",
+                    TimeNeeded = prep.TargetTime,
+                    TimeNeededDisplay = prep.TargetTime.ToString("hh:mm tt"),
+                    IsTimeTbd = false,
+                    IsNoFreebies = false,
+                    IsRawInnards = false,
+                    FreebiesSummary = null,
+                    ChecklistPills = pills,
+                    Remarks = prep.Remarks ?? string.Empty,
+                    CreatedBy = prep.CreatedBy
+                });
+            }
+
+            // 5. Chronological Sort:
+            // Scheduled items sort ascending by TimeNeeded (earliest first). Time TBD orders sort at the bottom.
+            var sortedRoster = roster
+                .OrderBy(r => r.IsTimeTbd ? 1 : 0)
+                .ThenBy(r => r.TimeNeeded ?? DateTime.MaxValue)
+                .ThenBy(r => r.IsPrepRequest ? 1 : 0)
+                .ThenBy(r => r.OrderRef)
+                .ToList();
+
+            return new FreebiesPrepResponseDto
+            {
+                TargetDate = targetDate.ToString("yyyy-MM-dd"),
+                FormattedDate = targetDate.ToString("dddd, MMMM dd, yyyy"),
+                Summary = summary,
+                Roster = sortedRoster,
+                PrepRequests = prepRequestDtos
+            };
+        }
+
+        public async Task<KitchenPrepRequestDto> CreateKitchenPrepRequestAsync(CreateKitchenPrepRequestDto request, string createdBy)
+        {
+            var targetDate = NormalizeToLocalStoreTime(request.TargetDate).Date;
+            targetDate = PhilippineTime.NormalizeYear(targetDate);
+            var targetTime = NormalizeToLocalStoreTime(request.TargetTime);
+
+            string itemsJson;
+            Dictionary<string, int> itemsDict;
+            if (request.Items != null && request.Items.Count > 0)
+            {
+                itemsDict = request.Items;
+                itemsJson = JsonSerializer.Serialize(request.Items);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ItemsJson))
+            {
+                itemsJson = request.ItemsJson;
+                itemsDict = DeserializePrepItems(itemsJson);
+            }
+            else
+            {
+                itemsJson = "{}";
+                itemsDict = new Dictionary<string, int>();
+            }
+
+            var author = !string.IsNullOrWhiteSpace(createdBy)
+                ? createdBy
+                : CurrentUser;
+
+            var prep = new KitchenPrepRequest
+            {
+                TargetDate = targetDate,
+                TargetTime = targetTime,
+                Category = request.Category.Trim(),
+                RecipientOrLabel = request.RecipientOrLabel.Trim(),
+                ItemsJson = itemsJson,
+                Remarks = request.Remarks?.Trim(),
+                CreatedBy = author,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.KitchenPrepRequests.Add(prep);
+            await _context.SaveChangesAsync();
+
+            return new KitchenPrepRequestDto
+            {
+                Id = prep.Id,
+                TargetDate = prep.TargetDate,
+                TargetTime = prep.TargetTime,
+                TargetTimeDisplay = prep.TargetTime.ToString("hh:mm tt"),
+                Category = prep.Category,
+                RecipientOrLabel = prep.RecipientOrLabel,
+                ItemsJson = prep.ItemsJson,
+                Items = itemsDict,
+                Remarks = prep.Remarks,
+                CreatedBy = prep.CreatedBy,
+                CreatedAt = prep.CreatedAt
+            };
+        }
+
+        public async Task<bool> DeleteKitchenPrepRequestAsync(int id)
+        {
+            var prep = await _context.KitchenPrepRequests.FindAsync(id);
+            if (prep == null) return false;
+
+            _context.KitchenPrepRequests.Remove(prep);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        private FreebiePrepRosterRowDto ProcessOrderFreebies(Order order, FreebiesPrepSummaryDto summary)
+        {
+            var wholePigItems = order.OrderItems
+                .Where(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg >= 13)
+                .ToList();
+            int wholePigCount = wholePigItems.Sum(oi => oi.Quantity);
+
+            var bellyItems = order.OrderItems
+                .Where(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg >= 2 && oi.ItemCategory.MinimumWeightKg <= 5)
+                .ToList();
+
+            var paidAddOnItems = order.OrderItems
+                .Where(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg <= 0)
+                .ToList();
+
+            // Determine Freebie State
+            var (isNoFreebies, isRawInnards, hasBellyCokeSwap, counts, bellyCounts) = ResolveFreebiesState(order, wholePigCount, bellyItems);
+
+            var pills = new List<PackItemPillDto>();
+
+            // 1. Process Whole Lechon Freebies
+            if (wholePigCount > 0)
+            {
+                if (isNoFreebies)
+                {
+                    // Guarantees 1x Sarsa per whole pig even when opted out of the 7 freebies (Less ₱2k)
+                    summary.Sarsa.NoFreebiesSarsaGuaranteed += wholePigCount;
+                    pills.Add(new PackItemPillDto
+                    {
+                        ItemName = "Sarsa",
+                        Quantity = wholePigCount,
+                        BadgeType = "NoFreebies",
+                        Label = $"🚫 NO FREEBIES (Less ₱2k) • {wholePigCount}x Sarsa Only"
+                    });
+                }
+                else
+                {
+                    int sarsaQty = counts.GetValueOrDefault("Sarsa", wholePigCount);
+                    int cokeQty = counts.GetValueOrDefault("1.5L Coke", wholePigCount);
+                    int pancitQty = counts.GetValueOrDefault("Pancit", wholePigCount);
+                    int palabokQty = counts.GetValueOrDefault("Palabok", wholePigCount);
+                    int spagQty = counts.GetValueOrDefault("Spaghetti", wholePigCount);
+                    int putoQty = counts.GetValueOrDefault("Puto", wholePigCount);
+
+                    summary.Sarsa.WholeFreebies += sarsaQty;
+                    summary.Coke15L.Freebies += cokeQty;
+                    summary.Pancit.Freebies += pancitQty;
+                    summary.Palabok.Freebies += palabokQty;
+                    summary.Spaghetti.Freebies += spagQty;
+                    summary.Puto.Freebies += putoQty;
+
+                    if (isRawInnards)
+                    {
+                        summary.RawInnardsHilaw.Bags += wholePigCount;
+                        summary.Dinuguan.ExcludedRawInnardsOrders += wholePigCount;
+                        pills.Add(new PackItemPillDto
+                        {
+                            ItemName = "Raw Innards",
+                            Quantity = wholePigCount,
+                            BadgeType = "Special",
+                            Label = $"🥩 {wholePigCount}x Raw Innards (Hilaw - Do NOT Cook Dinuguan)"
+                        });
+                    }
+                    else
+                    {
+                        int dinuguanQty = counts.GetValueOrDefault("Dinuguan", wholePigCount);
+                        summary.Dinuguan.Freebies += dinuguanQty;
+                        if (dinuguanQty > 0)
+                        {
+                            pills.Add(new PackItemPillDto
+                            {
+                                ItemName = "Dinuguan",
+                                Quantity = dinuguanQty,
+                                BadgeType = "Freebie",
+                                Label = $"{dinuguanQty}x Dinuguan"
+                            });
+                        }
+                    }
+
+                    if (sarsaQty > 0) pills.Add(new PackItemPillDto { ItemName = "Sarsa", Quantity = sarsaQty, BadgeType = "Freebie", Label = $"{sarsaQty}x Sarsa" });
+                    if (pancitQty > 0) pills.Add(new PackItemPillDto { ItemName = "Pancit", Quantity = pancitQty, BadgeType = "Freebie", Label = $"{pancitQty}x Pancit" });
+                    if (palabokQty > 0) pills.Add(new PackItemPillDto { ItemName = "Palabok", Quantity = palabokQty, BadgeType = "Freebie", Label = $"{palabokQty}x Palabok" });
+                    if (spagQty > 0) pills.Add(new PackItemPillDto { ItemName = "Spaghetti", Quantity = spagQty, BadgeType = "Freebie", Label = $"{spagQty}x Spaghetti" });
+                    if (putoQty > 0) pills.Add(new PackItemPillDto { ItemName = "Puto", Quantity = putoQty, BadgeType = "Freebie", Label = $"{putoQty}x Puto" });
+                    if (cokeQty > 0) pills.Add(new PackItemPillDto { ItemName = "1.5L Coke", Quantity = cokeQty, BadgeType = "Freebie", Label = $"{cokeQty}x 1.5L Coke" });
+                }
+            }
+
+            // 2. Process Belly Freebies
+            foreach (var (item, qty) in bellyCounts)
+            {
+                if (qty <= 0) continue;
+                var normalized = NormalizeSideItemName(item);
+                if (normalized == "Sarsa")
+                {
+                    summary.Sarsa.BellyFreebies += qty;
+                    if (!isNoFreebies || wholePigCount == 0)
+                    {
+                        pills.Add(new PackItemPillDto { ItemName = "Sarsa", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Sarsa" });
+                    }
+                }
+                else if (normalized == "1.5L Coke")
+                {
+                    // 4x Coke per 5kg belly bilao swap
+                    summary.Coke15L.BellySwaps += qty;
+                    pills.Add(new PackItemPillDto
+                    {
+                        ItemName = "1.5L Coke",
+                        Quantity = qty,
+                        BadgeType = "Special",
+                        Label = $"{qty}x 1.5L Coke (Bilao Swapped)"
+                    });
+                }
+                else if (normalized == "Pancit")
+                {
+                    summary.Pancit.Freebies += qty;
+                    pills.Add(new PackItemPillDto { ItemName = "Pancit", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Pancit" });
+                }
+                else if (normalized == "Palabok")
+                {
+                    summary.Palabok.Freebies += qty;
+                    pills.Add(new PackItemPillDto { ItemName = "Palabok", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Palabok" });
+                }
+                else if (normalized == "Spaghetti")
+                {
+                    summary.Spaghetti.Freebies += qty;
+                    pills.Add(new PackItemPillDto { ItemName = "Spaghetti", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Spaghetti" });
+                }
+                else if (normalized == "Dinuguan")
+                {
+                    summary.Dinuguan.Freebies += qty;
+                    pills.Add(new PackItemPillDto { ItemName = "Dinuguan", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Dinuguan" });
+                }
+                else if (normalized == "Puto")
+                {
+                    summary.Puto.Freebies += qty;
+                    pills.Add(new PackItemPillDto { ItemName = "Puto", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Puto" });
+                }
+            }
+
+            // 3. Process Customer Paid Side-Dish Add-Ons
+            var addOnItemsDict = ExtractPaidAddOns(order, paidAddOnItems);
+            foreach (var (item, qty) in addOnItemsDict)
+            {
+                if (qty <= 0) continue;
+                var normalized = NormalizeSideItemName(item);
+                switch (normalized)
+                {
+                    case "Sarsa":
+                        summary.Sarsa.PaidAddOns += qty;
+                        break;
+                    case "Pancit":
+                        summary.Pancit.PaidAddOns += qty;
+                        break;
+                    case "Palabok":
+                        summary.Palabok.PaidAddOns += qty;
+                        break;
+                    case "Spaghetti":
+                        summary.Spaghetti.PaidAddOns += qty;
+                        break;
+                    case "Dinuguan":
+                        summary.Dinuguan.PaidAddOns += qty;
+                        break;
+                    case "Puto":
+                        summary.Puto.PaidAddOns += qty;
+                        break;
+                    case "1.5L Coke":
+                        summary.Coke15L.PaidAddOns += qty;
+                        break;
+                    case "Raw Innards":
+                        summary.RawInnardsHilaw.PaidAddOns += qty;
+                        break;
+                }
+
+                pills.Add(new PackItemPillDto
+                {
+                    ItemName = normalized,
+                    Quantity = qty,
+                    BadgeType = "PaidAddOn",
+                    Label = $"+ {qty}x {normalized} (Paid Add-On)"
+                });
+            }
+
+            // Build Route Display
+            string routeDisplay = order.Fulfillment switch
+            {
+                FulfillmentType.Pickup => "🏪 Store Pickup",
+                FulfillmentType.Lalamove => "📦 Lalamove",
+                _ => $"🛵 {(order.DeliveryTrip != null && !string.IsNullOrWhiteSpace(order.DeliveryTrip.RiderName) ? order.DeliveryTrip.RiderName : "Unassigned")}"
+            };
+
+            // Build Item Type Display
+            var itemSummaries = new List<string>();
+            foreach (var item in order.OrderItems.Where(i => i.ItemCategory != null && i.ItemCategory.MinimumWeightKg > 0))
+            {
+                var categoryName = item.FulfilledItemCategory?.Name ?? item.ItemCategory!.Name;
+                itemSummaries.Add($"{item.Quantity}x {categoryName}");
+            }
+            string typeItem = itemSummaries.Count > 0 ? string.Join(", ", itemSummaries) : "Sides Only";
+
+            DateTime? timeNeeded = order.RiderDepartureTime ?? order.TargetDeliveryTime;
+            string timeNeededDisplay = order.IsTimeTbd || !timeNeeded.HasValue
+                ? "⏳ TIME TBD"
+                : timeNeeded.Value.ToString("hh:mm tt");
+
+            return new FreebiePrepRosterRowDto
+            {
+                Id = $"ord-{order.OrderReference}",
+                RowType = "Order",
+                OrderId = order.Id,
+                IsPrepRequest = false,
+                OrderRef = order.OrderReference.StartsWith("#") ? order.OrderReference : $"#{order.OrderReference}",
+                OrderReference = order.OrderReference.StartsWith("#") ? order.OrderReference : $"#{order.OrderReference}",
+                Recipient = order.CustomerName,
+                CustomerName = order.CustomerName,
+                FacebookName = order.FacebookName,
+                TypeItem = typeItem,
+                FulfillmentType = order.Fulfillment.ToString(),
+                RouteDisplay = routeDisplay,
+                RiderName = order.DeliveryTrip?.RiderName,
+                TimeNeeded = timeNeeded,
+                TimeNeededDisplay = timeNeededDisplay,
+                IsTimeTbd = order.IsTimeTbd || !timeNeeded.HasValue,
+                IsNoFreebies = isNoFreebies,
+                IsRawInnards = isRawInnards,
+                HasBellyCokeSwap = hasBellyCokeSwap,
+                FreebiesSummary = order.FreebiesSummary,
+                ChecklistPills = pills,
+                Remarks = order.Remarks ?? string.Empty,
+                CreatedBy = order.CreatedBy
+            };
+        }
+
+        private (bool isNoFreebies, bool isRawInnards, bool hasBellyCokeSwap, Dictionary<string, int> counts, Dictionary<string, int> bellyCounts)
+            ResolveFreebiesState(Order order, int wholePigCount, List<OrderItem> bellyItems)
+        {
+            bool isNoFreebies = false;
+            bool isRawInnards = false;
+            bool hasBellyCokeSwap = false;
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var bellyCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            // Try parsing FreebiesConfigJson first
+            if (!string.IsNullOrWhiteSpace(order.FreebiesConfigJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(order.FreebiesConfigJson);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("optOut", out var optOutProp) && optOutProp.GetBoolean())
+                        isNoFreebies = true;
+                    if (root.TryGetProperty("mode", out var modeProp) && modeProp.GetString()?.Equals("none", StringComparison.OrdinalIgnoreCase) == true)
+                        isNoFreebies = true;
+                    if (root.TryGetProperty("pigsWithFreebies", out var pwfProp) && pwfProp.GetInt32() == 0 && wholePigCount > 0)
+                        isNoFreebies = true;
+                    if (root.TryGetProperty("rawInnards", out var rawProp) && rawProp.GetBoolean())
+                        isRawInnards = true;
+
+                    if (root.TryGetProperty("counts", out var countsProp) && countsProp.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var prop in countsProp.EnumerateObject())
+                        {
+                            if (prop.Value.TryGetInt32(out int val)) counts[prop.Name] = val;
+                        }
+                    }
+
+                    if (root.TryGetProperty("bellyCounts", out var bellyProp) && bellyProp.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var prop in bellyProp.EnumerateObject())
+                        {
+                            if (prop.Value.TryGetInt32(out int val))
+                            {
+                                bellyCounts[prop.Name] = val;
+                                if (prop.Name.Contains("Coke", StringComparison.OrdinalIgnoreCase) && val > 1)
+                                {
+                                    hasBellyCokeSwap = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fallback to string scanning if JSON parse fails
+                }
+            }
+
+            // Inspect FreebiesSummary and Remarks as secondary authority / fallback
+            string combinedText = $"{order.FreebiesSummary ?? ""} {order.Remarks ?? ""}";
+            if (!isNoFreebies && Regex.IsMatch(combinedText, @"no\s*freebies|less\s*(?:₱\s*)?2(?:,000|k)?", RegexOptions.IgnoreCase))
+            {
+                isNoFreebies = true;
+            }
+            if (!isRawInnards && Regex.IsMatch(combinedText, @"raw\s*innards|walang\s*dinuguan|hilaw|lamang-loob", RegexOptions.IgnoreCase))
+            {
+                isRawInnards = true;
+            }
+            if (!hasBellyCokeSwap && Regex.IsMatch(combinedText, @"coke|bilao\s*swapped|4\s*pcs\s*1\.5\s*coke", RegexOptions.IgnoreCase))
+            {
+                hasBellyCokeSwap = true;
+            }
+
+            // If bellyCounts empty but belly items present, derive default belly freebies
+            if (bellyCounts.Count == 0 && bellyItems.Count > 0)
+            {
+                foreach (var belly in bellyItems)
+                {
+                    int kg = (int)Math.Round(belly.ItemCategory?.MinimumWeightKg ?? 2.0m);
+                    int qty = belly.Quantity;
+                    bellyCounts["Sarsa"] = bellyCounts.GetValueOrDefault("Sarsa") + qty;
+
+                    if (kg == 2 || kg == 3)
+                    {
+                        bellyCounts["Dinuguan"] = bellyCounts.GetValueOrDefault("Dinuguan") + qty;
+                    }
+                    else if (kg == 4)
+                    {
+                        bellyCounts["Puto"] = bellyCounts.GetValueOrDefault("Puto") + qty;
+                    }
+                    else if (kg == 5)
+                    {
+                        // Check if swapped for Coke
+                        if (hasBellyCokeSwap || Regex.IsMatch(combinedText, @"coke|bilao\s*swapped|4\s*pcs\s*1\.5\s*coke", RegexOptions.IgnoreCase))
+                        {
+                            hasBellyCokeSwap = true;
+                            bellyCounts["1.5L Coke"] = bellyCounts.GetValueOrDefault("1.5L Coke") + (4 * qty);
+                        }
+                        else if (Regex.IsMatch(combinedText, @"palabok", RegexOptions.IgnoreCase))
+                        {
+                            bellyCounts["Palabok"] = bellyCounts.GetValueOrDefault("Palabok") + qty;
+                        }
+                        else
+                        {
+                            bellyCounts["Pancit"] = bellyCounts.GetValueOrDefault("Pancit") + qty;
+                        }
+                    }
+                }
+            }
+
+            return (isNoFreebies, isRawInnards, hasBellyCokeSwap, counts, bellyCounts);
+        }
+
+        private Dictionary<string, int> ExtractPaidAddOns(Order order, List<OrderItem> paidAddOnItems)
+        {
+            var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            if (paidAddOnItems.Count > 0)
+            {
+                foreach (var item in paidAddOnItems)
+                {
+                    var name = item.ItemCategory?.Name ?? "Add-On";
+                    var normalized = NormalizeSideItemName(name);
+                    result[normalized] = result.GetValueOrDefault(normalized) + item.Quantity;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(order.AddOns) && order.AddOns != "-")
+            {
+                // Fallback: parse free-text AddOns string (e.g. "+ 1x Palabok", "Additional Sarsa (₱120)")
+                var matches = Regex.Matches(order.AddOns, @"(?:(\d+)\s*x?\s*)?(Pancit|Palabok|Spaghetti|Dinuguan|Puto|Sarsa|Coke|Raw Innards)", RegexOptions.IgnoreCase);
+                foreach (Match match in matches)
+                {
+                    int qty = 1;
+                    if (match.Groups[1].Success && int.TryParse(match.Groups[1].Value, out int parsedQty))
+                    {
+                        qty = parsedQty;
+                    }
+                    var name = match.Groups[2].Value;
+                    var normalized = NormalizeSideItemName(name);
+                    result[normalized] = result.GetValueOrDefault(normalized) + qty;
+                }
+            }
+
+            return result;
+        }
+
+        private static string NormalizeSideItemName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            var trimmed = raw.Trim();
+            if (trimmed.Contains("Sarsa", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("Liver Sauce", StringComparison.OrdinalIgnoreCase))
+                return "Sarsa";
+            if (trimmed.Contains("Coke", StringComparison.OrdinalIgnoreCase))
+                return "1.5L Coke";
+            if (trimmed.Contains("Palabok", StringComparison.OrdinalIgnoreCase))
+                return "Palabok";
+            if (trimmed.Contains("Spaghetti", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("Spag", StringComparison.OrdinalIgnoreCase))
+                return "Spaghetti";
+            if (trimmed.Contains("Pancit", StringComparison.OrdinalIgnoreCase))
+                return "Pancit";
+            if (trimmed.Contains("Dinuguan", StringComparison.OrdinalIgnoreCase))
+                return "Dinuguan";
+            if (trimmed.Contains("Puto", StringComparison.OrdinalIgnoreCase))
+                return "Puto";
+            if (trimmed.Contains("Raw", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("Lamang", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("Hilaw", StringComparison.OrdinalIgnoreCase))
+                return "Raw Innards";
+            return trimmed;
+        }
+
+        private static Dictionary<string, int> DeserializePrepItems(string itemsJson)
+        {
+            var dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(itemsJson)) return dict;
+
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<Dictionary<string, int>>(itemsJson);
+                if (parsed != null)
+                {
+                    foreach (var kvp in parsed) dict[kvp.Key] = kvp.Value;
+                }
+            }
+            catch
+            {
+                // Ignore JSON parse errors for corrupted manual edits
+            }
+
+            return dict;
         }
     }
 }
