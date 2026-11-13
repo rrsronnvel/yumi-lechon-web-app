@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useCreateUserMutation } from "@/hooks/useUsers";
-import { Eye, EyeOff, UserPlus, Loader2, ShieldCheck, User } from "lucide-react";
+import { Eye, EyeOff, UserPlus, Loader2, ShieldCheck, User, ReceiptText } from "lucide-react";
 
 interface CreateUserModalProps {
   open: boolean;
@@ -23,7 +23,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState<"Cashier" | "Owner">("Cashier");
+  const [role, setRole] = useState<"Cashier" | "Owner" | "Accountant">("Cashier");
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const createUserMutation = useCreateUserMutation();
@@ -176,7 +176,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
             <Label className="text-xs font-semibold text-stone-700">
               Account Role &amp; Permissions
             </Label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => setRole("Cashier")}
@@ -210,6 +210,24 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
                 </div>
                 <span className="text-[10px] text-stone-500 mt-0.5">
                   Full administrative CMS, user provisioning &amp; pricing governance.
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRole("Accountant")}
+                className={`flex flex-col items-start p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                  role === "Accountant"
+                    ? "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400"
+                    : "bg-stone-50 border-stone-200 hover:border-stone-300"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
+                  <ReceiptText className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>📒 Accountant</span>
+                </div>
+                <span className="text-[10px] text-stone-500 mt-0.5">
+                  Expense ledger only. Revenue, profit, orders, and dispatch are isolated.
                 </span>
               </button>
             </div>

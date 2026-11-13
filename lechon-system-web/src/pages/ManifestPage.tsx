@@ -3,8 +3,12 @@ import {
   usePendingSettlements,
   usePendingPickupsQuery,
   usePendingLalamoveQuery,
+  useDownpaymentsQuery,
   useRevertCustodyMutation,
+  useVerifyDigitalSettlementMutation,
   computeCustodyMetrics,
+  getPendingDigitalAmount,
+  getPendingDigitalMethod,
   PendingSettlementDrop,
 } from "@/hooks/useManifest";
 import { useAuth } from "@/context/AuthContext";
@@ -15,7 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { PickupSettlementTab } from "@/components/manifest/PickupSettlementTab";
 import { LalamoveSettlementTab } from "@/components/manifest/LalamoveSettlementTab";
+import { DownpaymentTrackerTab } from "@/components/manifest/DownpaymentTrackerTab";
 import { QrSettlementModal } from "@/components/manifest/QrSettlementModal";
+import { VerifyDigitalDepositModal } from "@/components/manifest/VerifyDigitalDepositModal";
 import OrderDetailsModal from "@/components/ui/orders/OrderDetailsModal";
 import { toast } from "sonner";
 import { WalkInBadge } from "@/components/WalkInBadge";
@@ -29,6 +35,7 @@ import {
   Banknote,
   Search,
   X,
+  Loader2,
 } from "lucide-react";
 
 const formatSchedule = (value?: string | null) => {
@@ -58,11 +65,15 @@ const sortManifestItemsByDateAscending = <
   },
 >(items: readonly T[]) =>
   [...items].sort((a, b) => {
-    const aTimestamp = a.targetDeliveryTime || (a as any).targetDate
-      ? new Date((a.targetDeliveryTime || (a as any).targetDate)!).getTime()
+    const aTargetDate = (a as { targetDate?: string }).targetDate;
+    const bTargetDate = (b as { targetDate?: string }).targetDate;
+    const aSchedule = a.targetDeliveryTime || aTargetDate;
+    const bSchedule = b.targetDeliveryTime || bTargetDate;
+    const aTimestamp = aSchedule
+      ? new Date(aSchedule).getTime()
       : Number.POSITIVE_INFINITY;
-    const bTimestamp = b.targetDeliveryTime || (b as any).targetDate
-      ? new Date((b.targetDeliveryTime || (b as any).targetDate)!).getTime()
+    const bTimestamp = bSchedule
+      ? new Date(bSchedule).getTime()
       : Number.POSITIVE_INFINITY;
     const safeATimestamp = Number.isNaN(aTimestamp)
       ? Number.POSITIVE_INFINITY
@@ -83,7 +94,14 @@ export default function ManifestPage() {
   const { data: unsortedDrops = [], isLoading: isLoadingRiders } = usePendingSettlements();
   const { data: unsortedPickupDrops = [] } = usePendingPickupsQuery();
   const { data: unsortedLalamoveDrops = [] } = usePendingLalamoveQuery();
+  const { data: downpayments = [], isLoading: isLoadingDownpayments } =
+    useDownpaymentsQuery();
   const revertCustodyMutation = useRevertCustodyMutation();
+
+  const [activeTab, setActiveTab] = useState("riders");
+  const [pickupOwnerVerifyOrderId, setPickupOwnerVerifyOrderId] = useState<
+    number | null
+  >(null);
 
   const drops = useMemo(
     () => sortManifestItemsByDateAscending(unsortedDrops),
@@ -97,6 +115,13 @@ export default function ManifestPage() {
     () => sortManifestItemsByDateAscending(unsortedLalamoveDrops),
     [unsortedLalamoveDrops]
   );
+
+  const unremittedDpCount = useMemo(
+    () => downpayments.filter((item) => !item.isDpRemittedToOwner).length,
+    [downpayments],
+  );
+
+  const [filterPendingDigital, setFilterPendingDigital] = useState(false);
 
   const {
     inDrawerTotal,
@@ -144,13 +169,21 @@ export default function ManifestPage() {
   }, [inDrawerItems]);
 
   const visibleDrops = useMemo(() => {
-    if (!selectedCustodian) return drops;
-    return drops.filter((d) => {
+    let list = drops;
+    if (filterPendingDigital) {
+      list = list.filter(
+        (d) =>
+          getPendingDigitalAmount(d) > 0 &&
+          (d.settlementCustodyStatus || d.custodyStatus) !== "Settled",
+      );
+    }
+    if (!selectedCustodian) return list;
+    return list.filter((d) => {
       const isDrawer = (d.settlementCustodyStatus || d.custodyStatus) === "InStaffDrawer";
       const custodian = d.heldByStaffName?.trim() || "Staff";
       return isDrawer && custodian === selectedCustodian;
     });
-  }, [drops, selectedCustodian]);
+  }, [drops, selectedCustodian, filterPendingDigital]);
 
   // Real-time search query and dossier modal states
   const [searchQuery, setSearchQuery] = useState("");
@@ -238,8 +271,8 @@ export default function ManifestPage() {
       heldPaymentMethod: drop.heldPaymentMethod,
       riderSignedBy: drop.riderSignedBy,
       heldByStaffAmount: drop.heldByStaffAmount,
-      digitalTransferMethod: drop.digitalTransferMethod,
-      digitalTransferAmount: drop.digitalTransferAmount,
+      digitalTransferMethod: getPendingDigitalMethod(drop),
+      digitalTransferAmount: getPendingDigitalAmount(drop),
       digitalReferenceNote: drop.digitalReferenceNote,
     });
   };
@@ -252,7 +285,7 @@ export default function ManifestPage() {
       expectedAmount:
         Number(drop.heldByStaffAmount ?? 0) > 0
           ? Number(drop.heldByStaffAmount)
-          : Number(drop.digitalTransferAmount ?? drop.netRemittance),
+          : Number(getPendingDigitalAmount(drop) || drop.netRemittance),
       totalCollected: drop.totalCollected,
       deliveryFee: drop.riderDeliveryFee,
       riderName: drop.riderName,
@@ -261,10 +294,74 @@ export default function ManifestPage() {
       heldPaymentMethod: drop.heldPaymentMethod,
       riderSignedBy: drop.riderSignedBy,
       heldByStaffAmount: drop.heldByStaffAmount,
-      digitalTransferMethod: drop.digitalTransferMethod,
-      digitalTransferAmount: drop.digitalTransferAmount,
+      digitalTransferMethod: getPendingDigitalMethod(drop),
+      digitalTransferAmount: getPendingDigitalAmount(drop),
       digitalReferenceNote: drop.digitalReferenceNote,
     });
+  };
+
+  const verifyDigitalMutation = useVerifyDigitalSettlementMutation();
+  const [verifyingDropOrderId, setVerifyingDropOrderId] = useState<number | null>(null);
+  const [digitalVerifyDrop, setDigitalVerifyDrop] = useState<PendingSettlementDrop | null>(null);
+
+  const handleVerifyDigitalDrop = (drop: PendingSettlementDrop) => {
+    setDigitalVerifyDrop(drop);
+  };
+
+  const handleConfirmDigitalVerifyDrop = () => {
+    if (!digitalVerifyDrop) return;
+    const orderId = digitalVerifyDrop.orderId || digitalVerifyDrop.id;
+    const pendingAmount = getPendingDigitalAmount(digitalVerifyDrop);
+
+    setVerifyingDropOrderId(orderId);
+    verifyDigitalMutation.mutate(orderId, {
+      onSuccess: (data) => {
+        toast.success(
+          data?.message ||
+            `Order #${orderId} digital deposit (₱${pendingAmount.toLocaleString()}) verified and settled!`,
+        );
+        setVerifyingDropOrderId(null);
+        setDigitalVerifyDrop(null);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err: any) => {
+        toast.error(
+          err?.response?.data?.message ||
+            "Failed to verify digital deposit. Please try again.",
+        );
+        setVerifyingDropOrderId(null);
+      },
+    });
+  };
+
+  const handleTogglePendingDigitalCheck = () => {
+    if (filterPendingDigital) {
+      setFilterPendingDigital(false);
+      return;
+    }
+
+    setFilterPendingDigital(true);
+    setSelectedCustodian(null);
+
+    const hasDigitalRiders = drops.some(
+      (d) =>
+        getPendingDigitalAmount(d) > 0 &&
+        (d.settlementCustodyStatus || d.custodyStatus) !== "Settled",
+    );
+    const hasDigitalPickups = pickupDrops.some(
+      (p) =>
+        getPendingDigitalAmount(p) > 0 &&
+        (p.settlementCustodyStatus || p.custodyStatus) !== "Settled",
+    );
+
+    if (activeTab === "pickups" && hasDigitalPickups) return;
+    if (activeTab === "riders" && hasDigitalRiders) return;
+
+    if (hasDigitalPickups) {
+      setActiveTab("pickups");
+    } else if (hasDigitalRiders) {
+      setActiveTab("riders");
+    }
   };
 
   return (
@@ -315,9 +412,12 @@ export default function ManifestPage() {
             <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-amber-500/20 relative z-10">
               <button
                 type="button"
-                onClick={() => setSelectedCustodian(null)}
+                onClick={() => {
+                  setFilterPendingDigital(false);
+                  setSelectedCustodian(null);
+                }}
                 className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all cursor-pointer flex items-center gap-1 ${
-                  selectedCustodian === null
+                  selectedCustodian === null && !filterPendingDigital
                     ? "bg-amber-400 text-stone-950 font-bold shadow-xs"
                     : "bg-stone-800/90 text-amber-200/90 hover:bg-stone-800 hover:text-white border border-amber-500/30"
                 }`}
@@ -328,9 +428,12 @@ export default function ManifestPage() {
                 <button
                   key={cust.name}
                   type="button"
-                  onClick={() => setSelectedCustodian(selectedCustodian === cust.name ? null : cust.name)}
+                  onClick={() => {
+                    setFilterPendingDigital(false);
+                    setSelectedCustodian(selectedCustodian === cust.name ? null : cust.name);
+                  }}
                   className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    selectedCustodian === cust.name
+                    selectedCustodian === cust.name && !filterPendingDigital
                       ? "bg-amber-400 text-stone-950 font-bold shadow-xs"
                       : "bg-stone-800/90 text-amber-200/90 hover:bg-stone-800 hover:text-white border border-amber-500/30"
                   }`}
@@ -345,22 +448,41 @@ export default function ManifestPage() {
         </div>
 
         {/* Card 2: Pending Owner Digital Check */}
-        <div className="bg-gradient-to-br from-sky-950 via-sky-900 to-sky-950 border border-sky-500/40 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <button
+          type="button"
+          onClick={handleTogglePendingDigitalCheck}
+          disabled={pendingDigitalCount === 0}
+          className={`bg-gradient-to-br from-sky-950 via-sky-900 to-sky-950 border rounded-2xl p-5 shadow-lg relative overflow-hidden text-left transition-all enabled:cursor-pointer enabled:hover:-translate-y-0.5 enabled:focus-visible:outline-none enabled:focus-visible:ring-2 enabled:focus-visible:ring-sky-400 disabled:opacity-75 ${
+            filterPendingDigital
+              ? "border-sky-300 ring-2 ring-sky-400/80 shadow-sky-950/50"
+              : "border-sky-500/40 enabled:hover:border-sky-300/70"
+          }`}
+          aria-label="Filter pending Owner digital verification items"
+        >
           <div className="flex items-center justify-between relative z-10">
             <span className="text-xs font-bold uppercase tracking-wider text-sky-200">
               Pending Owner Digital Check
             </span>
-            <span className="text-xs text-sky-100 bg-sky-500/10 border border-sky-400/30 px-2.5 py-0.5 rounded-full font-mono font-semibold">
-              {pendingDigitalCount} {pendingDigitalCount === 1 ? "item" : "items"}
+            <span
+              className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border ${
+                filterPendingDigital
+                  ? "bg-sky-400 text-sky-950 border-sky-300 font-bold"
+                  : "text-sky-100 bg-sky-500/10 border-sky-400/30"
+              }`}
+            >
+              {filterPendingDigital ? "FILTER ACTIVE • " : ""}{pendingDigitalCount}{" "}
+              {pendingDigitalCount === 1 ? "item" : "items"}
             </span>
           </div>
           <div className="text-3xl sm:text-4xl font-black text-sky-300 font-mono tracking-tight my-1.5 relative z-10">
             ₱{pendingDigitalTotal.toLocaleString()}
           </div>
           <p className="text-xs text-sky-100/70 relative z-10">
-            Bank, Direct GCash, GCash, and Maya awaiting Owner account verification
+            {filterPendingDigital
+              ? "Showing pending digital items only. Click again to show all orders."
+              : "Bank, Direct GCash, GCash, and Maya awaiting Owner account verification (Click to filter)"}
           </p>
-        </div>
+        </button>
 
         {/* Card 3: Uncollected */}
         <div className="bg-gradient-to-br from-[#1C1917] via-[#22201E] to-[#1C1917] border border-stone-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
@@ -385,8 +507,31 @@ export default function ManifestPage() {
         </div>
       </div>
 
+      {/* Active Filter Indicator Banner */}
+      {filterPendingDigital && (
+        <div className="flex items-center justify-between bg-sky-950/90 border border-sky-500/60 rounded-xl px-4 py-2.5 text-xs text-sky-100 shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sky-300">🏦 Digital Check Filter Active:</span>
+            <span>
+              Showing {pendingDigitalCount} order(s) awaiting Owner digital account verification.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFilterPendingDigital(false)}
+            className="px-2.5 py-1 bg-sky-800 hover:bg-sky-700 text-sky-100 rounded-lg font-bold text-[11px] cursor-pointer transition-colors"
+          >
+            ✕ Show All Orders
+          </button>
+        </div>
+      )}
+
       {/* MODERN TABS SWITCHER WITH REAL-TIME MULTI-FIELD SEARCH */}
-      <Tabs defaultValue="riders" className="w-full space-y-5">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="w-full space-y-5"
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <TabsList className="w-full sm:w-auto inline-flex h-auto p-1 bg-stone-200/80 rounded-xl border border-stone-300/60 gap-1 shrink-0">
             <TabsTrigger
@@ -430,6 +575,20 @@ export default function ManifestPage() {
                 {lalamoveDrops.length}
               </Badge>
             </TabsTrigger>
+
+            <TabsTrigger
+              value="downpayments"
+              className="flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-xs text-stone-600 transition-all cursor-pointer"
+            >
+              <HandCoins className="w-4 h-4 text-emerald-700" />
+              <span>DP &amp; Walk-In Tracker</span>
+              <Badge
+                variant="secondary"
+                className="ml-1 px-1.5 py-0 text-xs font-mono bg-amber-100 text-amber-900 border border-amber-300"
+              >
+                {unremittedDpCount}
+              </Badge>
+            </TabsTrigger>
           </TabsList>
 
           {/* Real-time Search Input Bar */}
@@ -437,7 +596,11 @@ export default function ManifestPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
             <Input
               type="text"
-              placeholder="Search customer, #order, rider, address..."
+              placeholder={
+                activeTab === "downpayments"
+                  ? "Search customer, #order, phone, payment mode, encoder..."
+                  : "Search customer, #order, rider, address..."
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 pr-8 h-9 text-xs sm:text-sm bg-white border-stone-300 rounded-xl shadow-2xs focus-visible:ring-amber-500"
@@ -534,9 +697,16 @@ export default function ManifestPage() {
                       </tr>
                     ) : (
                       filteredDrops.map((drop: PendingSettlementDrop) => {
-                        const isInDrawer = drop.custodyStatus === "InStaffDrawer";
+                        const custodyStatus =
+                          drop.settlementCustodyStatus ||
+                          drop.custodyStatus ||
+                          "Uncollected";
+                        const pendingDigitalAmount = getPendingDigitalAmount(drop);
+                        const pendingDigitalMethod = getPendingDigitalMethod(drop);
                         const isAwaitingDigital =
-                          drop.custodyStatus === "AwaitingOwnerDigitalVerification";
+                          pendingDigitalAmount > 0 && custodyStatus !== "Settled";
+                        const isInDrawer =
+                          custodyStatus === "InStaffDrawer" && !isAwaitingDigital;
                         const isAwaitingOwner = isInDrawer || isAwaitingDigital;
                         const isUnassignedRider =
                           !drop.riderName?.trim() ||
@@ -552,7 +722,9 @@ export default function ManifestPage() {
                             className={`hover:bg-amber-50/30 transition-colors ${
                               isWalkIn
                                 ? "bg-indigo-50/40"
-                                : isInDrawer
+                                : isAwaitingDigital
+                                  ? "bg-sky-50/40"
+                                  : isInDrawer
                                   ? "bg-amber-50/20"
                                   : ""
                             }`}
@@ -627,7 +799,16 @@ export default function ManifestPage() {
 
                             {/* Custody Status Badge */}
                             <td className="px-3 py-2.5 text-xs">
-                              {isInDrawer ? (
+                              {isAwaitingDigital ? (
+                                <div className="flex flex-col items-start gap-0.5">
+                                  <span className="text-xs font-bold text-sky-900 bg-sky-100 border border-sky-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    🏦 Awaiting Digital Check
+                                  </span>
+                                  <span className="text-[11px] font-medium text-sky-700 pl-1">
+                                    ₱{pendingDigitalAmount.toLocaleString()} • {pendingDigitalMethod}
+                                  </span>
+                                </div>
+                              ) : isInDrawer ? (
                                 <div className="flex flex-col items-start gap-0.5">
                                   <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
@@ -668,14 +849,42 @@ export default function ManifestPage() {
                               <div className="w-[152px] flex items-center justify-end gap-1.5 ml-auto">
                                 {isAwaitingOwner ? (
                                   <>
-                                    <Button
-                                      size="sm"
-                                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold shadow-2xs h-8 px-2.5 rounded-lg inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                                      onClick={() => handleOpenStaffToOwner(drop)}
-                                    >
-                                      <HandCoins className="w-3.5 h-3.5 shrink-0" />
-                                      <span>Remit</span>
-                                    </Button>
+                                    {!isAwaitingDigital || isOwner ? (
+                                      isAwaitingDigital ? (
+                                        <Button
+                                          size="sm"
+                                          disabled={
+                                            verifyDigitalMutation.isPending &&
+                                            verifyingDropOrderId === (drop.orderId || drop.id)
+                                          }
+                                          className="flex-1 bg-sky-700 hover:bg-sky-800 text-white text-[11px] font-bold shadow-2xs h-8 px-2 rounded-lg inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-75"
+                                          onClick={() => handleVerifyDigitalDrop(drop)}
+                                        >
+                                          {verifyDigitalMutation.isPending &&
+                                          verifyingDropOrderId === (drop.orderId || drop.id) ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                              <span>Verifying...</span>
+                                            </>
+                                          ) : (
+                                            <span>👑 Verify Digital</span>
+                                          )}
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          className="flex-1 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold shadow-2xs h-8 px-2.5 rounded-lg inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                                          onClick={() => handleOpenStaffToOwner(drop)}
+                                        >
+                                          <HandCoins className="w-3.5 h-3.5 shrink-0" />
+                                          <span>Remit</span>
+                                        </Button>
+                                      )
+                                    ) : (
+                                      <span className="flex-1 whitespace-normal text-center text-[11px] font-semibold text-sky-800">
+                                        Awaiting Owner
+                                      </span>
+                                    )}
                                     {(isOwner ||
                                       (Boolean(user?.username) &&
                                         Boolean(drop.heldByStaffName) &&
@@ -735,6 +944,10 @@ export default function ManifestPage() {
             searchQuery={searchQuery}
             onClearSearch={() => setSearchQuery("")}
             onSelectOrder={setSelectedDossierOrderId}
+            ownerVerifyOrderId={pickupOwnerVerifyOrderId}
+            onOwnerVerifyOpened={() => setPickupOwnerVerifyOrderId(null)}
+            filterPendingDigital={filterPendingDigital}
+            onClearFilterPendingDigital={() => setFilterPendingDigital(false)}
           />
         </TabsContent>
 
@@ -747,7 +960,36 @@ export default function ManifestPage() {
             onSelectOrder={setSelectedDossierOrderId}
           />
         </TabsContent>
+
+        {/* Tab 4: Downpayment & Walk-In Remittance Tracker */}
+        <TabsContent value="downpayments" className="space-y-4">
+          <DownpaymentTrackerTab
+            items={downpayments}
+            isLoading={isLoadingDownpayments}
+            searchQuery={searchQuery}
+            onClearSearch={() => setSearchQuery("")}
+            onSelectOrder={setSelectedDossierOrderId}
+          />
+        </TabsContent>
       </Tabs>
+
+      {/* Styled Verify Digital Deposit Modal (Delivery Drops) */}
+      {digitalVerifyDrop && (
+        <VerifyDigitalDepositModal
+          open={Boolean(digitalVerifyDrop)}
+          onOpenChange={(open) => !open && setDigitalVerifyDrop(null)}
+          orderId={digitalVerifyDrop.orderId || digitalVerifyDrop.id}
+          orderReference={digitalVerifyDrop.orderReference || String(digitalVerifyDrop.orderId || digitalVerifyDrop.id)}
+          customerName={digitalVerifyDrop.customerName}
+          fulfillmentType="Delivery"
+          riderName={digitalVerifyDrop.riderName || digitalVerifyDrop.riderSignedBy}
+          pendingDigitalMethod={getPendingDigitalMethod(digitalVerifyDrop)}
+          digitalReferenceNote={digitalVerifyDrop.digitalReferenceNote}
+          pendingDigitalAmount={getPendingDigitalAmount(digitalVerifyDrop)}
+          onConfirm={handleConfirmDigitalVerifyDrop}
+          isPending={verifyDigitalMutation.isPending && verifyingDropOrderId === (digitalVerifyDrop.orderId || digitalVerifyDrop.id)}
+        />
+      )}
 
       {/* Two-Hop QR Settlement Modal */}
       {qrModalData.open && (

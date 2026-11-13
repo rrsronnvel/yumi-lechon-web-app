@@ -1,125 +1,3 @@
-**
-
-## 9. 2026-11-10 Daily Operations Reliability
-
-### Backend
-
-- `LechonSystem.Api/Models/KitchenPrepRequest.cs`: POCO domain entity capturing extra kitchen prep requests (`Id`, `TargetDate`, `TargetTime`, `Category`, `RecipientOrLabel`, `ItemsJson`, `Remarks`, `CreatedBy`, `CreatedAt`).
-- `LechonSystem.Api/Data/LechonDbContext.cs`: Registered `DbSet<KitchenPrepRequest> KitchenPrepRequests`.
-- `LechonSystem.Api/Program.cs`: Startup idempotent SQL check creating `KitchenPrepRequests` table if not present, alongside column-guarded mojibake repairs. No purge, drop, truncate, reset, or row deletion.
-- `LechonSystem.Api/DTOs/FreebiesPrepDtos.cs`: Type contracts for Section 1 (8 high-contrast cards: `SarsaSummaryDto`, `FreebieItemSummaryDto`, `DinuguanSummaryDto`, `CokeSummaryDto`, `RawInnardsSummaryDto`), Section 2 (`FreebiePrepRosterRowDto`, `PackItemPillDto`), and CRUD operations (`KitchenPrepRequestDto`, `CreateKitchenPrepRequestDto`).
-- `LechonSystem.Api/Controllers/SchedulesController.cs` & `Services/SchedulingService.cs`:
-  - `GET /api/schedules/freebies-prep?date=YYYY-MM-DD`: Multi-source aggregation across Whole Lechon freebies (including guaranteed 1x Sarsa for Less ₱2k orders), Belly freebies, paid Add-Ons, and Store Paluto requests, returning grand totals and a chronological packing roster sorted by `TimeNeeded`.
-  - `POST /api/schedules/prep-requests`: Creates a new `KitchenPrepRequest` with user attribution and JSON item dictionary serialization.
-  - `DELETE /api/schedules/prep-requests/{id}`: Deletes a `KitchenPrepRequest` by ID.
-  - Roasting backward calculation anchors on `RiderDepartureTime ?? TargetDeliveryTime` as its production zero-hour.
-- `LechonSystem.Api/Services/OrderService.cs`: Preserves independent customer target and Lalamove pickup timestamps.
-- `LechonSystem.Api/Services/LogisticsService.cs`: Settlement/manifest streams order by target delivery ascending (earliest first), then order ID ascending.
-
-### Web
-
-- `DailySheetsPage.tsx`: Integrated 3rd tab (`🎁 Freebies & Prep Sheet`) in TabsList and clean switcher; direct 4K UHD PNG export with filename `Yumi-Lechon-Freebies-Prep-${selectedDate}-4K.png` via direct blob URL download.
-- `FreebiesPrepViewTab.tsx`:
-  - Section 1: Morning Aggregate Prep Board with 8 high-contrast summary cards (Sarsa, Pancit, Palabok, Spaghetti, Dinuguan, Puto, 1.5L Coke, 🥩 Raw Innards Hilaw) displaying grand totals and breakdown subtitles.
-  - Section 2: Chronological Kitchen Packing & Prep Roster Table with columns (Time Needed, Order/Recipient, Type/Item, Route, Checklist Pills, Remarks) and delete actions.
-- `StorePalutoModal.tsx`: Dialog for creating extra prep requests (Category pills, Recipient label, Time Needed picker with quick presets, 7 item steppers, remarks).
-- `useFreebiesPrep.ts`: TanStack Query hooks `useFreebiesPrep`, `useCreatePrepRequestMutation`, `useDeletePrepRequestMutation` with cache invalidations.
-- `OrderForm.tsx` and `messengerTextParser.ts`: Live balance mismatch reconciliation plus Richard Hernandez template variants; parser regression tests lock the behavior.
-- `ManifestPage.tsx`: Earliest-first chronological ordering across all manifest streams.
-- `sanitizeDisplayText.ts`, Kitchen/Rider sheets, and `OrderDetailsModal.tsx`: Repair known mojibake at the final display boundary.
-
-### Mobile
-
-- `PosScreen.tsx` and `messengerTextParser.ts`: Match Web live-balance and template parsing behavior.
-- `DrawerScreen.tsx`: Cross-field active-stream search with clear/count feedback and target-date/order descending sorting.
-- `EditOrderModal.tsx` and `OrderDossierModal.tsx`: Preserve Lalamove pickup separately and require actual held physical cash before rendering rider-custody warnings.
-- `sanitizeDisplayText.ts`: Final display repair for dossier remarks/freebies.
-
-## 8. 2026-11-04 Owner Reports, Intake Attribution & Custody Safety
-
-### Backend
-
-- `LechonSystem.Api/Services/RiderRegistrationHelper.cs`: Reusable auto-save helper `EnsureRiderRegisteredAsync` ensuring typed freelance riders are persisted in the master `Riders` table or reactivated. Reserved system keywords (`Unassigned`, `Store Pickup`, `Pickup`, `Lalamove`, `Lalamove Courier`, `Walk-in`, `None`, `TBD`, `-`) are blocked.
-- `LechonSystem.Api/Controllers/InventoryController.cs` & `Services/InventoryService.cs`: `GET /api/inventory/butcher-plan` endpoint and service logic computing the Papakatay procurement plan across 9 ascending Whole Lechon categories, factoring in physical stock, upcoming order counts, and custom weight displays.
-- `LechonSystem.Api/DTOs/ButcherPlanDtos.cs`: `ButcherPlanItemDto` and `ButcherPlanResponseDto` data contracts.
-- `LechonSystem.Api/Controllers/ReportsController.cs`: Owner-only `GET /api/reports/analytics` boundary accepting `startDate`, `endDate`, and `preset` query filters.
-- `LechonSystem.Api/Services/ReportService.cs`: Read-optimized aggregation layer for Reports 1–3: order/size revenue summary, `COALESCE(AssistedByAdmin, CreatedBy)` admin tally, and payment/collection channel reconciliation.
-- `LechonSystem.Api/DTOs/ReportDtos.cs`: Typed analytics response contract shared by the three report tabs.
-- `LechonSystem.Api/Models/Order.cs` + `Program.cs`: Nullable `AssistedByAdmin` model field and idempotent `COL_LENGTH` startup installation guard.
-- `LechonSystem.Api/Services/LogisticsService.cs`: Freelance settlement projection includes unassigned Delivery orders with a due balance or drawer custody, independent of `DeliveryTripId`. Integrates rider auto-registration on assignment and Hop 1 drawer drop validation.
-
-### Web
-
-- `lechon-system-web/src/components/ui/orders/OrderDetailsModal.tsx`: Slide-out Order Details Dossier modal mounted directly on `/manifest`, enabling comprehensive order inspection, item line items with upgrades (`🔄 Upgraded: M → L`), financial splits, in-modal single/split payment logging, audit trails, and void dialogs without leaving `/manifest` or losing state.
-- `lechon-system-web/src/pages/ManifestPage.tsx`, `PickupSettlementTab.tsx`, `LalamoveSettlementTab.tsx`: Added real-time multi-field search (`customerName`, `#orderId`, `riderName` / `No Rider`, `deliveryAddress` / landmark / remarks), live header counter indicators (`Showing {filtered} of {total} drops`), friendly empty search state with clear CTA, clickable `#OrderNumber` and customer name triggers opening the in-modal dossier, and standardized 152px/240px action column button bounding boxes.
-- `lechon-system-web/src/components/ui/inventory/PapakatayPlannerModal.tsx`: Interactive Papakatay Planner modal with quick date presets, interactive planning table with net shortage and editable quantity steppers, custom weight rows, and 1-click clipboard generator strictly outputting weight brackets by default.
-- `lechon-system-web/src/pages/InventoryPage.tsx`: Prominent `[ 🔪 Papakatay Planner (Butcher List) ]` hero button and planner modal mount.
-- `lechon-system-web/src/components/daily-sheets/KitchenViewTab.tsx`: Displays `🏪 Store Pickup` and `📦 Lalamove` badges in the RIDER column with `Store Counter` fallback for empty locations, in both standard and clean screenshot views.
-- `lechon-system-web/src/pages/DailySheetsPage.tsx`: Upgraded 4K UHD PNG export with dynamic `pixelRatio = Math.max(3.5, 3840 / element.offsetWidth)`, `quality: 1.0`, `cacheBust: true`, and antialiased font smoothing.
-- `lechon-system-web/src/hooks/useInventory.ts`, `useSchedules.ts`, `useEditOrder.ts`, `useLogistics.ts`, `useManifest.ts`: Integrated `useButcherPlan` query hook and added `['riders']` query cache invalidations on all rider mutation callbacks.
-- `lechon-system-web/src/pages/ReportsPage.tsx`: Owner-only `/reports` workspace with month/custom date filters, three report tabs, KPI cards, tables, and active-tab CSV export.
-- `lechon-system-web/src/components/ui/Sidebar.tsx` + `src/App.tsx`: Owner-only Reports navigation and protected route.
-- `lechon-system-web/src/utils/messengerTextParser.ts`: Parenthetical-colon-safe field splitting, new template financial/admin fields, container-unit cleanup, and `S. Jumbo` aliases. `chatParser.ts` remains the stable re-export entry point.
-
-### Mobile
-
-- `lechon-system-mobile/src/hooks/usePos.ts` & `useManifest.ts`: Added `['riders']` query cache invalidations to `useUpdateOrderMutation` and `invalidateAllSettlementCaches`.
-- `lechon-system-mobile/src/screens/PosScreen.tsx`: Blank schedule defaults and collapsed assisted-admin attribution field with parser-driven expansion.
-- `lechon-system-mobile/src/screens/DrawerScreen.tsx`: Unassigned-rider Hop 1 entry safeguard and payment-channel-aware digital Hop 2 verification.
-
-## 7. 2026-10-31 Daily Operations Enhancements
-
-### Intake and pricing
-
-- Web and Mobile Messenger parsers share the same implicit Belly token rules, quantity aggregation, third-party courier override, additive quoted-price parsing, quoted-balance extraction, and floating culinary-note capture.
-- `OrderForm` and `PosScreen` compare the quoted item total with catalog item prices and materialize the difference as a Courtesy Discount, with quoted balance as the fallback reconciliation source.
-
-### Payment and custody ledger
-
-- Manual split payment requests create two `PaymentLog` rows atomically through `PaymentService.ProcessSplitPaymentAsync`, so payment history and channel summaries remain ledger-based.
-- `LogisticsService` settles the digital leg of a Hop 1 split immediately. The cash leg alone enters `InStaffDrawer` and is persisted in `Orders.HeldByStaffAmount`; Hop 2 remits that stored amount.
-- `OrderService.VoidPaymentAsync` recomputes the active ledger and restores unpaid, non-held orders to `Uncollected`. Web and Mobile invalidate order, manifest, logistics, and drawer caches after a void.
-
-### Production authorization and overrides
-
-- Daily Sheet edit affordances receive an Owner-only `canEdit` capability. The API separately rejects schedule overrides unless the authenticated principal is in the Owner role.
-- `OrderItemSchedules.CustomWeightDisplay` is projected alongside `StandardWeightRange`. Scheduling preserves it during time regeneration; Kitchen Sheets and nightly defrost text consume it without changing inventory categories or prices.
-
-### Complimentary stock substitution
-
-- `OrderItems.FulfilledItemCategoryId` defines the effective freezer and cooking category. Reservation reassignment moves committed demand between categories and emits inventory/audit history while retaining the booked `OrderItem.Price`.
-- Scheduling resolves cooking profiles, size, and weight from the fulfilled category. Internal dossier and non-clean planner views disclose the booked category, while receipt generators continue to use only the booked category.
-
-### Additive schema policy
-
-- `Program.cs` owns idempotent `COL_LENGTH` guards for `Orders.HeldByStaffAmount`, `OrderItemSchedules.CustomWeightDisplay`, and `OrderItems.FulfilledItemCategoryId`. No destructive migration or seed reset is part of this capability.
-
-## 6. 2026-10-30 Operational Parity Additions
-
-### Backend
-
-- `LechonSystem.Api/Services/OrderService.cs`: Philippine-date Upcoming/Past slicing, strict date-less Drafts separation, operational Balance Due queue providing all active unpaid records for 4-pill client filtering, zero-DP inclusion with 3-Tier Alert Badges Matrix, custody-aware operational balance, rider-fee-at-door detail projection, and null-safe audit text comparison.
-- `LechonSystem.Api/Services/LogisticsService.cs`: Hop 1/2 and direct-settlement completion semantics; fully remitted Delivery orders and trips transition to `Delivered`. Rider assignments, changes, and unassignments record immutable `OrderAuditLog` records (`ActionType = "Rider Updated"`).
-- `LechonSystem.Api/Services/SchedulingService.cs`: Active non-draft orders remain on daily sheets even before Owner confirmation, with `IsTrustedCustomer` projected for no-DP warning logic, and `DailySheetItemDto.IsTimeTbd` stamped to guard against clock crashes. Schedule rider overrides record immutable `OrderAuditLog` records.
-- `LechonSystem.Api/DTOs/OrderDetailsDto.cs`: exposes `SettlementCustodyStatus` and `RiderFeeSettledAtDoor`; `BalanceDue` remains a derived read-model value.
-- `LechonSystem.Api/Program.cs`: QA scenario seeding is disabled by default and requires the explicit `EnableQaDataSeeder` configuration flag.
-
-### Web
-
-- `src/utils/chatParser.ts` and `messengerTextParser.ts`: official Messenger form compatibility, payment-method extraction, dual phone parsing, multiline events, freebie customization, and footer suppression.
-- `src/pages/OrdersPage.tsx`: Philippine-date directory boundary, 3-Tier Alert Badges (`⏳ TIME TBD`, `⚠️ NO DP • PENDING DEPOSIT`, `🚨 URGENT: NO DP`), 4-pill operational Balance Due filtering (`Due Today / Overdue`, `In Staff Drawer`, `Future Receivables`, `All Unpaid`), dossier rider assignment, and deep-linked dossier opening from Manifest.
-- `src/components/manifest/LalamoveSettlementTab.tsx`: direct `View / Cancel Order` dossier action. `QrSettlementModal.tsx` exposes Bank Transfer.
-- `src/components/ui/orders/EditOrderForm.tsx`: registered/custom rider assignment during edit.
-- `src/components/daily-sheets/{KitchenViewTab,RiderViewTab}.tsx`: Time-TBD backward clock crash guards displaying `[ ⏳ TIME TBD ]`, bottom table grouping under visual divider, and explicit no-DP confirmation warnings.
-
-### Mobile
-
-- `src/screens/PosScreen.tsx` uses the synchronized `chatParser.ts` contract and hydrates DP method plus freebie overrides.
-- `src/screens/OrdersScreen.tsx`: Philippine-date Today/Tomorrow/Upcoming slicing, 3-Tier Alert Badges, and 4-pill operational Balance Due sub-filter matching Web.
-- `src/screens/DrawerScreen.tsx`: Bank Transfer, native handover QR, schedule/Past Shift badges, and Lalamove dossier access.
-- `src/components/orders/{OrderDossierModal,EditOrderModal}.tsx` plus `src/hooks/useRiders.ts`: registered/custom rider assignment and post-mutation cache refresh.
-- Native QR dependencies are `react-native-qrcode-svg` and Expo-compatible `react-native-svg`.
-
 # Codebase Architecture Map
 
 ### 1. Directory Tree
@@ -432,6 +310,9 @@
 - POST /api/logistics/settlements/qr-session/{token}/staff-validate | Headers: Authorization: Bearer | Payload: { ManualOverrideRiderName?: string, ManualOverrideAmount?: decimal } | Returns: 200 OK (Transitions order custody to InStaffDrawer and stamps StaffValidatedBy from JWT)
 - POST /api/logistics/settlements/orders/{orderId}/revert-custody | Headers: Authorization: Bearer (Roles = "Owner,Cashier") | Reverts order custody from InStaffDrawer back to Uncollected, expires active Hop 2 QR sessions, and records immutable OrderAuditLog (authorized only to holding cashier or owner).
 - POST /api/logistics/settlements/qr-session/{token}/owner-approve | Public (Owner PIN/Credentials) or Headers: Authorization: Bearer | Payload: OwnerApproveRequest { CountedAmount: decimal, OwnerUsername?: string, OwnerPinOrPassword?: string } | Enforces physical envelope counted cash verification matching expected amount (returns 400 BadRequest on mismatch), transitions order to Settled, writes PaymentLog, and burns token.  
+- POST /api/logistics/settlements/orders/{orderId}/verify-digital | Headers: Authorization: Bearer (Roles = "Owner") | Payload: None | Returns: { success: boolean, message: string }. Verifies and settles Store Pickup and freelance Delivery orders with pending digital transfers (GCash/Maya/Bank Transfer); validates custody, credits payment ledger in PaymentLogs, updates cached Downpayment, transitions custody to Settled (or remaining cash custody), and clears pending digital fields.
+- GET /api/logistics/downpayments | Headers: Authorization: Bearer | Payload: None | Returns: DownpaymentTrackerItemDto[]. Returns all active orders with downpayments for the DP & Walk-In Remittance Tracker stream, including booking source, staff attribution, and owner remittance status.
+- POST /api/logistics/downpayments/{orderId}/verify | Headers: Authorization: Bearer (Roles = "Owner") | Payload: None | Returns: DownpaymentTrackerItemDto. Toggles IsDpRemittedToOwner status for an order, stamping DpRemittedAt and DpRemittedBy or clearing them on undo.
 
 #### Roasting & Scheduling Domain (RoastingController.cs & SchedulesController.cs)
 
@@ -517,6 +398,9 @@
 - useRiderSignQrMutation -> Submits rider name and remitted peso amount from mobile browser.  
 - useStaffValidateQrMutation -> Success Invalidates: ['manifest', 'qr-session', token], ['manifest', 'pending-settlement'], ['manifest', 'pickups'], ['dashboard'], ['orders']  
 - useOwnerApproveQrMutation -> Success Invalidates: ['manifest', 'qr-session', token], ['manifest', 'pending-settlement'], ['manifest', 'pickups'], ['dashboard'], ['orders']
+- `useDownpaymentsQuery`: `['downpayments']` -> `GET /api/logistics/downpayments`.
+- `useToggleDownpaymentRemittanceMutation`: calls `POST /api/logistics/downpayments/{orderId}/verify`, invalidates `['downpayments']`, `['manifest']`, `['dashboard']`.
+- `useVerifyDigitalSettlementMutation`: calls `POST /api/logistics/settlements/orders/{orderId}/verify-digital`, invalidates `['manifest']`, `['order']`, `['orders']`, `['dashboard']`, `['downpayments']`.
 
 #### Inventory & Procurement Scope (useInventory.ts):
 
@@ -586,6 +470,115 @@
 
 - GET /daily-sheets -> renders (Hosts KitchenViewTab and RiderViewTab)
 
+### 5. Whole Lechon Freebies & Confirmation Extension
+
+#### Backend Contracts and Endpoints
+
+- `LechonSystem.Api/Models/Order.cs` persists `FreebiesSummary`, `FreebiesConfigJson`, `DownpaymentMethod`, `IsOwnerConfirmed`, `OwnerConfirmedAt`, and `OwnerConfirmedBy`.
+- `LechonSystem.Api/Models/PaymentLog.cs` persists canonical BIR `PaymentMethod` values: `Cash`, `GCash`, `Maya`, or `Bank Transfer`.
+- `POST /api/orders/{id}/confirm-owner` is Owner-only and stamps confirmation metadata plus an immutable audit entry.
+- `GET /api/dashboard/pending-owner-confirmations` is available to Owner/Cashier clients and returns active cashier orders awaiting review.
+- `GET /api/customers/lookup` includes `ActiveUpcomingOrders` and returns a wrapper even when no `CustomerProfile` row exists but a matching active order does.
+- Order directory/details expose channel aggregates and payment-log methods; daily sheets project `FreebiesSummary` for staff badges.
+
+#### Web Files
+
+- `lechon-system-web/src/utils/freebiesHelper.ts`: Canonical seven-item defaults, Raw Innards quota, opt-out state, JSON hydration, and compact summary formatting.
+- `lechon-system-web/src/components/ui/orders/FreebiesSelector.tsx`: Collapsed smart-pill selector shared by POS and edit forms.
+- `lechon-system-web/src/components/ui/orders/PaymentChannelPills.tsx`: Cash, GCash, Maya, and Bank Transfer selector.
+- `DashboardPage.tsx`, `OrdersPage.tsx`, and Manifest settlement modals expose Owner review and BIR channel visibility/actions.
+
+#### Mobile Files
+
+- `lechon-system-mobile/src/utils/freebiesHelper.ts`: Behaviorally synchronized copy of the web freebies engine.
+- `lechon-system-mobile/src/hooks/useNotifications.ts`: Authenticated permission/channel setup, 9:00 AM deposit reminder, 4:00 PM defrost reminder, Owner-queue increase alerts, Rush Defrost alerts, and test alerts.
+- `PosScreen.tsx` and `EditOrderModal.tsx` implement duplicate speed bumps, freebies, and four-channel selection; `FloorActionView.tsx` and `OrderDossierModal.tsx` implement Owner actions and operational visibility.
+
+## 6. 2026-10-30 Operational Parity Additions
+
+### Backend
+
+- `LechonSystem.Api/Services/OrderService.cs`: Philippine-date Upcoming/Past slicing, strict date-less Drafts separation, operational Balance Due queue providing all active unpaid records for 4-pill client filtering, zero-DP inclusion with 3-Tier Alert Badges Matrix, custody-aware operational balance, rider-fee-at-door detail projection, and null-safe audit text comparison.
+- `LechonSystem.Api/Services/LogisticsService.cs`: Hop 1/2 and direct-settlement completion semantics; fully remitted Delivery orders and trips transition to `Delivered`. Rider assignments, changes, and unassignments record immutable `OrderAuditLog` records (`ActionType = "Rider Updated"`).
+- `LechonSystem.Api/Services/SchedulingService.cs`: Active non-draft orders remain on daily sheets even before Owner confirmation, with `IsTrustedCustomer` projected for no-DP warning logic, and `DailySheetItemDto.IsTimeTbd` stamped to guard against clock crashes. Schedule rider overrides record immutable `OrderAuditLog` records.
+- `LechonSystem.Api/DTOs/OrderDetailsDto.cs`: exposes `SettlementCustodyStatus` and `RiderFeeSettledAtDoor`; `BalanceDue` remains a derived read-model value.
+- `LechonSystem.Api/Program.cs`: QA scenario seeding is disabled by default and requires the explicit `EnableQaDataSeeder` configuration flag.
+
+### Web
+
+- `src/utils/chatParser.ts` and `messengerTextParser.ts`: official Messenger form compatibility, payment-method extraction, dual phone parsing, multiline events, freebie customization, and footer suppression.
+- `src/pages/OrdersPage.tsx`: Philippine-date directory boundary, 3-Tier Alert Badges (`⏳ TIME TBD`, `⚠️ NO DP • PENDING DEPOSIT`, `🚨 URGENT: NO DP`), 4-pill operational Balance Due filtering (`Due Today / Overdue`, `In Staff Drawer`, `Future Receivables`, `All Unpaid`), dossier rider assignment, and deep-linked dossier opening from Manifest.
+- `src/components/manifest/LalamoveSettlementTab.tsx`: direct `View / Cancel Order` dossier action. `QrSettlementModal.tsx` exposes Bank Transfer.
+- `src/components/ui/orders/EditOrderForm.tsx`: registered/custom rider assignment during edit.
+- `src/components/daily-sheets/{KitchenViewTab,RiderViewTab}.tsx`: Time-TBD backward clock crash guards displaying `[ ⏳ TIME TBD ]`, bottom table grouping under visual divider, and explicit no-DP confirmation warnings.
+
+### Mobile
+
+- `src/screens/PosScreen.tsx` uses the synchronized `chatParser.ts` contract and hydrates DP method plus freebie overrides.
+- `src/screens/OrdersScreen.tsx`: Philippine-date Today/Tomorrow/Upcoming slicing, 3-Tier Alert Badges, and 4-pill operational Balance Due sub-filter matching Web.
+- `src/screens/DrawerScreen.tsx`: Bank Transfer, native handover QR, schedule/Past Shift badges, and Lalamove dossier access.
+- `src/components/orders/{OrderDossierModal,EditOrderModal}.tsx` plus `src/hooks/useRiders.ts`: registered/custom rider assignment and post-mutation cache refresh.
+- Native QR dependencies are `react-native-qrcode-svg` and Expo-compatible `react-native-svg`.
+
+## 7. 2026-10-31 Daily Operations Enhancements
+
+### Intake and pricing
+
+- Web and Mobile Messenger parsers share the same implicit Belly token rules, quantity aggregation, third-party courier override, additive quoted-price parsing, quoted-balance extraction, and floating culinary-note capture.
+- `OrderForm` and `PosScreen` compare the quoted item total with catalog item prices and materialize the difference as a Courtesy Discount, with quoted balance as the fallback reconciliation source.
+
+### Payment and custody ledger
+
+- Manual split payment requests create two `PaymentLog` rows atomically through `PaymentService.ProcessSplitPaymentAsync`, so payment history and channel summaries remain ledger-based.
+- `LogisticsService` settles the digital leg of a Hop 1 split immediately. The cash leg alone enters `InStaffDrawer` and is persisted in `Orders.HeldByStaffAmount`; Hop 2 remits that stored amount.
+- `OrderService.VoidPaymentAsync` recomputes the active ledger and restores unpaid, non-held orders to `Uncollected`. Web and Mobile invalidate order, manifest, logistics, and drawer caches after a void.
+
+### Production authorization and overrides
+
+- Daily Sheet edit affordances receive an Owner-only `canEdit` capability. The API separately rejects schedule overrides unless the authenticated principal is in the Owner role.
+- `OrderItemSchedules.CustomWeightDisplay` is projected alongside `StandardWeightRange`. Scheduling preserves it during time regeneration; Kitchen Sheets and nightly defrost text consume it without changing inventory categories or prices.
+
+### Complimentary stock substitution
+
+- `OrderItems.FulfilledItemCategoryId` defines the effective freezer and cooking category. Reservation reassignment moves committed demand between categories and emits inventory/audit history while retaining the booked `OrderItem.Price`.
+- Scheduling resolves cooking profiles, size, and weight from the fulfilled category. Internal dossier and non-clean planner views disclose the booked category, while receipt generators continue to use only the booked category.
+
+### Additive schema policy
+
+- `Program.cs` owns idempotent `COL_LENGTH` guards for `Orders.HeldByStaffAmount`, `OrderItemSchedules.CustomWeightDisplay`, and `OrderItems.FulfilledItemCategoryId`. No destructive migration or seed reset is part of this capability.
+
+## 8. 2026-11-04 Owner Reports, Intake Attribution & Custody Safety
+
+### Backend
+
+- `LechonSystem.Api/Services/RiderRegistrationHelper.cs`: Reusable auto-save helper `EnsureRiderRegisteredAsync` ensuring typed freelance riders are persisted in the master `Riders` table or reactivated. Reserved system keywords (`Unassigned`, `Store Pickup`, `Pickup`, `Lalamove`, `Lalamove Courier`, `Walk-in`, `None`, `TBD`, `-`) are blocked.
+- `LechonSystem.Api/Controllers/InventoryController.cs` & `Services/InventoryService.cs`: `GET /api/inventory/butcher-plan` endpoint and service logic computing the Papakatay procurement plan across 9 ascending Whole Lechon categories, factoring in physical stock, upcoming order counts, and custom weight displays.
+- `LechonSystem.Api/DTOs/ButcherPlanDtos.cs`: `ButcherPlanItemDto` and `ButcherPlanResponseDto` data contracts.
+- `LechonSystem.Api/Controllers/ReportsController.cs`: Owner-only `GET /api/reports/analytics` boundary accepting `startDate`, `endDate`, and `preset` query filters.
+- `LechonSystem.Api/Services/ReportService.cs`: Read-optimized aggregation layer for Reports 1–3: order/size revenue summary, `COALESCE(AssistedByAdmin, CreatedBy)` admin tally, and payment/collection channel reconciliation.
+- `LechonSystem.Api/DTOs/ReportDtos.cs`: Typed analytics response contract shared by the three report tabs.
+- `LechonSystem.Api/Models/Order.cs` + `Program.cs`: Nullable `AssistedByAdmin` model field and idempotent `COL_LENGTH` startup installation guard.
+- `LechonSystem.Api/Services/LogisticsService.cs`: Freelance settlement projection includes unassigned Delivery orders with a due balance or drawer custody, independent of `DeliveryTripId`. Integrates rider auto-registration on assignment and Hop 1 drawer drop validation.
+
+### Web
+
+- `lechon-system-web/src/components/ui/orders/OrderDetailsModal.tsx`: Slide-out Order Details Dossier modal mounted directly on `/manifest`, enabling comprehensive order inspection, item line items with upgrades (`🔄 Upgraded: M → L`), financial splits, in-modal single/split payment logging, audit trails, and void dialogs without leaving `/manifest` or losing state.
+- `lechon-system-web/src/pages/ManifestPage.tsx`, `PickupSettlementTab.tsx`, `LalamoveSettlementTab.tsx`: Added real-time multi-field search (`customerName`, `#orderId`, `riderName` / `No Rider`, `deliveryAddress` / landmark / remarks), live header counter indicators (`Showing {filtered} of {total} drops`), friendly empty search state with clear CTA, clickable `#OrderNumber` and customer name triggers opening the in-modal dossier, and standardized 152px/240px action column button bounding boxes.
+- `lechon-system-web/src/components/ui/inventory/PapakatayPlannerModal.tsx`: Interactive Papakatay Planner modal with quick date presets, interactive planning table with net shortage and editable quantity steppers, custom weight rows, and 1-click clipboard generator strictly outputting weight brackets by default.
+- `lechon-system-web/src/pages/InventoryPage.tsx`: Prominent `[ 🔪 Papakatay Planner (Butcher List) ]` hero button and planner modal mount.
+- `lechon-system-web/src/components/daily-sheets/KitchenViewTab.tsx`: Displays `🏪 Store Pickup` and `📦 Lalamove` badges in the RIDER column with `Store Counter` fallback for empty locations, in both standard and clean screenshot views.
+- `lechon-system-web/src/pages/DailySheetsPage.tsx`: Upgraded 4K UHD PNG export with dynamic `pixelRatio = Math.max(3.5, 3840 / element.offsetWidth)`, `quality: 1.0`, `cacheBust: true`, and antialiased font smoothing.
+- `lechon-system-web/src/hooks/useInventory.ts`, `useSchedules.ts`, `useEditOrder.ts`, `useLogistics.ts`, `useManifest.ts`: Integrated `useButcherPlan` query hook and added `['riders']` query cache invalidations on all rider mutation callbacks.
+- `lechon-system-web/src/pages/ReportsPage.tsx`: Owner-only `/reports` workspace with month/custom date filters, three report tabs, KPI cards, tables, and active-tab CSV export.
+- `lechon-system-web/src/components/ui/Sidebar.tsx` + `src/App.tsx`: Owner-only Reports navigation and protected route.
+- `lechon-system-web/src/utils/messengerTextParser.ts`: Parenthetical-colon-safe field splitting, new template financial/admin fields, container-unit cleanup, and `S. Jumbo` aliases. `chatParser.ts` remains the stable re-export entry point.
+
+### Mobile
+
+- `lechon-system-mobile/src/hooks/usePos.ts` & `useManifest.ts`: Added `['riders']` query cache invalidations to `useUpdateOrderMutation` and `invalidateAllSettlementCaches`.
+- `lechon-system-mobile/src/screens/PosScreen.tsx`: Blank schedule defaults and collapsed assisted-admin attribution field with parser-driven expansion.
+- `lechon-system-mobile/src/screens/DrawerScreen.tsx`: Unassigned-rider Hop 1 entry safeguard and payment-channel-aware digital Hop 2 verification.
+
 ### Direct Digital Settlement State Flow (2026-11-05)
 
 ```text
@@ -643,28 +636,144 @@ Belly item(s)
 * `FreebiesSelector.tsx` and `freebiesHelper.ts` remain paired across Web/Mobile. Belly defaults are 2/3kg Sarsa+Dinuguan, 4kg Sarsa+Puto, and 5kg Sarsa+Pancit/Palabok; selections persist through the existing order freebie fields.
 * `DELETE /api/riders/{id}` is Owner-only. `DeliveryTrip` has no rider-registry FK and retains its historical `RiderName`, so registry cleanup is isolated from order/trip history. `useDeleteRiderMutation` invalidates `['riders']`.
 
-### 5. Whole Lechon Freebies & Confirmation Extension
+## 9. 2026-11-10 Daily Operations Reliability
 
-#### Backend Contracts and Endpoints
+### Backend
 
-- `LechonSystem.Api/Models/Order.cs` persists `FreebiesSummary`, `FreebiesConfigJson`, `DownpaymentMethod`, `IsOwnerConfirmed`, `OwnerConfirmedAt`, and `OwnerConfirmedBy`.
-- `LechonSystem.Api/Models/PaymentLog.cs` persists canonical BIR `PaymentMethod` values: `Cash`, `GCash`, `Maya`, or `Bank Transfer`.
-- `POST /api/orders/{id}/confirm-owner` is Owner-only and stamps confirmation metadata plus an immutable audit entry.
-- `GET /api/dashboard/pending-owner-confirmations` is available to Owner/Cashier clients and returns active cashier orders awaiting review.
-- `GET /api/customers/lookup` includes `ActiveUpcomingOrders` and returns a wrapper even when no `CustomerProfile` row exists but a matching active order does.
-- Order directory/details expose channel aggregates and payment-log methods; daily sheets project `FreebiesSummary` for staff badges.
+- `LechonSystem.Api/Models/KitchenPrepRequest.cs`: POCO domain entity capturing extra kitchen prep requests (`Id`, `TargetDate`, `TargetTime`, `Category`, `RecipientOrLabel`, `ItemsJson`, `Remarks`, `CreatedBy`, `CreatedAt`).
+- `LechonSystem.Api/Data/LechonDbContext.cs`: Registered `DbSet<KitchenPrepRequest> KitchenPrepRequests`.
+- `LechonSystem.Api/Program.cs`: Startup idempotent SQL check creating `KitchenPrepRequests` table if not present, alongside column-guarded mojibake repairs. No purge, drop, truncate, reset, or row deletion.
+- `LechonSystem.Api/DTOs/FreebiesPrepDtos.cs`: Type contracts for Section 1 (8 high-contrast cards: `SarsaSummaryDto`, `FreebieItemSummaryDto`, `DinuguanSummaryDto`, `CokeSummaryDto`, `RawInnardsSummaryDto`), Section 2 (`FreebiePrepRosterRowDto`, `PackItemPillDto`), and CRUD operations (`KitchenPrepRequestDto`, `CreateKitchenPrepRequestDto`).
+- `LechonSystem.Api/Controllers/SchedulesController.cs` & `Services/SchedulingService.cs`:
+  - `GET /api/schedules/freebies-prep?date=YYYY-MM-DD`: Multi-source aggregation across Whole Lechon freebies (including guaranteed 1x Sarsa for Less ₱2k orders), Belly freebies, paid Add-Ons, and Store Paluto requests, returning grand totals and a chronological packing roster sorted by `TimeNeeded`.
+  - `POST /api/schedules/prep-requests`: Creates a new `KitchenPrepRequest` with user attribution and JSON item dictionary serialization.
+  - `DELETE /api/schedules/prep-requests/{id}`: Deletes a `KitchenPrepRequest` by ID.
+  - Roasting backward calculation anchors on `RiderDepartureTime ?? TargetDeliveryTime` as its production zero-hour.
+- `LechonSystem.Api/Services/OrderService.cs`: Preserves independent customer target and Lalamove pickup timestamps.
+- `LechonSystem.Api/Services/LogisticsService.cs`: Settlement/manifest streams order by target delivery ascending (earliest first), then order ID ascending.
 
-#### Web Files
+### Web
 
-- `lechon-system-web/src/utils/freebiesHelper.ts`: Canonical seven-item defaults, Raw Innards quota, opt-out state, JSON hydration, and compact summary formatting.
-- `lechon-system-web/src/components/ui/orders/FreebiesSelector.tsx`: Collapsed smart-pill selector shared by POS and edit forms.
-- `lechon-system-web/src/components/ui/orders/PaymentChannelPills.tsx`: Cash, GCash, Maya, and Bank Transfer selector.
-- `DashboardPage.tsx`, `OrdersPage.tsx`, and Manifest settlement modals expose Owner review and BIR channel visibility/actions.
+- `DailySheetsPage.tsx`: Integrated 3rd tab (`🎁 Freebies & Prep Sheet`) in TabsList and clean switcher; direct 4K UHD PNG export with filename `Yumi-Lechon-Freebies-Prep-${selectedDate}-4K.png` via direct blob URL download.
+- `FreebiesPrepViewTab.tsx`:
+  - Section 1: Morning Aggregate Prep Board with 8 high-contrast summary cards (Sarsa, Pancit, Palabok, Spaghetti, Dinuguan, Puto, 1.5L Coke, 🥩 Raw Innards Hilaw) displaying grand totals and breakdown subtitles.
+  - Section 2: Chronological Kitchen Packing & Prep Roster Table with columns (Time Needed, Order/Recipient, Type/Item, Route, Checklist Pills, Remarks) and delete actions.
+- `StorePalutoModal.tsx`: Dialog for creating extra prep requests (Category pills, Recipient label, Time Needed picker with quick presets, 7 item steppers, remarks).
+- `useFreebiesPrep.ts`: TanStack Query hooks `useFreebiesPrep`, `useCreatePrepRequestMutation`, `useDeletePrepRequestMutation` with cache invalidations.
+- `OrderForm.tsx` and `messengerTextParser.ts`: Live balance mismatch reconciliation plus Richard Hernandez template variants; parser regression tests lock the behavior.
+- `ManifestPage.tsx`: Earliest-first chronological ordering across all manifest streams.
+- `sanitizeDisplayText.ts`, Kitchen/Rider sheets, and `OrderDetailsModal.tsx`: Repair known mojibake at the final display boundary.
 
-#### Mobile Files
+### Mobile
 
-- `lechon-system-mobile/src/utils/freebiesHelper.ts`: Behaviorally synchronized copy of the web freebies engine.
-- `lechon-system-mobile/src/hooks/useNotifications.ts`: Authenticated permission/channel setup, 9:00 AM deposit reminder, 4:00 PM defrost reminder, Owner-queue increase alerts, Rush Defrost alerts, and test alerts.
-- `PosScreen.tsx` and `EditOrderModal.tsx` implement duplicate speed bumps, freebies, and four-channel selection; `FloorActionView.tsx` and `OrderDossierModal.tsx` implement Owner actions and operational visibility.
+- `PosScreen.tsx` and `messengerTextParser.ts`: Match Web live-balance and template parsing behavior.
+- `DrawerScreen.tsx`: Cross-field active-stream search with clear/count feedback and target-date/order descending sorting.
+- `EditOrderModal.tsx` and `OrderDossierModal.tsx`: Preserve Lalamove pickup separately and require actual held physical cash before rendering rider-custody warnings.
+- `sanitizeDisplayText.ts`: Final display repair for dossier remarks/freebies.
 
-**
+## 10. 2026-11-13 Daily Operations Enhancements
+
+### Backend
+
+- `LechonSystem.Api/Models/Order.cs`: Nullable columns for digital transfer custody and downpayment remittance: `DigitalTransferMethod` (nvarchar(64)), `DigitalTransferAmount` (decimal(18,2)), `DigitalReferenceNote` (nvarchar(255)), `IsDpRemittedToOwner` (bit), `DpRemittedAt` (datetime2), `DpRemittedBy` (nvarchar(100)).
+- `LechonSystem.Api/Program.cs`: Idempotent startup checks creating the 6 new columns via `IF COL_LENGTH('Orders', ...) IS NULL ALTER TABLE Orders ADD ...`. Startup reconciliation query guards `InStaffDrawer` orders having `DigitalTransferAmount > 0` (`AND ISNULL(o.DigitalTransferAmount, 0) = 0`).
+- `LechonSystem.Api/DTOs/PendingPickupSettlementDto.cs` & `PendingSettlementDropDto.cs`: Added `PendingDigitalAmount => Math.Max(0m, DigitalTransferAmount ?? 0m)` and `PendingDigitalMethod => DigitalTransferMethod`. In `PendingPickupSettlementDto`, `BalanceDue` is 0 when `CustodyStatus == "Settled"`.
+- `LechonSystem.Api/DTOs/DownpaymentTrackerDtos.cs`: POCO DTO `DownpaymentTrackerItemDto` for advance DP & Walk-In tracking.
+- `LechonSystem.Api/Controllers/LogisticsController.cs` & `Services/LogisticsService.cs`:
+  - `POST /api/logistics/settlements/orders/{orderId}/verify-digital`: Owner Hop 2 verification crediting digital payment to ledger, transitioning custody to `Settled`, and setting `BalanceDue = 0` WITHOUT mutating or inflating advance booking `Order.Downpayment`.
+  - `RemitToOwnerAsync`: Final Hop 2 physical and digital handover collections recorded in `PaymentLogs` and custody set to `Settled` WITHOUT inflating `Order.Downpayment`.
+  - `GET /api/logistics/downpayments`: Chronological query of active downpayments with cashier encoding attribution and owner remittance status.
+  - `POST /api/logistics/downpayments/{orderId}/verify`: Owner endpoint toggling `IsDpRemittedToOwner`.
+- `LechonSystem.Api/Data/SeedQaData_20261113.sql`: Idempotent seed script for `#111326-901`, `#111326-902`, and `#111326-903`, preserving 100% of baseline customer orders.
+- `LechonSystem.Api/Program.cs`: Startup reconciliation query protects advance downpayment totals without inflating from final Hop 2 settlement logs (`GatewayReferenceId NOT LIKE 'OWNER_%' AND NOT LIKE 'QR_SETTLE_%'`), plus idempotent repair restoring `#111326-901` downpayment to ₱2,200.
+
+### Web
+
+- `lechon-system-web/src/pages/ManifestPage.tsx`:
+  - Integrated 4th manifest stream tab `💵 DP & Walk-In Tracker (${unremittedCount})`.
+  - Search input bar remains visible across all 4 manifest tabs, updating placeholder to `"Search customer, #order, phone, payment mode, encoder..."` on the DP Tracker tab and passing `searchQuery` into child tabs.
+  - KPI Card 2 (`🏦 Pending Owner Digital Check`) made interactive toggle filter with custodian filter unmasking and tab auto-switching.
+  - Replaced native `window.confirm` with styled `VerifyDigitalDepositModal`.
+- `lechon-system-web/src/components/manifest/VerifyDigitalDepositModal.tsx`:
+  - Reusable styled modal card showing `#orderReference • customerName`, fulfillment type (`🏪 Store Pickup` or `🛵 Rider`), payment channel badge, reference/bank note, and large bold `₱Amount` with `[ Cancel ]` and `[ 👑 Confirm & Settle ]` buttons.
+- `lechon-system-web/src/components/manifest/PickupSettlementTab.tsx`:
+  - Renders `🏦 Awaiting Digital Check` badge and pending amount for orders with `pendingDigitalAmount > 0`.
+  - Direct `[ 👑 Verify Digital Deposit ]` button for Owners opening `VerifyDigitalDepositModal` (no native `window.confirm`).
+- `lechon-system-web/src/components/manifest/DownpaymentTrackerTab.tsx`:
+  - 3-box summary strip (`Unremitted Cash`, `Unverified Digital`, `Verified / Remitted`).
+  - 6 filter pills defaulting to `[ ⏳ Unremitted (${count}) ]`.
+  - Multi-field real-time search across `customerName`, `orderReference`, `orderId`, `phoneNumber`, `downpaymentMethod`, `bookingSource`, and `encodedBy`.
+  - Remittance toggle transitions items out of `[ ⏳ Unremitted ]` into `[ ✅ Remitted to Owner ]`.
+  - Clicking customer or order reference opens `<OrderDetailsModal>`.
+
+### Mobile
+
+- `lechon-system-mobile/src/screens/DrawerScreen.tsx`:
+  - 4th stream tab `💵 DP & Walk-In Tracker ({unremittedCashCount})` defaulting to `[ ⏳ Unremitted ]` filter pill.
+  - Replaced native `Alert.alert("Verify Digital Deposit?", ...)` with styled React Native `<Modal transparent animationType="fade">` card detailing Customer, Order #, Channel, Reference Note, and Amount with `[ Cancel ]` and `[ 👑 Verify & Settle ]` buttons.
+  - Direct `[ 👑 Verify Digital Deposit ]` in Tab 3 (Pickups) and Tab 1 (Hop 2 Handover Queue) for Owners.
+  - KPI Card 2 toggles `hop2SubFilter` (`all` vs `digital`), with active border styling and dismissible filter banner.
+  - Drawer Handover tab visibility invariant: visible if `inStaffDrawerCount + pendingDigitalCount > 0 || isOwner || activeTab === 'hop2'`.
+- `lechon-system-web/src/components/ui/orders/OrderForm.tsx` & `EditOrderForm.tsx`:
+  - Past-date warning banner `⚠️ PAST DATE DETECTED...` with `[ 📅 Fix Year to 2026 ]` and `[ 📅 Set to Today ]` buttons.
+  - Pre-submit `window.confirm` guard for past dates.
+  - Shared-phone duplicate radar notice (`ℹ️ SHARED PHONE NUMBER ON THIS DATE`) suppressing red duplicate alert when customer name differs.
+- `lechon-system-web/src/utils/similarityHelper.ts`: `isSharedPhoneDifferentName` condition.
+- `lechon-system-web/src/utils/dateNormalizer.ts`: Timezone-aware date helpers (`getCurrentPhilippineYear`, `isPastDeliveryDate`, `replaceDeliveryDateYear`, `setDeliveryDateToPhilippineToday`).
+
+### Mobile
+
+- `lechon-system-mobile/src/screens/DrawerScreen.tsx`:
+  - 4th stream tab `💵 DP & Walk-In Tracker ({unremittedCashCount})`.
+  - Direct `[ 👑 Verify Digital Deposit ]` in Tab 3 (Pickups) and Tab 1 (Hop 2 Handover Queue) for Owners.
+  - KPI Card 2 toggles `hop2SubFilter` (`all` vs `digital`), with active border styling and dismissible filter banner.
+  - Drawer Handover tab visibility invariant: visible if `inStaffDrawerCount + pendingDigitalCount > 0 || isOwner || activeTab === 'hop2'`.
+- `lechon-system-mobile/src/screens/PosScreen.tsx` & `EditOrderModal.tsx`:
+  - Past-date warning banner with `[ 📅 Fix Year to 2026 ]` and `[ 📅 Set to Today ]` buttons.
+  - Pre-submit `Alert.alert` confirmation guard.
+  - Shared-phone duplicate notice (`ℹ️ SHARED PHONE NUMBER ON THIS DATE`) in `EditOrderModal.tsx` and `PosScreen.tsx`.
+- `lechon-system-mobile/src/utils/deliveryDateWarnings.ts`: Date utilities for `Asia/Manila`.
+- `lechon-system-mobile/src/hooks/useManifest.ts`: Exported `useVerifyDigitalSettlementMutation` and `useToggleDownpaymentRemittanceMutation`.
+
+## 11. 2026-11-13 Expense Ledger & Accountant RBAC
+
+### Backend
+
+- `LechonSystem.Api/Models/ExpenseRecord.cs`: Additive expense entity containing the spreadsheet ledger fields and the canonical `COGS` / `OPEX` / `NON_OP` classification.
+- `LechonSystem.Api/DTOs/ExpenseDtos.cs`: Flat create/update/list, monthly/YTD summary, category-breakdown, and reclassification contracts. Revenue/profit members are nullable to support server-side Accountant redaction.
+- `LechonSystem.Api/Services/ExpenseCategorizer.cs`: Ordered keyword engine and authoritative category-to-cost-type mapping. Packaging precedence prevents `Lechon Belly Box` from being classified as meat.
+- `LechonSystem.Api/Controllers/ExpensesController.cs`: `[Authorize(Roles = "Owner,Accountant")]` CRUD, `GET /api/expenses/summary`, and `POST /api/expenses/auto-reclassify?year=&month=` surface. The controller/service removes every revenue and profit value when the role claim is `Accountant`.
+- `LechonSystem.Api/Data/LechonDbContext.cs`: `DbSet<ExpenseRecord>` plus decimal precision, text limits, and date/index configuration.
+- `LechonSystem.Api/Program.cs`: Registers expense services; creates or extends the expense table through idempotent `OBJECT_ID` / `COL_LENGTH` SQL; creates the Accountant account only when missing; and inserts the 17 November QA rows only when their natural seed keys do not already exist.
+- `LechonSystem.Api/Services/UserService.cs` and `Controllers/UsersController.cs`: Owner-only account governance recognizes `Accountant` for staff create/edit operations.
+- Existing `OrdersController`, `SchedulesController`, `LogisticsController`, operational dashboards, analytics, and general reports retain Owner/Cashier or Owner-only authorization and therefore reject Accountant tokens.
+
+### Web
+
+- `lechon-system-web/src/pages/ExpensesPage.tsx`: Owner/Accountant monthly dashboard, YTD cards, category table/chart, filters, quick presets, fast inline entry, editable ledger, delete action, reclassification action, and top-of-table grand total.
+- `lechon-system-web/src/utils/expenseCategorizer.ts`: Live classifier mirroring backend precedence and canonical mappings; a per-row manual-override flag prevents subsequent typing from replacing an explicit category choice.
+- `lechon-system-web/src/utils/__tests__/expenseCategorizer.test.ts`: Node regression suite for packaging, live pigs, ingredients, fuel, and owner-outflow keywords.
+- `lechon-system-web/src/App.tsx`, `components/auth/ProtectedRoute.tsx`, and `components/ui/Sidebar.tsx`: `/expenses` route plus strict Accountant redirect and navigation isolation. Accountant receives only the ledger/profile/logout shell; Owner retains all navigation plus Expenses.
+- `lechon-system-web/src/pages/ReportsPage.tsx`: Owner-only Expense & Net Profit report reuses the expense summary contract without relaxing the Owner guard on revenue reports.
+- `lechon-system-web/src/components/cms/CreateUserModal.tsx`, CMS staff table, and `hooks/useUsers.ts`: Accountant role selection, editing contract, and role-specific badge.
+
+### Data and Request Flow
+
+```text
+Expense form / preset
+  -> live expenseCategorizer (manual override respected)
+  -> POST/PUT /api/expenses
+  -> backend ExpenseCategorizer validates category and derives CostType
+  -> ExpenseRecord
+  -> GET /api/expenses/summary?year=&month=
+       -> Accountant: expense/YTD/category fields + revenue/profit = null
+       -> Owner: expense fields + order revenue, profit, margins, cash flow
+```
+
+`NON_OP` flows into Grand Total Outflow and Net Cash Flow only. It never enters COGS, OPEX, Gross Profit, or Operating Net Profit.
+
+### QA and Verification
+
+- November 2026 seed invariant: 17 rows; COGS `₱111,766.00`; OPEX `₱59,843.39`; operating expense `₱171,609.39`; NON_OP `₱23,000.00`; grand outflow `₱194,609.39`.
+- Focused categorizer tests run with `node --experimental-strip-types --test src/utils/__tests__/expenseCategorizer.test.ts` from `lechon-system-web` on the repository's Node 22 toolchain.
+- Full gates: `dotnet build LechonSystem.Api`; `npm --prefix lechon-system-web run build`; mobile `npx tsc --noEmit`; and `npm --prefix lechon-system-mobile run lint`.

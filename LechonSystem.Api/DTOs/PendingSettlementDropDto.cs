@@ -24,4 +24,6 @@ public class PendingSettlementDropDto
     public string? DigitalTransferMethod { get; set; }
     public decimal? DigitalTransferAmount { get; set; }
     public string? DigitalReferenceNote { get; set; }
+    public string? PendingDigitalMethod => DigitalTransferMethod;
+    public decimal PendingDigitalAmount => Math.Max(0m, DigitalTransferAmount ?? 0m);
 }

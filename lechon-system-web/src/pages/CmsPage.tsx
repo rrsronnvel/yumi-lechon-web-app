@@ -42,6 +42,7 @@ import { ChangePriceModal } from "@/components/cms/ChangePriceModal";
 import { EditCategoryModal } from "@/components/cms/EditCategoryModal";
 import { CreateUserModal } from "@/components/cms/CreateUserModal";
 import { ResetPasswordModal } from "@/components/cms/ResetPasswordModal";
+import { EditUserModal } from "@/components/cms/EditUserModal";
 import {
   useUsersQuery,
   useToggleUserStatusMutation,
@@ -78,6 +79,8 @@ export default function CmsPage() {
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
   const [selectedResetUser, setSelectedResetUser] = useState<UserListItemDto | null>(null);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
+  const [selectedEditUser, setSelectedEditUser] = useState<UserListItemDto | null>(null);
+  const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [statusConfirmUser, setStatusConfirmUser] = useState<{
     user: UserListItemDto;
     targetActive: boolean;
@@ -954,7 +957,7 @@ export default function CmsPage() {
                     Staff &amp; Terminal Accounts
                   </CardTitle>
                   <CardDescription className="text-xs text-stone-500 mt-0.5">
-                    Provision counter cashier logins, reset shift passwords, and revoke terminal access.
+                    Provision cashier and accountant logins, edit access roles, reset passwords, and revoke terminal access.
                   </CardDescription>
                 </div>
               </div>
@@ -1034,6 +1037,10 @@ export default function CmsPage() {
                               <Badge className="bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100 font-semibold text-xs">
                                 👑 Owner
                               </Badge>
+                            ) : u.role === "Accountant" ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-semibold text-xs">
+                                📒 Accountant
+                              </Badge>
                             ) : (
                               <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100 font-semibold text-xs">
                                 🧑‍💼 Cashier
@@ -1056,6 +1063,17 @@ export default function CmsPage() {
                           </TableCell>
                           <TableCell className="py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedEditUser(u);
+                                  setIsEditUserModalOpen(true);
+                                }}
+                                className="h-8 text-xs font-medium border-amber-300 text-amber-800 hover:bg-amber-50 cursor-pointer"
+                              >
+                                <Edit className="mr-1 h-3.5 w-3.5" /> Edit Role
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -1248,6 +1266,15 @@ export default function CmsPage() {
         user={selectedResetUser}
         open={isResetPasswordModalOpen}
         onOpenChange={setIsResetPasswordModalOpen}
+      />
+
+      <EditUserModal
+        user={selectedEditUser}
+        open={isEditUserModalOpen}
+        onOpenChange={(open) => {
+          setIsEditUserModalOpen(open);
+          if (!open) setSelectedEditUser(null);
+        }}
       />
 
       {/* MODAL 1: Price History Drawer / Sheet */}

@@ -21,6 +21,8 @@ export interface PendingSettlementDrop {
   heldByStaffAmount?: number | null;
   digitalTransferMethod?: string | null;
   digitalTransferAmount?: number | null;
+  pendingDigitalMethod?: string | null;
+  pendingDigitalAmount?: number | null;
   digitalReferenceNote?: string | null;
   createdAt?: string;
   targetDeliveryTime?: string;
@@ -51,6 +53,8 @@ export interface PendingPickupSettlement {
   heldByStaffAmount?: number | null;
   digitalTransferMethod?: string | null;
   digitalTransferAmount?: number | null;
+  pendingDigitalMethod?: string | null;
+  pendingDigitalAmount?: number | null;
   digitalReferenceNote?: string | null;
 }
 
@@ -72,6 +76,22 @@ export interface PendingLalamoveSettlement {
   isClearedForRelease: boolean;
   isReleased: boolean;
   remarks?: string;
+}
+
+export interface DownpaymentTrackerItem {
+  orderId: number;
+  orderReference: string;
+  customerName: string;
+  phoneNumber?: string | null;
+  bookingSource?: string | null;
+  downpaymentAmount: number;
+  downpaymentMethod?: string | null;
+  targetDeliveryTime?: string | null;
+  createdAt: string;
+  encodedBy?: string | null;
+  isDpRemittedToOwner: boolean;
+  dpRemittedAt?: string | null;
+  dpRemittedBy?: string | null;
 }
 
 export interface CreateQrSessionPayload {
@@ -146,6 +166,14 @@ export interface DirectGcashPayload {
   referenceNumber: string;
 }
 
+export interface VerifyDigitalSettlementResponse {
+  success: boolean;
+  message: string;
+  orderId?: number;
+  settlementStatus?: string;
+  balanceDue?: number;
+}
+
 export const usePendingRiderSettlements = () => {
   return useQuery<PendingSettlementDrop[]>({
     queryKey: ['manifest', 'pending-settlement'],
@@ -182,6 +210,18 @@ export const usePendingLalamoveSettlements = () => {
   });
 };
 
+export const useDownpaymentTracker = () => {
+  return useQuery<DownpaymentTrackerItem[]>({
+    queryKey: ['manifest', 'downpayments'],
+    queryFn: async () => {
+      const response = await apiClient.get<DownpaymentTrackerItem[]>(
+        '/logistics/downpayments'
+      );
+      return response.data;
+    },
+  });
+};
+
 export const useQrSessionStatus = (token: string | null, enabled: boolean = true) => {
   return useQuery<QrSessionStatus>({
     queryKey: ['manifest', 'qr-session', token],
@@ -203,8 +243,10 @@ const invalidateAllSettlementCaches = async (
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ['riders'] }),
     queryClient.invalidateQueries({ queryKey: ['manifest'] }),
+    queryClient.invalidateQueries({ queryKey: ['order'] }),
     queryClient.invalidateQueries({ queryKey: ['orders'] }),
     queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+    queryClient.invalidateQueries({ queryKey: ['logistics'] }),
   ]);
 };
 
@@ -370,6 +412,38 @@ export const useSettleManualPaymentMutation = () => {
         referenceNumber: payload.referenceNumber?.trim() || undefined,
         referenceId: payload.referenceNumber?.trim() || '',
       });
+      return response.data;
+    },
+    onSuccess: async () => {
+      await invalidateAllSettlementCaches(queryClient);
+    },
+  });
+};
+
+export const useToggleDownpaymentRemittanceMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post<DownpaymentTrackerItem>(
+        `/logistics/downpayments/${orderId}/verify`
+      );
+      return response.data;
+    },
+    onSuccess: async () => {
+      await invalidateAllSettlementCaches(queryClient);
+    },
+  });
+};
+
+export const useVerifyDigitalSettlementMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post<VerifyDigitalSettlementResponse>(
+        `/logistics/settlements/orders/${orderId}/verify-digital`
+      );
       return response.data;
     },
     onSuccess: async () => {

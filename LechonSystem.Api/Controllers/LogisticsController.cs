@@ -132,6 +132,33 @@ namespace LechonSystem.Api.Controllers
             }
         }
 
+        [HttpGet("downpayments")]
+        public async Task<IActionResult> GetDownpayments()
+        {
+            var downpayments = await _logisticsService.GetDownpaymentsAsync();
+            return Ok(downpayments);
+        }
+
+        [HttpPost("downpayments/{orderId}/verify")]
+        [Authorize(Roles = "Owner")]
+        public async Task<IActionResult> ToggleDownpaymentVerification(int orderId)
+        {
+            try
+            {
+                var currentUser = UserIdentityHelper.ResolveDisplayName(User, "Owner");
+                var item = await _logisticsService.ToggleDownpaymentRemittanceAsync(orderId, currentUser);
+                return Ok(item);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         // ==========================================
         // TWO-HOP QR CUSTODY CHAIN ENDPOINTS
         // ==========================================
@@ -384,6 +411,30 @@ namespace LechonSystem.Api.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Failed to settle Direct Store GCash.", error = ex.Message });
+            }
+        }
+
+        [HttpPost("settlements/orders/{orderId}/verify-digital")]
+        [Authorize(Roles = "Owner")]
+        public async Task<IActionResult> VerifyDigitalSettlement(int orderId)
+        {
+            try
+            {
+                var ownerUsername = UserIdentityHelper.ResolveDisplayName(User, "Owner");
+                var result = await _logisticsService.VerifyDigitalSettlementAsync(orderId, ownerUsername);
+                return Ok(new
+                {
+                    success = result,
+                    message = $"Order #{orderId} digital deposit verified and settled by Owner."
+                });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
         }
     }

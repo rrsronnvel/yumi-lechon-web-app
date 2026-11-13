@@ -228,7 +228,9 @@ namespace LechonSystem.Api.Services
                          && (((o.GrandTotal > 0
                                   ? o.GrandTotal
                                   : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0
-                             || o.SettlementCustodyStatus == "InStaffDrawer"))
+                             || o.SettlementCustodyStatus == "InStaffDrawer"
+                             || o.SettlementCustodyStatus == "AwaitingOwnerDigitalVerification"
+                             || (o.DigitalTransferAmount ?? 0m) > 0m))
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ThenBy(o => o.Id)
                 .Select(o => new PendingSettlementDropDto
@@ -282,7 +284,9 @@ namespace LechonSystem.Api.Services
                          && o.SettlementCustodyStatus != "Settled"
                          && o.TargetDeliveryTime.HasValue && o.TargetDeliveryTime.Value.Date <= today
                          && (((o.GrandTotal > 0 ? o.GrandTotal : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) > 0
-                             || o.SettlementCustodyStatus == "InStaffDrawer"))
+                             || o.SettlementCustodyStatus == "InStaffDrawer"
+                             || o.SettlementCustodyStatus == "AwaitingOwnerDigitalVerification"
+                             || (o.DigitalTransferAmount ?? 0m) > 0m))
                 .OrderBy(o => o.TargetDeliveryTime)
                 .ThenBy(o => o.Id)
                 .Select(o => new PendingPickupSettlementDto
@@ -379,6 +383,131 @@ namespace LechonSystem.Api.Services
 
             await _context.SaveChangesAsync();
             return true;
+        }
+
+        public async Task<IEnumerable<DownpaymentTrackerItemDto>> GetDownpaymentsAsync()
+        {
+            var items = await _context.Orders
+                .AsNoTracking()
+                .Where(o => !o.IsDraft
+                         && !o.IsCancelled
+                         && (o.Downpayment > 0m || o.Source == "Walk-in"))
+                .OrderByDescending(o => o.CreatedAt)
+                .ThenByDescending(o => o.Id)
+                .Select(o => new DownpaymentTrackerItemDto
+                {
+                    OrderId = o.Id,
+                    OrderReference = o.OrderReference,
+                    CustomerName = o.CustomerName,
+                    PhoneNumber = o.ContactNumber ?? string.Empty,
+                    BookingSource = o.Source ?? string.Empty,
+                    DownpaymentAmount = o.Downpayment,
+                    DownpaymentMethod = o.DownpaymentMethod,
+                    TargetDeliveryTime = o.TargetDeliveryTime,
+                    CreatedAt = o.CreatedAt,
+                    EncodedBy = o.CreatedBy,
+                    IsDpRemittedToOwner = o.IsDpRemittedToOwner,
+                    DpRemittedAt = o.DpRemittedAt,
+                    DpRemittedBy = o.DpRemittedBy
+                })
+                .ToListAsync();
+
+            if (items.Count == 0)
+            {
+                return items;
+            }
+
+            var orderIds = items.Select(item => item.OrderId).ToList();
+            var paymentMethods = await _context.PaymentLogs
+                .AsNoTracking()
+                .Where(payment => orderIds.Contains(payment.OrderId)
+                                  && payment.Status == PaymentStatus.Success
+                                  && !payment.IsVoided)
+                .OrderBy(payment => payment.CreatedAt)
+                .ThenBy(payment => payment.Id)
+                .Select(payment => new { payment.OrderId, payment.PaymentMethod })
+                .ToListAsync();
+            var firstPaymentMethodByOrder = paymentMethods
+                .GroupBy(payment => payment.OrderId)
+                .ToDictionary(group => group.Key, group => group.First().PaymentMethod);
+
+            foreach (var item in items)
+            {
+                firstPaymentMethodByOrder.TryGetValue(item.OrderId, out var firstPaymentMethod);
+                item.DownpaymentMethod = ResolveDownpaymentMethod(item.DownpaymentMethod, firstPaymentMethod);
+            }
+
+            return items;
+        }
+
+        public async Task<DownpaymentTrackerItemDto> ToggleDownpaymentRemittanceAsync(int orderId, string currentUser)
+        {
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null || order.IsDraft || order.IsCancelled)
+            {
+                throw new KeyNotFoundException($"Order #{orderId} was not found in the active downpayment tracker.");
+            }
+            if (order.Downpayment <= 0m && !string.Equals(order.Source, "Walk-in", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Order #{orderId} does not have a downpayment and is not a Walk-in booking.");
+            }
+
+            order.IsDpRemittedToOwner = !order.IsDpRemittedToOwner;
+            order.DpRemittedAt = order.IsDpRemittedToOwner ? PhilippineTime.Now : null;
+            order.DpRemittedBy = order.IsDpRemittedToOwner ? currentUser : null;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            var firstPaymentMethod = await _context.PaymentLogs
+                .AsNoTracking()
+                .Where(payment => payment.OrderId == order.Id
+                                  && payment.Status == PaymentStatus.Success
+                                  && !payment.IsVoided)
+                .OrderBy(payment => payment.CreatedAt)
+                .ThenBy(payment => payment.Id)
+                .Select(payment => payment.PaymentMethod)
+                .FirstOrDefaultAsync();
+            var method = ResolveDownpaymentMethod(order.DownpaymentMethod, firstPaymentMethod);
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = order.IsDpRemittedToOwner ? "DP Verified" : "DP Verification Reverted",
+                Changes = order.IsDpRemittedToOwner
+                    ? $"[DP Verified] Downpayment of ₱{order.Downpayment:N2} ({method}) marked as remitted/verified by Owner."
+                    : $"[DP Verification Reverted] Downpayment of ₱{order.Downpayment:N2} ({method}) returned to Unremitted by Owner.",
+                ChangedBy = currentUser,
+                Timestamp = PhilippineTime.Now
+            });
+
+            await _context.SaveChangesAsync();
+
+            return new DownpaymentTrackerItemDto
+            {
+                OrderId = order.Id,
+                OrderReference = order.OrderReference,
+                CustomerName = order.CustomerName,
+                PhoneNumber = order.ContactNumber ?? string.Empty,
+                BookingSource = order.Source ?? string.Empty,
+                DownpaymentAmount = order.Downpayment,
+                DownpaymentMethod = method,
+                TargetDeliveryTime = order.TargetDeliveryTime,
+                CreatedAt = order.CreatedAt,
+                EncodedBy = order.CreatedBy,
+                IsDpRemittedToOwner = order.IsDpRemittedToOwner,
+                DpRemittedAt = order.DpRemittedAt,
+                DpRemittedBy = order.DpRemittedBy
+            };
+        }
+
+        private static string ResolveDownpaymentMethod(string? orderMethod, string? firstPaymentMethod)
+        {
+            var rawMethod = !string.IsNullOrWhiteSpace(orderMethod)
+                            && !string.Equals(orderMethod, "None", StringComparison.OrdinalIgnoreCase)
+                ? orderMethod
+                : firstPaymentMethod;
+            return string.IsNullOrWhiteSpace(rawMethod)
+                ? "None"
+                : PaymentChannels.Normalize(rawMethod, rawMethod.Trim());
         }
 
         // ==========================================
@@ -1022,90 +1151,134 @@ namespace LechonSystem.Api.Services
             var heldCashAmount = Math.Max(0m, order.HeldByStaffAmount ?? 0m);
             var pendingDigitalAmount = Math.Max(0m, order.DigitalTransferAmount ?? 0m);
             var hasStructuredDigitalHandover = order.DigitalTransferAmount.HasValue;
-            decimal amountToSettle = hasStructuredDigitalHandover
+            var requestedSettlementAmount = hasStructuredDigitalHandover
                 ? heldCashAmount + pendingDigitalAmount
                 : order.HeldByStaffAmount ??
                     (session.ExpectedAmount > 0
                         ? session.ExpectedAmount
                         : Math.Max(0, (order.GrandTotal > 0 ? order.GrandTotal : (order.Price + order.DeliveryFee - order.Discount)) - order.Downpayment));
+            var grossTotal = order.GrandTotal > 0
+                ? order.GrandTotal
+                : order.Price + order.DeliveryFee - order.Discount;
+            var isFullDigitalSettlement = heldCashAmount <= 0m && pendingDigitalAmount > 0m;
+            var settlementTarget = order.Fulfillment == FulfillmentType.Delivery && !isFullDigitalSettlement
+                ? Math.Max(0m, grossTotal - order.DeliveryFee)
+                : Math.Max(0m, grossTotal);
+            var activeLedgerTotal = await _context.PaymentLogs
+                .Where(payment => payment.OrderId == order.Id
+                                  && payment.Status == PaymentStatus.Success
+                                  && !payment.IsVoided)
+                .SumAsync(payment => (decimal?)payment.Amount) ?? 0m;
+            var effectivePaid = Math.Max(order.Downpayment, activeLedgerTotal);
+            var outstandingSettlement = Math.Max(0m, settlementTarget - effectivePaid);
+            var cashAmountToCredit = hasStructuredDigitalHandover
+                ? Math.Min(heldCashAmount, outstandingSettlement)
+                : 0m;
+            var digitalAmountToCredit = hasStructuredDigitalHandover
+                ? Math.Min(pendingDigitalAmount, Math.Max(0m, outstandingSettlement - cashAmountToCredit))
+                : 0m;
+            var amountToSettle = hasStructuredDigitalHandover
+                ? cashAmountToCredit + digitalAmountToCredit
+                : Math.Min(Math.Max(0m, requestedSettlementAmount), outstandingSettlement);
+            var ledgerRoom = Math.Max(0m, settlementTarget - activeLedgerTotal);
+            var cashAmountToRecord = hasStructuredDigitalHandover
+                ? Math.Min(heldCashAmount, ledgerRoom)
+                : 0m;
+            var digitalAmountToRecord = hasStructuredDigitalHandover
+                ? Math.Min(pendingDigitalAmount, Math.Max(0m, ledgerRoom - cashAmountToRecord))
+                : 0m;
+            var legacyAmountToRecord = hasStructuredDigitalHandover
+                ? 0m
+                : Math.Min(Math.Max(0m, requestedSettlementAmount), ledgerRoom);
 
-            if (amountToSettle > 0)
+            // Final handover collections are credited to PaymentLogs and transition custody to Settled.
+            // Order.Downpayment represents the original advance booking downpayment and must not be inflated.
+
+            if (hasStructuredDigitalHandover)
             {
-                order.Downpayment += amountToSettle;
-
-                if (hasStructuredDigitalHandover)
+                if (cashAmountToRecord > 0m)
                 {
-                    if (heldCashAmount > 0m)
-                    {
-                        _context.PaymentLogs.Add(new PaymentLog
-                        {
-                            OrderId = order.Id,
-                            GatewayReferenceId = $"OWNER_CASH_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}",
-                            Provider = PaymentProvider.Cash,
-                            PaymentMethod = "Cash",
-                            Amount = heldCashAmount,
-                            Status = PaymentStatus.Success
-                        });
-                    }
-
-                    if (pendingDigitalAmount > 0m)
-                    {
-                        var digitalMethod = order.DigitalTransferMethod ?? session.PaymentMethod;
-                        var digitalRef = !string.IsNullOrWhiteSpace(order.DigitalReferenceNote)
-                            ? order.DigitalReferenceNote
-                            : !string.IsNullOrWhiteSpace(session.ReferenceNumber)
-                                ? session.ReferenceNumber
-                                : $"OWNER_DIGITAL_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
-                        _context.PaymentLogs.Add(new PaymentLog
-                        {
-                            OrderId = order.Id,
-                            // Reference notes need not be globally unique (for example, "BDO from Customer").
-                            // Keep the note on Order while giving the payment ledger an order-scoped key.
-                            GatewayReferenceId = $"{digitalRef}_ORDER_{order.Id}",
-                            Provider = PaymentChannels.ToProvider(digitalMethod),
-                            PaymentMethod = PaymentChannels.Normalize(digitalMethod),
-                            Amount = pendingDigitalAmount,
-                            Status = PaymentStatus.Success
-                        });
-                    }
-                }
-                else
-                {
-                    var normalizedPaymentMethod = PaymentChannels.Normalize(session.PaymentMethod);
-                    var refId = session.ReferenceNumber;
-                    if (string.IsNullOrWhiteSpace(refId))
-                    {
-                        refId = $"QR_SETTLE_{session.Token[..Math.Min(8, session.Token.Length)].ToUpperInvariant()}_{Guid.NewGuid().ToString()[..4]}";
-                    }
-
                     _context.PaymentLogs.Add(new PaymentLog
                     {
                         OrderId = order.Id,
-                        GatewayReferenceId = refId,
-                        Provider = PaymentChannels.ToProvider(normalizedPaymentMethod),
-                        PaymentMethod = normalizedPaymentMethod,
-                        Amount = amountToSettle,
-                        Status = PaymentStatus.Success
+                        GatewayReferenceId = $"OWNER_CASH_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}",
+                        Provider = PaymentProvider.Cash,
+                        PaymentMethod = "Cash",
+                        Amount = cashAmountToRecord,
+                        Status = PaymentStatus.Success,
+                        RecordedBy = verifiedOwnerUsername
                     });
                 }
 
-                _context.OrderAuditLogs.Add(new OrderAuditLog
+                if (digitalAmountToRecord > 0m)
+                {
+                    var digitalMethod = order.DigitalTransferMethod ?? session.PaymentMethod;
+                    var digitalRef = !string.IsNullOrWhiteSpace(order.DigitalReferenceNote)
+                        ? order.DigitalReferenceNote
+                        : !string.IsNullOrWhiteSpace(session.ReferenceNumber)
+                            ? session.ReferenceNumber
+                            : $"OWNER_DIGITAL_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+                    var baseReference = $"{digitalRef}_ORDER_{order.Id}";
+                    var referenceExists = await _context.PaymentLogs
+                        .AnyAsync(payment => payment.GatewayReferenceId == baseReference);
+                    _context.PaymentLogs.Add(new PaymentLog
+                    {
+                        OrderId = order.Id,
+                        GatewayReferenceId = referenceExists
+                            ? $"{baseReference}_VERIFY_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}"
+                            : baseReference,
+                        Provider = PaymentChannels.ToProvider(digitalMethod),
+                        PaymentMethod = PaymentChannels.Normalize(digitalMethod),
+                        Amount = digitalAmountToRecord,
+                        Status = PaymentStatus.Success,
+                        RecordedBy = verifiedOwnerUsername
+                    });
+                }
+            }
+            else if (legacyAmountToRecord > 0m)
+            {
+                var normalizedPaymentMethod = PaymentChannels.Normalize(session.PaymentMethod);
+                var refId = session.ReferenceNumber;
+                if (string.IsNullOrWhiteSpace(refId))
+                {
+                    refId = $"QR_SETTLE_{session.Token[..Math.Min(8, session.Token.Length)].ToUpperInvariant()}_{Guid.NewGuid().ToString()[..4]}";
+                }
+                else if (await _context.PaymentLogs.AnyAsync(payment => payment.GatewayReferenceId == refId))
+                {
+                    refId = $"{refId}_VERIFY_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+                }
+
+                _context.PaymentLogs.Add(new PaymentLog
                 {
                     OrderId = order.Id,
-                    ActionType = "Custody: Settled by Owner",
-                    Changes = hasStructuredDigitalHandover
-                        ? $"Owner {verifiedOwnerUsername} verified settlement of ₱{heldCashAmount:N2} physical cash and ₱{pendingDigitalAmount:N2} digital transfer. Ref: {order.DigitalReferenceNote}. Order marked Settled."
-                        : $"Owner {verifiedOwnerUsername} verified and approved custody settlement of ₱{amountToSettle:N2} via {session.PaymentMethod}. Order marked Settled.",
-                    ChangedBy = verifiedOwnerUsername,
-                    Timestamp = DateTime.UtcNow
+                    GatewayReferenceId = refId,
+                    Provider = PaymentChannels.ToProvider(normalizedPaymentMethod),
+                    PaymentMethod = normalizedPaymentMethod,
+                    Amount = legacyAmountToRecord,
+                    Status = PaymentStatus.Success,
+                    RecordedBy = verifiedOwnerUsername
                 });
             }
 
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Custody: Settled by Owner",
+                Changes = hasStructuredDigitalHandover
+                    ? $"Owner {verifiedOwnerUsername} verified settlement of ₱{heldCashAmount:N2} physical cash and ₱{pendingDigitalAmount:N2} digital transfer. Credited ₱{amountToSettle:N2} without exceeding the outstanding store balance. Ref: {order.DigitalReferenceNote}. Order marked Settled."
+                    : $"Owner {verifiedOwnerUsername} verified and approved custody settlement of ₱{amountToSettle:N2} via {session.PaymentMethod}. Order marked Settled.",
+                ChangedBy = verifiedOwnerUsername,
+                Timestamp = DateTime.UtcNow
+            });
+
             order.HeldByStaffAmount = 0m;
             order.HeldByStaffMethod = null;
+            order.DigitalTransferAmount = 0m;
+            order.DigitalTransferMethod = null;
+            order.DigitalReferenceNote = null;
 
             var storeNetTotal = Math.Max(0, order.GrandTotal - order.DeliveryFee);
-            if (order.Fulfillment == FulfillmentType.Delivery && order.Downpayment >= storeNetTotal)
+            if (order.Fulfillment == FulfillmentType.Delivery && (order.SettlementCustodyStatus == "Settled" || order.Downpayment >= storeNetTotal))
             {
                 order.RoutingStatus = DeliveryStatus.Delivered;
                 if (order.DeliveryTrip != null)
@@ -1153,6 +1326,146 @@ namespace LechonSystem.Api.Services
                 ActionType = "Digital Transfer: Awaiting Owner Verification",
                 Changes = $"Direct Store GCash payment of ₱{amount:N2} logged with Ref: {referenceNumber.Trim()}. Physical drawer received ₱0.00. Awaiting Owner verification.",
                 ChangedBy = staffUsername,
+                Timestamp = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> VerifyDigitalSettlementAsync(int orderId, string ownerUsername)
+        {
+            var order = await _context.Orders
+                .Include(o => o.DeliveryTrip)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null)
+            {
+                throw new KeyNotFoundException($"Order #{orderId} not found.");
+            }
+            if (order.Fulfillment != FulfillmentType.Pickup && order.Fulfillment != FulfillmentType.Delivery)
+            {
+                throw new InvalidOperationException("Digital owner verification is available only for Store Pickup and freelance-rider Delivery orders.");
+            }
+            if (order.SettlementCustodyStatus != "AwaitingOwnerDigitalVerification"
+                && order.SettlementCustodyStatus != "InStaffDrawer")
+            {
+                throw new InvalidOperationException($"Order #{orderId} is not awaiting Owner settlement verification.");
+            }
+
+            var pendingDigitalAmount = Math.Max(0m, order.DigitalTransferAmount ?? 0m);
+            var heldCashAmount = Math.Max(0m, order.HeldByStaffAmount ?? 0m);
+            if (pendingDigitalAmount <= 0m)
+            {
+                throw new InvalidOperationException($"Order #{orderId} has no pending digital deposit to verify.");
+            }
+
+            var digitalMethod = PaymentChannels.Normalize(order.DigitalTransferMethod ?? order.HeldByStaffMethod, "GCash");
+            var digitalReference = !string.IsNullOrWhiteSpace(order.DigitalReferenceNote)
+                ? order.DigitalReferenceNote.Trim()
+                : $"OWNER_DIGITAL_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}";
+            var grossTotal = order.GrandTotal > 0m
+                ? order.GrandTotal
+                : order.Price + order.DeliveryFee - order.Discount;
+            var isFullDigitalSettlement = heldCashAmount <= 0m && pendingDigitalAmount > 0m;
+            var settlementTarget = order.Fulfillment == FulfillmentType.Delivery && !isFullDigitalSettlement
+                ? Math.Max(0m, grossTotal - order.DeliveryFee)
+                : Math.Max(0m, grossTotal);
+
+            var activeLedgerTotal = await _context.PaymentLogs
+                .Where(payment => payment.OrderId == order.Id
+                                  && payment.Status == PaymentStatus.Success
+                                  && !payment.IsVoided)
+                .SumAsync(payment => (decimal?)payment.Amount) ?? 0m;
+            var effectivePaid = Math.Max(order.Downpayment, activeLedgerTotal);
+            var outstandingSettlement = Math.Max(0m, settlementTarget - effectivePaid);
+            var handoverTotal = heldCashAmount + pendingDigitalAmount;
+            if (handoverTotal < outstandingSettlement)
+            {
+                throw new InvalidOperationException(
+                    $"Pending custody of ₱{handoverTotal:N2} does not cover the outstanding store balance of ₱{outstandingSettlement:N2}.");
+            }
+
+            // Final digital deposit settlements are recorded in PaymentLogs and transition custody to Settled.
+            // Advance booking downpayment (Order.Downpayment) is strictly preserved without inflation.
+
+            // The ledger and cached total may differ for legacy records. Fill only the remaining
+            // ledger room so verification never creates a duplicate or over-credit.
+            var ledgerRoom = Math.Max(0m, settlementTarget - activeLedgerTotal);
+            var digitalAmountToRecord = Math.Min(pendingDigitalAmount, ledgerRoom);
+            var cashAmountToRecord = Math.Min(heldCashAmount, Math.Max(0m, ledgerRoom - digitalAmountToRecord));
+
+            if (digitalAmountToRecord > 0m)
+            {
+                var baseReference = $"{digitalReference}_ORDER_{order.Id}";
+                var referenceExists = await _context.PaymentLogs
+                    .AnyAsync(payment => payment.GatewayReferenceId == baseReference);
+                var ledgerReference = referenceExists
+                    ? $"{baseReference}_VERIFY_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}"
+                    : baseReference;
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = ledgerReference,
+                    Provider = PaymentChannels.ToProvider(digitalMethod),
+                    PaymentMethod = digitalMethod,
+                    Amount = digitalAmountToRecord,
+                    Status = PaymentStatus.Success,
+                    RecordedBy = ownerUsername
+                });
+            }
+            if (cashAmountToRecord > 0m)
+            {
+                _context.PaymentLogs.Add(new PaymentLog
+                {
+                    OrderId = order.Id,
+                    GatewayReferenceId = $"OWNER_CASH_{order.Id}_{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}",
+                    Provider = PaymentProvider.Cash,
+                    PaymentMethod = "Cash",
+                    Amount = cashAmountToRecord,
+                    Status = PaymentStatus.Success,
+                    RecordedBy = ownerUsername
+                });
+            }
+
+            order.SettlementCustodyStatus = "Settled";
+            order.OwnerApprovedBy = ownerUsername;
+            order.OwnerApprovedAt = DateTime.UtcNow;
+            order.HeldByStaffAmount = 0m;
+            order.HeldByStaffMethod = null;
+            order.DigitalTransferAmount = 0m;
+            order.DigitalTransferMethod = null;
+            order.DigitalReferenceNote = null;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            if (order.Fulfillment == FulfillmentType.Delivery && (order.SettlementCustodyStatus == "Settled" || order.Downpayment >= settlementTarget))
+            {
+                order.RoutingStatus = DeliveryStatus.Delivered;
+                if (order.DeliveryTrip != null)
+                {
+                    order.DeliveryTrip.Status = DeliveryStatus.Delivered;
+                    order.DeliveryTrip.ActualReturnTime = DateTime.UtcNow;
+                }
+            }
+
+            var activeHopTwoSessions = await _context.SettlementQrSessions
+                .Where(session => session.OrderId == order.Id
+                                  && session.HopStage == "StaffToOwner"
+                                  && !session.IsUsed)
+                .ToListAsync();
+            foreach (var session in activeHopTwoSessions)
+            {
+                session.Status = "ApprovedByOwner";
+                session.OwnerApprovedBy = ownerUsername;
+                session.OwnerApprovedAt = DateTime.UtcNow;
+                session.IsUsed = true;
+            }
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Digital Deposit Verified by Owner",
+                Changes = $"Owner {ownerUsername} verified ₱{pendingDigitalAmount:N2} via {digitalMethod}. Ref: {digitalReference}. Physical cash included: ₱{heldCashAmount:N2}. Order marked Settled; pending digital and drawer amounts cleared.",
+                ChangedBy = ownerUsername,
                 Timestamp = DateTime.UtcNow
             });
 

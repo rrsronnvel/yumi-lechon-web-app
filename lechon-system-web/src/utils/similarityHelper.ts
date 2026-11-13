@@ -19,6 +19,9 @@ export interface DuplicateMatchEvaluation {
   matchingFactors: string[];
   isSameDate: boolean;
   isSameDay: boolean;
+  matchedPhone?: string;
+  hasNameMatch: boolean;
+  isSharedPhoneDifferentName: boolean;
 }
 
 export interface RepeatCustomerMatchEvaluation {
@@ -324,9 +327,10 @@ export const evaluateDuplicateOrders = (
     }
 
     const candidatePhones = cleanPhoneDigits(candidate.contactNumber);
-    const phoneMatches =
-      hasValidCurrentPhone &&
-      candidatePhones.some((cp) => currentPhones.includes(cp));
+    const matchedPhone = hasValidCurrentPhone
+      ? candidatePhones.find((cp) => currentPhones.includes(cp))
+      : undefined;
+    const phoneMatches = Boolean(matchedPhone);
 
     const nameMatches =
       checkNameSimilarity(current.customerName, candidate.customerName) ||
@@ -347,7 +351,7 @@ export const evaluateDuplicateOrders = (
 
     if (!dateEval.isSameDay) {
       const repeatFactors: string[] = [];
-      if (phoneMatches) repeatFactors.push("Valid Phone Match");
+      if (phoneMatches) repeatFactors.push(`Same Phone (${matchedPhone})`);
       if (nameMatches) repeatFactors.push("Name / FB Match");
       if (repeatFactors.length > 0) {
         repeatCustomerMatches.push({
@@ -363,7 +367,7 @@ export const evaluateDuplicateOrders = (
     const matchingFactors = ["Exact Same Date"];
     if (phoneMatches) {
       score += 1;
-      matchingFactors.push("Valid Phone Match");
+      matchingFactors.push(`Same Phone (${matchedPhone})`);
     }
     if (nameMatches) {
       score += 1;
@@ -376,12 +380,25 @@ export const evaluateDuplicateOrders = (
 
     // Exact date plus at least one additional factor.
     if (score >= 2) {
+      const currentCustomerName = normalizeName(current.customerName);
+      const existingCustomerName = normalizeName(candidate.customerName);
+      const isSharedPhoneDifferentName = Boolean(
+        phoneMatches &&
+          !nameMatches &&
+          !addressMatches &&
+          currentCustomerName &&
+          existingCustomerName &&
+          currentCustomerName !== existingCustomerName,
+      );
       evaluations.push({
         order: candidate,
         score,
         matchingFactors,
         isSameDate: dateEval.isSameDay,
         isSameDay: dateEval.isSameDay,
+        matchedPhone,
+        hasNameMatch: nameMatches,
+        isSharedPhoneDifferentName,
       });
     }
   }

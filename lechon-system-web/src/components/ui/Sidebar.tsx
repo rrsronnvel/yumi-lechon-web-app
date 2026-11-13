@@ -11,6 +11,7 @@ import {
   Settings,
   Truck,
   X,
+  ReceiptText,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -27,19 +28,23 @@ export default function Sidebar() {
   const { user, logout, apiEnv, apiBaseUrl, switchApiEnv } = useAuth();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  const navigation = [
-    { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Orders", href: "/orders", icon: ClipboardList },
-    { name: "Logistics", href: "/logistics", icon: Truck },
-    { name: "Manifest", href: "/manifest", icon: FileSpreadsheet },
-    { name: "Inventory", href: "/inventory", icon: Boxes },
-    ...(user?.role === "Owner"
-      ? [
-          { name: "Reports", href: "/reports", icon: BarChart3 },
-          { name: "Settings", href: "/cms", icon: Settings },
-        ]
-      : []),
-  ];
+  const isAccountant = user?.role === "Accountant";
+  const navigation = isAccountant
+    ? [{ name: "Expenses Ledger", href: "/expenses", icon: ReceiptText }]
+    : [
+        { name: "Dashboard", href: "/", icon: LayoutDashboard },
+        { name: "Orders", href: "/orders", icon: ClipboardList },
+        { name: "Logistics", href: "/logistics", icon: Truck },
+        { name: "Manifest", href: "/manifest", icon: FileSpreadsheet },
+        { name: "Inventory", href: "/inventory", icon: Boxes },
+        ...(user?.role === "Owner"
+          ? [
+              { name: "Expenses Ledger", href: "/expenses", icon: ReceiptText },
+              { name: "Reports", href: "/reports", icon: BarChart3 },
+              { name: "Settings", href: "/cms", icon: Settings },
+            ]
+          : []),
+      ];
 
   useEffect(() => {
     setIsMobileNavOpen(false);
@@ -111,7 +116,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-stone-800/80 bg-stone-950/40 px-3.5 py-2.5">
+      {!isAccountant && <div className="border-t border-stone-800/80 bg-stone-950/40 px-3.5 py-2.5">
         <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-stone-400 uppercase">
           <span>Target API</span>
           <span
@@ -149,7 +154,7 @@ export default function Sidebar() {
             {apiEnv === "local" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />}
           </button>
         </div>
-      </div>
+      </div>}
 
       {user && (
         <div className="border-t border-stone-800/80 bg-stone-950/80 p-4">
@@ -166,10 +171,12 @@ export default function Sidebar() {
                   className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-2xs ${
                     user.role === "Owner"
                       ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                      : user.role === "Accountant"
+                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
                       : "border-stone-700 bg-stone-800 text-stone-200"
                   }`}
                 >
-                  {user.role === "Owner" ? "👑 Owner" : "🧑‍💼 Cashier"}
+                  {user.role === "Owner" ? "👑 Owner" : user.role === "Accountant" ? "📒 Accountant" : "🧑‍💼 Cashier"}
                 </span>
               </div>
             </div>
@@ -218,16 +225,16 @@ export default function Sidebar() {
         <div className="ml-2 flex shrink-0 items-center gap-1.5 text-[10px]">
           {user && (
             <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-1 font-semibold text-amber-300">
-              {user.role === "Owner" ? "👑 Owner" : "Cashier"}
+              {user.role === "Owner" ? "👑 Owner" : user.role === "Accountant" ? "📒 Accountant" : "Cashier"}
             </span>
           )}
-          <span
+          {!isAccountant && <span
             className="flex items-center gap-1 rounded-full border border-stone-700 bg-stone-900 px-2 py-1 text-stone-300"
             title={`API: ${apiBaseUrl}`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${apiEnv === "cloud" ? "bg-amber-400" : "bg-emerald-400"}`} />
             {apiEnv === "cloud" ? "Cloud" : "Local"}
-          </span>
+          </span>}
         </div>
       </header>
 

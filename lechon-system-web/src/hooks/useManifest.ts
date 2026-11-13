@@ -21,6 +21,8 @@ export interface PendingSettlementDrop {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   heldByStaffAmount?: number | null;
+  pendingDigitalMethod?: string | null;
+  pendingDigitalAmount?: number | null;
   digitalTransferMethod?: string | null;
   digitalTransferAmount?: number | null;
   digitalReferenceNote?: string | null;
@@ -66,6 +68,8 @@ export interface PendingPickupSettlement {
   heldByStaffName?: string | null;
   heldPaymentMethod?: string | null;
   heldByStaffAmount?: number | null;
+  pendingDigitalMethod?: string | null;
+  pendingDigitalAmount?: number | null;
   digitalTransferMethod?: string | null;
   digitalTransferAmount?: number | null;
   digitalReferenceNote?: string | null;
@@ -92,6 +96,36 @@ export interface PendingLalamoveSettlement {
   custodyStatus?: string;
   settlementCustodyStatus?: string;
 }
+
+export interface DownpaymentTrackerItem {
+  orderId: number;
+  orderReference: string;
+  customerName: string;
+  phoneNumber?: string | null;
+  bookingSource?: string | null;
+  downpaymentAmount: number;
+  downpaymentMethod?: string | null;
+  targetDeliveryTime?: string | null;
+  createdAt: string;
+  encodedBy?: string | null;
+  isDpRemittedToOwner: boolean;
+  dpRemittedAt?: string | null;
+  dpRemittedBy?: string | null;
+}
+
+type PendingDigitalFields = {
+  pendingDigitalAmount?: number | null;
+  pendingDigitalMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  digitalTransferMethod?: string | null;
+};
+
+export const getPendingDigitalAmount = (item: PendingDigitalFields): number =>
+  Number(item.pendingDigitalAmount ?? item.digitalTransferAmount ?? 0);
+
+export const getPendingDigitalMethod = (
+  item: PendingDigitalFields,
+): string => item.pendingDigitalMethod || item.digitalTransferMethod || "Digital Transfer";
 
 // QR Settlement Data Types
 export interface CreateQrSessionPayload {
@@ -201,6 +235,7 @@ export const useSettlePaymentMutation = () => {
   });
 };
 
+
 // Tab 2: Store Pickup Settlements
 export const usePendingPickupsQuery = () => {
   return useQuery<PendingPickupSettlement[]>({
@@ -237,6 +272,7 @@ export const useSettlePickupPaymentMutation = () => {
   });
 };
 
+
 // Tab 3: Lalamove Courier Gate Settlements & Dispatch Release
 export const usePendingLalamoveQuery = () => {
   return useQuery<PendingLalamoveSettlement[]>({
@@ -267,6 +303,39 @@ export const useReleaseLalamoveMutation = () => {
     },
   });
 };
+
+
+// Tab 4: Downpayment & Walk-In Remittance Tracker
+export const useDownpaymentsQuery = () => {
+  return useQuery<DownpaymentTrackerItem[]>({
+    queryKey: ["manifest", "downpayments"],
+    queryFn: async () => {
+      const response = await apiClient.get("/logistics/downpayments");
+      return response.data;
+    },
+  });
+};
+
+export const useToggleDownpaymentRemittanceMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (orderId: number) => {
+      const response = await apiClient.post(
+        `/logistics/downpayments/${orderId}/verify`,
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["manifest", "downpayments"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
 
 // ==========================================
 // TWO-HOP QR DIGITAL SETTLEMENT HOOKS
@@ -387,6 +456,7 @@ export const useStaffValidateQrMutation = () => {
   });
 };
 
+
 // 4b. Safeguard 3: Revert Custody to Uncollected
 export const useRevertCustodyMutation = () => {
   const queryClient = useQueryClient();
@@ -411,6 +481,7 @@ export const useRevertCustodyMutation = () => {
     },
   });
 };
+
 
 // 5. Store Counter Collection (Tab 2 Pickup & Tab 3 Lalamove)
 export const useCounterCollectPickupMutation = () => {
@@ -437,6 +508,7 @@ export const useCounterCollectPickupMutation = () => {
     },
   });
 };
+
 
 // 6. Owner Verification & Final Settlement
 export const useOwnerApproveQrMutation = () => {
@@ -472,6 +544,7 @@ export const useOwnerApproveQrMutation = () => {
   });
 };
 
+
 // 7. Direct Store GCash Bypass Settlement
 export const useDirectGcashSettlementMutation = () => {
   const queryClient = useQueryClient();
@@ -493,6 +566,33 @@ export const useDirectGcashSettlementMutation = () => {
         queryClient.invalidateQueries({ queryKey: ["manifest", "lalamove"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+};
+
+// 7b. Direct Owner Digital Verification Mutation
+export const useVerifyDigitalSettlementMutation = (hookOrderId?: number) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (mutationOrderId?: number) => {
+      const targetOrderId = mutationOrderId ?? hookOrderId;
+      if (!targetOrderId) {
+        throw new Error("Order ID is required for digital settlement verification.");
+      }
+      const response = await apiClient.post(
+        `/logistics/settlements/orders/${targetOrderId}/verify-digital`
+      );
+      return response.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["manifest"] }),
+        queryClient.invalidateQueries({ queryKey: ["order"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["downpayments"] }),
       ]);
     },
   });
@@ -526,21 +626,19 @@ export function computeCustodyMetrics(
     const status = r.settlementCustodyStatus || r.custodyStatus || "Uncollected";
     const amount = Number(r.netRemittance || 0);
     const physicalAmount = Number(r.heldByStaffAmount ?? 0);
-    const digitalAmount = Number(r.digitalTransferAmount ?? 0);
+    const digitalAmount = getPendingDigitalAmount(r);
+    const hasPendingDigital = status !== "Settled" && digitalAmount > 0;
 
     if (status === "InStaffDrawer") {
       if (physicalAmount > 0) {
         inDrawerTotal += physicalAmount;
         inDrawerCount += 1;
       }
-    } else if (status === "Uncollected" && amount > 0) {
+    } else if (status === "Uncollected" && !hasPendingDigital && amount > 0) {
       uncollectedTotal += amount;
       uncollectedCount += 1;
     }
-    if (
-      (status === "InStaffDrawer" || status === "AwaitingOwnerDigitalVerification") &&
-      digitalAmount > 0
-    ) {
+    if (hasPendingDigital) {
       pendingDigitalTotal += digitalAmount;
       pendingDigitalCount += 1;
     }
@@ -550,21 +648,19 @@ export function computeCustodyMetrics(
     const status = p.settlementCustodyStatus || p.custodyStatus || "Uncollected";
     const amount = Number(p.heldByStaffAmount ?? p.balanceDue ?? 0);
     const physicalAmount = Number(p.heldByStaffAmount ?? 0);
-    const digitalAmount = Number(p.digitalTransferAmount ?? 0);
+    const digitalAmount = getPendingDigitalAmount(p);
+    const hasPendingDigital = status !== "Settled" && digitalAmount > 0;
 
     if (status === "InStaffDrawer") {
       if (physicalAmount > 0) {
         inDrawerTotal += physicalAmount;
         inDrawerCount += 1;
       }
-    } else if (status === "Uncollected" && amount > 0) {
+    } else if (status === "Uncollected" && !hasPendingDigital && amount > 0) {
       uncollectedTotal += amount;
       uncollectedCount += 1;
     }
-    if (
-      (status === "InStaffDrawer" || status === "AwaitingOwnerDigitalVerification") &&
-      digitalAmount > 0
-    ) {
+    if (hasPendingDigital) {
       pendingDigitalTotal += digitalAmount;
       pendingDigitalCount += 1;
     }

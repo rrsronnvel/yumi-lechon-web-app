@@ -28,6 +28,11 @@ namespace LechonSystem.Api.Services
 
         private static decimal CalculateOperationalBalanceDue(Order order, decimal paidAmount)
         {
+            if (string.Equals(order.SettlementCustodyStatus, "Settled", StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
             var rawBalance = Math.Max(0, order.GrandTotal - paidAmount);
             if (order.Fulfillment != FulfillmentType.Delivery)
             {
@@ -35,10 +40,6 @@ namespace LechonSystem.Api.Services
             }
 
             var storeNetTotal = Math.Max(0, order.GrandTotal - order.DeliveryFee);
-            if (string.Equals(order.SettlementCustodyStatus, "Settled", StringComparison.OrdinalIgnoreCase))
-            {
-                return 0;
-            }
 
             var expectedOutstandingStoreRemittance = Math.Max(0, storeNetTotal - paidAmount);
             var isAwaitingOwnerVerification =

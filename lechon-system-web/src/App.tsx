@@ -13,6 +13,7 @@ import DailySheetsPage from "./pages/DailySheetsPage";
 import CmsPage from "./pages/CmsPage";
 import LoginPage from "./pages/LoginPage";
 import QrSignPage from "./pages/QrSignPage";
+import ExpensesPage from "./pages/ExpensesPage";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -41,6 +42,15 @@ export default function App() {
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="manifest" element={<ManifestPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
+
+            <Route
+              path="expenses"
+              element={
+                <ProtectedRoute allowedRoles={["Owner", "Accountant"]}>
+                  <ExpensesPage />
+                </ProtectedRoute>
+              }
+            />
 
             <Route
               path="reports"

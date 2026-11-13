@@ -8,6 +8,15 @@ Location: Cavite, Philippines
 
 Architecture Phase: Phase 5 (Advanced Logistics & Cash Reconciliation)
 
+### Daily Operations Enhancements — November 13, 2026
+
+- **Store Pickup Digital Transfers & Owner Hop 2 Digital Verification:** In `ManifestPage.tsx`, `PickupSettlementTab.tsx`, and mobile `DrawerScreen.tsx`, Store Pickup orders with pending non-cash payments (`pendingDigitalAmount > 0`, e.g. `#111326-901 Robin Evangelio` with ₱10,500 Direct GCash) render a prominent blue custody pill `🏦 Awaiting Digital Check (₱{amount} • {method})` and explicitly display the pending digital amount. The top blue KPI card (`🏦 Pending Owner Digital Check`) serves as an interactive toggle filter that unmasks pending digital orders even when physical drawer cash is ₱0. In both Web and Mobile, users with `role === 'Owner'` see `[ 👑 Verify Digital Deposit ]`. Native `window.confirm` and `Alert.alert` are replaced by dedicated styled modal cards (`VerifyDigitalDepositModal` on Web, React Native `<Modal>` on Mobile) detailing `#orderReference • customerName`, fulfillment type, payment channel, reference note, and large bold `₱Amount` with `[ Cancel ]` and `[ 👑 Confirm & Settle ]` buttons. Calling `POST /api/logistics/settlements/orders/{orderId}/verify-digital` records ledger payment logs and sets `BalanceDue = 0` via `Settled` custody WITHOUT mutating or inflating the advance booking `Order.Downpayment`. Mobile `👑 Drawer Handover` tab visibility invariant guarantees visibility whenever `physicalCashCount + pendingDigitalCount > 0` or `activeTab === 'hop2'`.
+- **Downpayment & Walk-In Remittance Tracker Lifecycle & Search:** In `ManifestPage.tsx`, `DownpaymentTrackerTab.tsx`, and mobile `DrawerScreen.tsx`, the 4th manifest stream tab `💵 DP & Walk-In Tracker` defaults to the `[ ⏳ Unremitted (${count}) ]` queue. Marking an item remitted transitions it out of the unremitted queue into `[ ✅ Remitted to Owner ]`. The Web search bar remains visible and active across all 4 manifest tabs, updating its placeholder to `"Search customer, #order, phone, payment mode, encoder..."` on the DP Tracker tab and filtering rows case-insensitively across `customerName`, `orderReference`, `orderId`, `phoneNumber`, `downpaymentMethod`, `bookingSource`, and `encodedBy`. `Order.Downpayment` is strictly protected against inflation from final pickup/delivery collections; startup self-heal idempotently restores `#111326-901` downpayment to ₱2,200.
+- **Past-Date / Wrong-Year Warning Banner & 1-Tap Year Fix:** In Web (`OrderForm.tsx`, `EditOrderForm.tsx`) and Mobile (`PosScreen.tsx`, `EditOrderModal.tsx`), selecting a delivery date earlier than today's Philippine date (`Asia/Manila`, UTC+8) displays a high-visibility amber/rose warning banner directly below the target date input: `⚠️ PAST DATE DETECTED: Selected date ({date}) is in the past! It will not appear in Upcoming or Tomorrow tabs.` If the entered year is earlier than the current Philippine year (e.g. `2025` instead of `2026`), a 1-tap `[ 📅 Fix Year to {currentYear} ]` button replaces the year component while strictly preserving month, day, and time, alongside a `[ 📅 Set to Today ]` button. Pre-submit confirmation guards (`window.confirm` on Web, `Alert.alert` on Mobile) intercept submissions of past dates.
+- **POS Duplicate Order Radar Shared-Phone Clarification:** In `similarityHelper.ts`, `OrderForm.tsx`, `PosScreen.tsx`, and `EditOrderModal.tsx`, duplicate detection segregates true same-day duplicate orders from shared-phone contacts. When a same-day order matches ONLY by phone number and the customer name differs from the existing booking, the red alert is suppressed in favor of an amber informational notice: `ℹ️ SHARED PHONE NUMBER ON THIS DATE — Phone number {phone} is already used on Order #{ref} under a different customer name ("{name}" • {items}) for {date}. If this is a separate order using the same contact number, you may safely proceed.` The red `🚨 POSSIBLE DUPLICATE ORDER DETECTED!` banner and pre-submit confirmation modal are reserved strictly for genuine name or name+phone matches.
+- **Non-Destructive QA Seeding (November 13, 2026):** Test records `#111326-901` (Robin Evangelio - Store Pickup ₱10,500 pending GCash), `#111326-902` (Bunso - Tirador - Store Pickup Shared Phone QA), and `#111326-903` (Johnmark Salipande - Walk-in Cash DP ₱4,000 Unremitted) are seeded idempotently via `SeedQaData_20261113.sql`. Scoped deletions preserve all 111 baseline customer orders (total 114 orders in `LechonSystemDb`). Startup reconciliation in `Program.cs` safeguards orders in `InStaffDrawer` with pending digital transfer amounts (`ISNULL(DigitalTransferAmount, 0) > 0`).
+- **Mobile DP Tab Count & Web UI Polish:** In `DrawerScreen.tsx`, the `💵 DP & Walk-In Tracker` tab pill count references `dpSummary.unremittedCount` (tracking all unremitted cash and unverified digital booking DPs, preventing zero-count masking). The search placeholder dynamically adapts to `"Search customer, #order, phone, payment mode, encoder..."` when the DP Tracker is active. In `Sidebar.tsx`, navigation items render clean Lucide icons without redundant emojis (`"Expenses Ledger"`). In `ExpensesPage.tsx`, quick-add form grid columns enforce uniform `h-4` headers (with `rightBadge` for auto-category and unit-cost badges), `h-9` inputs/buttons, and `min-w-[1080px] overflow-x-auto`, ensuring baseline vertical alignment between inputs and `+ Add Expense`.
+
 ### Daily Operations Reliability — November 10, 2026
 
 - **Freebies & Sides Prep Sheet (3rd Daily Sheet Tab):** `DailySheetsPage.tsx` integrates the third operational tab `"🎁 Freebies & Prep Sheet"` alongside Kitchen and Rider sheets. Backed by `FreebiesPrepViewTab.tsx`, it delivers a consolidated preparation view combining customer Whole Lechon freebies, Belly freebies, customer paid side-dish Add-Ons, and Store Paluto requests. Image export produces a direct 4K UHD download named `Yumi-Lechon-Freebies-Prep-${dateStr}-4K.png` without `navigator.share`.
@@ -1076,4 +1085,143 @@ Section 2 provides a chronological kitchen checklist merging customer orders and
   - `GET /api/schedules/freebies-prep?date=YYYY-MM-DD`: Returns consolidated `FreebiesPrepResponseDto` with 8-card summary, chronological roster, and store paluto list.
   - `POST /api/schedules/prep-requests`: Validates category and item dictionary, serializes JSON, stamps `FullName (@username)`, and returns 201 Created.
   - `DELETE /api/schedules/prep-requests/{id}`: Deletes the prep request and returns 204 NoContent.
+
+---
+
+## 21. 2026-11-13 Daily Operations: Store Pickup Digital Verification, Date Warning & 1-Tap Fix, Shared Phone Radar & DP Remittance Tracker
+
+### 21.1 Store Pickup Digital Transfers & Owner Hop 2 Digital Verification
+* **The Non-Cash Counter Handover Problem:** Store pickup customers frequently settle outstanding balances upon arrival via direct mobile e-wallet (GCash, Maya) or online bank transfer rather than physical bills (e.g. `#111326-901 Robin Evangelio` with ₱10,500 balance via Direct GCash). Previously, these orders were trapped in `Uncollected` status or required cashiers to enter a paper cash envelope amount, misstating cash-in-drawer counts.
+* **Database Schema & DTO Contracts:**
+  - `Orders.DigitalTransferAmount` (DECIMAL(18,2) NULL)
+  - `Orders.DigitalTransferMethod` (NVARCHAR(64) NULL)
+  - `Orders.DigitalReferenceNote` (NVARCHAR(255) NULL)
+  - `PendingPickupSettlementDto` and `PendingSettlementDropDto` expose computed properties:
+    `PendingDigitalAmount => Math.Max(0m, DigitalTransferAmount ?? 0m)`
+    `PendingDigitalMethod => DigitalTransferMethod`
+* **Web & Mobile Manifest UI Integration:**
+  - When `pendingDigitalAmount > 0`, the custody status displays `🏦 Awaiting Digital Check (₱{amount} • {method})`.
+  - The column explicitly renders the pending digital amount instead of ₱0.
+  - For `role === 'Owner'`, the action button displays `[ 👑 Verify Digital Deposit ]`. Clicking opens a confirmation dialog showing order number, customer name, channel, and amount.
+  - Confirming calls `POST /api/logistics/settlements/orders/{orderId}/verify-digital` via `useVerifyDigitalSettlementMutation`, invalidating `['manifest']`, `['order']`, `['orders']`, `['dashboard']`, and `['downpayments']`.
+  - For non-owner staff, it displays an informational badge: `Awaiting Owner verification`.
+* **KPI Card 2 Interactive Toggle & Tab Visibility Guard:**
+  - The top blue KPI card (`🏦 Pending Owner Digital Check`) is clickable on Web and Mobile. Clicking toggles a filter that unmasks pending digital orders even when physical cash held is ₱0, clears any active custodian filter (`selectedCustodian = null`), switches to the pickups/handover view, and renders an active border and dismissible filter banner.
+  - In mobile `DrawerScreen.tsx`, `isDrawerHandoverVisible` enforces:
+    `isOwner || inStaffDrawerCount + pendingDigitalCount > 0 || activeTab === 'hop2'`
+    ensuring the handover tab is never hidden while digital verifications remain pending.
+* **Backend Verification Service (`LogisticsService.VerifyDigitalSettlementAsync`):**
+  - Validates order fulfillment is Pickup or Delivery, and custody is `AwaitingOwnerDigitalVerification` or `InStaffDrawer`.
+  - Validates `DigitalTransferAmount > 0`.
+  - Writes a success payment entry to `PaymentLogs` with unique reference ID.
+  - Credits the digital amount to cached `order.Downpayment`.
+  - If cash is also held (`HeldByStaffAmount > 0`), custody remains `InStaffDrawer` for the physical leg; if no cash is held, custody transitions to `Settled` and clears digital transfer fields.
+  - Stamps an immutable `OrderAuditLog` with `ownerUsername`.
+
+### 21.2 Past-Date / Wrong-Year Warning Banner & 1-Tap Year Fix
+* **The Disappearing Order Bug:** Rush-hour order intake often leads to date typos (e.g. typing `2025` instead of `2026`, or selecting yesterday's date). Such orders vanish from `Upcoming` and `Tomorrow` filters, causing missed roasting and unfulfilled orders.
+* **Timezone-Aware Detection (`Asia/Manila`, UTC+8):**
+  - Evaluates target delivery dates against `PhilippineTime.Today` using `deliveryDateWarnings.ts` (Mobile) and `dateNormalizer.ts` (Web).
+  - Identifies past dates when `!isDateTbd && normalizedDate < getPhilippineTodayDate()`.
+  - Identifies past years when `selectedYear < currentPhilippineYear`.
+* **High-Visibility Banner & 1-Tap Quick Fix:**
+  - Directly below the Target Delivery Date input in `OrderForm.tsx`, `EditOrderForm.tsx`, `PosScreen.tsx`, and `EditOrderModal.tsx`, an amber/rose banner renders:
+    `⚠️ PAST DATE DETECTED: Selected date ({date}) is in the past! It will not appear in Upcoming or Tomorrow tabs.`
+  - If `selectedYear < currentPhilippineYear`, renders `[ 📅 Fix Year to {currentYear} ]` which updates the first 4 characters of the ISO date string to `2026` while strictly preserving the month, day, and time components, and automatically synchronizing associated departure schedules.
+  - Accompanied by `[ 📅 Set to Today ]`, resetting the date to current Philippine date while preserving the chosen time.
+* **Pre-Submit Confirmation Guard:**
+  - Web: `window.confirm` modal halts submission if the date is in the past until explicitly confirmed by the user.
+  - Mobile: `Alert.alert` intercepts save actions with Cancel and "Proceed Anyway" options.
+
+### 21.3 POS Duplicate Order Radar Shared-Phone Clarification
+* **The Shared Contact Number Conflict:** Family members, event coordinators, and catering organizers frequently place separate orders for the same date using a shared mobile or landline number. The previous duplicate radar flagged all same-date phone matches as red duplicate risks (`🚨 POSSIBLE DUPLICATE ORDER DETECTED!`), creating false alarms and operational friction.
+* **Composite Similarity Categorization (`similarityHelper.ts`):**
+  - Calculates `isSharedPhoneDifferentName`:
+    `phoneMatches && !nameMatches && !addressMatches && currentCustomerName && existingCustomerName && currentCustomerName !== existingCustomerName`
+  - Segregates matches into:
+    1. `blockingDuplicateOrders`: Customer name matches, or both name and contact match.
+    2. `sharedPhoneMatches`: Phone number matches, but customer name is non-empty and distinctly different.
+* **Differentiated UI Presentation:**
+  - Red Alert Banner (`🚨 POSSIBLE DUPLICATE ORDER DETECTED!`): Renders ONLY when `blockingDuplicateOrders.length > 0`. Triggers pre-submit confirmation prompt before allowing duplicate creation.
+  - Amber Informational Notice (`ℹ️ SHARED PHONE NUMBER ON THIS DATE`): Renders when `sharedPhoneMatches.length > 0`.
+    - Header: `ℹ️ SHARED PHONE NUMBER ON THIS DATE`
+    - Body: `Phone number {matchedPhone} is already used on Order #{orderReference} under a different customer name ("{existingCustomerName}" • {itemsSummary}) for {date}.`
+    - Subtext: `If this is a separate order using the same contact number, you may safely proceed.`
+    - Frictionless workflow: Submissions with shared-phone notices proceed without blocking confirmation dialogs.
+
+### 21.4 Downpayment & Walk-In Remittance Tracker
+* **The Advance Deposit Black Hole:** Advance bookings taken days or weeks in advance (especially in-person Walk-In orders, e.g. `#111326-903 Johnmark Salipande` with ₱4,000 cash DP) placed cash in the staff drawer. Because daily manifest streams enforce the Notebook Rule (`TargetDeliveryTime <= PhilippineTime.Today`), advance deposits were invisible on daily sheets until delivery day, creating accountability gaps between cashiers and owners.
+* **Database Schema:**
+  - `Orders.IsDpRemittedToOwner` (BIT NOT NULL DEFAULT 0)
+  - `Orders.DpRemittedAt` (DATETIME2 NULL)
+  - `Orders.DpRemittedBy` (NVARCHAR(100) NULL)
+  - Installed idempotently via `COL_LENGTH` startup checks in `Program.cs`.
+* **API Contracts (`LogisticsController`):**
+  - `GET /api/logistics/downpayments`: Returns all orders with `Downpayment > 0` as `DownpaymentTrackerItemDto[]`, including `OrderId`, `OrderReference`, `CustomerName`, `PhoneNumber`, `BookingSource`, `DownpaymentAmount`, `DownpaymentMethod`, `TargetDeliveryTime`, `CreatedAt`, `EncodedBy`, `IsDpRemittedToOwner`, `DpRemittedAt`, `DpRemittedBy`.
+  - `POST /api/logistics/downpayments/{orderId}/verify`: Protected by `[Authorize(Roles = "Owner")]`. Toggles `IsDpRemittedToOwner`, stamping current owner username and UTC timestamp, or clearing verification on undo.
+* **Manifest 4th Stream Tab (`ManifestPage.tsx` & `DownpaymentTrackerTab.tsx`):**
+  - Navigation: 4th tab `💵 DP & Walk-In Tracker (${unremittedCount})`.
+  - 3-Box Summary Strip:
+    1. `⏳ Unremitted Cash DP (Held by Staff): ₱X,XXX` (urgent amber box)
+    2. `⏳ Unverified Digital DP: ₱X,XXX` (sky blue box)
+    3. `✅ Verified / Remitted DPs: ₱X,XXX` (emerald box)
+  - 6 Filter Pills: `[ All DPs ]`, `[ 💵 Cash DP Only ]`, `[ 📱 Digital DP (GCash/Maya/Bank) ]`, `[ 🚶 Walk-In Only ]`, `[ ⏳ Unremitted (${count}) ]`, `[ ✅ Remitted to Owner ]`.
+  - Master Table Columns: `CUSTOMER & MODE` (Order reference, customer name, contact number, `🚶 Walk-in` badge via canonical `isWalkInOrder`, `Encoded by @staff`), `DP AMOUNT & CHANNEL` (amount, channel badge), `EVENT DATE` (formatted target date), `STATUS & OWNER REMITTANCE` (unremitted state with `[ ✓ Mark Remitted ]` for Owner, or remitted badge with verifier, timestamp, and `[ ↺ Undo ]`).
+* **Mobile Parity (`DrawerScreen.tsx`):**
+  - Renders identical 4th stream tab, 3-box summary strip, 6 filter pills, card list with urgent cash styling, and Owner remittance verification.
+
+### 21.5 Non-Destructive QA Test Seeding & Database Invariants
+* **Idempotent Upsert Script (`SeedQaData_20261113.sql`):**
+  - Transaction-safe (`SET XACT_ABORT ON; BEGIN TRANSACTION; ... COMMIT TRANSACTION;`).
+  - Scopes deletions strictly to test references (`111326-901`, `111326-902`, `111326-903`) across `OrderItemSchedules`, `SettlementQrSessions`, `InventoryReservations`, `PaymentLogs`, `OrderAuditLogs`, `OrderItems`, and `Orders`.
+  - 100% preservation of 111 baseline customer orders (total 114 orders in `LechonSystemDb`).
+* **Target QA Scenarios:**
+  1. `#111326-901` (Robin Evangelio): Store Pickup, 1x M Lechon, GrandTotal ₱12,700, DP ₱2,200 GCash, BalanceDue ₱10,500, `PendingDigitalAmount = 10500`, `PendingDigitalMethod = "Direct GCash"`, `SettlementCustodyStatus = "InStaffDrawer"`, `HeldByStaffAmount = 0.00`. Validates Store Pickup Digital Transfers & Owner Hop 2 Digital Verification.
+  2. `#111326-902` (Bunso - Tirador): Store Pickup, phone `09174427367`, 1x Belly 2kg, GrandTotal ₱1,700, DP ₱0, BalanceDue ₱1,700. Validates Shared-Phone POS Duplicate Radar.
+  3. `#111326-903` (Johnmark Salipande): Walk-in booking (`Source = "Walk-in"`), Store Pickup, phone `09175551234`, 1x L Lechon, GrandTotal ₱13,500, DP ₱4,000 Cash, BalanceDue ₱9,500, `IsDpRemittedToOwner = 0`. Validates Downpayment & Walk-In Remittance Tracker.
+* **API Startup Reconciliation Invariant (`Program.cs`):**
+  - Startup repair query resetting empty cash drawer custody to `'Uncollected'` must enforce:
+    `AND ISNULL(o.DigitalTransferAmount, 0) = 0`
+    preventing valid digital settlements (like `#111326-901`) from being incorrectly reset upon server boot.
+
+## 22. 2026-11-13 Expense, Net Profit & Accountant Isolation
+
+### 22.1 Dedicated Accountant Security Boundary
+
+* `Accountant` is a dedicated expense-encoding and audit role. The idempotent local startup seed guarantees `accountant` / `accountant123` with display name `Store Accountant` without modifying an existing account or deleting any user.
+* Expense CRUD, monthly/YTD summaries, and reclassification are the only finance operations shared by `Owner` and `Accountant`. Orders, schedules, logistics, operational dashboards, CMS, and every revenue report remain unavailable to `Accountant` at both API and web-route layers.
+* API redaction is mandatory, not cosmetic. An Accountant response from `GET /api/expenses/summary` must return `null` for `GrossRevenue`, `NetFoodRevenue`, `DeliveryFeeRevenue`, `DiscountTotal`, `GrossProfit`, `OperatingNetProfit`, and `NetCashFlowAfterOwnerOutflows`. The client must never receive hidden sales or profit values.
+* The Accountant application shell permits only `/expenses`, `📒 Expenses Ledger`, the signed-in profile, and Logout. Direct navigation to `/`, `/orders`, `/daily-sheets`, `/manifest`, `/reports`, or `/cms` redirects to `/expenses`. Owners retain the complete application and an Expenses navigation entry.
+* Owner-only staff governance accepts `Accountant` when creating or editing an account. Accountant rows and selectors must be labeled distinctly from Owner and Cashier.
+
+### 22.2 Canonical Expense Ledger & Cost-Type Mapping
+
+* `ExpenseRecord` persists `Id`, `ExpenseDate` (Philippine wall-clock date with `DateTimeKind.Unspecified`), `Category`, derived `CostType`, `ItemDescription`, nullable `Quantity`, nullable `Unit`, nullable `UnitCost`, positive `TotalCost`, `PaymentMethod`, nullable `Remarks`, `EncodedBy`, and `CreatedAt`.
+* The 13 categories are fixed and mapped exactly as follows:
+  - `COGS`: `Meat / Main Products`, `Ingredients & Freebies`, `Packaging`.
+  - `OPEX`: `Fuel`, `Utilities`, `Labor`, `Rent`, `Equipment & Supplies`, `Taxes and Government Fees`, `Marketing`, `Staff Meal`, `Others`.
+  - `NON_OP`: `Owner / Non-Operating Outflow`.
+* `CostType` is always derived on the server from `Category`; client input cannot relabel it. `NON_OP` contributes to total cash outflow but is excluded from COGS, OPEX, Gross Profit, and Operating Net Profit.
+* Accepted payment methods are `Cash`, `GCash`, `Maya`, and `Bank Transfer`. When quantity and total are available but unit cost is blank, the UI may display `TotalCost / Quantity` without forcing a stored manual value.
+* Schema installation is additive and idempotent through `OBJECT_ID` / `COL_LENGTH` guards in `Program.cs`. Expense work must never purge, drop, truncate, reset, or overwrite existing operational records.
+
+### 22.3 Classifier, Reclassification & Live-Pig Fast Entry
+
+* `ExpenseCategorizer` is shared in behavior across the frontend live-entry helper and backend fallback. Packaging keywords are evaluated before meat keywords so `Lechon Belly Box` resolves to `Packaging`, while `Live Pigs`, `Buong Baboy`, and ordinary `Belly` resolve to `Meat / Main Products`.
+* Live typing selects an inferred category until the encoder manually overrides the category for that row. Quick-entry presets cover Live Pigs (`heads`), Packaging (`pcs`), Market / Freebies, and Owner / Non-Operating Outflow.
+* `POST /api/expenses/auto-reclassify?year=YYYY&month=MM` applies the canonical keyword rules only inside the selected month and updates both category and derived cost type. It must correctly repair belly boxes/bilao/paper/tape, Coke/palabok/bihon/cantos, gasoline, and owner-draw examples.
+* Regression coverage in `expenseCategorizer.test.ts` locks classification for `Lechon Belly Box`, `10 pcs Platic Bilao 12"`, `Manila Paper`, `Live Pigs`, `Fluid - Coke 1.5`, `Toto gasoline`, `Resort DP`, and `Paluwagan`.
+
+### 22.4 Dashboard, Ledger & Profit Math
+
+* `/expenses` defaults to `2026-11` and supports month, category, cost type, payment method, and keyword filters. The spreadsheet-style ledger provides preset buttons, keyboard-submit inline entry, edit/delete actions, and a live `GRAND TOTAL` row.
+* Both roles see annual total outflow, monthly COGS, monthly OPEX, combined operating expense, NON_OP outflow, the 13-row category breakdown, and the category distribution chart. `Total Expenses YTD` is a true January-through-December sum across operating and non-operating expense records.
+* Owners additionally see `Net Food Revenue`, `Gross Profit`, `Operating Net Profit`, margin badges, and `Net Cash Flow (After Owner Outflows)` on `/expenses` and in Report 2 of `/reports`.
+* Canonical formulas are: `Gross Profit = Net Food Revenue - COGS`; `Operating Net Profit = Net Food Revenue - COGS - OPEX`; `Net Cash Flow After Owner Outflows = Operating Net Profit - NON_OP`.
+
+### 22.5 November 2026 QA Ledger Baseline
+
+* The 17 explicit November 2026 records are inserted idempotently and non-destructively. They cover live pigs, packaging, ingredients/freebies, utilities, labor, rent, equipment, marketing, and owner/non-operating outflows.
+* The locked QA totals are: `Meat / Main Products ₱83,497.00`, `Ingredients & Freebies ₱21,494.00`, `Packaging ₱6,775.00`, `COGS ₱111,766.00`, `OPEX ₱59,843.39`, `Operating Expenses ₱171,609.39`, `NON_OP ₱23,000.00`, and `Grand Total Outflow ₱194,609.39`.
+* Release verification requires `dotnet build LechonSystem.Api`, `npm --prefix lechon-system-web run build`, `npx tsc --noEmit` in `lechon-system-mobile`, `npm --prefix lechon-system-mobile run lint`, and the focused `expenseCategorizer.test.ts` Node test to pass without errors.
 

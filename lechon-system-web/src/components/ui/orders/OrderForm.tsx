@@ -10,7 +10,14 @@ import {
 } from "@/hooks/useCms";
 import { useCustomerLookup } from "@/hooks/useCustomers";
 import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from "@/utils/similarityHelper";
-import { normalizeLocalDateTimeInput } from "@/utils/dateNormalizer";
+import {
+  getCurrentPhilippineYear,
+  isPastDeliveryDate,
+  normalizeLocalDateTimeInput,
+  replaceDeliveryDateYear,
+  setDeliveryDateToPhilippineToday,
+  shiftRelatedScheduleWithTargetDate,
+} from "@/utils/dateNormalizer";
 import apiClient from "@/services/apiClient";
 import {
   OrderFormData,
@@ -607,6 +614,62 @@ export default function OrderForm({
       ? []
       : duplicateEvaluation.duplicates;
 
+  const sharedPhoneMatches = duplicateOrders.filter(
+    (duplicate) => duplicate.isSharedPhoneDifferentName,
+  );
+  const redDuplicateOrders = duplicateOrders.filter(
+    (duplicate) => !duplicate.isSharedPhoneDifferentName,
+  );
+
+  const currentPhilippineYear = getCurrentPhilippineYear();
+  const selectedTargetYear = Number(watchedTargetTime?.slice(0, 4));
+  const hasPastTargetDate = isPastDeliveryDate(watchedTargetTime, false);
+
+  const applyTargetDateQuickFix = (nextTargetTime: string) => {
+    form.setValue("targetDeliveryTime", nextTargetTime, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    if (watchedIsTimeTbd || !nextTargetTime) return;
+    if (Number(watchedFulfillment) === 0) {
+      form.setValue("riderDepartureTime", nextTargetTime, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      return;
+    }
+    if (Number(watchedFulfillment) === 2) {
+      const currentDeparture = form.getValues("riderDepartureTime");
+      if (currentDeparture && watchedTargetTime) {
+        form.setValue(
+          "riderDepartureTime",
+          shiftRelatedScheduleWithTargetDate(
+            currentDeparture,
+            watchedTargetTime,
+            nextTargetTime,
+          ),
+          { shouldDirty: true, shouldValidate: true },
+        );
+      }
+      return;
+    }
+
+    const targetDate = new Date(nextTargetTime);
+    if (Number.isNaN(targetDate.getTime())) return;
+    form.setValue(
+      "riderDepartureTime",
+      formatLocalDateTimeInput(
+        calculateRiderDepartureTime(
+          targetDate,
+          Number(watchedDistanceKm) || 0,
+          Number(watchedFulfillment),
+        ),
+      ),
+      { shouldDirty: true, shouldValidate: true },
+    );
+  };
+
   const repeatCustomerBooking =
     createOrderMutation.isSuccess || isSuccessModalOpen
       ? undefined
@@ -640,7 +703,16 @@ export default function OrderForm({
       return;
     }
 
-    const sameDayDuplicate = duplicateOrders.find((d) => d.isSameDay);
+    if (
+      isPastDeliveryDate(data.targetDeliveryTime, false) &&
+      !window.confirm(
+        `⚠️ Past Date Warning: The delivery date you entered (${formatCalendarDateLabel(data.targetDeliveryTime)}) is in the past! Are you sure you want to save this order with a past date?`,
+      )
+    ) {
+      return;
+    }
+
+    const sameDayDuplicate = redDuplicateOrders.find((d) => d.isSameDay);
     if (
       sameDayDuplicate &&
       !window.confirm(
@@ -1150,7 +1222,7 @@ export default function OrderForm({
 
           {!createOrderMutation.isSuccess &&
             !isSuccessModalOpen &&
-            duplicateOrders.length > 0 && (
+            redDuplicateOrders.length > 0 && (
             <div
               role="alert"
               className="rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-xs text-rose-950 shadow-sm"
@@ -1158,7 +1230,7 @@ export default function OrderForm({
               <div className="font-black tracking-wide">
                 🚨 POSSIBLE DUPLICATE ORDER DETECTED!
               </div>
-              {duplicateOrders.slice(0, 3).map((duplicate) => (
+              {redDuplicateOrders.slice(0, 3).map((duplicate) => (
                 <div key={duplicate.order.orderId} className="mt-1 font-medium">
                   {duplicate.order.customerName ||
                     customerProfile?.fullName ||
@@ -1176,6 +1248,38 @@ export default function OrderForm({
               ))}
             </div>
           )}
+
+          {!createOrderMutation.isSuccess &&
+            !isSuccessModalOpen &&
+            sharedPhoneMatches.length > 0 && (
+              <div
+                role="status"
+                className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3 text-xs text-amber-950 shadow-sm"
+              >
+                <div className="font-black tracking-wide">
+                  ℹ️ SHARED PHONE NUMBER ON THIS DATE
+                </div>
+                {sharedPhoneMatches.slice(0, 3).map((duplicate) => (
+                  <div key={duplicate.order.orderId} className="mt-1 font-medium">
+                    Phone number {duplicate.matchedPhone || "(unknown)"} is already
+                    used on Order #{duplicate.order.orderReference} under a different
+                    customer name (&quot;{duplicate.order.customerName || "Customer"}&quot;
+                    {" • "}{duplicate.order.itemsSummary}) for{" "}
+                    {formatCalendarDateLabel(
+                      duplicate.order.targetDeliveryDate ??
+                        duplicate.order.targetDeliveryTime,
+                    )}.
+                    <div className="mt-1 font-bold text-amber-800">
+                      If this is a separate order using the same contact number, you
+                      may safely proceed.
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-bold text-amber-700">
+                      Matched criteria: {duplicate.matchingFactors.join(" • ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
           {repeatCustomerBooking && (
             <div className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-xs">
@@ -1600,6 +1704,49 @@ export default function OrderForm({
                       }}
                     />
                   </FormControl>
+                  {hasPastTargetDate && (
+                    <div
+                      role="alert"
+                      className="mt-2 rounded-lg border-2 border-amber-500 bg-amber-50 p-3 text-xs text-amber-950 shadow-sm"
+                    >
+                      <p className="font-black leading-relaxed">
+                        ⚠️ PAST DATE DETECTED: The selected date ({formatCalendarDateLabel(watchedTargetTime)}) is in the past! It will not appear in Upcoming or Tomorrow tabs.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedTargetYear < currentPhilippineYear && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 border-amber-500 bg-white text-xs font-bold text-amber-950 hover:bg-amber-100"
+                            onClick={() =>
+                              applyTargetDateQuickFix(
+                                replaceDeliveryDateYear(
+                                  watchedTargetTime,
+                                  currentPhilippineYear,
+                                ),
+                              )
+                            }
+                          >
+                            📅 Fix Year to {currentPhilippineYear}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-rose-400 bg-white text-xs font-bold text-rose-800 hover:bg-rose-50"
+                          onClick={() =>
+                            applyTargetDateQuickFix(
+                              setDeliveryDateToPhilippineToday(watchedTargetTime),
+                            )
+                          }
+                        >
+                          📅 Set to Today
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   <FormMessage className="text-[11px]" />
                 </FormItem>
               )}

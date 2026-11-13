@@ -14,7 +14,7 @@ export interface UserProfile {
   id?: number;
   username: string;
   fullName: string;
-  role: "Owner" | "Cashier" | string;
+  role: "Owner" | "Cashier" | "Accountant" | string;
 }
 
 export interface AuthContextType {

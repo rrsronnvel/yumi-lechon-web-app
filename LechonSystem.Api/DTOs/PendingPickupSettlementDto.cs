@@ -12,7 +12,7 @@ public class PendingPickupSettlementDto
     public DateTime? RiderDepartureTime { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal Downpayment { get; set; }
-    public decimal BalanceDue => Math.Max(0, GrandTotal - Downpayment);
+    public decimal BalanceDue => CustodyStatus == "Settled" ? 0m : Math.Max(0, GrandTotal - Downpayment);
     public bool IsPaidInFull => BalanceDue <= 0;
     public bool IsTrustedCustomer { get; set; }
     public string? Address { get; set; }
@@ -27,4 +27,6 @@ public class PendingPickupSettlementDto
     public string? DigitalTransferMethod { get; set; }
     public decimal? DigitalTransferAmount { get; set; }
     public string? DigitalReferenceNote { get; set; }
+    public string? PendingDigitalMethod => DigitalTransferMethod;
+    public decimal PendingDigitalAmount => Math.Max(0m, DigitalTransferAmount ?? 0m);
 }

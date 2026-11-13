@@ -27,6 +27,11 @@ export interface UpdateUserStatusRequest {
   isActive: boolean;
 }
 
+export interface UpdateUserProfileRequest {
+  fullName: string;
+  role: 'Owner' | 'Cashier' | 'Accountant';
+}
+
 export function useUsersQuery() {
   return useQuery<UserListItemDto[]>({
     queryKey: ['users'],
@@ -79,6 +84,26 @@ export function useUpdateUserPasswordMutation() {
       toast.error('Password Update Failed', {
         description: message,
       });
+    },
+  });
+}
+
+export function useUpdateUserProfileMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<UserListItemDto, Error, { id: number; payload: UpdateUserProfileRequest }>({
+    mutationFn: async ({ id, payload }) => {
+      const response = await apiClient.put<UserListItemDto>(`/users/${id}`, payload);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Staff Account Updated', {
+        description: `${data.fullName} now has the ${data.role} role.`,
+      });
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message || error.message || 'Failed to update staff account.';
+      toast.error('Account Update Failed', { description: message });
     },
   });
 }

@@ -19,6 +19,7 @@ import {
   usePendingRiderSettlements,
   usePendingPickupSettlements,
   usePendingLalamoveSettlements,
+  useDownpaymentTracker,
   useQrSessionStatus,
   useCreateQrSessionMutation,
   useStaffValidateQrMutation,
@@ -28,12 +29,91 @@ import {
   useCounterCollectPickupMutation,
   useReleaseLalamoveMutation,
   useSettleManualPaymentMutation,
+  useToggleDownpaymentRemittanceMutation,
+  useVerifyDigitalSettlementMutation,
   PendingLalamoveSettlement,
+  DownpaymentTrackerItem,
 } from '../hooks/useManifest';
 import WalkInBadge from '../components/orders/WalkInBadge';
 import OrderDossierModal from '../components/orders/OrderDossierModal';
+import { isWalkInOrder } from '../utils/walkIn';
 
-type DrawerTabKey = 'hop2' | 'riders' | 'pickups' | 'lalamove';
+type DrawerTabKey = 'hop2' | 'riders' | 'pickups' | 'downpayments' | 'lalamove';
+type DpFilterKey = 'all' | 'cash' | 'digital' | 'walkin' | 'unremitted' | 'remitted';
+
+interface DigitalVerifyTarget {
+  orderId: number;
+  orderReference?: string;
+  customerName: string;
+  amount: number;
+  method?: string | null;
+  referenceNote?: string | null;
+  fulfillmentType?: string;
+  riderName?: string | null;
+}
+
+interface PendingDigitalFields {
+  digitalTransferMethod?: string | null;
+  digitalTransferAmount?: number | null;
+  pendingDigitalMethod?: string | null;
+  pendingDigitalAmount?: number | null;
+}
+
+function getPendingDigitalAmount(item: PendingDigitalFields): number {
+  return Number(item.pendingDigitalAmount ?? item.digitalTransferAmount ?? 0);
+}
+
+function getPendingDigitalMethod(item: PendingDigitalFields): string | null {
+  return item.pendingDigitalMethod ?? item.digitalTransferMethod ?? null;
+}
+
+function isAwaitingOwnerStatus(status?: string | null): boolean {
+  return (
+    status === 'InStaffDrawer' ||
+    status === 'AwaitingOwnerDigitalVerification' ||
+    status === 'PendingDigitalCheck'
+  );
+}
+
+function isCashDownpayment(item: DownpaymentTrackerItem): boolean {
+  return (item.downpaymentMethod || '').trim().toLowerCase() === 'cash';
+}
+
+function isDigitalDownpayment(item: DownpaymentTrackerItem): boolean {
+  const method = (item.downpaymentMethod || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '');
+  return ['gcash', 'directgcash', 'maya', 'banktransfer'].includes(method);
+}
+
+function formatTrackerDate(value?: string | null): string {
+  if (!value) return 'Date TBD';
+  const localMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const parsed = localMatch
+    ? new Date(Number(localMatch[1]), Number(localMatch[2]) - 1, Number(localMatch[3]))
+    : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Date TBD';
+  return parsed.toLocaleDateString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatTrackerDateTime(value?: string | null): string {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
 
 interface ManifestListItem {
   orderId?: number | null;
@@ -195,7 +275,10 @@ export default function DrawerScreen() {
   const [activeTab, setActiveTab] = useState<DrawerTabKey>(
     isOwner ? 'hop2' : 'riders'
   );
+  const [hop2SubFilter, setHop2SubFilter] = useState<'all' | 'digital' | 'cash'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dpFilter, setDpFilter] = useState<DpFilterKey>('unremitted');
+  const [digitalVerifyModalItem, setDigitalVerifyModalItem] = useState<DigitalVerifyTarget | null>(null);
 
   const {
     data: riderDrops = [],
@@ -218,6 +301,13 @@ export default function DrawerScreen() {
     refetch: refetchLalamove,
   } = usePendingLalamoveSettlements();
 
+  const {
+    data: downpaymentItems = [],
+    isLoading: isLoadingDownpayments,
+    isRefetching: isRefetchingDownpayments,
+    refetch: refetchDownpayments,
+  } = useDownpaymentTracker();
+
   const sortedRiderDrops = useMemo(
     () => sortManifestItemsByDateAscending(riderDrops),
     [riderDrops]
@@ -239,6 +329,8 @@ export default function DrawerScreen() {
   const counterCollectMutation = useCounterCollectPickupMutation();
   const releaseLalamoveMutation = useReleaseLalamoveMutation();
   const manualPaymentMutation = useSettleManualPaymentMutation();
+  const toggleDpRemittanceMutation = useToggleDownpaymentRemittanceMutation();
+  const verifyDigitalMutation = useVerifyDigitalSettlementMutation();
 
   // Modal State
   const defaultStaffLabel = user?.fullName
@@ -345,10 +437,10 @@ export default function DrawerScreen() {
 
     for (const r of sortedRiderDrops) {
       const physicalAmount = Number(r.heldByStaffAmount ?? 0);
-      const digitalAmount = Number(r.digitalTransferAmount ?? 0);
+      const digitalAmount = getPendingDigitalAmount(r);
+      const digitalMethod = getPendingDigitalMethod(r);
       const isAwaitingOwner =
-        r.custodyStatus === 'InStaffDrawer' ||
-        r.custodyStatus === 'AwaitingOwnerDigitalVerification';
+        isAwaitingOwnerStatus(r.custodyStatus) || digitalAmount > 0;
       if (r.custodyStatus === 'InStaffDrawer' && physicalAmount > 0) {
         drawerSum += physicalAmount;
         drawerCnt += 1;
@@ -373,12 +465,15 @@ export default function DrawerScreen() {
           heldByStaffName: r.heldByStaffName || 'Cashier',
           heldPaymentMethod: r.heldPaymentMethod,
           heldByStaffAmount: r.heldByStaffAmount,
-          digitalTransferMethod: r.digitalTransferMethod,
-          digitalTransferAmount: r.digitalTransferAmount,
+          digitalTransferMethod: digitalMethod,
+          digitalTransferAmount: digitalAmount,
           digitalReferenceNote: r.digitalReferenceNote,
           totalCollected: r.totalCollected,
           deliveryFee: r.riderDeliveryFee,
-          custodyStatus: r.custodyStatus || 'Uncollected',
+          custodyStatus:
+            digitalAmount > 0 && !isAwaitingOwnerStatus(r.custodyStatus)
+              ? 'PendingDigitalCheck'
+              : r.custodyStatus || 'Uncollected',
           targetDeliveryTime: r.targetDeliveryTime,
           deliveryAddress: r.deliveryAddress,
         });
@@ -390,10 +485,10 @@ export default function DrawerScreen() {
 
     for (const p of sortedPickupDrops) {
       const physicalAmount = Number(p.heldByStaffAmount ?? 0);
-      const digitalAmount = Number(p.digitalTransferAmount ?? 0);
+      const digitalAmount = getPendingDigitalAmount(p);
+      const digitalMethod = getPendingDigitalMethod(p);
       const isAwaitingOwner =
-        p.custodyStatus === 'InStaffDrawer' ||
-        p.custodyStatus === 'AwaitingOwnerDigitalVerification';
+        isAwaitingOwnerStatus(p.custodyStatus) || digitalAmount > 0;
       if (p.custodyStatus === 'InStaffDrawer' && physicalAmount > 0) {
         drawerSum += physicalAmount;
         drawerCnt += 1;
@@ -418,12 +513,15 @@ export default function DrawerScreen() {
           heldByStaffName: p.heldByStaffName || 'Cashier',
           heldPaymentMethod: p.heldPaymentMethod,
           heldByStaffAmount: p.heldByStaffAmount,
-          digitalTransferMethod: p.digitalTransferMethod,
-          digitalTransferAmount: p.digitalTransferAmount,
+          digitalTransferMethod: digitalMethod,
+          digitalTransferAmount: digitalAmount,
           digitalReferenceNote: p.digitalReferenceNote,
           totalCollected: p.balanceDue,
           deliveryFee: 0,
-          custodyStatus: p.custodyStatus || 'Uncollected',
+          custodyStatus:
+            digitalAmount > 0 && !isAwaitingOwnerStatus(p.custodyStatus)
+              ? 'PendingDigitalCheck'
+              : p.custodyStatus || 'Uncollected',
           targetDeliveryTime: p.targetDeliveryTime,
           deliveryAddress: p.address,
         });
@@ -459,11 +557,17 @@ export default function DrawerScreen() {
   }, [hop2CombinedItems]);
 
   const custodianHop2Items = useMemo(() => {
-    if (!selectedCustodian) return hop2CombinedItems;
-    return hop2CombinedItems.filter(
+    let items = hop2CombinedItems;
+    if (hop2SubFilter === 'digital') {
+      items = items.filter((item) => Number(item.digitalTransferAmount ?? 0) > 0);
+    } else if (hop2SubFilter === 'cash') {
+      items = items.filter((item) => Number(item.heldByStaffAmount ?? 0) > 0);
+    }
+    if (!selectedCustodian) return items;
+    return items.filter(
       (item) => (item.heldByStaffName || 'Cashier') === selectedCustodian
     );
-  }, [hop2CombinedItems, selectedCustodian]);
+  }, [hop2CombinedItems, hop2SubFilter, selectedCustodian]);
 
   const visibleHop2Items = useMemo(
     () =>
@@ -517,6 +621,64 @@ export default function DrawerScreen() {
     [sortedLalamoveDrops, searchQuery]
   );
 
+  const dpSummary = useMemo(() => {
+    let unremittedCashTotal = 0;
+    let unverifiedDigitalTotal = 0;
+    let verifiedTotal = 0;
+    let unremittedCashCount = 0;
+    let unremittedCount = 0;
+
+    for (const item of downpaymentItems) {
+      const amount = Number(item.downpaymentAmount || 0);
+      if (item.isDpRemittedToOwner) {
+        verifiedTotal += amount;
+        continue;
+      }
+
+      unremittedCount += 1;
+      if (isCashDownpayment(item)) {
+        unremittedCashTotal += amount;
+        unremittedCashCount += 1;
+      } else if (isDigitalDownpayment(item)) {
+        unverifiedDigitalTotal += amount;
+      }
+    }
+
+    return {
+      unremittedCashTotal,
+      unverifiedDigitalTotal,
+      verifiedTotal,
+      unremittedCashCount,
+      unremittedCount,
+    };
+  }, [downpaymentItems]);
+
+  const filteredDownpaymentItems = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    return downpaymentItems.filter((item) => {
+      const matchesFilter =
+        dpFilter === 'all' ||
+        (dpFilter === 'cash' && isCashDownpayment(item)) ||
+        (dpFilter === 'digital' && isDigitalDownpayment(item)) ||
+        (dpFilter === 'walkin' &&
+          isWalkInOrder({ source: item.bookingSource, customerName: item.customerName })) ||
+        (dpFilter === 'unremitted' && !item.isDpRemittedToOwner) ||
+        (dpFilter === 'remitted' && item.isDpRemittedToOwner);
+
+      if (!matchesFilter) return false;
+      if (!normalizedSearch) return true;
+      return [
+        item.orderId,
+        item.orderReference,
+        item.customerName,
+        item.phoneNumber,
+        item.bookingSource,
+        item.downpaymentMethod,
+        item.encodedBy,
+      ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch));
+    });
+  }, [downpaymentItems, dpFilter, searchQuery]);
+
   const activeListCount =
     activeTab === 'hop2'
       ? visibleHop2Items.length
@@ -524,7 +686,9 @@ export default function DrawerScreen() {
         ? visibleRiderDrops.length
         : activeTab === 'pickups'
           ? visiblePickupDrops.length
-          : visibleLalamoveDrops.length;
+          : activeTab === 'downpayments'
+            ? filteredDownpaymentItems.length
+            : visibleLalamoveDrops.length;
   const activeListTotal =
     activeTab === 'hop2'
       ? custodianHop2Items.length
@@ -532,7 +696,9 @@ export default function DrawerScreen() {
         ? custodianRiderDrops.length
         : activeTab === 'pickups'
           ? custodianPickupDrops.length
-          : sortedLalamoveDrops.length;
+          : activeTab === 'downpayments'
+            ? downpaymentItems.length
+            : sortedLalamoveDrops.length;
   const isSearching = searchQuery.trim().length > 0;
 
   // Mint or Resume QR Session when Hop 1 or Hop 2 modal opens
@@ -657,6 +823,36 @@ export default function DrawerScreen() {
         },
       ]
     );
+  };
+
+  const handleOpenVerifyDigitalModal = (target: DigitalVerifyTarget) => {
+    if (!isOwner) {
+      Alert.alert(
+        'Owner Verification Required',
+        'Only the Owner can verify and close digital deposits.'
+      );
+      return;
+    }
+    setDigitalVerifyModalItem(target);
+  };
+
+  const handleConfirmDigitalVerifyModal = async () => {
+    if (!digitalVerifyModalItem) return;
+    const { orderId, amount } = digitalVerifyModalItem;
+    try {
+      await verifyDigitalMutation.mutateAsync(orderId);
+      setDigitalVerifyModalItem(null);
+      showSuccessFeedback(
+        `👑 Order #${orderId} digital deposit (₱${amount.toLocaleString()}) was successfully verified and settled.`
+      );
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      Alert.alert(
+        'Verification Error',
+        axiosErr.response?.data?.message ||
+          'Failed to verify digital deposit. Please try again.'
+      );
+    }
   };
 
   // Workflow A: Hop 2 Owner Envelope Verification ("The Speed Bump")
@@ -874,13 +1070,39 @@ export default function DrawerScreen() {
     );
   };
 
+  const handleToggleDpRemittance = async (item: DownpaymentTrackerItem) => {
+    if (!isOwner) {
+      Alert.alert('Owner Only', 'Only the Owner can verify downpayment remittances.');
+      return;
+    }
+
+    try {
+      await toggleDpRemittanceMutation.mutateAsync(item.orderId);
+      showSuccessFeedback(
+        item.isDpRemittedToOwner
+          ? `↩️ Order #${String(item.orderReference).replace(/^#/, '')} downpayment marked unverified.`
+          : `✅ Order #${String(item.orderReference).replace(/^#/, '')} downpayment verified as remitted.`,
+      );
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      Alert.alert(
+        'DP Verification Failed',
+        axiosErr.response?.data?.message || 'Could not update downpayment remittance.',
+      );
+    }
+  };
+
   const isRefreshingAny =
-    isRefetchingRiders || isRefetchingPickups || isRefetchingLalamove;
+    isRefetchingRiders ||
+    isRefetchingPickups ||
+    isRefetchingLalamove ||
+    isRefetchingDownpayments;
 
   const handleRefreshAll = () => {
     void refetchRiders();
     void refetchPickups();
     void refetchLalamove();
+    void refetchDownpayments();
   };
 
   // Hop 2 Speed Bump Validation Math
@@ -914,6 +1136,9 @@ export default function DrawerScreen() {
   const isRiderExact = riderDeclaredAmount === expectedHop1Amount;
   const isRiderShort = riderDeclaredAmount < expectedHop1Amount;
 
+  const isDrawerHandoverVisible =
+    isOwner || inStaffDrawerCount + pendingDigitalCount > 0 || activeTab === 'hop2';
+
   return (
     <View style={styles.container}>
       {/* 1. Top Custody Summary Banner */}
@@ -924,9 +1149,12 @@ export default function DrawerScreen() {
             style={[
               styles.summaryCard,
               styles.summaryCardDrawer,
-              activeTab === 'hop2' && styles.summaryCardActiveBorder,
+              activeTab === 'hop2' && hop2SubFilter === 'cash' && styles.summaryCardActiveBorder,
             ]}
-            onPress={() => setActiveTab('hop2')}
+            onPress={() => {
+              setActiveTab('hop2');
+              setHop2SubFilter((prev) => (prev === 'cash' ? 'all' : 'cash'));
+            }}
           >
             <View style={styles.summaryTopRow}>
               <Text style={styles.summaryBadgeDrawer} numberOfLines={2}>
@@ -947,9 +1175,13 @@ export default function DrawerScreen() {
             style={[
               styles.summaryCard,
               styles.summaryCardDigital,
-              activeTab === 'hop2' && styles.summaryCardActiveBorder,
+              activeTab === 'hop2' && hop2SubFilter === 'digital' && styles.summaryCardActiveBorder,
             ]}
-            onPress={() => setActiveTab('hop2')}
+            onPress={() => {
+              setActiveTab('hop2');
+              setHop2SubFilter((prev) => (prev === 'digital' ? 'all' : 'digital'));
+              setSelectedCustodian(null);
+            }}
           >
             <View style={styles.summaryTopRow}>
               <Text style={styles.summaryBadgeDigital} numberOfLines={2}>
@@ -1022,19 +1254,24 @@ export default function DrawerScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsScrollContent}
         >
-          <Pressable
-            style={[styles.tabPill, activeTab === 'hop2' && styles.tabPillActive]}
-            onPress={() => setActiveTab('hop2')}
-          >
-            <Text
-              style={[
-                styles.tabPillText,
-                activeTab === 'hop2' && styles.tabPillTextActive,
-              ]}
+          {isDrawerHandoverVisible && (
+            <Pressable
+              style={[styles.tabPill, activeTab === 'hop2' && styles.tabPillActive]}
+              onPress={() => {
+                setActiveTab('hop2');
+                setHop2SubFilter('all');
+              }}
             >
-              👑 Drawer Handover ({hop2CombinedItems.length})
-            </Text>
-          </Pressable>
+              <Text
+                style={[
+                  styles.tabPillText,
+                  activeTab === 'hop2' && styles.tabPillTextActive,
+                ]}
+              >
+                👑 Drawer Handover ({hop2CombinedItems.length})
+              </Text>
+            </Pressable>
+          )}
 
           <Pressable
             style={[styles.tabPill, activeTab === 'riders' && styles.tabPillActive]}
@@ -1065,6 +1302,23 @@ export default function DrawerScreen() {
           </Pressable>
 
           <Pressable
+            style={[
+              styles.tabPill,
+              activeTab === 'downpayments' && styles.tabPillActive,
+            ]}
+            onPress={() => setActiveTab('downpayments')}
+          >
+            <Text
+              style={[
+                styles.tabPillText,
+                activeTab === 'downpayments' && styles.tabPillTextActive,
+              ]}
+            >
+              💵 DP & Walk-In Tracker ({dpSummary.unremittedCount})
+            </Text>
+          </Pressable>
+
+          <Pressable
             style={[styles.tabPill, activeTab === 'lalamove' && styles.tabPillActive]}
             onPress={() => setActiveTab('lalamove')}
           >
@@ -1086,7 +1340,11 @@ export default function DrawerScreen() {
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search customer, #order, rider, address..."
+            placeholder={
+              activeTab === 'downpayments'
+                ? 'Search customer, #order, phone, payment mode, encoder...'
+                : 'Search customer, #order, rider, address...'
+            }
             placeholderTextColor="#A8A29E"
             autoCapitalize="none"
             autoCorrect={false}
@@ -1148,6 +1406,34 @@ export default function DrawerScreen() {
               </Text>
             </View>
 
+            {hop2SubFilter === 'digital' && (
+              <View style={styles.digitalFilterBanner}>
+                <Text style={styles.digitalFilterBannerText}>
+                  🏦 Showing Pending Digital Checks only ({visibleHop2Items.length})
+                </Text>
+                <Pressable
+                  onPress={() => setHop2SubFilter('all')}
+                  style={styles.digitalFilterClearBtn}
+                >
+                  <Text style={styles.digitalFilterClearText}>✕ Show All</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {hop2SubFilter === 'cash' && (
+              <View style={styles.digitalFilterBanner}>
+                <Text style={styles.digitalFilterBannerText}>
+                  💵 Showing Physical Cash Envelopes only ({visibleHop2Items.length})
+                </Text>
+                <Pressable
+                  onPress={() => setHop2SubFilter('all')}
+                  style={styles.digitalFilterClearBtn}
+                >
+                  <Text style={styles.digitalFilterClearText}>✕ Show All</Text>
+                </Pressable>
+              </View>
+            )}
+
             {isLoadingRiders || isLoadingPickups ? (
               <View style={styles.centerBox}>
                 <ActivityIndicator size="large" color="#C81E1E" />
@@ -1161,13 +1447,21 @@ export default function DrawerScreen() {
                     ? 'No Matching Drawer Handovers'
                     : selectedCustodian
                       ? 'No Matches for Custodian'
-                      : 'Owner Verification Queue is Clear!'}
+                      : hop2SubFilter === 'digital'
+                        ? 'No Pending Digital Checks'
+                        : hop2SubFilter === 'cash'
+                          ? 'No Physical Cash Envelopes'
+                          : 'Owner Verification Queue is Clear!'}
                 </Text>
                 <Text style={styles.emptySub}>
                   {isSearching
                     ? `No drawer handovers match “${searchQuery.trim()}”.`
                     : selectedCustodian
                     ? `No cash or digital handovers are logged by ${selectedCustodian}.`
+                    : hop2SubFilter === 'digital'
+                    ? 'No direct digital transfers are awaiting Owner verification.'
+                    : hop2SubFilter === 'cash'
+                    ? 'No physical cash envelopes are waiting for Owner verification.'
                     : 'No cash envelopes or digital deposits are waiting for Owner verification.'}
                 </Text>
               </View>
@@ -1201,7 +1495,7 @@ export default function DrawerScreen() {
 
                   <View style={styles.custodyMetaBox}>
                     <Text style={styles.custodyMetaLine}>
-                      {item.custodyStatus === 'AwaitingOwnerDigitalVerification'
+                      {Number(item.digitalTransferAmount ?? 0) > 0
                         ? '🏦 Awaiting Bank Check • Logged by: '
                         : '🟡 Held in Drawer by: '}
                       <Text style={styles.custodyMetaStrong}>
@@ -1222,37 +1516,76 @@ export default function DrawerScreen() {
                   </View>
 
                   <View style={styles.cardActionRow}>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.remitOwnerBtn,
-                        pressed && styles.btnPressed,
-                      ]}
-                      onPress={() => {
-                        setCountedAmount('');
-                        setOwnerPinOrPassword('');
-                        setModalError(null);
-                        setModalState({
-                          workflow: 'hop2_owner',
-                          orderId: item.orderId,
-                          customerName: item.customerName,
-                          expectedAmount: item.amount,
-                          riderName: item.riderName,
-                          riderSignedBy: item.riderSignedBy,
-                          heldByStaffName: item.heldByStaffName,
-                          heldPaymentMethod: item.heldPaymentMethod,
-                          heldByStaffAmount: item.heldByStaffAmount,
-                          digitalTransferMethod: item.digitalTransferMethod,
-                          digitalTransferAmount: item.digitalTransferAmount,
-                          digitalReferenceNote: item.digitalReferenceNote,
-                          totalCollected: item.totalCollected,
-                          deliveryFee: item.deliveryFee,
-                        });
-                      }}
-                    >
-                      <Text style={styles.remitOwnerBtnText}>
-                        👑 Remit / Approve to Owner
-                      </Text>
-                    </Pressable>
+                    {Number(item.digitalTransferAmount ?? 0) > 0 ? (
+                      isOwner ? (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.verifyDigitalBtn,
+                            pressed && styles.btnPressed,
+                            verifyDigitalMutation.isPending && styles.disabledBtn,
+                          ]}
+                          disabled={verifyDigitalMutation.isPending}
+                          onPress={() =>
+                            handleOpenVerifyDigitalModal({
+                              orderId: item.orderId,
+                              orderReference: item.orderReference,
+                              customerName: item.customerName,
+                              amount: Number(item.digitalTransferAmount ?? item.amount),
+                              method: item.digitalTransferMethod,
+                              referenceNote: item.digitalReferenceNote,
+                              fulfillmentType: item.sourceType === 'Rider Delivery' ? 'Delivery' : 'Pickup',
+                              riderName: item.riderName,
+                            })
+                          }
+                        >
+                          {verifyDigitalMutation.isPending ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.verifyDigitalBtnText}>
+                              👑 Verify Digital Deposit
+                            </Text>
+                          )}
+                        </Pressable>
+                      ) : (
+                        <View style={styles.awaitingOwnerBadge}>
+                          <Text style={styles.awaitingOwnerBadgeText}>
+                            🏦 Awaiting Owner Verification
+                          </Text>
+                        </View>
+                      )
+                    ) : (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.remitOwnerBtn,
+                          pressed && styles.btnPressed,
+                        ]}
+                        onPress={() => {
+                          setCountedAmount('');
+                          setOwnerPinOrPassword('');
+                          setModalError(null);
+                          setModalState({
+                            workflow: 'hop2_owner',
+                            orderId: item.orderId,
+                            customerName: item.customerName,
+                            expectedAmount: item.amount,
+                            riderName: item.riderName,
+                            riderSignedBy: item.riderSignedBy,
+                            heldByStaffName: item.heldByStaffName,
+                            heldPaymentMethod: item.heldPaymentMethod,
+                            heldByStaffAmount: item.heldByStaffAmount,
+                            digitalTransferMethod: item.digitalTransferMethod,
+                            digitalTransferAmount: item.digitalTransferAmount,
+                            digitalReferenceNote: item.digitalReferenceNote,
+                            totalCollected: item.totalCollected,
+                            deliveryFee: item.deliveryFee,
+                          });
+                        }}
+                      >
+                        <Text style={styles.remitOwnerBtnText}>
+                          👑 Remit / Approve to Owner
+                        </Text>
+                      </Pressable>
+                    )}
 
                     {canUserRevertCustody(item.heldByStaffName) && (
                       <Pressable
@@ -1544,13 +1877,22 @@ export default function DrawerScreen() {
             ) : (
               visiblePickupDrops.map((pickup) => {
                 const isInDrawer = pickup.custodyStatus === 'InStaffDrawer';
+                const pendingDigitalAmount = getPendingDigitalAmount(pickup);
+                const pendingDigitalMethod =
+                  getPendingDigitalMethod(pickup) || 'Digital Transfer';
+                const isAwaitingDigital = pendingDigitalAmount > 0;
+                const isAwaitingOwner =
+                  isAwaitingDigital || isAwaitingOwnerStatus(pickup.custodyStatus);
+                const ownerVerificationAmount = isAwaitingDigital
+                  ? pendingDigitalAmount
+                  : Number(pickup.heldByStaffAmount ?? pickup.balanceDue ?? 0);
 
                 return (
                   <View
                     key={pickup.orderId}
                     style={[
                       styles.itemCard,
-                      isInDrawer && styles.itemCardDrawerHighlight,
+                      isAwaitingOwner && styles.itemCardDrawerHighlight,
                     ]}
                   >
                     <View style={styles.cardHeaderRow}>
@@ -1563,7 +1905,19 @@ export default function DrawerScreen() {
                         )}
                       </View>
 
-                      {isInDrawer ? (
+                      {isAwaitingDigital ? (
+                        <View style={styles.custodyPillDigital}>
+                          <Text style={styles.custodyPillDigitalText}>
+                            🏦 Awaiting Digital Check (₱
+                            {pendingDigitalAmount.toLocaleString()} • {pendingDigitalMethod})
+                          </Text>
+                          {pickup.digitalReferenceNote ? (
+                            <Text style={styles.custodyReferenceText}>
+                              Ref: {pickup.digitalReferenceNote}
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : isInDrawer ? (
                         <View style={styles.custodyPillDrawer}>
                           <Text style={styles.custodyPillDrawerText}>
                             🟡 In Drawer • Held by {pickup.heldByStaffName || 'Cashier'}
@@ -1606,41 +1960,91 @@ export default function DrawerScreen() {
                         </Text>
                       </View>
                       <View style={[styles.splitCell, styles.splitCellNet]}>
-                        <Text style={styles.splitCellNetLabel}>Balance Due</Text>
+                        <Text style={styles.splitCellNetLabel}>
+                          {isAwaitingDigital ? 'Digital Deposit' : 'Balance Due'}
+                        </Text>
                         <Text style={styles.splitCellNetVal}>
-                          ₱{pickup.balanceDue.toLocaleString()}
+                          ₱{(isAwaitingDigital
+                            ? pendingDigitalAmount
+                            : pickup.balanceDue
+                          ).toLocaleString()}
                         </Text>
                       </View>
                     </View>
 
                     <View style={styles.cardActionRow}>
-                      {isInDrawer ? (
+                      {isAwaitingOwner ? (
                         <>
-                          <Pressable
-                            style={({ pressed }) => [
-                              styles.remitOwnerBtn,
-                              pressed && styles.btnPressed,
-                            ]}
-                            onPress={() => {
-                              setCountedAmount('');
-                              setOwnerPinOrPassword('');
-                              setModalError(null);
-                              setModalState({
-                                workflow: 'hop2_owner',
-                                orderId: pickup.orderId,
-                                customerName: pickup.customerName,
-                                expectedAmount: pickup.balanceDue,
-                                riderName: 'Walk-in Store Pickup',
-                                riderSignedBy: 'Walk-in Customer',
-                                heldByStaffName: pickup.heldByStaffName,
-                                heldPaymentMethod: pickup.heldPaymentMethod,
-                              });
-                            }}
-                          >
-                            <Text style={styles.remitOwnerBtnText}>
-                              👑 Remit to Owner
-                            </Text>
-                          </Pressable>
+                          {isAwaitingDigital ? (
+                            isOwner ? (
+                              <Pressable
+                                style={({ pressed }) => [
+                                  styles.verifyDigitalBtn,
+                                  pressed && styles.btnPressed,
+                                  verifyDigitalMutation.isPending && styles.disabledBtn,
+                                ]}
+                                disabled={verifyDigitalMutation.isPending}
+                                onPress={() =>
+                                  handleOpenVerifyDigitalModal({
+                                    orderId: pickup.orderId,
+                                    orderReference: pickup.orderReference,
+                                    customerName: pickup.customerName,
+                                    amount: pendingDigitalAmount,
+                                    method: pendingDigitalMethod,
+                                    referenceNote: pickup.digitalReferenceNote,
+                                    fulfillmentType: 'Pickup',
+                                  })
+                                }
+                              >
+                                {verifyDigitalMutation.isPending ? (
+                                  <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                  <Text style={styles.verifyDigitalBtnText}>
+                                    👑 Verify Digital Deposit
+                                  </Text>
+                                )}
+                              </Pressable>
+                            ) : (
+                              <View style={styles.awaitingOwnerBadge}>
+                                <Text style={styles.awaitingOwnerBadgeText}>
+                                  🏦 Awaiting Owner Verification
+                                </Text>
+                              </View>
+                            )
+                          ) : (
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.remitOwnerBtn,
+                                pressed && styles.btnPressed,
+                              ]}
+                              onPress={() => {
+                                setCountedAmount('');
+                                setOwnerPinOrPassword('');
+                                setModalError(null);
+                                setModalState({
+                                  workflow: 'hop2_owner',
+                                  orderId: pickup.orderId,
+                                  customerName: pickup.customerName,
+                                  expectedAmount: ownerVerificationAmount,
+                                  riderName: 'Walk-in Store Pickup',
+                                  riderSignedBy: 'Walk-in Customer',
+                                  heldByStaffName: pickup.heldByStaffName,
+                                  heldPaymentMethod:
+                                    pickup.heldPaymentMethod || pendingDigitalMethod,
+                                  heldByStaffAmount: pickup.heldByStaffAmount,
+                                  digitalTransferMethod: pendingDigitalMethod,
+                                  digitalTransferAmount: pendingDigitalAmount,
+                                  digitalReferenceNote: pickup.digitalReferenceNote,
+                                  totalCollected: ownerVerificationAmount,
+                                  deliveryFee: 0,
+                                });
+                              }}
+                            >
+                              <Text style={styles.remitOwnerBtnText}>
+                                👑 Remit to Owner
+                              </Text>
+                            </Pressable>
+                          )}
 
                           {canUserRevertCustody(pickup.heldByStaffName) && (
                             <Pressable
@@ -1692,7 +2096,197 @@ export default function DrawerScreen() {
         )}
 
         {/* ============================================================ */}
-        {/* TAB 4: 📦 LALAMOVE GATE                                      */}
+        {/* TAB 4: 💵 DOWNPAYMENT & WALK-IN TRACKER                      */}
+        {/* ============================================================ */}
+        {activeTab === 'downpayments' && (
+          <>
+            <View style={styles.sectionBannerBox}>
+              <Text style={styles.sectionBannerTitle}>
+                💵 Downpayment & Walk-In DP Remittance Tracker
+              </Text>
+              <Text style={styles.sectionBannerSub}>
+                Verify that cash downpayments held by counter staff and digital deposits
+                reached the Owner.
+              </Text>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dpFilterRow}
+            >
+              {([
+                {
+                  key: 'unremitted',
+                  label: `⏳ Unremitted (${dpSummary.unremittedCount})`,
+                },
+                { key: 'all', label: 'All DPs' },
+                { key: 'cash', label: '💵 Cash DP Only' },
+                { key: 'digital', label: '📱 Digital DP' },
+                { key: 'walkin', label: '🚶 Walk-In Only' },
+                { key: 'remitted', label: '✅ Remitted to Owner' },
+              ] as { key: DpFilterKey; label: string }[]).map((filter) => (
+                <Pressable
+                  key={filter.key}
+                  style={[
+                    styles.dpFilterPill,
+                    dpFilter === filter.key && styles.dpFilterPillActive,
+                  ]}
+                  onPress={() => setDpFilter(filter.key)}
+                >
+                  <Text
+                    style={[
+                      styles.dpFilterPillText,
+                      dpFilter === filter.key && styles.dpFilterPillTextActive,
+                    ]}
+                  >
+                    {filter.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={styles.dpSummaryBar}>
+              <View style={styles.dpSummaryCellCash}>
+                <Text style={styles.dpSummaryLabel}>⏳ Unremitted Cash DP</Text>
+                <Text style={styles.dpSummaryCashAmount}>
+                  ₱{dpSummary.unremittedCashTotal.toLocaleString()}
+                </Text>
+                <Text style={styles.dpSummaryHint}>Held by Staff</Text>
+              </View>
+              <View style={styles.dpSummaryCellDigital}>
+                <Text style={styles.dpSummaryLabel}>⏳ Unverified Digital DP</Text>
+                <Text style={styles.dpSummaryDigitalAmount}>
+                  ₱{dpSummary.unverifiedDigitalTotal.toLocaleString()}
+                </Text>
+              </View>
+              <View style={styles.dpSummaryCellVerified}>
+                <Text style={styles.dpSummaryLabel}>✅ Verified / Remitted</Text>
+                <Text style={styles.dpSummaryVerifiedAmount}>
+                  ₱{dpSummary.verifiedTotal.toLocaleString()}
+                </Text>
+              </View>
+            </View>
+
+            {isLoadingDownpayments ? (
+              <View style={styles.centerBox}>
+                <ActivityIndicator size="large" color="#C81E1E" />
+                <Text style={styles.loadingText}>Loading downpayment tracker...</Text>
+              </View>
+            ) : filteredDownpaymentItems.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyEmoji}>💵</Text>
+                <Text style={styles.emptyTitle}>No Downpayments in This View</Text>
+                <Text style={styles.emptySub}>
+                  Try another filter or clear the manifest search.
+                </Text>
+              </View>
+            ) : (
+              filteredDownpaymentItems.map((item) => {
+                const isWalkIn = isWalkInOrder({
+                  source: item.bookingSource,
+                  customerName: item.customerName,
+                });
+                const method = item.downpaymentMethod || 'Unspecified';
+                const reference = String(item.orderReference || item.orderId).replace(
+                  /^#/,
+                  '',
+                );
+                const encodedBy = item.encodedBy
+                  ? item.encodedBy.startsWith('@')
+                    ? item.encodedBy
+                    : `@${item.encodedBy}`
+                  : '@unknown';
+
+                return (
+                  <View
+                    key={item.orderId}
+                    style={[
+                      styles.dpTrackerCard,
+                      !item.isDpRemittedToOwner &&
+                        isCashDownpayment(item) &&
+                        styles.dpTrackerCardUrgent,
+                    ]}
+                  >
+                    <View style={styles.cardHeaderRow}>
+                      <View style={styles.rowCenterWrap}>
+                        <Text style={styles.monoOrderId}>#{reference}</Text>
+                        {isWalkIn && (
+                          <View style={styles.dpWalkInBadge}>
+                            <Text style={styles.dpWalkInBadgeText}>🚶 Walk-in</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.dpAmount,
+                          !item.isDpRemittedToOwner &&
+                            isCashDownpayment(item) &&
+                            styles.dpAmountUrgent,
+                        ]}
+                      >
+                        ₱{Number(item.downpaymentAmount || 0).toLocaleString()}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.dpCustomerMode}>
+                      {item.customerName} - {method.toLowerCase()}
+                    </Text>
+                    <Text style={styles.dpMetaText}>
+                      📅 {formatTrackerDate(item.targetDeliveryTime)} • Encoded by {encodedBy}
+                    </Text>
+                    <Text style={styles.dpMetaText}>
+                      📞 {item.phoneNumber || 'No phone'} •{' '}
+                      {item.bookingSource || 'Source not recorded'}
+                    </Text>
+
+                    {item.isDpRemittedToOwner ? (
+                      <View style={styles.dpRemittedPanel}>
+                        <Text style={styles.dpRemittedBadge}>✅ Remitted to Owner</Text>
+                        <Text style={styles.dpRemittedMeta}>
+                          {formatTrackerDateTime(item.dpRemittedAt)}
+                          {item.dpRemittedBy ? ` • ${item.dpRemittedBy}` : ''}
+                        </Text>
+                        {isOwner && (
+                          <Pressable
+                            style={styles.dpUndoButton}
+                            disabled={toggleDpRemittanceMutation.isPending}
+                            onPress={() => void handleToggleDpRemittance(item)}
+                          >
+                            <Text style={styles.dpUndoButtonText}>↩ Mark Unverified</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    ) : (
+                      <View style={styles.dpUnremittedPanel}>
+                        <Text style={styles.dpUnremittedBadge}>⏳ Unremitted</Text>
+                        {isOwner ? (
+                          <Pressable
+                            style={[
+                              styles.dpVerifyButton,
+                              toggleDpRemittanceMutation.isPending && styles.disabledBtn,
+                            ]}
+                            disabled={toggleDpRemittanceMutation.isPending}
+                            onPress={() => void handleToggleDpRemittance(item)}
+                          >
+                            <Text style={styles.dpVerifyButtonText}>✓ Mark Remitted</Text>
+                          </Pressable>
+                        ) : (
+                          <Text style={styles.dpOwnerOnlyHint}>
+                            Owner verification required
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB 5: 📦 LALAMOVE GATE                                      */}
         {/* ============================================================ */}
         {activeTab === 'lalamove' && (
           <>
@@ -2327,7 +2921,7 @@ export default function DrawerScreen() {
                             onPress={() => handleHop1StaffValidate(false)}
                           >
                             <Text style={styles.validateDrawerBtnText}>
-                              ✅ Validate &amp; Receive into Drawer
+                              ✅ Validate & Receive into Drawer
                             </Text>
                           </Pressable>
 
@@ -2405,7 +2999,7 @@ export default function DrawerScreen() {
                               <ActivityIndicator color="#FFFFFF" size="small" />
                             ) : (
                               <Text style={styles.validateDrawerBtnText}>
-                                ✅ Validate &amp; Receive into Drawer
+                                ✅ Validate & Receive into Drawer
                               </Text>
                             )}
                           </Pressable>
@@ -2599,6 +3193,113 @@ export default function DrawerScreen() {
             )}
           </ScrollView>
         </SafeAreaView>
+      </Modal>
+
+      {/* ============================================================== */}
+      {/* STYLED MODAL: VERIFY DIGITAL DEPOSIT (HOP 2)                   */}
+      {/* ============================================================== */}
+      <Modal
+        visible={Boolean(digitalVerifyModalItem)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!verifyDigitalMutation.isPending) {
+            setDigitalVerifyModalItem(null);
+          }
+        }}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.digitalVerifyCard}>
+            {/* Header */}
+            <View style={styles.digitalVerifyHeader}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.digitalVerifyHeaderTitle}>👑 Verify Digital Deposit</Text>
+                <Text style={styles.digitalVerifyHeaderSubtitle}>
+                  🏦 Verify Digital Deposit (Hop 2)
+                </Text>
+              </View>
+              <Pressable
+                style={styles.digitalVerifyCloseBtn}
+                onPress={() => setDigitalVerifyModalItem(null)}
+                disabled={verifyDigitalMutation.isPending}
+              >
+                <Text style={styles.digitalVerifyCloseBtnText}>✕</Text>
+              </Pressable>
+            </View>
+
+            {/* Summary Box */}
+            <View style={styles.digitalVerifySummaryBox}>
+              {/* Customer & Order */}
+              <View style={styles.digitalVerifyRow}>
+                <Text style={styles.digitalVerifyLabel}>CUSTOMER & ORDER</Text>
+                <Text style={styles.digitalVerifyValBold}>
+                  #{digitalVerifyModalItem?.orderReference?.replace(/^#/, '') || digitalVerifyModalItem?.orderId} • {digitalVerifyModalItem?.customerName}
+                </Text>
+              </View>
+
+              {/* Fulfillment Type */}
+              <View style={styles.digitalVerifyRow}>
+                <Text style={styles.digitalVerifyLabel}>FULFILLMENT TYPE</Text>
+                <Text style={styles.digitalVerifyVal}>
+                  {digitalVerifyModalItem?.fulfillmentType === 'Delivery'
+                    ? `🛵 Rider (${digitalVerifyModalItem?.riderName || 'Freelance Rider'})`
+                    : '🏪 Store Pickup'}
+                </Text>
+              </View>
+
+              {/* Payment Channel Badge */}
+              <View style={styles.digitalVerifyRow}>
+                <Text style={styles.digitalVerifyLabel}>PAYMENT CHANNEL</Text>
+                <View style={styles.digitalVerifyChannelBadge}>
+                  <Text style={styles.digitalVerifyChannelText}>
+                    📱 {digitalVerifyModalItem?.method || 'Direct GCash'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Reference / Bank Note */}
+              <View style={styles.digitalVerifyNoteBox}>
+                <Text style={styles.digitalVerifyNoteLabel}>REFERENCE / BANK NOTE</Text>
+                <Text style={styles.digitalVerifyNoteVal}>
+                  {digitalVerifyModalItem?.referenceNote?.trim() || 'No reference note provided'}
+                </Text>
+              </View>
+
+              {/* Amount to Verify & Settle */}
+              <View style={styles.digitalVerifyAmountBox}>
+                <Text style={styles.digitalVerifyAmountLabel}>AMOUNT TO VERIFY & SETTLE</Text>
+                <Text style={styles.digitalVerifyAmountVal}>
+                  ₱{Number(digitalVerifyModalItem?.amount || 0).toLocaleString()}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.digitalVerifyActionsRow}>
+              <Pressable
+                style={[styles.digitalVerifyCancelBtn, verifyDigitalMutation.isPending && styles.disabledBtn]}
+                disabled={verifyDigitalMutation.isPending}
+                onPress={() => setDigitalVerifyModalItem(null)}
+              >
+                <Text style={styles.digitalVerifyCancelText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.digitalVerifyConfirmBtn, verifyDigitalMutation.isPending && styles.disabledBtn]}
+                disabled={verifyDigitalMutation.isPending}
+                onPress={handleConfirmDigitalVerifyModal}
+              >
+                {verifyDigitalMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.digitalVerifyConfirmText}>
+                    👑 Verify & Settle
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -3085,6 +3786,67 @@ const styles = StyleSheet.create({
     color: '#181312',
     fontSize: 13,
     fontWeight: '900',
+  },
+  verifyDigitalBtn: {
+    flex: 1,
+    backgroundColor: '#0284C7',
+    borderRadius: 9,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyDigitalBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  awaitingOwnerBadge: {
+    flex: 1,
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 9,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  awaitingOwnerBadgeText: {
+    color: '#0369A1',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  digitalFilterBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#7DD3FC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  digitalFilterBannerText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0369A1',
+    flex: 1,
+  },
+  digitalFilterClearBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  digitalFilterClearText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0284C7',
   },
   undoIconBtn: {
     backgroundColor: '#FFF1F2',
@@ -3685,10 +4447,362 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
+  dpFilterRow: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  dpFilterPill: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D6D3D1',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  dpFilterPillActive: {
+    backgroundColor: '#78350F',
+    borderColor: '#78350F',
+  },
+  dpFilterPillText: {
+    color: '#57534E',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  dpFilterPillTextActive: {
+    color: '#FEF3C7',
+  },
+  dpSummaryBar: {
+    gap: 8,
+  },
+  dpSummaryCellCash: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    padding: 12,
+  },
+  dpSummaryCellDigital: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#38BDF8',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    padding: 12,
+  },
+  dpSummaryCellVerified: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#34D399',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    padding: 12,
+  },
+  dpSummaryLabel: {
+    color: '#44403C',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  dpSummaryCashAmount: {
+    color: '#B45309',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  dpSummaryDigitalAmount: {
+    color: '#0369A1',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  dpSummaryVerifiedAmount: {
+    color: '#047857',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  dpSummaryHint: {
+    color: '#92400E',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  dpTrackerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    gap: 8,
+  },
+  dpTrackerCardUrgent: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+  },
+  dpWalkInBadge: {
+    backgroundColor: '#EDE9FE',
+    borderColor: '#A78BFA',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  dpWalkInBadgeText: {
+    color: '#5B21B6',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  dpAmount: {
+    color: '#047857',
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  dpAmountUrgent: {
+    color: '#B45309',
+  },
+  dpCustomerMode: {
+    color: '#1C1917',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  dpMetaText: {
+    color: '#57534E',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  dpUnremittedPanel: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FCD34D',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+  },
+  dpUnremittedBadge: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  dpVerifyButton: {
+    backgroundColor: '#059669',
+    borderRadius: 9,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  dpVerifyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  dpOwnerOnlyHint: {
+    color: '#78716C',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  dpRemittedPanel: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#6EE7B7',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+  },
+  dpRemittedBadge: {
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  dpRemittedMeta: {
+    color: '#065F46',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  dpUndoButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#6EE7B7',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    marginTop: 4,
+  },
+  dpUndoButtonText: {
+    color: '#047857',
+    fontSize: 10,
+    fontWeight: '900',
+  },
   disabledBtn: {
     opacity: 0.5,
   },
   btnPressed: {
     opacity: 0.75,
+  },
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  digitalVerifyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 400,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  digitalVerifyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  digitalVerifyHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#1C1917',
+  },
+  digitalVerifyHeaderSubtitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+    marginTop: 2,
+  },
+  digitalVerifyCloseBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F5F5F4',
+    borderRadius: 8,
+  },
+  digitalVerifyCloseBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#78716C',
+  },
+  digitalVerifySummaryBox: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+    marginBottom: 16,
+  },
+  digitalVerifyRow: {
+    flexDirection: 'column',
+    gap: 2,
+  },
+  digitalVerifyLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#0369A1',
+    letterSpacing: 0.5,
+  },
+  digitalVerifyValBold: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  digitalVerifyVal: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  digitalVerifyChannelBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E0F2FE',
+    borderColor: '#7DD3FC',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 2,
+  },
+  digitalVerifyChannelText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  digitalVerifyNoteBox: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 2,
+  },
+  digitalVerifyNoteLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  digitalVerifyNoteVal: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  digitalVerifyAmountBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#BAE6FD',
+  },
+  digitalVerifyAmountLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  digitalVerifyAmountVal: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#0C4A6E',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  digitalVerifyActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
+  digitalVerifyCancelBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  digitalVerifyCancelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#57534E',
+  },
+  digitalVerifyConfirmBtn: {
+    flex: 1.5,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#0369A1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  digitalVerifyConfirmText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

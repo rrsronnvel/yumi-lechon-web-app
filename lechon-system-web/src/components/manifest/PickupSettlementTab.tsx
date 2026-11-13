@@ -1,7 +1,10 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
+  getPendingDigitalAmount,
+  getPendingDigitalMethod,
   usePendingPickupsQuery,
   useRevertCustodyMutation,
+  useVerifyDigitalSettlementMutation,
   PendingPickupSettlement,
 } from "@/hooks/useManifest";
 import { useAuth } from "@/context/AuthContext";
@@ -10,10 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SettlePickupModal } from "./SettlePickupModal";
 import { QrSettlementModal } from "./QrSettlementModal";
+import { VerifyDigitalDepositModal } from "./VerifyDigitalDepositModal";
 import { toast } from "sonner";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
-import { Store, RotateCcw, HandCoins, Search } from "lucide-react";
+import { Store, RotateCcw, HandCoins, Search, Loader2 } from "lucide-react";
 
 export interface PickupSettlementTabProps {
   pickups?: PendingPickupSettlement[];
@@ -21,6 +25,10 @@ export interface PickupSettlementTabProps {
   searchQuery?: string;
   onClearSearch?: () => void;
   onSelectOrder?: (orderId: number) => void;
+  ownerVerifyOrderId?: number | null;
+  onOwnerVerifyOpened?: () => void;
+  filterPendingDigital?: boolean;
+  onClearFilterPendingDigital?: () => void;
 }
 
 export function PickupSettlementTab({
@@ -29,18 +37,65 @@ export function PickupSettlementTab({
   searchQuery = "",
   onClearSearch,
   onSelectOrder,
+  ownerVerifyOrderId,
+  onOwnerVerifyOpened,
+  filterPendingDigital = false,
+  onClearFilterPendingDigital,
 }: PickupSettlementTabProps = {}) {
   const { user, isOwner } = useAuth();
   const { data: queriedPickups = [], isLoading } = usePendingPickupsQuery();
   const pickups = providedPickups ?? queriedPickups;
+
+  const verifyDigitalMutation = useVerifyDigitalSettlementMutation();
+  const [verifyingOrderId, setVerifyingOrderId] = useState<number | null>(null);
+  const [digitalVerifyPickup, setDigitalVerifyPickup] = useState<PendingPickupSettlement | null>(null);
+
+  const handleVerifyDigital = (pickup: PendingPickupSettlement) => {
+    setDigitalVerifyPickup(pickup);
+  };
+
+  const handleConfirmDigitalVerify = () => {
+    if (!digitalVerifyPickup) return;
+    const orderId = digitalVerifyPickup.orderId;
+    const pendingAmount = getPendingDigitalAmount(digitalVerifyPickup);
+
+    setVerifyingOrderId(orderId);
+    verifyDigitalMutation.mutate(orderId, {
+      onSuccess: (data) => {
+        toast.success(
+          data?.message ||
+            `Order #${orderId} digital deposit (₱${pendingAmount.toLocaleString()}) verified and settled!`
+        );
+        setVerifyingOrderId(null);
+        setDigitalVerifyPickup(null);
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err: any) => {
+        toast.error(
+          err?.response?.data?.message ||
+            "Failed to verify digital deposit. Please try again."
+        );
+        setVerifyingOrderId(null);
+      },
+    });
+  };
+
   const visiblePickups = useMemo(() => {
-    if (!selectedCustodian) return pickups;
-    return pickups.filter((p) => {
+    let list = pickups;
+    if (filterPendingDigital) {
+      list = list.filter(
+        (p) =>
+          getPendingDigitalAmount(p) > 0 &&
+          (p.settlementCustodyStatus || p.custodyStatus) !== "Settled"
+      );
+    }
+    if (!selectedCustodian) return list;
+    return list.filter((p) => {
       const isDrawer = (p.settlementCustodyStatus || p.custodyStatus) === "InStaffDrawer";
       const custodian = p.heldByStaffName?.trim() || "Staff";
       return isDrawer && custodian === selectedCustodian;
     });
-  }, [pickups, selectedCustodian]);
+  }, [pickups, selectedCustodian, filterPendingDigital]);
 
   const filteredPickups = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -69,8 +124,8 @@ export function PickupSettlementTab({
           );
         });
     return [...list].sort((a, b) => {
-      const timeA = new Date(a.targetDeliveryTime || (a as any).targetDate || 0).getTime();
-      const timeB = new Date(b.targetDeliveryTime || (b as any).targetDate || 0).getTime();
+      const timeA = new Date(a.targetDeliveryTime || (a as { targetDate?: string }).targetDate || 0).getTime();
+      const timeB = new Date(b.targetDeliveryTime || (b as { targetDate?: string }).targetDate || 0).getTime();
       if (timeA !== timeB) return timeA - timeB;
       return Number(a.orderId ?? 0) - Number(b.orderId ?? 0);
     });
@@ -117,6 +172,18 @@ export function PickupSettlementTab({
   const handleCloseOwnerRemit = () => {
     setSelectedOwnerRemit(null);
   };
+
+  useEffect(() => {
+    if (!isOwner || !ownerVerifyOrderId) return;
+    const pendingPickup = pickups.find(
+      (pickup) =>
+        pickup.orderId === ownerVerifyOrderId &&
+        getPendingDigitalAmount(pickup) > 0,
+    );
+    if (!pendingPickup) return;
+    handleVerifyDigital(pendingPickup);
+    onOwnerVerifyOpened?.();
+  }, [isOwner, onOwnerVerifyOpened, ownerVerifyOrderId, pickups]);
 
   if (isLoading) {
     return (
@@ -176,7 +243,25 @@ export function PickupSettlementTab({
                     className="p-10 text-center text-stone-500"
                   >
                     {visiblePickups.length === 0 ? (
-                      "🎉 No store pickup balances pending settlement."
+                      filterPendingDigital ? (
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <p className="text-sm font-medium text-stone-700">
+                            🎉 No pending digital verification store pickups.
+                          </p>
+                          {onClearFilterPendingDigital && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={onClearFilterPendingDigital}
+                              className="mt-1 h-7 text-xs cursor-pointer border-stone-300"
+                            >
+                              Show All Pickups
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        "🎉 No store pickup balances pending settlement."
+                      )
                     ) : (
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Search className="w-6 h-6 text-stone-400" />
@@ -211,7 +296,16 @@ export function PickupSettlementTab({
                     hour12: true,
                   });
 
-                  const isInDrawer = pickup.custodyStatus === "InStaffDrawer";
+                  const custodyStatus =
+                    pickup.settlementCustodyStatus ||
+                    pickup.custodyStatus ||
+                    "Uncollected";
+                  const pendingDigitalAmount = getPendingDigitalAmount(pickup);
+                  const pendingDigitalMethod = getPendingDigitalMethod(pickup);
+                  const isAwaitingDigital =
+                    pendingDigitalAmount > 0 && custodyStatus !== "Settled";
+                  const isInDrawer =
+                    custodyStatus === "InStaffDrawer" && !isAwaitingDigital;
                   const isWalkIn = isWalkInOrder(pickup);
 
                   return (
@@ -220,7 +314,9 @@ export function PickupSettlementTab({
                       className={`hover:bg-amber-50/30 transition-colors ${
                         isWalkIn
                           ? "bg-indigo-50/40"
-                          : isInDrawer
+                          : isAwaitingDigital
+                            ? "bg-sky-50/50"
+                            : isInDrawer
                             ? "bg-amber-50/20"
                             : ""
                       }`}
@@ -292,7 +388,18 @@ export function PickupSettlementTab({
 
                       {/* Custody Status Badge */}
                       <td className="px-3 py-2.5 text-xs">
-                        {isInDrawer ? (
+                        {isAwaitingDigital ? (
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className="inline-flex max-w-[230px] items-center gap-1 rounded-full border border-sky-300 bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-900 shadow-2xs">
+                              🏦 Awaiting Digital Check (₱{pendingDigitalAmount.toLocaleString()} • {pendingDigitalMethod})
+                            </span>
+                            {pickup.heldByStaffName && (
+                              <span className="pl-1 text-[11px] font-medium text-stone-500">
+                                Logged by {pickup.heldByStaffName}
+                              </span>
+                            )}
+                          </div>
+                        ) : isInDrawer ? (
                           <div className="flex flex-col items-start gap-0.5">
                             <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
@@ -325,13 +432,43 @@ export function PickupSettlementTab({
 
                       {/* Balance to Collect */}
                       <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/40 text-xs tabular-nums whitespace-nowrap border-l border-stone-200">
-                        ₱{Number(pickup.heldByStaffAmount ?? pickup.balanceDue).toLocaleString()}
+                        ₱{Number(
+                          isAwaitingDigital
+                            ? pendingDigitalAmount
+                            : pickup.heldByStaffAmount ?? pickup.balanceDue,
+                        ).toLocaleString()}
                       </td>
 
                       {/* REFINED, COHESIVE ACTIONS COLUMN (UNIFORM ALIGNED WIDTH) */}
                       <td className="px-3.5 py-2.5 text-right whitespace-nowrap text-xs">
                         <div className="w-[152px] flex items-center justify-end gap-1.5 ml-auto">
-                          {isInDrawer ? (
+                          {isAwaitingDigital ? (
+                            isOwner ? (
+                              <Button
+                                size="sm"
+                                disabled={
+                                  verifyDigitalMutation.isPending &&
+                                  verifyingOrderId === pickup.orderId
+                                }
+                                className="w-full bg-sky-700 hover:bg-sky-800 text-white text-[11px] font-bold shadow-2xs h-8 px-2 rounded-lg inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-75"
+                                onClick={() => handleVerifyDigital(pickup)}
+                              >
+                                {verifyDigitalMutation.isPending &&
+                                verifyingOrderId === pickup.orderId ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                    <span>Verifying...</span>
+                                  </>
+                                ) : (
+                                  <span>👑 Verify Digital Deposit</span>
+                                )}
+                              </Button>
+                            ) : (
+                              <span className="w-full whitespace-normal text-center text-[11px] font-semibold text-sky-800">
+                                Awaiting Owner verification
+                              </span>
+                            )
+                          ) : isInDrawer ? (
                             <>
                               <Button
                                 size="sm"
@@ -410,20 +547,43 @@ export function PickupSettlementTab({
           expectedAmount={
             Number(selectedOwnerRemit.heldByStaffAmount ?? 0) > 0
               ? Number(selectedOwnerRemit.heldByStaffAmount)
-              : Number(selectedOwnerRemit.digitalTransferAmount ?? selectedOwnerRemit.balanceDue)
+              : Number(
+                  getPendingDigitalAmount(selectedOwnerRemit) ||
+                    selectedOwnerRemit.balanceDue,
+                )
           }
-          totalCollected={selectedOwnerRemit.balanceDue}
+          totalCollected={
+            getPendingDigitalAmount(selectedOwnerRemit) ||
+            selectedOwnerRemit.balanceDue
+          }
           deliveryFee={0}
           hopStage="StaffToOwner"
           heldByStaffName={selectedOwnerRemit.heldByStaffName}
           heldPaymentMethod={selectedOwnerRemit.heldPaymentMethod}
           heldByStaffAmount={selectedOwnerRemit.heldByStaffAmount}
-          digitalTransferMethod={selectedOwnerRemit.digitalTransferMethod}
-          digitalTransferAmount={selectedOwnerRemit.digitalTransferAmount}
+          digitalTransferMethod={getPendingDigitalMethod(selectedOwnerRemit)}
+          digitalTransferAmount={getPendingDigitalAmount(selectedOwnerRemit)}
           digitalReferenceNote={selectedOwnerRemit.digitalReferenceNote}
           onSuccess={() => {
             handleCloseOwnerRemit();
           }}
+        />
+      )}
+
+      {/* Styled Verify Digital Deposit Modal */}
+      {digitalVerifyPickup && (
+        <VerifyDigitalDepositModal
+          open={Boolean(digitalVerifyPickup)}
+          onOpenChange={(open) => !open && setDigitalVerifyPickup(null)}
+          orderId={digitalVerifyPickup.orderId}
+          orderReference={digitalVerifyPickup.orderReference || String(digitalVerifyPickup.orderId)}
+          customerName={digitalVerifyPickup.customerName}
+          fulfillmentType="Pickup"
+          pendingDigitalMethod={getPendingDigitalMethod(digitalVerifyPickup)}
+          digitalReferenceNote={digitalVerifyPickup.digitalReferenceNote}
+          pendingDigitalAmount={getPendingDigitalAmount(digitalVerifyPickup)}
+          onConfirm={handleConfirmDigitalVerify}
+          isPending={verifyDigitalMutation.isPending && verifyingOrderId === digitalVerifyPickup.orderId}
         />
       )}
     </div>

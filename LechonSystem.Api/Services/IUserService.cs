@@ -8,6 +8,7 @@ public interface IUserService
 {
     Task<List<UserListItemDto>> GetUsersAsync();
     Task<UserListItemDto> CreateUserAsync(CreateUserRequest request, string currentUsername);
+    Task<UserListItemDto> UpdateUserAsync(int userId, UpdateUserRequest request, string currentUsername);
     Task UpdatePasswordAsync(int userId, string newPassword);
     Task<UserListItemDto> ToggleUserStatusAsync(int userId, bool isActive, string currentUsername);
 }

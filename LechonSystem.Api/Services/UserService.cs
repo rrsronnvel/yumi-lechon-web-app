@@ -60,20 +60,7 @@ public class UserService : IUserService
             throw new ArgumentException("Password must be at least 6 characters.");
         }
 
-        var roleInput = request.Role?.Trim() ?? string.Empty;
-        string normalizedRole;
-        if (string.Equals(roleInput, "Owner", StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedRole = "Owner";
-        }
-        else if (string.Equals(roleInput, "Cashier", StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedRole = "Cashier";
-        }
-        else
-        {
-            throw new ArgumentException("Role must be either 'Owner' or 'Cashier'.");
-        }
+        var normalizedRole = NormalizeRole(request.Role);
 
         bool usernameExists = await _context.Users
             .AnyAsync(u => u.Username.ToLower() == username);
@@ -105,6 +92,47 @@ public class UserService : IUserService
             Role = newUser.Role,
             IsActive = newUser.IsActive,
             CreatedAt = newUser.CreatedAt
+        };
+    }
+
+    public async Task<UserListItemDto> UpdateUserAsync(int userId, UpdateUserRequest request, string currentUsername)
+    {
+        if (request == null) throw new ArgumentException("Request body cannot be null.");
+        if (string.IsNullOrWhiteSpace(request.FullName)) throw new ArgumentException("Full name is required.");
+
+        var user = await _context.Users.FirstOrDefaultAsync(candidate => candidate.Id == userId)
+            ?? throw new KeyNotFoundException($"User with ID {userId} was not found.");
+        var normalizedRole = NormalizeRole(request.Role);
+
+        if (string.Equals(user.Username, currentUsername, StringComparison.OrdinalIgnoreCase) &&
+            normalizedRole != "Owner")
+        {
+            throw new InvalidOperationException("You cannot remove the Owner role from your own account.");
+        }
+
+        if (user.Role == "Owner" && normalizedRole != "Owner" && user.IsActive)
+        {
+            var otherActiveOwners = await _context.Users.CountAsync(candidate =>
+                candidate.Id != user.Id && candidate.Role == "Owner" && candidate.IsActive);
+            if (otherActiveOwners == 0)
+            {
+                throw new InvalidOperationException("At least one active Owner account must remain.");
+            }
+        }
+
+        user.FullName = request.FullName.Trim();
+        user.Role = normalizedRole;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return new UserListItemDto
+        {
+            Id = user.Id,
+            Username = user.Username,
+            FullName = user.FullName,
+            Role = user.Role,
+            IsActive = user.IsActive,
+            CreatedAt = user.CreatedAt
         };
     }
 
@@ -141,6 +169,16 @@ public class UserService : IUserService
             throw new InvalidOperationException("You cannot deactivate your own active Owner account.");
         }
 
+        if (!isActive && user.IsActive && user.Role == "Owner")
+        {
+            var otherActiveOwners = await _context.Users.CountAsync(candidate =>
+                candidate.Id != user.Id && candidate.Role == "Owner" && candidate.IsActive);
+            if (otherActiveOwners == 0)
+            {
+                throw new InvalidOperationException("At least one active Owner account must remain.");
+            }
+        }
+
         user.IsActive = isActive;
         user.UpdatedAt = DateTime.UtcNow;
 
@@ -155,5 +193,14 @@ public class UserService : IUserService
             IsActive = user.IsActive,
             CreatedAt = user.CreatedAt
         };
+    }
+
+    private static string NormalizeRole(string? role)
+    {
+        var value = role?.Trim() ?? string.Empty;
+        if (string.Equals(value, "Owner", StringComparison.OrdinalIgnoreCase)) return "Owner";
+        if (string.Equals(value, "Cashier", StringComparison.OrdinalIgnoreCase)) return "Cashier";
+        if (string.Equals(value, "Accountant", StringComparison.OrdinalIgnoreCase)) return "Accountant";
+        throw new ArgumentException("Role must be 'Owner', 'Cashier', or 'Accountant'.");
     }
 }

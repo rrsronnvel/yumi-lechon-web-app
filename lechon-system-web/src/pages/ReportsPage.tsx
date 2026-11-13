@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ExpensesPage from "@/pages/ExpensesPage";
 
-type ReportTab = "summary" | "admins" | "payments";
+type ReportTab = "summary" | "expenses" | "admins" | "payments";
 type Preset = "Today" | "This Week" | "This Month" | "Last Month" | "Custom Range";
 
 interface ReportsAnalytics {
@@ -115,6 +116,7 @@ export default function ReportsPage() {
 
   const exportCsv = () => {
     if (!data) return;
+    if (activeTab === "expenses") return;
     let rows: Array<Array<string | number>> = [];
     if (activeTab === "summary") {
       rows = [
@@ -184,7 +186,7 @@ export default function ReportsPage() {
         <Button
           type="button"
           onClick={exportCsv}
-          disabled={!data}
+          disabled={!data || activeTab === "expenses"}
           className="gap-2 bg-emerald-700 text-white hover:bg-emerald-800"
         >
           <Download className="h-4 w-4" /> 📥 Export CSV
@@ -235,10 +237,11 @@ export default function ReportsPage() {
         </Card>
       ) : (
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportTab)}>
-          <TabsList className="grid h-auto w-full grid-cols-1 gap-1 bg-stone-100 p-1 sm:grid-cols-3">
-            <TabsTrigger value="summary">📋 Order Summary Report</TabsTrigger>
-            <TabsTrigger value="admins">👥 Admin Performance Report</TabsTrigger>
-            <TabsTrigger value="payments">💳 Payment & Collection Report</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-1 gap-1 bg-stone-100 p-1 sm:grid-cols-2 xl:grid-cols-4">
+            <TabsTrigger value="summary">Report 1 · Order Summary</TabsTrigger>
+            <TabsTrigger value="expenses">Report 2 · Expense &amp; Net Profit</TabsTrigger>
+            <TabsTrigger value="admins">Report 3 · Admin Performance</TabsTrigger>
+            <TabsTrigger value="payments">Report 4 · Payment &amp; Collection</TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary" className="mt-5 space-y-5">
@@ -251,6 +254,10 @@ export default function ReportsPage() {
               headers={["Lechon Size", "Quantity Sold", "Revenue"]}
               rows={data.orderSummary.lechonSizes.map((row) => [row.size, row.count.toLocaleString(), money(row.revenue)])}
             />
+          </TabsContent>
+
+          <TabsContent value="expenses" className="mt-5">
+            <ExpensesPage embedded showLedger={false} />
           </TabsContent>
 
           <TabsContent value="admins" className="mt-5">

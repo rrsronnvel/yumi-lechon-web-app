@@ -6,6 +6,13 @@
 
 ---
 
+## November 13, 2026 Operational Invariants
+
+- **Store Pickup Digital Transfers & Owner Hop 2 Digital Verification:** In `ManifestPage.tsx`, `PickupSettlementTab.tsx`, and mobile `DrawerScreen.tsx`, Store Pickup orders with non-cash settlements (`DigitalTransferAmount > 0`, e.g. `#111326-901 Robin Evangelio` with ₱10,500 GCash) render the blue custody badge `🏦 Awaiting Digital Check (₱{amount} • {method})` and explicitly display the pending digital amount. The top blue KPI card (`🏦 Pending Owner Digital Check`) is an interactive toggle filter that unmasks pending digital orders even when physical drawer cash is ₱0. In both Web and Mobile, users with `role === 'Owner'` see `[ 👑 Verify Digital Deposit ]`. Native `window.confirm` (Web) and `Alert.alert` (Mobile) are replaced with a styled `VerifyDigitalDepositModal` / React Native `<Modal>` card detailing `#orderReference • customerName`, fulfillment type (`🏪 Store Pickup` or `🛵 Rider`), payment channel badge, reference/bank note, and large bold `₱Amount` with `[ Cancel ]` and `[ 👑 Confirm & Settle ]` buttons. The backend endpoint `POST /api/logistics/settlements/orders/{orderId}/verify-digital` records ledger payment logs, clears custody to `Settled`, and sets `BalanceDue = 0` WITHOUT mutating or inflating the advance booking `Order.Downpayment`. Mobile `👑 Drawer Handover` tab visibility invariant guarantees visibility whenever `physicalCashCount + pendingDigitalCount > 0` or `activeTab === 'hop2'`.
+- **Downpayment & Walk-In Remittance Tracker Lifecycle & Search:** In `ManifestPage.tsx`, `DownpaymentTrackerTab.tsx`, and mobile `DrawerScreen.tsx`, the 4th manifest stream tab `💵 DP & Walk-In Tracker` defaults to the `[ ⏳ Unremitted (${count}) ]` queue. When the Owner marks an item remitted (`[ ✓ Mark Remitted ]`), the item transitions out of the unremitted queue into `[ ✅ Remitted to Owner ]`. The Web search bar remains visible and active across all 4 manifest tabs, switching its placeholder to `"Search customer, #order, phone, payment mode, encoder..."` on the DP Tracker tab and filtering rows case-insensitively across `customerName`, `orderReference`, `orderId`, `phoneNumber`, `downpaymentMethod`, `bookingSource`, and `encodedBy`. `Order.Downpayment` is strictly protected against inflation from final pickup/delivery collections; startup self-heal idempotently restores `#111326-901` downpayment to ₱2,200.
+- **Non-Destructive QA Seeding (November 13, 2026):** Test records `#111326-901` (Robin Evangelio - Store Pickup ₱10,500 pending GCash), `#111326-902` (Bunso - Tirador - Store Pickup Shared Phone QA), and `#111326-903` (Johnmark Salipande - Walk-in Cash DP ₱4,000 Unremitted) are seeded idempotently via `SeedQaData_20261113.sql`. Scoped deletions preserve all 111 baseline customer orders (total 114 orders in `LechonSystemDb`). Startup reconciliation in `Program.cs` safeguards orders in `InStaffDrawer` with pending digital transfer amounts (`ISNULL(DigitalTransferAmount, 0) > 0`).
+- **Mobile DP Tab Count & Web UI Polish:** In `DrawerScreen.tsx`, the `💵 DP & Walk-In Tracker` tab pill count strictly references `dpSummary.unremittedCount` (tracking all unremitted cash and unverified digital booking DPs, preventing zero-count masking). The search placeholder dynamically adapts to `"Search customer, #order, phone, payment mode, encoder..."` when the DP Tracker is active. In `Sidebar.tsx`, navigation items render clean Lucide icons without redundant emojis (`"Expenses Ledger"`). In `ExpensesPage.tsx`, quick-add form grid columns enforce uniform `h-4` headers (with `rightBadge` for auto-category and unit-cost badges), `h-9` inputs/buttons, and `min-w-[1080px] overflow-x-auto`, ensuring baseline vertical alignment between inputs and `+ Add Expense`.
+
 ## November 10, 2026 Daily Operations Reliability Invariants
 
 - **Freebies & Sides Prep Sheet (3rd Tab):** In `DailySheetsPage.tsx`, the 3rd tab `"🎁 Freebies & Prep Sheet"` aggregates Whole Lechon freebies (including guaranteed 1x Sarsa for Less ₱2k orders), Belly freebies (with 4x 1.5L Coke per 5kg Belly Bilao Swap), customer paid side-dish Add-Ons, and Store Paluto requests into an 8-card Morning Aggregate Prep Board and Chronological Packing Roster Table. Image export generates `Yumi-Lechon-Freebies-Prep-${dateStr}-4K.png` via direct blob download without `navigator.share`.
@@ -146,7 +153,8 @@ yumi-lechon-web-app/
 │   │   └── IUserService.cs          # Interface for Staff Account operations
 │   │
 │   ├── Data/
-│   │   └── LechonDbContext.cs       # EF Core DB context, relationship mappings & seed data
+│   │   ├── LechonDbContext.cs       # EF Core DB context, relationship mappings & seed data
+│   │   └── SeedQaData_20261113.sql   # Idempotent QA seed records for Nov 13 test scenarios (-901, -902, -903)
 │   │
 │   ├── Models/                      # Domain entities & database models
 │   │   ├── BaseEntity.cs            # Id and CreatedAt baseline
@@ -173,6 +181,7 @@ yumi-lechon-web-app/
 │   │
 │   └── DTOs/                        # High-speed data contracts & flat projections
 │       ├── CreateOrderRequest.cs    # POS intake payload
+│       ├── DownpaymentTrackerDtos.cs # POCO DTOs for advance downpayment & walk-in remittance tracking
 │       ├── FreebiesPrepDtos.cs      # Freebies aggregate summary, roster rows & prep request payloads
 │       ├── CustomerProfileDto.cs    # Customer intelligence & notes update contracts
 │       ├── DailySheetDtos.cs        # DailySheetItemDto for 13-column Kitchen & Rider manifests
@@ -209,6 +218,8 @@ yumi-lechon-web-app/
     │   │   │   ├── FreebiesPrepViewTab.tsx      # 8-card aggregate prep board + chronological packing roster
     │   │   │   ├── StorePalutoModal.tsx         # Extra kitchen prep & meryenda request modal
     │   │   │   └── InlineScheduleEditorModal.tsx# Interactive schedule, departure & rider override modal
+    │   │   ├── manifest/            # Cash reconciliation and settlement stream tabs
+    │   │   │   └── DownpaymentTrackerTab.tsx # 4th manifest stream tab for advance DP & Walk-In remittance tracking
     │   │   └── ui/                  # Reusable UI library (shadcn/ui + custom components)
     │   │       ├── RootLayout.tsx   # Global app container with sidebar navigation
     │   │       ├── Sidebar.tsx      # Navigation sidebar with responsive indicators
@@ -458,6 +469,7 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
       │   ├── usePos.ts                # Catalog, inventory balances, screenshot parser & order creation
       │   └── useManifest.ts           # Rider/Pickup/Lalamove settlements & 2-Hop QR custody mutations
       └── utils/
+          ├── deliveryDateWarnings.ts  # Timezone-aware date helpers and quick-fix utilities for Asia/Manila
           ├── messengerTemplates.ts    # Taglish Messenger receipts, defrost list generator & downpayment reminders
           ├── messengerTextParser.ts   # Client-side heuristic parser for pasted Messenger text
           └── similarityHelper.ts      # Multi-factor composite matching engine & placeholder phone bouncer
@@ -492,3 +504,15 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
 * **Parser additions:** Preserve multiline addresses under `Pickup or Deliver`, accept `Letchon belly`, normalize `nov 7, / 12pm` to the current 2026 year, and strip emoji markers from FREEBIES lines while retaining the custom selection/note.
 * **Rider deletion:** Only Owners may call `DELETE /api/riders/{id}`. Registry deletion must never mutate historical `DeliveryTrip.RiderName` or remove orders/trips. CMS add/delete actions invalidate `['riders']` immediately.
 * **Repair safety:** Startup payment and schedule repair is update/append-only. Never delete operational payments, orders, customer data, audit logs, or schedules while reconciling cached state.
+
+### 2026-11-13 Expense Ledger and Accountant Isolation Contract
+
+* **Accountant is expense-only:** `Accountant` may access only `/expenses` and `[Authorize(Roles = "Owner,Accountant")]` expense CRUD, summary, and auto-reclassification endpoints. Orders, schedules, logistics, POS, manifests, daily sheets, CMS, operational dashboards, order counts, revenue, and profit reports are forbidden.
+* **Payload redaction is the security boundary:** For an Accountant claim, `GrossRevenue`, `NetFoodRevenue`, `DeliveryFeeRevenue`, `DiscountTotal`, `GrossProfit`, `OperatingNetProfit`, and `NetCashFlowAfterOwnerOutflows` must be serialized as `null`. Hiding React cards is never an acceptable substitute.
+* **Canonical mapping:** COGS is exactly Meat / Main Products, Ingredients & Freebies, and Packaging. OPEX is exactly Fuel, Utilities, Labor, Rent, Equipment & Supplies, Taxes and Government Fees, Marketing, Staff Meal, and Others. `Owner / Non-Operating Outflow` is `NON_OP` and must not distort operating profit.
+* **Server owns classification:** `ExpenseCategorizer` validates all categories and derives `CostType` on create, update, and reclassification. Evaluate packaging before meat so a belly box stays Packaging; manual frontend overrides apply only to the active entry row.
+* **Philippine expense dates:** Persist `ExpenseDate` as a date-valued `DateTimeKind.Unspecified`. Do not apply UTC conversion or an eight-hour shift.
+* **Math:** `Gross Profit = Net Food Revenue - COGS`; `Operating Net Profit = Net Food Revenue - COGS - OPEX`; `Net Cash Flow = Operating Net Profit - NON_OP`. Annual expense totals include operating and non-operating records; operating totals do not include `NON_OP`.
+* **Additive data safety:** `ExpenseRecord` schema and the default Accountant account are installed idempotently in `Program.cs`. The 17 November 2026 QA expenses use existence checks and must never delete or replace existing records. Expected totals are COGS `₱111,766.00`, OPEX `₱59,843.39`, NON_OP `₱23,000.00`, and grand outflow `₱194,609.39`.
+* **Primary files:** `ExpenseRecord.cs`, `ExpenseDtos.cs`, `ExpenseCategorizer.cs`, `ExpensesController.cs`, `ExpensesPage.tsx`, `expenseCategorizer.ts`, and `expenseCategorizer.test.ts`. Keep frontend/backend keyword behavior aligned.
+* **Verification:** Stop the old process on port 5199 before the final API run, then require `dotnet build LechonSystem.Api`, `npm --prefix lechon-system-web run build`, mobile `npx tsc --noEmit`, `npm --prefix lechon-system-mobile run lint`, and `node --experimental-strip-types --test lechon-system-web/src/utils/__tests__/expenseCategorizer.test.ts` to pass.

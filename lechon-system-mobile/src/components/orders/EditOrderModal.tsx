@@ -34,6 +34,13 @@ import FreebiesSelector from './FreebiesSelector';
 import { evaluateDuplicateOrders, formatCalendarDateLabel } from '../../utils/similarityHelper';
 import { normalizeDateInput } from '../../utils/dateNormalizer';
 import {
+  fixDeliveryDateYear,
+  getCurrentPhilippineYear,
+  getDeliveryDateYear,
+  getPhilippineTodayDate,
+  isPastDeliveryDate,
+} from '../../utils/deliveryDateWarnings';
+import {
   FreebiesConfig,
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
@@ -210,8 +217,17 @@ export default function EditOrderModal({
   ]);
 
   const activeDuplicateOrders = duplicateEvaluation.duplicates;
+  const sharedPhoneMatches = activeDuplicateOrders.filter(
+    (duplicate) => duplicate.isSharedPhoneOnly,
+  );
+  const blockingDuplicateOrders = activeDuplicateOrders.filter(
+    (duplicate) => !duplicate.isSharedPhoneOnly,
+  );
 
   const repeatCustomerBooking = duplicateEvaluation.repeatCustomerMatches[0];
+  const currentPhilippineYear = getCurrentPhilippineYear();
+  const selectedDeliveryYear = getDeliveryDateYear(targetDate);
+  const hasPastDeliveryDate = isPastDeliveryDate(targetDate, false);
 
   // Hydrate state from order when modal opens
   useEffect(() => {
@@ -837,10 +853,30 @@ export default function EditOrderModal({
       return;
     }
 
+    if (normalizedTargetDate && isPastDeliveryDate(normalizedTargetDate, false)) {
+      const formattedDate = formatCalendarDateLabel(normalizedTargetDate);
+      const shouldContinue = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          '⚠️ Past Date Warning',
+          `The delivery date you entered (${formattedDate}) is in the past! Are you sure you want to save this order with a past date?`,
+          [
+            { text: 'Go Back', style: 'cancel', onPress: () => resolve(false) },
+            {
+              text: 'Save Past Date',
+              style: 'destructive',
+              onPress: () => resolve(true),
+            },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) },
+        );
+      });
+      if (!shouldContinue) return;
+    }
+
     const resolvedAddress =
       trimmedAddress || (fulfillment === 0 ? 'Store Pickup' : '');
 
-    const sameDayDuplicate = activeDuplicateOrders.find((d) => d.isSameDay);
+    const sameDayDuplicate = blockingDuplicateOrders.find((d) => d.isSameDay);
 
     if (!isEffectiveDraft && sameDayDuplicate) {
       const shouldContinue = await new Promise<boolean>((resolve) => {
@@ -962,12 +998,12 @@ export default function EditOrderModal({
           </View>
         )}
 
-        {activeDuplicateOrders.length > 0 && (
+        {blockingDuplicateOrders.length > 0 && (
           <View style={styles.duplicateWarningBanner}>
             <Text style={styles.duplicateWarningTitle}>
               🚨 POSSIBLE DUPLICATE ORDER DETECTED!
             </Text>
-            {activeDuplicateOrders.slice(0, 3).map((duplicate) => (
+            {blockingDuplicateOrders.slice(0, 3).map((duplicate) => (
               <View key={duplicate.order.orderId} style={{ marginTop: 4 }}>
                 <Text style={styles.duplicateWarningText}>
                   {duplicate.order.customerName || customerName || 'This customer'} already
@@ -982,6 +1018,33 @@ export default function EditOrderModal({
                 </Text>
                 <Text style={styles.duplicateCriteriaText}>
                   Matched criteria: {duplicate.matchingFactors.join(' • ')}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {sharedPhoneMatches.length > 0 && (
+          <View style={styles.sharedPhoneBanner}>
+            <Text style={styles.sharedPhoneTitle}>
+              ℹ️ SHARED PHONE NUMBER ON THIS DATE
+            </Text>
+            {sharedPhoneMatches.slice(0, 3).map((duplicate) => (
+              <View key={duplicate.order.orderId} style={{ marginTop: 5 }}>
+                <Text style={styles.sharedPhoneText}>
+                  Phone number {duplicate.matchedPhone || contactNumber.trim()} is already
+                  used on Order #{String(duplicate.order.orderReference).replace(/^#/, '')}{' '}
+                  under a different customer name (&quot;
+                  {duplicate.order.customerName || 'Unknown customer'}&quot; •{' '}
+                  {duplicate.order.itemsSummary}) for{' '}
+                  {formatCalendarDateLabel(
+                    duplicate.order.targetDeliveryDate ??
+                      duplicate.order.targetDeliveryTime,
+                  )}.
+                </Text>
+                <Text style={styles.sharedPhoneSubtitle}>
+                  If this is a separate order using the same contact number, you may safely
+                  proceed.
                 </Text>
               </View>
             ))}
@@ -1362,6 +1425,37 @@ export default function EditOrderModal({
                 </View>
               </View>
             </View>
+            {hasPastDeliveryDate && (
+              <View style={styles.pastDateWarningCard}>
+                <Text style={styles.pastDateWarningText}>
+                  ⚠️ PAST DATE DETECTED: The selected date ({formatCalendarDateLabel(targetDate)})
+                  {' '}is in the past! It will not appear in Upcoming or Tomorrow tabs.
+                </Text>
+                <View style={styles.pastDateActionRow}>
+                  {selectedDeliveryYear !== null &&
+                    selectedDeliveryYear < currentPhilippineYear && (
+                      <Pressable
+                        style={styles.pastDateFixButton}
+                        onPress={() =>
+                          setTargetDate(
+                            fixDeliveryDateYear(targetDate, currentPhilippineYear),
+                          )
+                        }
+                      >
+                        <Text style={styles.pastDateFixButtonText}>
+                          📅 Fix Year to {currentPhilippineYear}
+                        </Text>
+                      </Pressable>
+                    )}
+                  <Pressable
+                    style={styles.pastDateTodayButton}
+                    onPress={() => setTargetDate(getPhilippineTodayDate())}
+                  >
+                    <Text style={styles.pastDateTodayButtonText}>📅 Set to Today</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
             {!isTimeTbd && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timePresetRow}>
               {TIME_PRESET_CHIPS.map((slot) => {
                 const active = targetTime === slot.time && targetPeriod === slot.period;
@@ -2023,6 +2117,75 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     marginTop: 2,
+  },
+  sharedPhoneBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    padding: 11,
+  },
+  sharedPhoneTitle: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+  sharedPhoneText: {
+    color: '#78350F',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  sharedPhoneSubtitle: {
+    color: '#A16207',
+    fontSize: 10.5,
+    lineHeight: 15,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  pastDateWarningCard: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#EA580C',
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    gap: 10,
+  },
+  pastDateWarningText: {
+    color: '#9A3412',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '900',
+  },
+  pastDateActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pastDateFixButton: {
+    backgroundColor: '#C2410C',
+    borderRadius: 9,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  pastDateFixButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  pastDateTodayButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FB923C',
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  pastDateTodayButtonText: {
+    color: '#9A3412',
+    fontSize: 11,
+    fontWeight: '900',
   },
   safeArea: {
     flex: 1,

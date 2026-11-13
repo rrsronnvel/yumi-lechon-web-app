@@ -6,7 +6,7 @@ public class User
     public string Username { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
-    public string Role { get; set; } = "Cashier"; // "Owner" | "Cashier"
+    public string Role { get; set; } = "Cashier"; // "Owner" | "Cashier" | "Accountant"
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

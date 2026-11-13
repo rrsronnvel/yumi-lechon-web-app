@@ -32,6 +32,7 @@ public class LechonDbContext : DbContext
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<CustomerProfile> CustomerProfiles => Set<CustomerProfile>();
     public DbSet<KitchenPrepRequest> KitchenPrepRequests => Set<KitchenPrepRequest>();
+    public DbSet<ExpenseRecord> Expenses => Set<ExpenseRecord>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -178,5 +179,8 @@ public class LechonDbContext : DbContext
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();
+
+        modelBuilder.Entity<ExpenseRecord>()
+            .HasIndex(expense => expense.ExpenseDate);
     }
 }

@@ -18,6 +18,8 @@ namespace LechonSystem.Api.Services
         Task<IEnumerable<PendingPickupSettlementDto>> GetPendingPickupSettlementsAsync();
         Task<IEnumerable<PendingLalamoveSettlementDto>> GetPendingLalamoveSettlementsAsync();
         Task<bool> ConfirmLalamoveReleaseAsync(int orderId);
+        Task<IEnumerable<DownpaymentTrackerItemDto>> GetDownpaymentsAsync();
+        Task<DownpaymentTrackerItemDto> ToggleDownpaymentRemittanceAsync(int orderId, string currentUser);
 
         // Two-Hop QR Custody Chain
         Task<QrSessionStatusDto> CreateQrSessionAsync(CreateQrSessionRequest request);
@@ -30,5 +32,6 @@ namespace LechonSystem.Api.Services
         Task<bool> RevertCustodyAsync(int orderId, string currentUser, bool isOwner);
         Task<QrSessionStatusDto> OwnerApproveQrSessionAsync(string token, OwnerApproveRequest? request, string? currentUsername, bool isOwnerRole);
         Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername);
+        Task<bool> VerifyDigitalSettlementAsync(int orderId, string ownerUsername);
     }
 }

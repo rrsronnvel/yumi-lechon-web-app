@@ -26,6 +26,10 @@ public class Order : BaseEntity
     public decimal DeliveryFee { get; set; }
     public decimal Downpayment { get; set; }
     public string DownpaymentMethod { get; set; } = "None";
+    public bool IsDpRemittedToOwner { get; set; } = false;
+    public DateTime? DpRemittedAt { get; set; }
+    [MaxLength(128)]
+    public string? DpRemittedBy { get; set; }
 
     public string? FreebiesSummary { get; set; }
     public string? FreebiesConfigJson { get; set; }

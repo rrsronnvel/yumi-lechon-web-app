@@ -71,6 +71,30 @@ public class UsersController : ControllerBase
         }
     }
 
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserRequest request)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+
+        try
+        {
+            var currentUsername = User.FindFirst(ClaimTypes.Name)?.Value ?? User.Identity?.Name ?? "owner";
+            return Ok(await _userService.UpdateUserAsync(id, request, currentUsername));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> ToggleStatus(int id, [FromBody] UpdateUserStatusRequest request)
     {
@@ -81,7 +105,7 @@ public class UsersController : ControllerBase
 
         try
         {
-            var currentUsername = UserIdentityHelper.ResolveDisplayName(User, "owner");
+            var currentUsername = User.FindFirst(ClaimTypes.Name)?.Value ?? User.Identity?.Name ?? "owner";
             var updated = await _userService.ToggleUserStatusAsync(id, request.IsActive, currentUsername);
             return Ok(updated);
         }

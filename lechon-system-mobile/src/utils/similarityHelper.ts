@@ -19,6 +19,11 @@ export interface DuplicateMatchEvaluation {
   matchingFactors: string[];
   isSameDate: boolean;
   isSameDay: boolean;
+  phoneMatches: boolean;
+  nameMatches: boolean;
+  addressMatches: boolean;
+  matchedPhone?: string;
+  isSharedPhoneOnly: boolean;
 }
 
 export interface RepeatCustomerMatchEvaluation {
@@ -324,9 +329,10 @@ export const evaluateDuplicateOrders = (
     }
 
     const candidatePhones = cleanPhoneDigits(candidate.contactNumber);
-    const phoneMatches =
+    const matchedPhone =
       hasValidCurrentPhone &&
-      candidatePhones.some((cp) => currentPhones.includes(cp));
+      candidatePhones.find((cp) => currentPhones.includes(cp));
+    const phoneMatches = Boolean(matchedPhone);
 
     const nameMatches =
       checkNameSimilarity(current.customerName, candidate.customerName) ||
@@ -347,7 +353,7 @@ export const evaluateDuplicateOrders = (
 
     if (!dateEval.isSameDay) {
       const repeatFactors: string[] = [];
-      if (phoneMatches) repeatFactors.push('Valid Phone Match');
+      if (phoneMatches) repeatFactors.push(`Same Phone (${matchedPhone})`);
       if (nameMatches) repeatFactors.push('Name / FB Match');
       if (repeatFactors.length > 0) {
         repeatCustomerMatches.push({
@@ -363,7 +369,7 @@ export const evaluateDuplicateOrders = (
     const matchingFactors = ['Exact Same Date'];
     if (phoneMatches) {
       score += 1;
-      matchingFactors.push('Valid Phone Match');
+      matchingFactors.push(`Same Phone (${matchedPhone})`);
     }
     if (nameMatches) {
       score += 1;
@@ -376,12 +382,28 @@ export const evaluateDuplicateOrders = (
 
     // Exact date plus at least one additional factor.
     if (score >= 2) {
+      const normalizedCurrentCustomerName = normalizeName(current.customerName);
+      const normalizedExistingCustomerName = normalizeName(candidate.customerName);
+      const hasDifferentCustomerName = Boolean(
+        normalizedCurrentCustomerName &&
+          normalizedExistingCustomerName &&
+          normalizedCurrentCustomerName !== normalizedExistingCustomerName,
+      );
       evaluations.push({
         order: candidate,
         score,
         matchingFactors,
         isSameDate: dateEval.isSameDay,
         isSameDay: dateEval.isSameDay,
+        phoneMatches,
+        nameMatches,
+        addressMatches,
+        matchedPhone: matchedPhone || undefined,
+        isSharedPhoneOnly:
+          phoneMatches &&
+          !nameMatches &&
+          !addressMatches &&
+          hasDifferentCustomerName,
       });
     }
   }
