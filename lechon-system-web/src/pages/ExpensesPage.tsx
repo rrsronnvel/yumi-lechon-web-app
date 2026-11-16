@@ -327,6 +327,34 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
         </label>
       </header>
 
+      {!summaryQuery.isLoading &&
+        !summaryQuery.isError &&
+        monthKey === "2026-11" &&
+        displayedGrandTotal === 0 && (
+          <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-black">No November 2026 expenses have been encoded yet.</p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                October contains the imported historical expense ledger and is available for review.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setMonthKey("2026-10");
+                setSearch("");
+                setCategoryFilter("All");
+                setCostTypeFilter("All");
+                setPaymentFilter("All");
+              }}
+              className="shrink-0 border-amber-400 bg-white font-bold text-amber-950 hover:bg-amber-100"
+            >
+              View October 2026 Expenses
+            </Button>
+          </div>
+        )}
+
       {summaryQuery.isLoading ? (
         <div className="flex min-h-48 items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white text-sm text-stone-500">
           <Loader2 className="h-5 w-5 animate-spin" /> Loading {monthLabel(monthKey)} expense summary…
@@ -347,13 +375,13 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
             <MetricCard
               label="Total Direct Costs (COGS - Month)"
               value={money(summary?.totalDirectCosts)}
-              detail="Meat, ingredients/freebies, packaging"
+              detail="Meat and ingredients/freebies"
               accent="amber"
             />
             <MetricCard
               label="Total Overhead (OPEX - Month)"
               value={money(summary?.totalOverhead)}
-              detail="Nine operating overhead categories"
+              detail="Ten operating overhead categories"
               accent="blue"
             />
             <MetricCard

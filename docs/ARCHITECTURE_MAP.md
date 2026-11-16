@@ -60,11 +60,11 @@
     
 - LechonSystem.Api/Services/DashboardService.cs: Aggregates urgent staff action items across confirmation windows, verification schedules, roasting queues, and pricing renegotiation queues, strictly enforcing the Defrost Roster Carcass Bouncer (`MinimumWeightKg > 0`) to ban add-ons from defrosting lists.
     
-- LechonSystem.Api/Services/InventoryService.cs: Manages physical stock ledgers, executes rolling 14-day committed reservation hold calculations (Available = Physical - Locked), and processes atomic freezer stock intake.
+- LechonSystem.Api/Services/InventoryService.cs: Manages physical stock ledgers, executes rolling 14-day committed reservation hold calculations (Available = Physical - Locked), processes atomic freezer stock intake, and idempotently posts completed-order `StockOut` rows per order/effective bracket while removing completed or already-posted orders from Locked stock.
     
-- LechonSystem.Api/Services/LogisticsService.cs: Manages freelance driver dispatches, tri-modal settlement queries (Riders, Store Pickups, Lalamove), courier release validation gates, and COD reconciliations.
+- LechonSystem.Api/Services/LogisticsService.cs: Manages freelance driver dispatches, tri-modal settlement queries (Riders, Store Pickups, Lalamove), courier release validation gates, COD reconciliations, completion-triggered inventory deductions, and the positive-value DP tracker sorted by event time with TBD rows last.
     
-- LechonSystem.Api/Services/OrderService.cs: Core transaction processor; handles order creation with server-side price snapshotting, daily `OrderReference` sequence generation (`MMDDYY-XXX`), user identity stamping (`CreatedBy`), dual-contact comma separation (`ContactNumber` max length 45), the two-tier `IsDraft` lifecycle, `IsTimeTbd` noon-date normalization, date-filtered directory projections, non-lechon schedule/reservation isolation, Owner past-time edit override, Cashier-only new-past-time rejection, proportional `RiderDepartureTime` shifting/clamping, safe editing/finalization, cancellations, and `OrderAuditLog` entries.
+- LechonSystem.Api/Services/OrderService.cs: Core transaction processor; handles order creation with server-side price snapshotting, daily `OrderReference` sequence generation (`MMDDYY-XXX`), user identity stamping (`CreatedBy`), dual-contact comma separation (`ContactNumber` max length 45), the two-tier `IsDraft` lifecycle, `IsTimeTbd` noon-date normalization, date-filtered directory projections, non-lechon schedule/reservation isolation, Owner past-time edit override, Cashier-only new-past-time rejection, event-date schedule realignment with an explicit prior-day Lalamove exception, safe editing/finalization, cancellations, and `OrderAuditLog` entries.
     
 - LechonSystem.Api/Services/PaymentService.cs: Manages asynchronous payment reconciliations, verification logs, counter settlements, and automated reservation conversions.
     
@@ -72,7 +72,7 @@
     
 - LechonSystem.Api/Services/RoastingService.cs: Controls roasting queue progress and cooking status transitions for scheduled order items.
     
-- LechonSystem.Api/Services/SchedulingService.cs: Calculates backward-production schedules anchored on `RiderDepartureTime ?? TargetDeliveryTime`, roasting intervals, and daily driver dispatch manifests. `DailySheetItemDto` projects `Source`, net `LechonPrice`, numeric `AddOnsTotal`, `DeliveryFee`, `Downpayment`, and corrected `TotalToCollect`/balance due while retaining extras-only orders.
+- LechonSystem.Api/Services/SchedulingService.cs: Calculates backward-production schedules anchored on `RiderDepartureTime ?? TargetDeliveryTime`, realigns stranded schedule dates, builds daily driver dispatch manifests, and aggregates all eight Freebies/Prep categories into AM (`< 12:31`) and PM shift counts. `DailySheetItemDto` projects `Source`, net `LechonPrice`, numeric `AddOnsTotal`, `DeliveryFee`, `Downpayment`, and corrected `TotalToCollect`/balance due while retaining extras-only orders.
     
 - LechonSystem.Api/Services/SmsNotificationService.cs: Implementation of INotificationSender dispatching transactional SMS alerts for order milestones.
     
@@ -81,6 +81,10 @@
 - LechonSystem.Api/Services/UserService.cs: Core business logic for provisioning counter cashier/owner accounts with BCrypt password hashing, updating shift passwords, and toggling active status with the Owner self-preservation guard.
     
 - LechonSystem.Api/Data/LechonDbContext.cs: Entity Framework Core database context configuring entity schemas, relationships, soft-delete query filters, seed data (Riders, Users, Categories, SystemSettings), and decimal precisions.
+
+- LechonSystem.Api/Data/October2026ExpenseSeed.cs: Compiled deployment-safe copy of all 341 real October expense rows with occurrence-aware idempotency and locked COGS/OPEX/grand-total integrity checks.
+
+- LechonSystem.Api/Data/November15QaDataSeed.cs: Development-only idempotent fixtures for the Nov 15 morning/afternoon prep split, completed M StockOut, Belly add-on, and Store Paluto scenarios.
     
 - LechonSystem.Api/Models/BaseEntity.cs: Abstract foundation entity providing primary keys and created timestamps.
     
@@ -311,7 +315,7 @@
 - POST /api/logistics/settlements/orders/{orderId}/revert-custody | Headers: Authorization: Bearer (Roles = "Owner,Cashier") | Reverts order custody from InStaffDrawer back to Uncollected, expires active Hop 2 QR sessions, and records immutable OrderAuditLog (authorized only to holding cashier or owner).
 - POST /api/logistics/settlements/qr-session/{token}/owner-approve | Public (Owner PIN/Credentials) or Headers: Authorization: Bearer | Payload: OwnerApproveRequest { CountedAmount: decimal, OwnerUsername?: string, OwnerPinOrPassword?: string } | Enforces physical envelope counted cash verification matching expected amount (returns 400 BadRequest on mismatch), transitions order to Settled, writes PaymentLog, and burns token.  
 - POST /api/logistics/settlements/orders/{orderId}/verify-digital | Headers: Authorization: Bearer (Roles = "Owner") | Payload: None | Returns: { success: boolean, message: string }. Verifies and settles Store Pickup and freelance Delivery orders with pending digital transfers (GCash/Maya/Bank Transfer); validates custody, credits payment ledger in PaymentLogs, updates cached Downpayment, transitions custody to Settled (or remaining cash custody), and clears pending digital fields.
-- GET /api/logistics/downpayments | Headers: Authorization: Bearer | Payload: None | Returns: DownpaymentTrackerItemDto[]. Returns all active orders with downpayments for the DP & Walk-In Remittance Tracker stream, including booking source, staff attribution, and owner remittance status.
+- GET /api/logistics/downpayments | Headers: Authorization: Bearer | Payload: None | Returns: DownpaymentTrackerItemDto[]. Returns only active orders with `Downpayment > 0`, ordered by event time ascending then order ID with TBD dates last, including booking source, staff attribution, and owner remittance status.
 - POST /api/logistics/downpayments/{orderId}/verify | Headers: Authorization: Bearer (Roles = "Owner") | Payload: None | Returns: DownpaymentTrackerItemDto. Toggles IsDpRemittedToOwner status for an order, stamping DpRemittedAt and DpRemittedBy or clearing them on undo.
 
 #### Roasting & Scheduling Domain (RoastingController.cs & SchedulesController.cs)
@@ -744,7 +748,7 @@ Belly item(s)
 - `LechonSystem.Api/Services/ExpenseCategorizer.cs`: Ordered keyword engine and authoritative category-to-cost-type mapping. Packaging precedence prevents `Lechon Belly Box` from being classified as meat.
 - `LechonSystem.Api/Controllers/ExpensesController.cs`: `[Authorize(Roles = "Owner,Accountant")]` CRUD, `GET /api/expenses/summary`, and `POST /api/expenses/auto-reclassify?year=&month=` surface. The controller/service removes every revenue and profit value when the role claim is `Accountant`.
 - `LechonSystem.Api/Data/LechonDbContext.cs`: `DbSet<ExpenseRecord>` plus decimal precision, text limits, and date/index configuration.
-- `LechonSystem.Api/Program.cs`: Registers expense services; creates or extends the expense table through idempotent `OBJECT_ID` / `COL_LENGTH` SQL; creates the Accountant account only when missing; and inserts the 17 November QA rows only when their natural seed keys do not already exist.
+- `LechonSystem.Api/Program.cs`: Registers expense services; creates or extends the expense table through idempotent `OBJECT_ID` / `COL_LENGTH` SQL; creates the Accountant account only when missing; seeds the compiled 341-row October ledger in every environment; and removes only retired November rows attributed to `System QA Seed`.
 - `LechonSystem.Api/Services/UserService.cs` and `Controllers/UsersController.cs`: Owner-only account governance recognizes `Accountant` for staff create/edit operations.
 - Existing `OrdersController`, `SchedulesController`, `LogisticsController`, operational dashboards, analytics, and general reports retain Owner/Cashier or Owner-only authorization and therefore reject Accountant tokens.
 
@@ -774,6 +778,23 @@ Expense form / preset
 
 ### QA and Verification
 
-- November 2026 seed invariant: 17 rows; COGS `₱111,766.00`; OPEX `₱59,843.39`; operating expense `₱171,609.39`; NON_OP `₱23,000.00`; grand outflow `₱194,609.39`.
+- October 2026 seed invariant: 341 rows; COGS `₱245,677.00`; OPEX `₱395,543.00`; grand outflow `₱641,220.00`. November has no system-seeded expense rows.
 - Focused categorizer tests run with `node --experimental-strip-types --test src/utils/__tests__/expenseCategorizer.test.ts` from `lechon-system-web` on the repository's Node 22 toolchain.
 - Full gates: `dotnet build LechonSystem.Api`; `npm --prefix lechon-system-web run build`; mobile `npx tsc --noEmit`; and `npm --prefix lechon-system-mobile run lint`.
+
+## 12. 2026-11-15 Daily Operations Improvements
+
+### Backend and Startup Repair
+
+- `FreebiesPrepDtos.cs` and `SchedulingService.cs`: Every one of the eight summary cards carries total/AM/PM counts. Customer and Store Paluto contributions use the effective needed time and the exact 12:31 PM boundary.
+- `InventoryService.cs`, `LogisticsService.cs`, and `Program.cs`: Completed orders post idempotent per-bracket StockOut ledger rows. Startup repairs missing rows from Oct 27 onward; 14-day locked reservations omit delivered, settled, cancelled, or already-posted orders.
+- `OrderService.cs`, `SchedulingService.cs`, and `Program.cs`: Order create/update and startup reconciliation anchor rider departure and schedule dates to the event date while preserving clock time. An explicitly preceding-day Lalamove pickup is the only exception.
+- `October2026ExpenseSeed.cs` and `November15QaDataSeed.cs`: Production-safe compiled October expenses are separate from Development-only operational QA fixtures (`111526-901`, `111526-902`, and afternoon Store Paluto).
+
+### Web and Mobile
+
+- `DownpaymentTrackerTab.tsx`, `ManifestPage.tsx`, and Mobile `DrawerScreen.tsx`: Positive downpayments only; chronological event ordering; TBD rows last; matching unremitted badge counts.
+- `FreebiesPrepViewTab.tsx`: Eight AM/PM shift strips survive both responsive display and the clean 4K PNG export.
+- `KitchenViewTab.tsx`, `RiderViewTab.tsx`, and `FreebiesPrepViewTab.tsx`: Horizontal overflow and minimum-width non-wrapping time columns prevent tablet clock collisions.
+- Web `OrderForm.tsx` and Mobile `PosScreen.tsx`: A successful save clears pasted Messenger text and resets the order; exact name/phone/date/items matches use the explicit `ORDER ALREADY SAVED IN SYSTEM` warning.
+- `ExpensesPage.tsx`: An empty selected month offers a one-click route to October 2026.

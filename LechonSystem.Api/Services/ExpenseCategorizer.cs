@@ -33,7 +33,7 @@ public static class ExpenseCategorizer
         {
             [Meat] = Cogs,
             [Ingredients] = Cogs,
-            [Packaging] = Cogs,
+            [Packaging] = Opex,
             [Fuel] = Opex,
             [Utilities] = Opex,
             [Labor] = Opex,

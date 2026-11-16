@@ -145,14 +145,14 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
   return (
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
-      <div className={`w-full rounded-md border-2 border-black ${mode === "clean" ? "overflow-visible no-scrollbar" : "overflow-x-auto"} print:overflow-visible bg-white shadow-xs`}>
+      <div className={`w-full overflow-x-auto rounded-md border-2 border-black ${mode === "clean" ? "no-scrollbar" : ""} print:overflow-visible bg-white shadow-xs`}>
         <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
             <col className="w-[8%] min-w-[115px]" />  {/* 1. No. */}
             <col className="w-[4.5%]" />              {/* 2. Size (Compact: fits "S. Jumbo") */}
             <col className="w-[4.5%]" />              {/* 3. Weight */}
-            <col className="w-[8.5%]" />              {/* 4. Departure / Pickup Time */}
+            <col className="w-[8.5%] min-w-[96px]" /> {/* 4. Departure / Pickup Time */}
             <col className="w-[9.5%]" />              {/* 5. Customer Name */}
             <col className="w-[15%]" />               {/* 6. Location (Expanded) */}
             <col className="w-[11%]" />               {/* 7. Rider Name */}
@@ -170,7 +170,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
               <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[120px] whitespace-nowrap font-mono font-bold">No.</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 whitespace-nowrap">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Departure / Pickup</th>
+              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Departure / Pickup</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Location</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Rider</th>
@@ -250,7 +250,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                   </td>
 
                   {/* 4. Departure / Pickup Time (Anti-Complacency Guard: ONLY shows RiderDepartureTime ?? TargetDeliveryTime) */}
-                  <td className="px-1 py-2 text-center font-mono font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
+                  <td className="min-w-[96px] px-3 py-2.5 text-center font-mono font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
                     {item.isTimeTbd || (!item.riderDepartureTime && !item.targetDeliveryTime) ? (
                       <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.5 rounded text-[10.5px] whitespace-nowrap inline-flex items-center justify-center leading-none">
                         ⏳ Time TBD

@@ -25,7 +25,7 @@ describe("expense keyword categorizer", () => {
   });
 
   it("derives the official accounting type from the category", () => {
-    assert.equal(getExpenseCostType("Packaging"), "COGS");
+    assert.equal(getExpenseCostType("Packaging"), "OPEX");
     assert.equal(getExpenseCostType("Fuel"), "OPEX");
     assert.equal(getExpenseCostType("Owner / Non-Operating Outflow"), "NON_OP");
   });

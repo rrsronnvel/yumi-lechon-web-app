@@ -67,11 +67,17 @@ namespace LechonSystem.Api.Services
 
             var target = NormalizeToLocalStoreTime(targetDeliveryTime);
             DateTime anchorTime;
+            var intentionalPriorDayLalamove = false;
             if (riderDepartureTime.HasValue)
             {
                 // RiderDepartureTime is the kitchen zero-hour whenever it is present.
                 // TargetDeliveryTime remains the independent customer serving time.
-                anchorTime = NormalizeToLocalStoreTime(riderDepartureTime.Value);
+                var requestedDeparture = NormalizeToLocalStoreTime(riderDepartureTime.Value);
+                intentionalPriorDayLalamove = fulfillment == FulfillmentType.Lalamove
+                                              && requestedDeparture.Date == target.Date.AddDays(-1);
+                anchorTime = intentionalPriorDayLalamove
+                    ? requestedDeparture
+                    : target.Date.Add(requestedDeparture.TimeOfDay);
             }
             else if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
             {
@@ -88,6 +94,15 @@ namespace LechonSystem.Api.Services
             DateTime salangStart = packagingStart.AddMinutes(-salangDuration);
             DateTime tahiStart = salangStart.AddMinutes(-tahiDuration);
 
+            if (!intentionalPriorDayLalamove)
+            {
+                // Daily sheets are keyed by the event date. Preserve each calculated clock
+                // value while preventing an edit from stranding a schedule on another date.
+                packagingStart = target.Date.Add(packagingStart.TimeOfDay);
+                salangStart = target.Date.Add(salangStart.TimeOfDay);
+                tahiStart = target.Date.Add(tahiStart.TimeOfDay);
+            }
+
             var schedule = new OrderItemSchedule
             {
                 OrderItemId = orderItemId,
@@ -98,6 +113,65 @@ namespace LechonSystem.Api.Services
             };
 
             return schedule;
+        }
+
+        public async Task<bool> RealignOrderScheduleDatesAsync(int orderId)
+        {
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                    .ThenInclude(item => item.OrderItemSchedule)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null || order.IsCancelled || order.IsTimeTbd || !order.TargetDeliveryTime.HasValue)
+            {
+                return false;
+            }
+
+            var target = NormalizeToLocalStoreTime(order.TargetDeliveryTime.Value);
+            var intentionalPriorDayLalamove = order.Fulfillment == FulfillmentType.Lalamove
+                                              && order.RiderDepartureTime.HasValue
+                                              && order.RiderDepartureTime.Value.Date == target.Date.AddDays(-1);
+            if (intentionalPriorDayLalamove)
+            {
+                return false;
+            }
+
+            var changed = false;
+            if (order.RiderDepartureTime.HasValue && order.RiderDepartureTime.Value.Date != target.Date)
+            {
+                order.RiderDepartureTime = target.Date.Add(order.RiderDepartureTime.Value.TimeOfDay);
+                changed = true;
+            }
+
+            foreach (var schedule in order.OrderItems
+                         .Select(item => item.OrderItemSchedule)
+                         .Where(schedule => schedule != null)
+                         .Cast<OrderItemSchedule>())
+            {
+                var targetClock = target.Date.Add(schedule.TargetDeliveryTime.TimeOfDay);
+                var packagingClock = target.Date.Add(schedule.PackagingStartTime.TimeOfDay);
+                var salangClock = target.Date.Add(schedule.SalangStartTime.TimeOfDay);
+                var tahiClock = target.Date.Add(schedule.TahiStartTime.TimeOfDay);
+
+                if (schedule.TargetDeliveryTime != targetClock
+                    || schedule.PackagingStartTime != packagingClock
+                    || schedule.SalangStartTime != salangClock
+                    || schedule.TahiStartTime != tahiClock)
+                {
+                    schedule.TargetDeliveryTime = targetClock;
+                    schedule.PackagingStartTime = packagingClock;
+                    schedule.SalangStartTime = salangClock;
+                    schedule.TahiStartTime = tahiClock;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            return changed;
         }
 
         public async Task<object> GetDailyRosterAsync(DateTime targetDate)
@@ -934,13 +1008,16 @@ namespace LechonSystem.Api.Services
             // 3. Process each customer order
             foreach (var order in activeOrders)
             {
-                var row = ProcessOrderFreebies(order, summary);
+                var contribution = new FreebiesPrepSummaryDto();
+                var row = ProcessOrderFreebies(order, contribution);
+                MergePrepSummary(summary, contribution, IsMorningShift(row.TimeNeeded));
                 roster.Add(row);
             }
 
             // 4. Process each KitchenPrepRequest (Store Paluto)
             foreach (var prep in prepRequests)
             {
+                var contribution = new FreebiesPrepSummaryDto();
                 var itemsDict = DeserializePrepItems(prep.ItemsJson);
                 prepRequestDtos.Add(new KitchenPrepRequestDto
                 {
@@ -965,28 +1042,28 @@ namespace LechonSystem.Api.Services
                     switch (normalized)
                     {
                         case "Sarsa":
-                            summary.Sarsa.Paluto += qty;
+                            contribution.Sarsa.Paluto += qty;
                             break;
                         case "Pancit":
-                            summary.Pancit.Paluto += qty;
+                            contribution.Pancit.Paluto += qty;
                             break;
                         case "Palabok":
-                            summary.Palabok.Paluto += qty;
+                            contribution.Palabok.Paluto += qty;
                             break;
                         case "Spaghetti":
-                            summary.Spaghetti.Paluto += qty;
+                            contribution.Spaghetti.Paluto += qty;
                             break;
                         case "Dinuguan":
-                            summary.Dinuguan.Paluto += qty;
+                            contribution.Dinuguan.Paluto += qty;
                             break;
                         case "Puto":
-                            summary.Puto.Paluto += qty;
+                            contribution.Puto.Paluto += qty;
                             break;
                         case "1.5L Coke":
-                            summary.Coke15L.Paluto += qty;
+                            contribution.Coke15L.Paluto += qty;
                             break;
                         case "Raw Innards":
-                            summary.RawInnardsHilaw.Paluto += qty;
+                            contribution.RawInnardsHilaw.Paluto += qty;
                             break;
                     }
 
@@ -998,6 +1075,8 @@ namespace LechonSystem.Api.Services
                         Label = $"{qty}x {normalized} (Paluto)"
                     });
                 }
+
+                MergePrepSummary(summary, contribution, IsMorningShift(prep.TargetTime));
 
                 string categoryBadge = prep.Category switch
                 {
@@ -1123,6 +1202,72 @@ namespace LechonSystem.Api.Services
             _context.KitchenPrepRequests.Remove(prep);
             await _context.SaveChangesAsync();
             return true;
+        }
+
+        private static bool IsMorningShift(DateTime? timeNeeded) =>
+            timeNeeded.HasValue && timeNeeded.Value.TimeOfDay < new TimeSpan(12, 31, 0);
+
+        private static void AddShiftCount(FreebieItemSummaryDto target, int quantity, bool isMorning)
+        {
+            if (isMorning)
+            {
+                target.MorningCount += quantity;
+            }
+            else
+            {
+                target.AfternoonCount += quantity;
+            }
+        }
+
+        private static void MergeBaseSummary(
+            FreebieItemSummaryDto target,
+            FreebieItemSummaryDto contribution,
+            bool isMorning)
+        {
+            target.Freebies += contribution.Freebies;
+            target.PaidAddOns += contribution.PaidAddOns;
+            target.Paluto += contribution.Paluto;
+            AddShiftCount(target, contribution.TotalCount, isMorning);
+        }
+
+        private static void MergePrepSummary(
+            FreebiesPrepSummaryDto target,
+            FreebiesPrepSummaryDto contribution,
+            bool isMorning)
+        {
+            target.Sarsa.WholeFreebies += contribution.Sarsa.WholeFreebies;
+            target.Sarsa.BellyFreebies += contribution.Sarsa.BellyFreebies;
+            target.Sarsa.NoFreebiesSarsaGuaranteed += contribution.Sarsa.NoFreebiesSarsaGuaranteed;
+            target.Sarsa.PaidAddOns += contribution.Sarsa.PaidAddOns;
+            target.Sarsa.Paluto += contribution.Sarsa.Paluto;
+            AddShiftCount(target.Sarsa, contribution.Sarsa.TotalCount, isMorning);
+
+            MergeBaseSummary(target.Pancit, contribution.Pancit, isMorning);
+            MergeBaseSummary(target.Palabok, contribution.Palabok, isMorning);
+            MergeBaseSummary(target.Spaghetti, contribution.Spaghetti, isMorning);
+
+            MergeBaseSummary(target.Dinuguan, contribution.Dinuguan, isMorning);
+            target.Dinuguan.ExcludedRawInnardsOrders += contribution.Dinuguan.ExcludedRawInnardsOrders;
+
+            MergeBaseSummary(target.Puto, contribution.Puto, isMorning);
+
+            target.Coke15L.Freebies += contribution.Coke15L.Freebies;
+            target.Coke15L.PaidAddOns += contribution.Coke15L.PaidAddOns;
+            target.Coke15L.Paluto += contribution.Coke15L.Paluto;
+            target.Coke15L.BellySwaps += contribution.Coke15L.BellySwaps;
+            AddShiftCount(target.Coke15L, contribution.Coke15L.TotalCount, isMorning);
+
+            target.RawInnardsHilaw.Bags += contribution.RawInnardsHilaw.Bags;
+            target.RawInnardsHilaw.PaidAddOns += contribution.RawInnardsHilaw.PaidAddOns;
+            target.RawInnardsHilaw.Paluto += contribution.RawInnardsHilaw.Paluto;
+            if (isMorning)
+            {
+                target.RawInnardsHilaw.MorningCount += contribution.RawInnardsHilaw.TotalCount;
+            }
+            else
+            {
+                target.RawInnardsHilaw.AfternoonCount += contribution.RawInnardsHilaw.TotalCount;
+            }
         }
 
         private FreebiePrepRosterRowDto ProcessOrderFreebies(Order order, FreebiesPrepSummaryDto summary)

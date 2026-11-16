@@ -1198,8 +1198,8 @@ Section 2 provides a chronological kitchen checklist merging customer orders and
 
 * `ExpenseRecord` persists `Id`, `ExpenseDate` (Philippine wall-clock date with `DateTimeKind.Unspecified`), `Category`, derived `CostType`, `ItemDescription`, nullable `Quantity`, nullable `Unit`, nullable `UnitCost`, positive `TotalCost`, `PaymentMethod`, nullable `Remarks`, `EncodedBy`, and `CreatedAt`.
 * The 13 categories are fixed and mapped exactly as follows:
-  - `COGS`: `Meat / Main Products`, `Ingredients & Freebies`, `Packaging`.
-  - `OPEX`: `Fuel`, `Utilities`, `Labor`, `Rent`, `Equipment & Supplies`, `Taxes and Government Fees`, `Marketing`, `Staff Meal`, `Others`.
+  - `COGS`: `Meat / Main Products`, `Ingredients & Freebies`.
+  - `OPEX`: `Fuel`, `Packaging`, `Utilities`, `Labor`, `Rent`, `Equipment & Supplies`, `Taxes and Government Fees`, `Marketing`, `Staff Meal`, `Others`.
   - `NON_OP`: `Owner / Non-Operating Outflow`.
 * `CostType` is always derived on the server from `Category`; client input cannot relabel it. `NON_OP` contributes to total cash outflow but is excluded from COGS, OPEX, Gross Profit, and Operating Net Profit.
 * Accepted payment methods are `Cash`, `GCash`, `Maya`, and `Bank Transfer`. When quantity and total are available but unit cost is blank, the UI may display `TotalCost / Quantity` without forcing a stored manual value.
@@ -1219,9 +1219,42 @@ Section 2 provides a chronological kitchen checklist merging customer orders and
 * Owners additionally see `Net Food Revenue`, `Gross Profit`, `Operating Net Profit`, margin badges, and `Net Cash Flow (After Owner Outflows)` on `/expenses` and in Report 2 of `/reports`.
 * Canonical formulas are: `Gross Profit = Net Food Revenue - COGS`; `Operating Net Profit = Net Food Revenue - COGS - OPEX`; `Net Cash Flow After Owner Outflows = Operating Net Profit - NON_OP`.
 
-### 22.5 November 2026 QA Ledger Baseline
+### 22.5 Superseded November QA Ledger Baseline
 
-* The 17 explicit November 2026 records are inserted idempotently and non-destructively. They cover live pigs, packaging, ingredients/freebies, utilities, labor, rent, equipment, marketing, and owner/non-operating outflows.
-* The locked QA totals are: `Meat / Main Products ₱83,497.00`, `Ingredients & Freebies ₱21,494.00`, `Packaging ₱6,775.00`, `COGS ₱111,766.00`, `OPEX ₱59,843.39`, `Operating Expenses ₱171,609.39`, `NON_OP ₱23,000.00`, and `Grand Total Outflow ₱194,609.39`.
+* The former 17-row November 2026 `System QA Seed` expense fixture is retired. Startup removes only rows whose November date and `EncodedBy == "System QA Seed"` identify that temporary fixture; it never removes user-encoded expenses.
+* November is intentionally unseeded and therefore contains only real staff-entered records. An empty November view offers a one-click switch to the populated October 2026 ledger.
 * Release verification requires `dotnet build LechonSystem.Api`, `npm --prefix lechon-system-web run build`, `npx tsc --noEmit` in `lechon-system-mobile`, `npm --prefix lechon-system-mobile run lint`, and the focused `expenseCategorizer.test.ts` Node test to pass without errors.
+
+---
+
+## 23. 2026-11-15 Daily Operations Integrity, October Expenses & QA Fixtures
+
+### 23.1 DP Remittance Ordering and Zero-Value Exclusion
+
+* `GET /api/logistics/downpayments`, Web `DownpaymentTrackerTab`, the Manifest badge count, and Mobile `DrawerScreen` include only active orders with `Downpayment > 0`. A zero-value Walk-In is never actionable remittance work.
+* Every layer sorts scheduled rows by `TargetDeliveryTime` ascending, then `OrderId` ascending. `IsDateTbd` or missing-date rows sort after every dated event, preventing future bookings from obscuring urgent work.
+
+### 23.2 Shift-Split Prep Board and Tablet-Safe Time Columns
+
+* All eight `FreebiesPrepSummaryDto` categories expose `TotalCount`, `MorningCount`, and `AfternoonCount`. Contributions from customer orders and Store Paluto are assigned to AM when effective `TimeNeeded < 12:31:00`; all later or unscheduled contributions are assigned to PM, preserving `MorningCount + AfternoonCount == TotalCount`.
+* Each prep card renders the high-contrast `☀️ AM (≤12:30 PM)` and `🌤️ PM (12:31 PM+)` pills in normal and clean/4K export modes.
+* Kitchen, Rider, and Freebies tables use horizontally scrollable containers plus non-wrapping, padded, minimum-width time cells so Tahi, Salang, Departure/Pickup, and Delivery clocks cannot collide on tablet viewports.
+
+### 23.3 Completed-Order StockOut and Schedule Date Self-Heal
+
+* `InventoryService.DeductOrderStockIfCompletedAsync` aggregates each order's effective carcass category (`FulfilledItemCategoryId ?? ItemCategoryId`) and posts at most one `StockOut` per order/category. Serializable idempotency, `ReferenceId = Order.Id`, and the `Order #reference` reason prevent double deductions.
+* Delivered, Settled, completed handover/release, and strictly past-date paid-in-full orders qualify. Physical stock displays never fall below zero. `Locked (14D)` excludes cancelled, delivered, settled, and already-posted orders.
+* Startup reconciles qualifying non-cancelled orders since `2026-10-27`. Completion paths for rider QR, counter pickup, Lalamove release, and Owner verification invoke the same idempotent service.
+* Order create/update and startup repair align `RiderDepartureTime` and every schedule clock's date with `TargetDeliveryTime.Date` while preserving time-of-day. A Lalamove departure explicitly stored on the preceding calendar day remains untouched.
+
+### 23.4 POS Submission Reset and Exact-Duplicate Language
+
+* Successful Web and Mobile submissions preserve the created order-reference toast, then clear Messenger paste text and reset the full form/cart to a blank order.
+* When customer name, phone, event date, and normalized item summary all match an existing order, the warning title is `⚠️ ORDER ALREADY SAVED IN SYSTEM (#reference)` and explicitly says to submit again only for an additional separate booking.
+
+### 23.5 Compiled October Ledger and Development QA Data
+
+* `October2026ExpenseSeed` embeds spreadsheet rows 6-346 from `October Expense log.xlsx`, so Development and Production do not depend on the workbook at runtime. Occurrence-aware matching preserves legitimate duplicate rows while remaining restart-safe.
+* The locked October 2026 totals are 341 rows, COGS `₱245,677.00`, OPEX `₱395,543.00`, and grand outflow `₱641,220.00`. The Paper Plate text quantity becomes `Quantity = 15`, `Unit = "by 24 pcs"`; the blank Dalandan Juice Tang channel becomes `Cash`.
+* Development only seeds `#111526-901` (10:00 AM delivered/settled M StockOut), `#111526-902` (2:00 PM departure Belly 5kg plus paid Sarsa), and the 3:30 PM Staff Meryenda Store Paluto. Production receives none of these QA fixtures.
 

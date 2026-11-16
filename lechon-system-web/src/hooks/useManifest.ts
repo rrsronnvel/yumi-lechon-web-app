@@ -106,6 +106,7 @@ export interface DownpaymentTrackerItem {
   downpaymentAmount: number;
   downpaymentMethod?: string | null;
   targetDeliveryTime?: string | null;
+  isDateTbd?: boolean;
   createdAt: string;
   encodedBy?: string | null;
   isDpRemittedToOwner: boolean;

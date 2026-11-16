@@ -120,10 +120,15 @@ interface ManifestListItem {
   id?: number | null;
   orderReference?: string | null;
   targetDeliveryTime?: string | null;
+  isDateTbd?: boolean;
 }
 
 function sortManifestItemsByDateAscending<T extends ManifestListItem>(items: readonly T[]) {
   return [...items].sort((a, b) => {
+    const aIsTbd = Boolean(a.isDateTbd || (!a.targetDeliveryTime && !(a as any).targetDate));
+    const bIsTbd = Boolean(b.isDateTbd || (!b.targetDeliveryTime && !(b as any).targetDate));
+    if (aIsTbd !== bIsTbd) return aIsTbd ? 1 : -1;
+
     const aTimestamp = a.targetDeliveryTime || (a as any).targetDate
       ? new Date((a.targetDeliveryTime || (a as any).targetDate)!).getTime()
       : Number.POSITIVE_INFINITY;
@@ -630,6 +635,7 @@ export default function DrawerScreen() {
 
     for (const item of downpaymentItems) {
       const amount = Number(item.downpaymentAmount || 0);
+      if (amount <= 0) continue;
       if (item.isDpRemittedToOwner) {
         verifiedTotal += amount;
         continue;
@@ -655,7 +661,8 @@ export default function DrawerScreen() {
 
   const filteredDownpaymentItems = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
-    return downpaymentItems.filter((item) => {
+    return sortManifestItemsByDateAscending(downpaymentItems.filter((item) => {
+      if (Number(item.downpaymentAmount || 0) <= 0) return false;
       const matchesFilter =
         dpFilter === 'all' ||
         (dpFilter === 'cash' && isCashDownpayment(item)) ||
@@ -676,7 +683,7 @@ export default function DrawerScreen() {
         item.downpaymentMethod,
         item.encodedBy,
       ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch));
-    });
+    }));
   }, [downpaymentItems, dpFilter, searchQuery]);
 
   const activeListCount =
@@ -697,7 +704,7 @@ export default function DrawerScreen() {
         : activeTab === 'pickups'
           ? custodianPickupDrops.length
           : activeTab === 'downpayments'
-            ? downpaymentItems.length
+            ? downpaymentItems.filter((item) => Number(item.downpaymentAmount || 0) > 0).length
             : sortedLalamoveDrops.length;
   const isSearching = searchQuery.trim().length > 0;
 

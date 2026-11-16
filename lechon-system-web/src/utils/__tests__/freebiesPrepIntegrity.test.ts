@@ -14,6 +14,8 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
     return {
       sarsa: {
         total: 18,
+        morningCount: 11,
+        afternoonCount: 7,
         freebies: 15,
         wholeFreebies: 10,
         bellyFreebies: 3,
@@ -23,24 +25,32 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       },
       pancit: {
         total: 5,
+        morningCount: 3,
+        afternoonCount: 2,
         freebies: 2,
         paidAddOns: 1,
         paluto: 2,
       },
       palabok: {
         total: 4,
+        morningCount: 2,
+        afternoonCount: 2,
         freebies: 2,
         paidAddOns: 2,
         paluto: 0,
       },
       spaghetti: {
         total: 3,
+        morningCount: 1,
+        afternoonCount: 2,
         freebies: 2,
         paidAddOns: 1,
         paluto: 0,
       },
       dinuguan: {
         total: 6,
+        morningCount: 4,
+        afternoonCount: 2,
         freebies: 5,
         paidAddOns: 1,
         paluto: 0,
@@ -48,12 +58,16 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       },
       puto: {
         total: 7,
+        morningCount: 3,
+        afternoonCount: 4,
         freebies: 4,
         paidAddOns: 0,
         paluto: 3,
       },
       coke15L: {
         total: 8,
+        morningCount: 5,
+        afternoonCount: 3,
         freebies: 2,
         bellySwaps: 4,
         paidAddOns: 0,
@@ -61,6 +75,8 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       },
       rawInnardsHilaw: {
         total: 1,
+        morningCount: 1,
+        afternoonCount: 0,
         bags: 1,
         freebies: 1,
         paidAddOns: 0,
@@ -91,6 +107,8 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       const summaryWithGuaranteed = createSampleSummary({
         sarsa: {
           total: 5,
+          morningCount: 3,
+          afternoonCount: 2,
           freebies: 5,
           wholeFreebies: 3,
           bellyFreebies: 1,
@@ -104,6 +122,8 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       const summaryWithoutGuaranteed = createSampleSummary({
         sarsa: {
           total: 4,
+          morningCount: 2,
+          afternoonCount: 2,
           freebies: 4,
           wholeFreebies: 3,
           bellyFreebies: 1,
@@ -140,6 +160,8 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       const summary = createSampleSummary({
         dinuguan: {
           total: 5,
+          morningCount: 3,
+          afternoonCount: 2,
           freebies: 5,
           paidAddOns: 0,
           paluto: 0,
@@ -168,6 +190,13 @@ describe("Empirical Stress Testing: Freebies Prep UI Integrity & Data Binding", 
       assert.strictEqual(rawInnardsHilaw.total, rawInnardsHilaw.bags + rawInnardsHilaw.paidAddOns + rawInnardsHilaw.paluto);
       assert.strictEqual(rawInnardsHilaw.total, 1);
       assert.strictEqual(rawInnardsHilaw.bags, 1);
+    });
+
+    it("keeps every card's morning and afternoon split equal to its total", () => {
+      const summary = createSampleSummary();
+      Object.values(summary).forEach((card) => {
+        assert.strictEqual(card.morningCount + card.afternoonCount, card.total);
+      });
     });
   });
 

@@ -34,7 +34,12 @@ import {
   TemplateOrderData,
 } from '../utils/messengerTemplates';
 import FreebiesSelector from '../components/orders/FreebiesSelector';
-import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from '../utils/similarityHelper';
+import {
+  evaluateDuplicateOrders,
+  formatCalendarDateLabel,
+  isPlaceholderPhone,
+  normalizeName,
+} from '../utils/similarityHelper';
 import { normalizeDateInput } from '../utils/dateNormalizer';
 import {
   fixDeliveryDateYear,
@@ -106,6 +111,24 @@ const formatLocalHM = (d: Date): string => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
+
+const normalizeItemsSummary = (value?: string | null): string =>
+  Array.from(
+    new Set(
+      (value || '')
+        .split(/[,;|]+/)
+        .map((part) =>
+          part
+            .trim()
+            .toLowerCase()
+            .replace(/\s*(?:x|\*|\u00d7)\s*/g, 'x')
+            .replace(/\s+/g, ' '),
+        )
+        .filter(Boolean),
+    ),
+  )
+    .sort()
+    .join('|');
 
 export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
@@ -189,6 +212,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     debouncedFbName
   );
 
+  const currentItemsSummary = useMemo(
+    () =>
+      cartItems
+        .map((item) => `${Number(item.quantity) || 0}x ${item.name}`)
+        .join(', '),
+    [cartItems],
+  );
+
   const duplicateEvaluation = useMemo(() => {
     const targetTime24 = to24HourTime(targetTime, targetPeriod);
     const isoDate = targetDate && targetTime24 ? `${targetDate.trim()}T${targetTime24}:00` : targetDate;
@@ -221,6 +252,22 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   );
   const blockingDuplicateOrders = activeDuplicateOrders.filter(
     (duplicate) => !duplicate.isSharedPhoneOnly,
+  );
+  const exactSavedDuplicateOrders = blockingDuplicateOrders.filter(
+    (duplicate) =>
+      duplicate.isSameDay &&
+      duplicate.phoneMatches &&
+      Boolean(normalizeName(customerName)) &&
+      normalizeName(customerName) === normalizeName(duplicate.order.customerName) &&
+      Boolean(normalizeItemsSummary(currentItemsSummary)) &&
+      normalizeItemsSummary(currentItemsSummary) ===
+        normalizeItemsSummary(duplicate.order.itemsSummary),
+  );
+  const possibleDuplicateOrders = blockingDuplicateOrders.filter(
+    (duplicate) =>
+      !exactSavedDuplicateOrders.some(
+        (exact) => exact.order.orderId === duplicate.order.orderId,
+      ),
   );
 
   const repeatCustomerBooking = duplicateEvaluation.repeatCustomerMatches[0];
@@ -796,6 +843,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setFacebookName('');
     setContactNumber('');
     setContactNumber2('');
+    setDebouncedPhone('');
+    setDebouncedFbName('');
     setShowContactNumber2(false);
     setSource('Business FB Page');
     setEventType('');
@@ -1172,6 +1221,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
       setReceiptCopied(false);
       setCreatedReceiptOrder(receiptData);
+      handleClearForm();
     } catch (err: unknown) {
       const axiosErr = err as {
         response?: { data?: { message?: string; Message?: string; title?: string } | string };
@@ -1319,12 +1369,35 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           </View>
         )}
 
-        {blockingDuplicateOrders.length > 0 && (
+        {exactSavedDuplicateOrders.length > 0 && (
+          <View style={styles.duplicateWarningBanner}>
+            {exactSavedDuplicateOrders.slice(0, 3).map((duplicate) => {
+              const existingRef = String(duplicate.order.orderReference).replace(/^#/, '');
+              const dateStr = formatCalendarDateLabel(
+                duplicate.order.targetDeliveryDate ?? duplicate.order.targetDeliveryTime,
+              );
+              return (
+                <View key={duplicate.order.orderId} style={{ marginTop: 4 }}>
+                  <Text style={styles.duplicateWarningTitle}>
+                    ⚠️ ORDER ALREADY SAVED IN SYSTEM (#{existingRef})
+                  </Text>
+                  <Text style={styles.duplicateWarningText}>
+                    {duplicate.order.customerName || 'This customer'} already has Order #{existingRef}{' '}
+                    saved for {dateStr} with these exact items ({duplicate.order.itemsSummary}). Only
+                    submit again if the customer is booking an additional separate order.
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {possibleDuplicateOrders.length > 0 && (
           <View style={styles.duplicateWarningBanner}>
             <Text style={styles.duplicateWarningTitle}>
               🚨 POSSIBLE DUPLICATE ORDER DETECTED!
             </Text>
-            {blockingDuplicateOrders.slice(0, 3).map((duplicate) => (
+            {possibleDuplicateOrders.slice(0, 3).map((duplicate) => (
               <View key={duplicate.order.orderId} style={{ marginTop: 4 }}>
                 <Text style={styles.duplicateWarningText}>
                   {duplicate.order.customerName || customerName || 'This customer'} already

@@ -20,7 +20,7 @@ export type ExpenseCostType = "COGS" | "OPEX" | "NON_OP";
 export const CATEGORY_COST_TYPES: Record<ExpenseCategory, ExpenseCostType> = {
   "Meat / Main Products": "COGS",
   "Ingredients & Freebies": "COGS",
-  Packaging: "COGS",
+  Packaging: "OPEX",
   Fuel: "OPEX",
   Utilities: "OPEX",
   Labor: "OPEX",

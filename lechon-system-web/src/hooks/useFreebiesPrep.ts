@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 
 export interface FreebieItemSummaryDto {
   total: number;
+  morningCount: number;
+  afternoonCount: number;
   freebies: number;
   paidAddOns: number;
   paluto: number;
@@ -28,6 +29,8 @@ export interface CokeSummaryDto extends FreebieItemSummaryDto {
 
 export interface RawInnardsSummaryDto {
   total: number;
+  morningCount: number;
+  afternoonCount: number;
   bags: number;
   freebies: number;
   paidAddOns: number;

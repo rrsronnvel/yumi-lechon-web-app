@@ -153,8 +153,10 @@ yumi-lechon-web-app/
 │   │   └── IUserService.cs          # Interface for Staff Account operations
 │   │
 │   ├── Data/
-│   │   ├── LechonDbContext.cs       # EF Core DB context, relationship mappings & seed data
-│   │   └── SeedQaData_20261113.sql   # Idempotent QA seed records for Nov 13 test scenarios (-901, -902, -903)
+│   │   ├── LechonDbContext.cs          # EF Core DB context, relationship mappings & seed data
+│   │   ├── October2026ExpenseSeed.cs   # Compiled 341-row real October expense ledger
+│   │   ├── November15QaDataSeed.cs     # Development-only Nov 15 operational QA fixtures
+│   │   └── SeedQaData_20261113.sql      # Opt-in historical Nov 13 QA scenarios (-901, -902, -903)
 │   │
 │   ├── Models/                      # Domain entities & database models
 │   │   ├── BaseEntity.cs            # Id and CreatedAt baseline
@@ -509,10 +511,21 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
 
 * **Accountant is expense-only:** `Accountant` may access only `/expenses` and `[Authorize(Roles = "Owner,Accountant")]` expense CRUD, summary, and auto-reclassification endpoints. Orders, schedules, logistics, POS, manifests, daily sheets, CMS, operational dashboards, order counts, revenue, and profit reports are forbidden.
 * **Payload redaction is the security boundary:** For an Accountant claim, `GrossRevenue`, `NetFoodRevenue`, `DeliveryFeeRevenue`, `DiscountTotal`, `GrossProfit`, `OperatingNetProfit`, and `NetCashFlowAfterOwnerOutflows` must be serialized as `null`. Hiding React cards is never an acceptable substitute.
-* **Canonical mapping:** COGS is exactly Meat / Main Products, Ingredients & Freebies, and Packaging. OPEX is exactly Fuel, Utilities, Labor, Rent, Equipment & Supplies, Taxes and Government Fees, Marketing, Staff Meal, and Others. `Owner / Non-Operating Outflow` is `NON_OP` and must not distort operating profit.
+* **Canonical mapping:** COGS is exactly Meat / Main Products and Ingredients & Freebies. OPEX is exactly Fuel, Packaging, Utilities, Labor, Rent, Equipment & Supplies, Taxes and Government Fees, Marketing, Staff Meal, and Others. `Owner / Non-Operating Outflow` is `NON_OP` and must not distort operating profit.
 * **Server owns classification:** `ExpenseCategorizer` validates all categories and derives `CostType` on create, update, and reclassification. Evaluate packaging before meat so a belly box stays Packaging; manual frontend overrides apply only to the active entry row.
 * **Philippine expense dates:** Persist `ExpenseDate` as a date-valued `DateTimeKind.Unspecified`. Do not apply UTC conversion or an eight-hour shift.
 * **Math:** `Gross Profit = Net Food Revenue - COGS`; `Operating Net Profit = Net Food Revenue - COGS - OPEX`; `Net Cash Flow = Operating Net Profit - NON_OP`. Annual expense totals include operating and non-operating records; operating totals do not include `NON_OP`.
-* **Additive data safety:** `ExpenseRecord` schema and the default Accountant account are installed idempotently in `Program.cs`. The 17 November 2026 QA expenses use existence checks and must never delete or replace existing records. Expected totals are COGS `₱111,766.00`, OPEX `₱59,843.39`, NON_OP `₱23,000.00`, and grand outflow `₱194,609.39`.
+* **Additive data safety:** `ExpenseRecord` schema and the default Accountant account are installed idempotently in `Program.cs`. October's compiled seed is occurrence-aware and never deletes user data. The retired 17-row November fixture is removed only when `EncodedBy == "System QA Seed"`; every user-entered November row remains untouched.
 * **Primary files:** `ExpenseRecord.cs`, `ExpenseDtos.cs`, `ExpenseCategorizer.cs`, `ExpensesController.cs`, `ExpensesPage.tsx`, `expenseCategorizer.ts`, and `expenseCategorizer.test.ts`. Keep frontend/backend keyword behavior aligned.
 * **Verification:** Stop the old process on port 5199 before the final API run, then require `dotnet build LechonSystem.Api`, `npm --prefix lechon-system-web run build`, mobile `npx tsc --noEmit`, `npm --prefix lechon-system-mobile run lint`, and `node --experimental-strip-types --test lechon-system-web/src/utils/__tests__/expenseCategorizer.test.ts` to pass.
+
+### 2026-11-15 Daily Operations Integrity Contract
+
+* **DP tracker truth:** Only `Downpayment > 0` orders may appear or contribute to unremitted counts. Sort by `IsDateTbd` last, then `TargetDeliveryTime` ascending and `OrderId` ascending across API, Web, and Mobile.
+* **Prep shifts:** The eight Freebies/Prep cards expose `TotalCount`, `MorningCount`, and `AfternoonCount`. Effective needed times before `12:31:00` are AM; all later or unscheduled contributions are PM; the two shift counts must always sum to total. Both pills must remain visible in clean 4K export.
+* **Inventory completion:** `DeductOrderStockIfCompletedAsync` is the single idempotent StockOut path. Aggregate `FulfilledItemCategoryId ?? ItemCategoryId`, identify rows by order/category, exclude completed/posted orders from Locked (14D), and never display negative physical stock. Startup reconciles qualifying orders since `2026-10-27` without deleting orders, customers, reservations, or ledger history.
+* **Schedule anchoring:** Every non-TBD create/update and startup repair anchors rider departure plus Target/Tahi/Salang/Packaging dates to the event date while retaining time-of-day. Preserve a Lalamove pickup explicitly stored on the preceding date.
+* **Tablet clocks:** Kitchen, Rider, and Freebies time columns remain non-wrapping, padded, at least 96px wide, and enclosed in horizontal overflow containers.
+* **POS completion state:** Successful Web/Mobile creation keeps the success reference visible but clears Messenger paste state, cart, and all fields. Exact customer name + phone + event date + item-summary matches use `⚠️ ORDER ALREADY SAVED IN SYSTEM (#ref)` and explain that resubmission is only for a separate booking.
+* **October ledger:** `October2026ExpenseSeed` contains exactly 341 rows with COGS `₱245,677.00`, OPEX `₱395,543.00`, and total `₱641,220.00`. Paper Plate row 89 maps quantity/unit to `15` / `by 24 pcs`; Dalandan row 112 defaults blank payment to Cash. November remains unseeded.
+* **Development fixtures:** `November15QaDataSeed` is Development-only and idempotently creates `111526-901`, `111526-902`, and the 3:30 PM Staff Meryenda request. Never run these fixtures in Production.

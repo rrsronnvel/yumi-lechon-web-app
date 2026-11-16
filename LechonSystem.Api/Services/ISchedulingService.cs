@@ -16,4 +16,5 @@ public interface ISchedulingService
     Task<FreebiesPrepResponseDto> GetFreebiesPrepAsync(DateTime? date = null);
     Task<KitchenPrepRequestDto> CreateKitchenPrepRequestAsync(CreateKitchenPrepRequestDto dto, string createdBy);
     Task<bool> DeleteKitchenPrepRequestAsync(int id);
+    Task<bool> RealignOrderScheduleDatesAsync(int orderId);
 }

@@ -9,7 +9,12 @@ import {
   ItemCategory,
 } from "@/hooks/useCms";
 import { useCustomerLookup } from "@/hooks/useCustomers";
-import { evaluateDuplicateOrders, formatCalendarDateLabel, isPlaceholderPhone } from "@/utils/similarityHelper";
+import {
+  evaluateDuplicateOrders,
+  formatCalendarDateLabel,
+  isPlaceholderPhone,
+  normalizeName,
+} from "@/utils/similarityHelper";
 import {
   getCurrentPhilippineYear,
   isPastDeliveryDate,
@@ -97,6 +102,24 @@ const formatLocalDateTimeInput = (date: Date): string => {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
+
+const normalizeItemsSummary = (value?: string | null): string =>
+  Array.from(
+    new Set(
+      (value || "")
+        .split(/[,;|]+/)
+        .map((part) =>
+          part
+            .trim()
+            .toLowerCase()
+            .replace(/\s*(?:x|\*|\u00d7)\s*/g, "x")
+            .replace(/\s+/g, " "),
+        )
+        .filter(Boolean),
+    ),
+  )
+    .sort()
+    .join("|");
 
 export default function OrderForm({
   // auth
@@ -526,7 +549,7 @@ export default function OrderForm({
       return response.data;
     },
     onSuccess: async (savedOrder: any, variables: any) => {
-      await Promise.all([
+      const invalidations = Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders", "directory"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
         queryClient.invalidateQueries({ queryKey: ["customers"] }),
@@ -569,6 +592,11 @@ export default function OrderForm({
 
       setSavedOrderForModal(templateOrder);
       setIsSuccessModalOpen(true);
+      handleReset();
+      toast.success(`Order #${String(orderRef).replace(/^#/, "")} saved`, {
+        description: "The form is ready for the next booking.",
+      });
+      await invalidations;
     },
     onError: (err: any) => {
       const msg =
@@ -582,6 +610,22 @@ export default function OrderForm({
       });
     },
   });
+
+  const currentItemsSummary = useMemo(
+    () =>
+      (watchedItems || [])
+        .map((item) => {
+          const category = categories.find(
+            (candidate) => candidate.id === Number(item.itemCategoryId),
+          );
+          return category
+            ? `${Number(item.quantity) || 0}x ${category.name}`
+            : "";
+        })
+        .filter(Boolean)
+        .join(", "),
+    [categories, watchedItems],
+  );
 
   const duplicateEvaluation = useMemo(() => {
     return evaluateDuplicateOrders(
@@ -619,6 +663,23 @@ export default function OrderForm({
   );
   const redDuplicateOrders = duplicateOrders.filter(
     (duplicate) => !duplicate.isSharedPhoneDifferentName,
+  );
+  const exactSavedDuplicateOrders = redDuplicateOrders.filter(
+    (duplicate) =>
+      duplicate.isSameDay &&
+      Boolean(duplicate.matchedPhone) &&
+      Boolean(normalizeName(watchedCustomerName)) &&
+      normalizeName(watchedCustomerName) ===
+        normalizeName(duplicate.order.customerName) &&
+      Boolean(normalizeItemsSummary(currentItemsSummary)) &&
+      normalizeItemsSummary(currentItemsSummary) ===
+        normalizeItemsSummary(duplicate.order.itemsSummary),
+  );
+  const possibleDuplicateOrders = redDuplicateOrders.filter(
+    (duplicate) =>
+      !exactSavedDuplicateOrders.some(
+        (exact) => exact.order.orderId === duplicate.order.orderId,
+      ),
   );
 
   const currentPhilippineYear = getCurrentPhilippineYear();
@@ -1222,7 +1283,39 @@ export default function OrderForm({
 
           {!createOrderMutation.isSuccess &&
             !isSuccessModalOpen &&
-            redDuplicateOrders.length > 0 && (
+            exactSavedDuplicateOrders.length > 0 && (
+              <div
+                role="alert"
+                className="rounded-xl border-2 border-amber-500 bg-amber-50 p-3 text-xs text-amber-950 shadow-sm"
+              >
+                {exactSavedDuplicateOrders.slice(0, 3).map((duplicate) => {
+                  const existingRef = String(
+                    duplicate.order.orderReference,
+                  ).replace(/^#/, "");
+                  const dateStr = formatCalendarDateLabel(
+                    duplicate.order.targetDeliveryDate ??
+                      duplicate.order.targetDeliveryTime,
+                  );
+                  return (
+                    <div key={duplicate.order.orderId} className="space-y-1">
+                      <div className="font-black tracking-wide">
+                        ⚠️ ORDER ALREADY SAVED IN SYSTEM (#{existingRef})
+                      </div>
+                      <div className="font-medium">
+                        {duplicate.order.customerName || "This customer"} already
+                        has Order #{existingRef} saved for {dateStr} with these exact
+                        items ({duplicate.order.itemsSummary}). Only submit again if
+                        the customer is booking an additional separate order.
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+          {!createOrderMutation.isSuccess &&
+            !isSuccessModalOpen &&
+            possibleDuplicateOrders.length > 0 && (
             <div
               role="alert"
               className="rounded-xl border-2 border-rose-500 bg-rose-50 p-3 text-xs text-rose-950 shadow-sm"
@@ -1230,7 +1323,7 @@ export default function OrderForm({
               <div className="font-black tracking-wide">
                 🚨 POSSIBLE DUPLICATE ORDER DETECTED!
               </div>
-              {redDuplicateOrders.slice(0, 3).map((duplicate) => (
+              {possibleDuplicateOrders.slice(0, 3).map((duplicate) => (
                 <div key={duplicate.order.orderId} className="mt-1 font-medium">
                   {duplicate.order.customerName ||
                     customerProfile?.fullName ||

@@ -117,7 +117,12 @@ export default function ManifestPage() {
   );
 
   const unremittedDpCount = useMemo(
-    () => downpayments.filter((item) => !item.isDpRemittedToOwner).length,
+    () =>
+      downpayments.filter(
+        (item) =>
+          Number(item.downpaymentAmount || 0) > 0 &&
+          !item.isDpRemittedToOwner,
+      ).length,
     [downpayments],
   );
 

@@ -10,6 +10,7 @@ public class DownpaymentTrackerItemDto
     public decimal DownpaymentAmount { get; set; }
     public string DownpaymentMethod { get; set; } = "None";
     public DateTime? TargetDeliveryTime { get; set; }
+    public bool IsDateTbd { get; set; }
     public DateTime CreatedAt { get; set; }
     public string EncodedBy { get; set; } = string.Empty;
     public bool IsDpRemittedToOwner { get; set; }

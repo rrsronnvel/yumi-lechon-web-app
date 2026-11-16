@@ -23,6 +23,44 @@ export interface FreebiesPrepViewTabProps {
   onAddStorePaluto?: () => void;
 }
 
+interface ShiftCountSummary {
+  morningCount: number;
+  afternoonCount: number;
+}
+
+function ShiftBreakdown({
+  counts,
+  clean,
+}: {
+  counts: ShiftCountSummary;
+  clean: boolean;
+}) {
+  return (
+    <div className="mt-1.5 grid grid-cols-1 gap-1" aria-label="Morning and afternoon prep split">
+      <span
+        className={`inline-flex min-w-0 items-center justify-between gap-1 rounded px-1.5 py-1 text-[8px] font-black leading-tight ${
+          clean
+            ? "border border-black bg-amber-100 text-black"
+            : "border border-amber-400 bg-amber-200 text-amber-950"
+        }`}
+      >
+        <span>☀️ AM (≤12:30 PM):</span>
+        <span className="font-mono text-[10px]">{counts.morningCount ?? 0}</span>
+      </span>
+      <span
+        className={`inline-flex min-w-0 items-center justify-between gap-1 rounded px-1.5 py-1 text-[8px] font-black leading-tight ${
+          clean
+            ? "border border-black bg-sky-100 text-black"
+            : "border border-indigo-400 bg-sky-200 text-indigo-950"
+        }`}
+      >
+        <span>🌤️ PM (12:31 PM+):</span>
+        <span className="font-mono text-[10px]">{counts.afternoonCount ?? 0}</span>
+      </span>
+    </div>
+  );
+}
+
 export function FreebiesPrepViewTab({
   mode = "edit",
   selectedDate,
@@ -189,7 +227,7 @@ export function FreebiesPrepViewTab({
         } text-slate-900`}
       >
         {/* 1. TIME NEEDED */}
-        <td className="px-2 py-2 text-center border-r border-slate-300 text-xs font-mono font-bold whitespace-nowrap">
+        <td className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center border-r border-slate-300 text-xs font-mono font-bold">
           {row.isTimeTbd ? (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[10.5px]">
               ⏳ TIME TBD
@@ -364,6 +402,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-amber-800">bottles</span>
               </div>
+              <ShiftBreakdown counts={summary.sarsa} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-amber-900 leading-tight">
               <div>
@@ -398,6 +437,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-orange-800">bilaos</span>
               </div>
+              <ShiftBreakdown counts={summary.pancit} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-orange-900 leading-tight">
               <div>{summary.pancit.freebies} Freebies</div>
@@ -425,6 +465,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-yellow-800">bilaos</span>
               </div>
+              <ShiftBreakdown counts={summary.palabok} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-yellow-900 leading-tight">
               <div>{summary.palabok.freebies} Freebies</div>
@@ -452,6 +493,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-rose-800">bilaos</span>
               </div>
+              <ShiftBreakdown counts={summary.spaghetti} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-rose-900 leading-tight">
               <div>{summary.spaghetti.freebies} Freebies</div>
@@ -479,6 +521,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-stone-700">tubs</span>
               </div>
+              <ShiftBreakdown counts={summary.dinuguan} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-stone-800 leading-tight">
               <div>{summary.dinuguan.freebies} Freebies</div>
@@ -511,6 +554,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-sky-800">packs</span>
               </div>
+              <ShiftBreakdown counts={summary.puto} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-sky-900 leading-tight">
               <div>{summary.puto.freebies} Freebies</div>
@@ -538,6 +582,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-red-800">bottles</span>
               </div>
+              <ShiftBreakdown counts={summary.coke15L} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-red-900 leading-tight">
               <div>{summary.coke15L.freebies} Free + {summary.coke15L.bellySwaps} Belly Swaps</div>
@@ -565,6 +610,7 @@ export function FreebiesPrepViewTab({
                 </span>
                 <span className="text-[10px] font-bold text-purple-900">bags</span>
               </div>
+              <ShiftBreakdown counts={summary.rawInnardsHilaw} clean={isClean} />
             </div>
             <div className="mt-2 text-[10px] text-purple-950 leading-tight">
               <div className="font-bold text-[9px] text-purple-900 uppercase">
@@ -599,8 +645,8 @@ export function FreebiesPrepViewTab({
 
         {/* 100% Zero-Scroll Table Container */}
         <div
-          className={`w-full rounded-md border-2 border-black ${
-            isClean ? "overflow-visible no-scrollbar" : "overflow-x-auto"
+          className={`w-full overflow-x-auto rounded-md border-2 border-black ${
+            isClean ? "no-scrollbar" : ""
           } print:overflow-visible bg-white shadow-xs`}
         >
           <table
@@ -610,7 +656,7 @@ export function FreebiesPrepViewTab({
           >
             {/* Proportional Column Allocation (Total = 100%) */}
             <colgroup>
-              <col className="w-[10%] min-w-[95px]" />   {/* 1. Time Needed */}
+              <col className="w-[10%] min-w-[96px]" />   {/* 1. Time Needed */}
               <col className="w-[18%] min-w-[160px]" />  {/* 2. Order / Recipient */}
               <col className="w-[13%] min-w-[110px]" />  {/* 3. Type / Item */}
               <col className="w-[14%] min-w-[120px]" />  {/* 4. Fulfillment / Route */}
@@ -621,7 +667,7 @@ export function FreebiesPrepViewTab({
             {/* High-Contrast Bold Table Header */}
             <thead className="bg-black text-white">
               <tr className="border-b-2 border-black">
-                <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">
+                <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">
                   TIME NEEDED
                 </th>
                 <th className="px-2.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">

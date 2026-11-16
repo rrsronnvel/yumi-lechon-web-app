@@ -38,6 +38,9 @@ public class FreebiesPrepSummaryDto
 public class FreebieItemSummaryDto
 {
     public virtual int Total => Freebies + PaidAddOns + Paluto;
+    public int TotalCount => Total;
+    public int MorningCount { get; set; }
+    public int AfternoonCount { get; set; }
     public int Freebies { get; set; }
     public int PaidAddOns { get; set; }
     public int Paluto { get; set; }
@@ -84,6 +87,9 @@ public class CokeSummaryDto : FreebieItemSummaryDto
 public class RawInnardsSummaryDto
 {
     public int Total => Bags + PaidAddOns + Paluto;
+    public int TotalCount => Total;
+    public int MorningCount { get; set; }
+    public int AfternoonCount { get; set; }
     public int Bags { get; set; }
     public int Freebies => Bags;
     public int PaidAddOns { get; set; }

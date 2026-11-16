@@ -171,65 +171,16 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IX_Expenses_ExpenseDate ON Expenses (ExpenseDate);
     ");
 
-    // Explicit November 2026 QA ledger. The natural-tuple NOT EXISTS guard makes
-    // this insert-only and safe to run repeatedly alongside real store records.
-    // It is intentionally local/development-only so production databases never
-    // receive hard-coded QA expenses.
-    if (app.Environment.IsDevelopment())
-    {
-        await context.Database.ExecuteSqlRawAsync(@"
-        DECLARE @ExpenseSeed TABLE (
-            ExpenseDate datetime2 NOT NULL,
-            Category nvarchar(100) NOT NULL,
-            CostType nvarchar(20) NOT NULL,
-            ItemDescription nvarchar(250) NOT NULL,
-            Quantity decimal(18,2) NULL,
-            Unit nvarchar(50) NULL,
-            TotalCost decimal(18,2) NOT NULL,
-            PaymentMethod nvarchar(50) NOT NULL,
-            Remarks nvarchar(500) NULL
-        );
+    // Remove only the obsolete November QA expense fixtures. User-entered rows,
+    // including all operational November expenses, are deliberately untouched.
+    await context.Expenses
+        .Where(expense => expense.ExpenseDate >= new DateTime(2026, 11, 1) &&
+                          expense.EncodedBy == "System QA Seed")
+        .ExecuteDeleteAsync();
 
-        INSERT INTO @ExpenseSeed
-            (ExpenseDate, Category, CostType, ItemDescription, Quantity, Unit, TotalCost, PaymentMethod, Remarks)
-        VALUES
-            ('2026-11-01', N'Packaging', N'COGS', N'Packaging /tape', 4, N'pcs', 2504.00, N'Cash', N''),
-            ('2026-11-02', N'Owner / Non-Operating Outflow', N'NON_OP', N'Resort DP', NULL, NULL, 8000.00, N'Cash', N''),
-            ('2026-11-02', N'Marketing', N'OPEX', N'Meta Verified', NULL, NULL, 2850.00, N'Cash', N''),
-            ('2026-11-03', N'Meat / Main Products', N'COGS', N'Manok', 30, N'pcs', 6649.00, N'GCash', N''),
-            ('2026-11-03', N'Labor', N'OPEX', N'Ate Salary', NULL, NULL, 2510.00, N'GCash', N''),
-            ('2026-11-03', N'Ingredients & Freebies', N'COGS', N'Puregold', NULL, NULL, 10120.00, N'Cash', N''),
-            ('2026-11-03', N'Utilities', N'OPEX', N'Meralco Lechonan', NULL, NULL, 22483.39, N'GCash', N''),
-            ('2026-11-03', N'Packaging', N'COGS', N'Lechon Belly Box', 5, N'pcs', 1457.00, N'Cash', N'Shopee'),
-            ('2026-11-05', N'Equipment & Supplies', N'OPEX', N'Tablet', 1, N'pcs', 22000.00, N'Cash', N''),
-            ('2026-11-05', N'Meat / Main Products', N'COGS', N'Belly', NULL, NULL, 11848.00, N'GCash', N''),
-            ('2026-11-06', N'Rent', N'OPEX', N'Kitchen Park Rent', NULL, NULL, 10000.00, N'Cash', N''),
-            ('2026-11-07', N'Ingredients & Freebies', N'COGS', N'Fluid - Coke 1.5', NULL, NULL, 5124.00, N'Cash', N''),
-            ('2026-11-07', N'Ingredients & Freebies', N'COGS', N'Palabok', NULL, NULL, 6250.00, N'Cash', N''),
-            ('2026-11-07', N'Packaging', N'COGS', N'Manila Paper', 50, N'pcs', 2814.00, N'Cash', N'Shopee'),
-            ('2026-11-07', N'Owner / Non-Operating Outflow', N'NON_OP', N'Paluwagan', NULL, NULL, 3500.00, N'Cash', N''),
-            ('2026-11-08', N'Owner / Non-Operating Outflow', N'NON_OP', N'Expenses from Tita Elay', NULL, NULL, 11500.00, N'Cash', N''),
-            ('2026-11-10', N'Meat / Main Products', N'COGS', N'Live Pigs (Buong Baboy - Batch Katay)', 10, N'heads', 65000.00, N'Cash', N'Biyahero Batangas');
-
-        INSERT INTO Expenses
-            (ExpenseDate, Category, CostType, ItemDescription, Quantity, Unit, UnitCost,
-             TotalCost, PaymentMethod, Remarks, EncodedBy, CreatedAt)
-        SELECT seed.ExpenseDate, seed.Category, seed.CostType, seed.ItemDescription,
-               seed.Quantity, seed.Unit, NULL, seed.TotalCost, seed.PaymentMethod,
-               seed.Remarks, N'System QA Seed', '2026-11-13T00:00:00'
-        FROM @ExpenseSeed seed
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM Expenses existing
-            WHERE existing.ExpenseDate = seed.ExpenseDate
-              AND existing.Category = seed.Category
-              AND existing.ItemDescription = seed.ItemDescription
-              AND existing.TotalCost = seed.TotalCost
-              AND ISNULL(existing.Quantity, -1) = ISNULL(seed.Quantity, -1)
-              AND ISNULL(existing.Unit, N'') = ISNULL(seed.Unit, N'')
-        );
-        ");
-    }
+    // The real October ledger is compiled into the API so Development and
+    // Production seed identically without requiring the source workbook.
+    await October2026ExpenseSeed.SeedAsync(context);
 
     var accountant = await context.Users
         .FirstOrDefaultAsync(user => user.Username.ToLower() == "accountant");
@@ -299,6 +250,14 @@ using (var scope = app.Services.CreateScope())
             );
         END
     ");
+
+    // Fixed-date QA fixtures are intentionally Development-only. Unlike the
+    // opt-in legacy QA seeder below, this routine never deletes or recreates an
+    // order; it only upserts the two reserved QA references and one Paluto row.
+    if (app.Environment.IsDevelopment())
+    {
+        await November15QaDataSeed.SeedAsync(context);
+    }
 
     // Idempotent text repair only: correct known historical UTF-8/Windows-1252
     // mojibake without deleting records or changing unrelated order data.
@@ -554,6 +513,118 @@ using (var scope = app.Services.CreateScope())
         builder.Configuration.GetValue<bool>("EnableQaDataSeeder"))
     {
         await QaDataSeeder.SeedQaDataAsync(scope.ServiceProvider);
+    }
+
+    // Realign schedules stranded on an old date after an order delivery-date edit.
+    // A deliberate prior-day Lalamove pickup is the sole exception because that
+    // date difference represents an explicit courier handoff plan.
+    static DateTime AlignDatePreservingClock(DateTime value, DateTime targetDate) =>
+        DateTime.SpecifyKind(targetDate.Date.Add(value.TimeOfDay), DateTimeKind.Unspecified);
+
+    var scheduleDateRepairOrders = await context.Orders
+        .Include(order => order.OrderItems)
+            .ThenInclude(item => item.OrderItemSchedule)
+        .Where(order => !order.IsCancelled &&
+                        !order.IsDraft &&
+                        !order.IsTimeTbd &&
+                        order.TargetDeliveryTime.HasValue)
+        .ToListAsync();
+
+    var scheduleDateRepairs = 0;
+    foreach (var order in scheduleDateRepairOrders)
+    {
+        var target = DateTime.SpecifyKind(order.TargetDeliveryTime!.Value, DateTimeKind.Unspecified);
+        var schedules = order.OrderItems
+            .Select(item => item.OrderItemSchedule)
+            .Where(schedule => schedule != null)
+            .Cast<OrderItemSchedule>()
+            .ToList();
+        var intentionalPriorDayLalamove = order.Fulfillment == FulfillmentType.Lalamove &&
+            order.RiderDepartureTime.HasValue &&
+            order.RiderDepartureTime.Value.Date == target.Date.AddDays(-1);
+        if (intentionalPriorDayLalamove)
+        {
+            continue;
+        }
+
+        var scheduleDateMismatch = schedules.Any(schedule => schedule.TargetDeliveryTime.Date != target.Date);
+        var departureDateMismatch = order.RiderDepartureTime.HasValue &&
+                                    order.RiderDepartureTime.Value.Date != target.Date;
+        if (!scheduleDateMismatch && !departureDateMismatch)
+        {
+            continue;
+        }
+
+        order.RiderDepartureTime = order.RiderDepartureTime.HasValue
+            ? AlignDatePreservingClock(order.RiderDepartureTime.Value, target)
+            : target;
+        foreach (var schedule in schedules)
+        {
+            schedule.TargetDeliveryTime = AlignDatePreservingClock(schedule.TargetDeliveryTime, target);
+            schedule.TahiStartTime = AlignDatePreservingClock(schedule.TahiStartTime, target);
+            schedule.SalangStartTime = AlignDatePreservingClock(schedule.SalangStartTime, target);
+            schedule.PackagingStartTime = AlignDatePreservingClock(schedule.PackagingStartTime, target);
+        }
+
+        context.OrderAuditLogs.Add(new OrderAuditLog
+        {
+            OrderId = order.Id,
+            ActionType = "Schedule Date Realigned",
+            Changes = $"Aligned rider and kitchen schedule dates to {target:yyyy-MM-dd} while preserving each time of day.",
+            ChangedBy = "System Startup Repair",
+            Timestamp = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow
+        });
+        scheduleDateRepairs++;
+    }
+
+    if (scheduleDateRepairs > 0)
+    {
+        await context.SaveChangesAsync();
+    }
+
+    // Retroactively create missing StockOut ledger entries for completed orders.
+    // The inventory service performs the bracket-level idempotency check, so this
+    // pass is safe on every startup and cannot deduct an order twice.
+    var reconciliationStart = new DateTime(2026, 10, 27);
+    var todayPht = PhilippineTime.Today;
+    var successfulPayments = await context.PaymentLogs
+        .AsNoTracking()
+        .Where(payment => payment.Status == PaymentStatus.Success && !payment.IsVoided)
+        .GroupBy(payment => payment.OrderId)
+        .Select(group => new { OrderId = group.Key, Total = group.Sum(payment => payment.Amount) })
+        .ToDictionaryAsync(group => group.OrderId, group => group.Total);
+    var reconciliationOrders = await context.Orders
+        .AsNoTracking()
+        .Where(order => !order.IsCancelled &&
+                        order.TargetDeliveryTime.HasValue &&
+                        order.TargetDeliveryTime.Value >= reconciliationStart &&
+                        (order.RoutingStatus == DeliveryStatus.Delivered ||
+                         order.SettlementCustodyStatus == "Settled" ||
+                         order.TargetDeliveryTime.Value.Date < todayPht))
+        .Select(order => new
+        {
+            order.Id,
+            order.RoutingStatus,
+            order.SettlementCustodyStatus,
+            order.TargetDeliveryTime,
+            order.Downpayment,
+            order.GrandTotal
+        })
+        .ToListAsync();
+    var inventoryService = scope.ServiceProvider.GetRequiredService<IInventoryService>();
+    foreach (var order in reconciliationOrders)
+    {
+        successfulPayments.TryGetValue(order.Id, out var ledgerPaid);
+        var isCompleted = order.RoutingStatus == DeliveryStatus.Delivered ||
+                          string.Equals(order.SettlementCustodyStatus, "Settled", StringComparison.OrdinalIgnoreCase);
+        var isPastAndPaidInFull = order.TargetDeliveryTime!.Value.Date < todayPht &&
+                                  order.GrandTotal > 0 &&
+                                  Math.Max(ledgerPaid, order.Downpayment) >= order.GrandTotal;
+        if (isCompleted || isPastAndPaidInFull)
+        {
+            await inventoryService.DeductOrderStockIfCompletedAsync(order.Id, "System Startup Reconciliation");
+        }
     }
 }
 

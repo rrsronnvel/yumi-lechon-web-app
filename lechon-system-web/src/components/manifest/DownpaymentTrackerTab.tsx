@@ -52,6 +52,27 @@ const isDigitalMethod = (method?: string | null) => {
 const isWalkIn = (item: DownpaymentTrackerItem) =>
   isWalkInOrder({ source: item.bookingSource, customerName: item.customerName });
 
+const sortByEventDate = (
+  a: DownpaymentTrackerItem,
+  b: DownpaymentTrackerItem,
+) => {
+  const aIsTbd = Boolean(a.isDateTbd || !a.targetDeliveryTime);
+  const bIsTbd = Boolean(b.isDateTbd || !b.targetDeliveryTime);
+  if (aIsTbd !== bIsTbd) return aIsTbd ? 1 : -1;
+
+  const aTime = aIsTbd
+    ? Number.POSITIVE_INFINITY
+    : new Date(a.targetDeliveryTime!).getTime();
+  const bTime = bIsTbd
+    ? Number.POSITIVE_INFINITY
+    : new Date(b.targetDeliveryTime!).getTime();
+  const safeATime = Number.isNaN(aTime) ? Number.POSITIVE_INFINITY : aTime;
+  const safeBTime = Number.isNaN(bTime) ? Number.POSITIVE_INFINITY : bTime;
+  if (safeATime !== safeBTime) return safeATime - safeBTime;
+
+  return Number(a.orderId) - Number(b.orderId);
+};
+
 const formatDate = (value?: string | null) => {
   if (!value) return "Date TBD";
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -100,9 +121,14 @@ export function DownpaymentTrackerTab({
   const [filter, setFilter] = useState<DownpaymentFilter>("unremitted");
   const toggleRemittance = useToggleDownpaymentRemittanceMutation();
 
+  const payableItems = useMemo(
+    () => items.filter((item) => Number(item.downpaymentAmount || 0) > 0),
+    [items],
+  );
+
   const summary = useMemo(
     () =>
-      items.reduce(
+      payableItems.reduce(
         (totals, item) => {
           const amount = Number(item.downpaymentAmount || 0);
           if (item.isDpRemittedToOwner) {
@@ -127,14 +153,14 @@ export function DownpaymentTrackerTab({
           unremittedCount: 0,
         },
       ),
-    [items],
+    [payableItems],
   );
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const cleanQ = q.startsWith("#") ? q.slice(1) : q;
 
-    return items.filter((item) => {
+    return payableItems.filter((item) => {
       // 1. Text Search Filter across customerName, orderReference, orderId, phoneNumber, downpaymentMethod, bookingSource, encodedBy
       if (cleanQ) {
         const matchCustomer = item.customerName?.toLowerCase().includes(cleanQ);
@@ -173,8 +199,8 @@ export function DownpaymentTrackerTab({
         default:
           return true;
       }
-    });
-  }, [filter, items, searchQuery]);
+    }).sort(sortByEventDate);
+  }, [filter, payableItems, searchQuery]);
 
   const filters: Array<{ value: DownpaymentFilter; label: string }> = [
     {

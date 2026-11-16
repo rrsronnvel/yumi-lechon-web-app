@@ -22,6 +22,9 @@ public interface IInventoryService
     Task<IEnumerable<InventoryBalanceDto>> GetInventoryBalancesAsync();
     Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync();
 
+    // Idempotently posts completed order quantities to the freezer ledger.
+    Task<bool> DeductOrderStockIfCompletedAsync(int orderId, string actor);
+
     // Papakatay / Butcher Slaughter & Procurement Plan
     Task<ButcherPlanResponseDto> GetButcherPlanAsync(DateTime? startDate, DateTime? endDate);
 

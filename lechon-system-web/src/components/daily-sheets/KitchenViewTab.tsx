@@ -150,7 +150,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         {/* 2. Tahi */}
         <td
           onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
-          className={`px-1.5 py-2 text-center font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
+          className={`min-w-[96px] px-3 py-2.5 text-center font-black text-red-600 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
           title={isEdit && hasTahi && !isTimeTbd ? "Click to override production timings" : undefined}
         >
           {isTimeTbd ? (
@@ -168,7 +168,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         {/* 3. Salang */}
         <td
           onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
-          className={`px-1.5 py-2 text-center font-extrabold text-slate-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
+          className={`min-w-[96px] px-3 py-2.5 text-center font-extrabold text-slate-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
           title={isEdit && hasTahi && !isTimeTbd ? "Click to override production timings" : undefined}
         >
           {isTimeTbd ? (
@@ -219,7 +219,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         {/* 7. Departure / Pickup Time */}
         <td
           onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
-          className={`px-1 py-2 text-center font-mono font-bold text-amber-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
+          className={`min-w-[96px] px-3 py-2.5 text-center font-mono font-bold text-amber-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap ${editableCellClass}`}
           title={isEdit && hasTahi && !isTimeTbd ? "Click to override departure or production timings" : undefined}
         >
           {isTimeTbd ? (
@@ -315,7 +315,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         </td>
 
         {/* 12. Delivery Time */}
-        <td className="px-1.5 py-2 text-center font-bold text-slate-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
+        <td className="min-w-[96px] px-3 py-2.5 text-center font-bold text-slate-900 text-xs sm:text-[13px] border-r border-slate-300 whitespace-nowrap">
           {isTimeTbd ? (
             <span className="text-stone-400 font-semibold">—</span>
           ) : (
@@ -363,22 +363,22 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
   return (
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
-      <div className={`w-full rounded-md border-2 border-black ${mode === "clean" ? "overflow-visible no-scrollbar" : "overflow-x-auto"} print:overflow-visible bg-white shadow-xs`}>
+      <div className={`w-full overflow-x-auto rounded-md border-2 border-black ${mode === "clean" ? "no-scrollbar" : ""} print:overflow-visible bg-white shadow-xs`}>
         <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
             <col className="w-[8%] min-w-[115px]" />  {/* 1. No. */}
-            <col className="w-[5.5%]" />              {/* 2. Tahi */}
-            <col className="w-[5.5%]" />              {/* 3. Salang */}
+            <col className="w-[5.5%] min-w-[96px]" /> {/* 2. Tahi */}
+            <col className="w-[5.5%] min-w-[96px]" /> {/* 3. Salang */}
             <col className="w-[5%]" />                {/* 4. Priority */}
             <col className="w-[4.5%]" />              {/* 5. Size (Compact: fits "S. Jumbo") */}
             <col className="w-[4.5%]" />              {/* 6. Weight */}
-            <col className="w-[8.5%]" />              {/* 7. Departure / Pickup */}
+            <col className="w-[8.5%] min-w-[96px]" /> {/* 7. Departure / Pickup */}
             <col className="w-[9%]" />                {/* 8. Customer Name */}
             <col className="w-[15%]" />               {/* 9. Remarks (Expanded) */}
             <col className="w-[14.5%]" />             {/* 10. Location (Expanded) */}
             <col className="w-[4%]" />                {/* 11. Add-ons */}
-            <col className="w-[5.5%]" />              {/* 12. Delivery Time */}
+            <col className="w-[5.5%] min-w-[96px]" /> {/* 12. Delivery Time */}
             <col className="w-[11%]" />               {/* 13. Rider Name */}
           </colgroup>
 
@@ -386,17 +386,17 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
           <thead className="bg-black text-white">
             <tr className="border-b-2 border-black">
               <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[115px] whitespace-nowrap font-mono font-bold">No.</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Tahi</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Salang</th>
+              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Tahi</th>
+              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Salang</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Priority</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 whitespace-nowrap">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-amber-950 text-amber-300">Departure / Pickup</th>
+              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-amber-950 text-amber-300">Departure / Pickup</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Remarks</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Location</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Add-ons</th>
-              <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Delivery</th>
+              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Delivery</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px]">Rider</th>
             </tr>
           </thead>

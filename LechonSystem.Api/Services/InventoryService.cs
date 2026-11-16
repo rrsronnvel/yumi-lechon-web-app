@@ -1,5 +1,6 @@
 using LechonSystem.Api.Common;
 using System;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,12 @@ namespace LechonSystem.Api.Services
 {
     public class InventoryService : IInventoryService
     {
+        private static readonly HashSet<string> InventoryBracketNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "XXS", "XS", "S", "M", "L", "XL", "XXL", "Jumbo", "S. Jumbo",
+            "Belly 2kg", "Belly 3kg", "Belly 4kg", "Belly 5kg"
+        };
+
         private readonly LechonDbContext _context;
 
         public InventoryService(LechonDbContext context)
@@ -81,7 +88,7 @@ namespace LechonSystem.Api.Services
                 .Where(t => t.ItemCategoryId == itemCategoryId && t.Type == TransactionType.StockOut)
                 .SumAsync(t => t.Quantity);
 
-            int physicalOnHand = totalStockIn - totalStockOut;
+            int physicalOnHand = Math.Max(0, totalStockIn - totalStockOut);
 
             // 2. Calculate Promised/Locked Stock for this target date
             int totalCommittedReservations = await _context.InventoryReservations
@@ -163,12 +170,21 @@ namespace LechonSystem.Api.Services
             var windowStart = PhilippineTime.Today;
             var windowEnd = windowStart.AddDays(15);
 
+            var stockOutOrderIds = transactions
+                .Where(t => t.Type == TransactionType.StockOut && t.ReferenceId.HasValue)
+                .Select(t => t.ReferenceId!.Value)
+                .Distinct()
+                .ToList();
+
             var reservations = await _context.InventoryReservations
                 .AsNoTracking()
                 .Include(r => r.Order)
                 .Where(r => (r.Status == ReservationStatus.Committed || r.ReservationStatus == ReservationStatus.Committed)
                          && r.Order != null
                          && !r.Order.IsCancelled
+                         && r.Order.RoutingStatus != DeliveryStatus.Delivered
+                         && r.Order.SettlementCustodyStatus != "Settled"
+                         && !stockOutOrderIds.Contains(r.OrderId)
                          && r.Order.TargetDeliveryTime >= windowStart
                          && r.Order.TargetDeliveryTime < windowEnd)
                 .ToListAsync();
@@ -180,7 +196,7 @@ namespace LechonSystem.Api.Services
             // 3. Health status evaluation & DTO construction
             var balances = categories.Select(cat =>
             {
-                int physicalStock = physicalStockMap.GetValueOrDefault(cat.Id, 0);
+                int physicalStock = Math.Max(0, physicalStockMap.GetValueOrDefault(cat.Id, 0));
                 int lockedStock = lockedStockMap.GetValueOrDefault(cat.Id, 0);
                 int availableStock = physicalStock - lockedStock;
 
@@ -217,6 +233,124 @@ namespace LechonSystem.Api.Services
         public async Task<IEnumerable<InventoryBalanceDto>> GetLiveBalancesAsync()
         {
             return await GetInventoryBalancesAsync();
+        }
+
+        public async Task<bool> DeductOrderStockIfCompletedAsync(int orderId, string actor)
+        {
+            // A serializable transaction prevents two completion callbacks from both
+            // observing a missing order/category StockOut and posting it twice.
+            await using var transaction = _context.Database.CurrentTransaction == null
+                ? await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable)
+                : null;
+
+            var order = await _context.Orders
+                .Include(o => o.OrderItems)
+                    .ThenInclude(item => item.ItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(item => item.FulfilledItemCategory)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null || order.IsDraft || order.IsCancelled)
+            {
+                if (transaction != null) await transaction.CommitAsync();
+                return false;
+            }
+
+            var grossTotal = order.GrandTotal > 0m
+                ? order.GrandTotal
+                : order.Price + order.DeliveryFee - order.Discount;
+            var activePayments = await _context.PaymentLogs
+                .Where(payment => payment.OrderId == order.Id
+                                  && payment.Status == PaymentStatus.Success
+                                  && !payment.IsVoided)
+                .SumAsync(payment => (decimal?)payment.Amount) ?? 0m;
+            var isPastPaidInFull = grossTotal > 0m
+                                   && order.TargetDeliveryTime.HasValue
+                                   && order.TargetDeliveryTime.Value.Date < PhilippineTime.Today
+                                   && Math.Max(order.Downpayment, activePayments) >= Math.Max(0m, grossTotal);
+            var handoverCompleted = order.Fulfillment switch
+            {
+                FulfillmentType.Pickup => order.StaffValidatedAt.HasValue,
+                FulfillmentType.Delivery => order.RiderSignedAt.HasValue || order.StaffValidatedAt.HasValue,
+                FulfillmentType.Lalamove => order.RoutingStatus == DeliveryStatus.Delivered,
+                _ => false
+            };
+            var isCompleted = order.RoutingStatus == DeliveryStatus.Delivered
+                              || string.Equals(order.SettlementCustodyStatus, "Settled", StringComparison.OrdinalIgnoreCase)
+                              || handoverCompleted
+                              || isPastPaidInFull;
+
+            if (!isCompleted)
+            {
+                if (transaction != null) await transaction.CommitAsync();
+                return false;
+            }
+
+            var bracketQuantities = order.OrderItems
+                .Select(item => new
+                {
+                    Category = item.FulfilledItemCategory ?? item.ItemCategory,
+                    item.Quantity
+                })
+                .Where(item => item.Category != null
+                               && InventoryBracketNames.Contains(item.Category.Name.Trim())
+                               && item.Quantity > 0)
+                .GroupBy(item => new { item.Category!.Id, item.Category.Name })
+                .Select(group => new
+                {
+                    CategoryId = group.Key.Id,
+                    BracketName = group.Key.Name,
+                    Quantity = group.Sum(item => item.Quantity)
+                })
+                .ToList();
+
+            if (bracketQuantities.Count == 0)
+            {
+                if (transaction != null) await transaction.CommitAsync();
+                return false;
+            }
+
+            var bracketIds = bracketQuantities.Select(item => item.CategoryId).ToList();
+            var reasonPrefix = $"Order #{order.OrderReference} -";
+            var existingCategoryIds = await _context.InventoryTransactions
+                .Where(entry => entry.Type == TransactionType.StockOut
+                                && bracketIds.Contains(entry.ItemCategoryId)
+                                && (entry.ReferenceId == order.Id
+                                    || (entry.Reason != null && entry.Reason.StartsWith(reasonPrefix))))
+                .Select(entry => entry.ItemCategoryId)
+                .Distinct()
+                .ToListAsync();
+
+            var postedAny = false;
+            foreach (var bracket in bracketQuantities.Where(item => !existingCategoryIds.Contains(item.CategoryId)))
+            {
+                _context.InventoryTransactions.Add(new InventoryTransaction
+                {
+                    ItemCategoryId = bracket.CategoryId,
+                    Quantity = bracket.Quantity,
+                    Type = TransactionType.StockOut,
+                    ReferenceId = order.Id,
+                    TransactionDate = order.TargetDeliveryTime ?? PhilippineTime.Now,
+                    Reason = $"Order #{order.OrderReference} - {order.CustomerName} ({bracket.BracketName})"
+                });
+                postedAny = true;
+            }
+
+            if (postedAny)
+            {
+                _context.OrderAuditLogs.Add(new OrderAuditLog
+                {
+                    OrderId = order.Id,
+                    ActionType = "Inventory StockOut",
+                    Changes = $"Completed-order freezer StockOut posted idempotently by {actor}.",
+                    ChangedBy = string.IsNullOrWhiteSpace(actor) ? "System" : actor.Trim(),
+                    Timestamp = PhilippineTime.Now
+                });
+                await _context.SaveChangesAsync();
+            }
+
+            if (transaction != null) await transaction.CommitAsync();
+            return postedAny;
         }
 
         public async Task<ButcherPlanResponseDto> GetButcherPlanAsync(DateTime? startDate, DateTime? endDate)

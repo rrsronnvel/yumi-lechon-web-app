@@ -90,12 +90,19 @@ namespace LechonSystem.Api.Services
         {
             var target = AsStoreLocal(targetDeliveryTime);
 
-            // An explicitly supplied pickup/departure time is an independent kitchen
-            // anchor. This is especially important for Lalamove orders where the
-            // courier may collect the order well before the customer's serving time.
             if (requestedDepartureTime.HasValue)
             {
-                return AsStoreLocal(requestedDepartureTime.Value);
+                var requested = AsStoreLocal(requestedDepartureTime.Value);
+                // An explicit previous-day Lalamove collection is intentional. All other
+                // departure clocks belong to the customer event date, including edits that
+                // arrive with a stale YYYY-MM-DD portion.
+                if (fulfillment == FulfillmentType.Lalamove
+                    && requested.Date == target.Date.AddDays(-1))
+                {
+                    return requested;
+                }
+
+                return target.Date.Add(requested.TimeOfDay);
             }
 
             if (fulfillment == FulfillmentType.Pickup || fulfillment == FulfillmentType.Lalamove)
@@ -108,18 +115,9 @@ namespace LechonSystem.Api.Services
 
         private static DateTime AnchorScheduleClock(
             DateTime value,
-            DateTime targetDeliveryTime,
-            DateTime? departureTime)
+            DateTime targetDeliveryTime)
         {
-            var anchored = AsStoreLocal(targetDeliveryTime.Date.Add(value.TimeOfDay));
-            if (departureTime.HasValue &&
-                departureTime.Value.Hour >= 1 && departureTime.Value.Hour <= 5 &&
-                anchored > departureTime.Value)
-            {
-                anchored = anchored.AddDays(-1);
-            }
-
-            return anchored;
+            return AsStoreLocal(targetDeliveryTime.Date.Add(value.TimeOfDay));
         }
 
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
@@ -343,6 +341,10 @@ namespace LechonSystem.Api.Services
             _context.OrderAuditLogs.Add(auditLog);
 
             await _context.SaveChangesAsync();
+            if (!order.IsTimeTbd && order.TargetDeliveryTime.HasValue)
+            {
+                await _schedulingService.RealignOrderScheduleDatesAsync(order.Id);
+            }
             return order;
         }
 
@@ -351,7 +353,15 @@ namespace LechonSystem.Api.Services
             var reservation = await _context.InventoryReservations
                 .FirstOrDefaultAsync(r => r.OrderId == orderId);
 
-            if (reservation == null) return false;
+            if (reservation == null)
+            {
+                // Payment processing can still move an order to Settled even when
+                // the order has no reservation row (for example, a repaired legacy
+                // order). The shared inventory gate is idempotent and will no-op
+                // unless the order is in a completed state with a stock bracket.
+                await _inventoryService.DeductOrderStockIfCompletedAsync(orderId, CurrentUser);
+                return false;
+            }
 
             reservation.ReservationStatus = ReservationStatus.Committed;
 
@@ -374,6 +384,7 @@ namespace LechonSystem.Api.Services
 
             _context.NotificationLogs.Add(log);
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(orderId, CurrentUser);
             return true;
         }
 
@@ -1218,11 +1229,17 @@ namespace LechonSystem.Api.Services
                     if (oldSchedule?.IsManualOverride == true)
                     {
                         var target = AsStoreLocal(order.TargetDeliveryTime.Value);
-                        var departure = order.RiderDepartureTime ?? target;
+                        var intentionalPriorDayLalamove = order.Fulfillment == FulfillmentType.Lalamove
+                                                          && order.RiderDepartureTime.HasValue
+                                                          && order.RiderDepartureTime.Value.Date == target.Date.AddDays(-1);
+                        if (intentionalPriorDayLalamove)
+                        {
+                            continue;
+                        }
                         oldSchedule.TargetDeliveryTime = target;
-                        oldSchedule.TahiStartTime = AnchorScheduleClock(oldSchedule.TahiStartTime, target, departure);
-                        oldSchedule.SalangStartTime = AnchorScheduleClock(oldSchedule.SalangStartTime, target, departure);
-                        oldSchedule.PackagingStartTime = AnchorScheduleClock(oldSchedule.PackagingStartTime, target, departure);
+                        oldSchedule.TahiStartTime = AnchorScheduleClock(oldSchedule.TahiStartTime, target);
+                        oldSchedule.SalangStartTime = AnchorScheduleClock(oldSchedule.SalangStartTime, target);
+                        oldSchedule.PackagingStartTime = AnchorScheduleClock(oldSchedule.PackagingStartTime, target);
                         oldSchedule.CustomWeightDisplay = customWeightDisplay;
                         continue;
                     }
@@ -1257,6 +1274,10 @@ namespace LechonSystem.Api.Services
             }
 
             await _context.SaveChangesAsync();
+            if (!order.IsDraft && !order.IsTimeTbd && order.TargetDeliveryTime.HasValue)
+            {
+                await _schedulingService.RealignOrderScheduleDatesAsync(order.Id);
+            }
         }
 
         public async Task<List<OrderAuditLog>> GetOrderAuditLogsAsync(int orderId)

@@ -17,15 +17,18 @@ namespace LechonSystem.Api.Services
         private readonly LechonDbContext _context;
         private readonly INotificationSender _notificationSender;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IInventoryService _inventoryService;
 
         public LogisticsService(
             LechonDbContext context,
             INotificationSender notificationSender,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            IInventoryService inventoryService)
         {
             _context = context;
             _notificationSender = notificationSender;
             _httpContextAccessor = httpContextAccessor;
+            _inventoryService = inventoryService;
         }
 
         private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
@@ -382,6 +385,7 @@ namespace LechonSystem.Api.Services
             _context.OrderAuditLogs.Add(auditLog);
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, "Lalamove Dispatcher");
             return true;
         }
 
@@ -391,9 +395,10 @@ namespace LechonSystem.Api.Services
                 .AsNoTracking()
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
-                         && (o.Downpayment > 0m || o.Source == "Walk-in"))
-                .OrderByDescending(o => o.CreatedAt)
-                .ThenByDescending(o => o.Id)
+                         && o.Downpayment > 0m)
+                .OrderBy(o => (o.IsTimeTbd || !o.TargetDeliveryTime.HasValue) ? 1 : 0)
+                .ThenBy(o => o.TargetDeliveryTime)
+                .ThenBy(o => o.Id)
                 .Select(o => new DownpaymentTrackerItemDto
                 {
                     OrderId = o.Id,
@@ -404,6 +409,7 @@ namespace LechonSystem.Api.Services
                     DownpaymentAmount = o.Downpayment,
                     DownpaymentMethod = o.DownpaymentMethod,
                     TargetDeliveryTime = o.TargetDeliveryTime,
+                    IsDateTbd = o.IsTimeTbd || !o.TargetDeliveryTime.HasValue,
                     CreatedAt = o.CreatedAt,
                     EncodedBy = o.CreatedBy,
                     IsDpRemittedToOwner = o.IsDpRemittedToOwner,
@@ -447,9 +453,9 @@ namespace LechonSystem.Api.Services
             {
                 throw new KeyNotFoundException($"Order #{orderId} was not found in the active downpayment tracker.");
             }
-            if (order.Downpayment <= 0m && !string.Equals(order.Source, "Walk-in", StringComparison.OrdinalIgnoreCase))
+            if (order.Downpayment <= 0m)
             {
-                throw new InvalidOperationException($"Order #{orderId} does not have a downpayment and is not a Walk-in booking.");
+                throw new InvalidOperationException($"Order #{orderId} does not have a downpayment to remit.");
             }
 
             order.IsDpRemittedToOwner = !order.IsDpRemittedToOwner;
@@ -491,6 +497,7 @@ namespace LechonSystem.Api.Services
                 DownpaymentAmount = order.Downpayment,
                 DownpaymentMethod = method,
                 TargetDeliveryTime = order.TargetDeliveryTime,
+                IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
                 CreatedAt = order.CreatedAt,
                 EncodedBy = order.CreatedBy,
                 IsDpRemittedToOwner = order.IsDpRemittedToOwner,
@@ -838,6 +845,7 @@ namespace LechonSystem.Api.Services
             });
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return MapToStatusDto(session, order);
         }
 
@@ -876,6 +884,10 @@ namespace LechonSystem.Api.Services
             order.HeldByStaffAmount = physicalCash;
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
+            if (order.Fulfillment == FulfillmentType.Pickup)
+            {
+                order.RoutingStatus = DeliveryStatus.Delivered;
+            }
 
             if (digitalTransfer > 0m)
             {
@@ -940,6 +952,7 @@ namespace LechonSystem.Api.Services
             });
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return true;
         }
 
@@ -972,6 +985,10 @@ namespace LechonSystem.Api.Services
             order.DigitalReferenceNote = isFullOwnerDigital ? session.ReferenceNumber : null;
             order.StaffValidatedBy = staffUsername;
             order.StaffValidatedAt = DateTime.UtcNow;
+            if (order.Fulfillment == FulfillmentType.Pickup)
+            {
+                order.RoutingStatus = DeliveryStatus.Delivered;
+            }
 
             if (order.Fulfillment == FulfillmentType.Lalamove)
             {
@@ -1005,6 +1022,7 @@ namespace LechonSystem.Api.Services
             });
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return MapToStatusDto(session, order);
         }
 
@@ -1289,6 +1307,7 @@ namespace LechonSystem.Api.Services
             }
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, verifiedOwnerUsername);
             return MapToStatusDto(session, order);
         }
 
@@ -1330,6 +1349,7 @@ namespace LechonSystem.Api.Services
             });
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return true;
         }
 
@@ -1470,6 +1490,7 @@ namespace LechonSystem.Api.Services
             });
 
             await _context.SaveChangesAsync();
+            await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, ownerUsername);
             return true;
         }
 
