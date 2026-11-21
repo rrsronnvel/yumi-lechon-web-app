@@ -46,6 +46,9 @@ export interface FreebiesPrepSummaryDto {
   puto: FreebieItemSummaryDto;
   coke15L: CokeSummaryDto;
   rawInnardsHilaw: RawInnardsSummaryDto;
+  friedChicken?: FreebieItemSummaryDto;
+  shanghai?: FreebieItemSummaryDto;
+  bopis?: FreebieItemSummaryDto;
 }
 
 export interface PackItemPillDto {
@@ -78,6 +81,9 @@ export interface FreebiePrepRosterRowDto {
   isRawInnards: boolean;
   hasBellyCokeSwap: boolean;
   freebiesSummary?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
+  isPromoCustomized?: boolean;
   checklistPills: PackItemPillDto[];
   remarks: string;
   createdBy?: string | null;

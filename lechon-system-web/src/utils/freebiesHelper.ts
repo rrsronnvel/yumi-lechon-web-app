@@ -12,12 +12,155 @@ export const FREEBIE_ITEMS = [
 
 export type FreebieItem = (typeof FREEBIE_ITEMS)[number];
 
+export const PROMO_FREEBIE_ITEMS = [
+  "Sarsa",
+  "Pancit",
+  "Palabok",
+  "Spaghetti",
+  "Dinuguan",
+  "Bopis",
+  "Fried Chicken",
+  "Shanghai",
+  "Puto",
+  "1.5L Coke",
+] as const;
+
+export type PromoFreebieItem = (typeof PROMO_FREEBIE_ITEMS)[number];
+
+export type PromoDateKind = "regular" | "decemberRegular" | "decemberPeak";
+
+export const getPromoDateKind = (date?: string | null): PromoDateKind => {
+  const match = date?.slice(0, 10).match(/^\d{4}-(\d{2})-(\d{2})$/);
+  if (!match || Number(match[1]) !== 12) return "regular";
+  const day = Number(match[2]);
+  return day === 24 || day === 31 ? "decemberPeak" : "decemberRegular";
+};
+
+export const parsePromoIncludedItems = (
+  json?: string | null,
+): Record<string, number> => {
+  try {
+    const parsed = JSON.parse(json || "{}") as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, value]) => [key, Math.max(0, Math.floor(Number(value) || 0))])
+        .filter(([, value]) => Number(value) > 0),
+    );
+  } catch {
+    return {};
+  }
+};
+
+export const formatPromoIncludedItems = (
+  items: Record<string, number>,
+): string[] => Object.entries(items)
+  .filter(([, quantity]) => quantity > 0)
+  .map(([item, quantity]) => `${quantity}x ${item}`);
+
+export const createPromoPackageCounts = (
+  includedItems: Record<string, number>,
+  wholePigCount: number,
+): Record<string, number> => {
+  const multiplier = Math.max(0, Math.floor(wholePigCount));
+  return Object.fromEntries(
+    PROMO_FREEBIE_ITEMS.map((item) => [
+      item,
+      Math.max(0, Math.floor(Number(includedItems[item]) || 0)) * multiplier,
+    ]),
+  );
+};
+
+export const normalizePromoCounts = (
+  counts?: Record<string, number> | null,
+): Record<string, number> => Object.fromEntries(
+  PROMO_FREEBIE_ITEMS.map((item) => [
+    item,
+    Math.max(0, Math.floor(Number(counts?.[item]) || 0)),
+  ]),
+);
+
+export const getPromoSlotsUsed = (counts?: Record<string, number> | null): number =>
+  PROMO_FREEBIE_ITEMS.reduce(
+    (sum, item) => sum + Math.max(0, Math.floor(Number(counts?.[item]) || 0)),
+    0,
+  );
+
+export const formatPromoBadge = (
+  code?: string | null,
+  label?: string | null,
+  customized = false,
+): string | null => {
+  if (!code && !label) return null;
+  if (code === "DEC_OPT3_LESS_2K") {
+    return "🎄 Option 3 (Less ₱2k) • 1x Sarsa Only";
+  }
+  const customSuffix = customized && !/custom(?:ized|\s+swap)/i.test(label || "")
+    ? " • Custom Swap"
+    : "";
+  return `${code?.startsWith("DEC_") ? "🎄" : "🎁"} ${label || code}${customSuffix}`;
+};
+
+export const parsePromoCustomization = (
+  configJson?: string | null,
+): { customized: boolean; counts: Record<string, number> } => {
+  if (!configJson) return { customized: false, counts: normalizePromoCounts() };
+  try {
+    const parsed = JSON.parse(configJson) as Partial<FreebiesConfig>;
+    return {
+      customized: parsed.promoCustomized === true,
+      counts: normalizePromoCounts(parsed.promoCounts),
+    };
+  } catch {
+    return { customized: false, counts: normalizePromoCounts() };
+  }
+};
+
+export const formatPromoOrderFreebiesSummary = (
+  promoCode: string | null | undefined,
+  promoLabel: string | null | undefined,
+  inputConfig: FreebiesConfig,
+  wholePigCount: number,
+  noFreebiesDiscountPerPig: number,
+  bellyItems: BellyFreebieSource[] = [],
+): string | null => {
+  if (!promoCode?.startsWith("DEC_")) {
+    return formatFreebiesSummary(
+      inputConfig,
+      wholePigCount,
+      noFreebiesDiscountPerPig,
+      bellyItems,
+    );
+  }
+
+  const parts = [formatPromoBadge(promoCode, promoLabel)].filter(Boolean) as string[];
+  if (inputConfig.promoCustomized) {
+    const customItems = PROMO_FREEBIE_ITEMS
+      .filter((item) => (inputConfig.promoCounts?.[item] ?? 0) > 0)
+      .map((item) => `${inputConfig.promoCounts?.[item]}x ${item}`);
+    parts[0] = `${parts[0]} • Custom Swap`;
+    if (customItems.length > 0) parts.push(customItems.join(", "));
+  }
+  if (bellyItems.length > 0) {
+    const normalized = normalizeFreebiesConfig(inputConfig, wholePigCount, bellyItems);
+    const selected = FREEBIE_ITEMS
+      .filter((item) => (normalized.bellyCounts?.[item] ?? 0) > 0)
+      .map((item) => `${normalized.bellyCounts?.[item]}x ${item}`);
+    const request = normalized.bellyCustomizationNote
+      ? ` | Request: ${normalized.bellyCustomizationNote}`
+      : "";
+    parts.push(`🎁 Belly Freebies: ${selected.join(", ") || "Custom selection pending"}${request}`);
+  }
+  return parts.join(" • ") || null;
+};
+
 export interface FreebiesConfig {
   optOut: boolean;
   pigsWithFreebies: number;
   rawInnards: boolean;
   counts: Record<string, number>;
   customizationNote?: string;
+  promoCustomized?: boolean;
+  promoCounts?: Record<string, number>;
   bellyCounts?: Record<string, number>;
   bellyCustomizationNote?: string;
   bellySignature?: string;
@@ -334,6 +477,10 @@ export const normalizeFreebiesConfig = (
     bellyCustomizationNote: config.bellyCustomizationNote?.trim() || "",
     bellySignature,
   };
+  const promoFields = {
+    promoCustomized: Boolean(config.promoCustomized),
+    promoCounts: normalizePromoCounts(config.promoCounts),
+  };
 
   if (pigsWithFreebies === 0 || safeWholePigCount === 0) {
     return {
@@ -342,6 +489,7 @@ export const normalizeFreebiesConfig = (
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
       customizationNote: config.customizationNote?.trim() || "",
+      ...promoFields,
       ...bellyFields,
     };
   }
@@ -356,6 +504,7 @@ export const normalizeFreebiesConfig = (
     rawInnards: Boolean(config.rawInnards),
     counts,
     customizationNote: config.customizationNote?.trim() || "",
+    ...promoFields,
     ...bellyFields,
   };
 };
@@ -385,6 +534,8 @@ export const updatePigsWithFreebies = (
       rawInnards: false,
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
       customizationNote: inputConfig.customizationNote?.trim() || "",
+      promoCustomized: inputConfig.promoCustomized,
+      promoCounts: inputConfig.promoCounts,
       bellyCounts: inputConfig.bellyCounts,
       bellyCustomizationNote: inputConfig.bellyCustomizationNote,
       bellySignature: inputConfig.bellySignature,
@@ -411,6 +562,8 @@ export const updatePigsWithFreebies = (
     rawInnards: normalized.rawInnards,
     counts,
     customizationNote: inputConfig.customizationNote?.trim() || "",
+    promoCustomized: inputConfig.promoCustomized,
+    promoCounts: inputConfig.promoCounts,
     bellyCounts: inputConfig.bellyCounts,
     bellyCustomizationNote: inputConfig.bellyCustomizationNote,
     bellySignature: inputConfig.bellySignature,
@@ -434,6 +587,8 @@ export const parseFreebiesConfig = (
         rawInnards: Boolean(parsed.rawInnards),
         counts: parsed.counts ?? {},
         customizationNote: parsed.customizationNote ?? "",
+        promoCustomized: Boolean(parsed.promoCustomized),
+        promoCounts: parsed.promoCounts ?? {},
         bellyCounts: parsed.bellyCounts ?? {},
         bellyCustomizationNote: parsed.bellyCustomizationNote ?? "",
         bellySignature: parsed.bellySignature ?? "",

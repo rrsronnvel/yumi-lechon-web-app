@@ -18,6 +18,11 @@ namespace LechonSystem.Api.Services
         private readonly LechonDbContext _context;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IInventoryService _inventoryService;
+        private static readonly string[] PromoKitchenItemNames =
+        [
+            "Sarsa", "Pancit", "Palabok", "Spaghetti", "Dinuguan",
+            "Bopis", "Fried Chicken", "Shanghai", "Puto", "1.5L Coke"
+        ];
 
         public SchedulingService(LechonDbContext context, IHttpContextAccessor httpContextAccessor, IInventoryService inventoryService)
         {
@@ -246,6 +251,8 @@ namespace LechonSystem.Api.Services
                     remarks = s.OrderItem!.Order!.Remarks ?? string.Empty,
                     freebiesSummary = s.OrderItem!.Order!.FreebiesSummary,
                     freebiesConfigJson = s.OrderItem!.Order!.FreebiesConfigJson,
+                    promoPackageCode = s.OrderItem!.Order!.PromoPackageCode,
+                    promoPackageLabel = s.OrderItem!.Order!.PromoPackageLabel,
                     addOns = s.OrderItem!.Order!.AddOns ?? "-",
 
                     // Financials & Fulfillment for Rider View
@@ -320,6 +327,8 @@ namespace LechonSystem.Api.Services
                     Remarks = s.remarks,
                     FreebiesSummary = s.freebiesSummary,
                     FreebiesConfigJson = s.freebiesConfigJson,
+                    PromoPackageCode = s.promoPackageCode,
+                    PromoPackageLabel = s.promoPackageLabel,
                     AddOns = s.addOns,
                     Price = s.price,
                     LechonPrice = Math.Max(0, s.price - s.discount),
@@ -404,6 +413,8 @@ namespace LechonSystem.Api.Services
                         Remarks = order.Remarks ?? string.Empty,
                         FreebiesSummary = order.FreebiesSummary,
                         FreebiesConfigJson = order.FreebiesConfigJson,
+                        PromoPackageCode = order.PromoPackageCode,
+                        PromoPackageLabel = order.PromoPackageLabel,
                         AddOns = order.AddOns ?? "-",
                         Price = order.Price,
                         LechonPrice = 0,
@@ -460,6 +471,8 @@ namespace LechonSystem.Api.Services
                             Remarks = order.Remarks ?? string.Empty,
                             FreebiesSummary = order.FreebiesSummary,
                             FreebiesConfigJson = order.FreebiesConfigJson,
+                            PromoPackageCode = order.PromoPackageCode,
+                            PromoPackageLabel = order.PromoPackageLabel,
                             AddOns = order.AddOns ?? "-",
                             Price = order.Price,
                             LechonPrice = 0,
@@ -546,6 +559,8 @@ namespace LechonSystem.Api.Services
                         Remarks = order.Remarks ?? string.Empty,
                         FreebiesSummary = order.FreebiesSummary,
                         FreebiesConfigJson = order.FreebiesConfigJson,
+                        PromoPackageCode = order.PromoPackageCode,
+                        PromoPackageLabel = order.PromoPackageLabel,
                         AddOns = order.AddOns ?? "-",
                         Price = order.Price,
                         LechonPrice = lechonPrice,
@@ -619,6 +634,8 @@ namespace LechonSystem.Api.Services
                             Remarks = order.Remarks ?? string.Empty,
                             FreebiesSummary = order.FreebiesSummary,
                             FreebiesConfigJson = order.FreebiesConfigJson,
+                            PromoPackageCode = order.PromoPackageCode,
+                            PromoPackageLabel = order.PromoPackageLabel,
                             AddOns = order.AddOns ?? "-",
                             Price = order.Price,
                             LechonPrice = lechonPrice,
@@ -1001,6 +1018,24 @@ namespace LechonSystem.Api.Services
                 .OrderBy(p => p.TargetTime)
                 .ToListAsync();
 
+            // Load even inactive promo definitions: historical orders retain their
+            // selected package and must continue contributing exact prep quantities.
+            var referencedPromoCodes = activeOrders
+                .Select(order => order.PromoPackageCode)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var referencedPromos = referencedPromoCodes.Count == 0
+                ? new List<PromoPackage>()
+                : await _context.PromoPackages
+                    .AsNoTracking()
+                    .Where(promo => referencedPromoCodes.Contains(promo.Code))
+                    .ToListAsync();
+            var promosByCode = referencedPromos.ToDictionary(
+                promo => promo.Code,
+                StringComparer.OrdinalIgnoreCase);
+
             var summary = new FreebiesPrepSummaryDto();
             var roster = new List<FreebiePrepRosterRowDto>();
             var prepRequestDtos = new List<KitchenPrepRequestDto>();
@@ -1009,7 +1044,7 @@ namespace LechonSystem.Api.Services
             foreach (var order in activeOrders)
             {
                 var contribution = new FreebiesPrepSummaryDto();
-                var row = ProcessOrderFreebies(order, contribution);
+                var row = ProcessOrderFreebies(order, contribution, promosByCode);
                 MergePrepSummary(summary, contribution, IsMorningShift(row.TimeNeeded));
                 roster.Add(row);
             }
@@ -1064,6 +1099,15 @@ namespace LechonSystem.Api.Services
                             break;
                         case "Raw Innards":
                             contribution.RawInnardsHilaw.Paluto += qty;
+                            break;
+                        case "Fried Chicken":
+                            contribution.FriedChicken.Paluto += qty;
+                            break;
+                        case "Shanghai":
+                            contribution.Shanghai.Paluto += qty;
+                            break;
+                        case "Bopis":
+                            contribution.Bopis.Paluto += qty;
                             break;
                     }
 
@@ -1250,6 +1294,9 @@ namespace LechonSystem.Api.Services
             target.Dinuguan.ExcludedRawInnardsOrders += contribution.Dinuguan.ExcludedRawInnardsOrders;
 
             MergeBaseSummary(target.Puto, contribution.Puto, isMorning);
+            MergeBaseSummary(target.FriedChicken, contribution.FriedChicken, isMorning);
+            MergeBaseSummary(target.Shanghai, contribution.Shanghai, isMorning);
+            MergeBaseSummary(target.Bopis, contribution.Bopis, isMorning);
 
             target.Coke15L.Freebies += contribution.Coke15L.Freebies;
             target.Coke15L.PaidAddOns += contribution.Coke15L.PaidAddOns;
@@ -1270,7 +1317,10 @@ namespace LechonSystem.Api.Services
             }
         }
 
-        private FreebiePrepRosterRowDto ProcessOrderFreebies(Order order, FreebiesPrepSummaryDto summary)
+        private FreebiePrepRosterRowDto ProcessOrderFreebies(
+            Order order,
+            FreebiesPrepSummaryDto summary,
+            IReadOnlyDictionary<string, PromoPackage> promosByCode)
         {
             var wholePigItems = order.OrderItems
                 .Where(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg >= 13)
@@ -1285,15 +1335,23 @@ namespace LechonSystem.Api.Services
                 .Where(oi => oi.ItemCategory != null && oi.ItemCategory.MinimumWeightKg <= 0)
                 .ToList();
 
-            // Determine Freebie State
-            var (isNoFreebies, isRawInnards, hasBellyCokeSwap, counts, bellyCounts) = ResolveFreebiesState(order, wholePigCount, bellyItems);
+            PromoPackage? promoPackage = null;
+            if (!string.IsNullOrWhiteSpace(order.PromoPackageCode))
+            {
+                promosByCode.TryGetValue(order.PromoPackageCode, out promoPackage);
+            }
+
+            // Determine Freebie State. A persisted promo package is authoritative
+            // for Whole Lechon quantities; belly customization stays independent.
+            var (isNoFreebies, isRawInnards, hasBellyCokeSwap, isPromoCustomized, counts, bellyCounts) =
+                ResolveFreebiesState(order, wholePigCount, bellyItems, promoPackage);
 
             var pills = new List<PackItemPillDto>();
 
             // 1. Process Whole Lechon Freebies
             if (wholePigCount > 0)
             {
-                if (isNoFreebies)
+                if (isNoFreebies && promoPackage == null)
                 {
                     // Guarantees 1x Sarsa per whole pig even when opted out of the 7 freebies (Less ₱2k)
                     summary.Sarsa.NoFreebiesSarsaGuaranteed += wholePigCount;
@@ -1313,13 +1371,26 @@ namespace LechonSystem.Api.Services
                     int palabokQty = counts.GetValueOrDefault("Palabok", wholePigCount);
                     int spagQty = counts.GetValueOrDefault("Spaghetti", wholePigCount);
                     int putoQty = counts.GetValueOrDefault("Puto", wholePigCount);
+                    int friedChickenQty = counts.GetValueOrDefault("Fried Chicken", 0);
+                    int shanghaiQty = counts.GetValueOrDefault("Shanghai", 0);
+                    int bopisQty = counts.GetValueOrDefault("Bopis", 0);
 
-                    summary.Sarsa.WholeFreebies += sarsaQty;
+                    if (isNoFreebies)
+                    {
+                        summary.Sarsa.NoFreebiesSarsaGuaranteed += sarsaQty;
+                    }
+                    else
+                    {
+                        summary.Sarsa.WholeFreebies += sarsaQty;
+                    }
                     summary.Coke15L.Freebies += cokeQty;
                     summary.Pancit.Freebies += pancitQty;
                     summary.Palabok.Freebies += palabokQty;
                     summary.Spaghetti.Freebies += spagQty;
                     summary.Puto.Freebies += putoQty;
+                    summary.FriedChicken.Freebies += friedChickenQty;
+                    summary.Shanghai.Freebies += shanghaiQty;
+                    summary.Bopis.Freebies += bopisQty;
 
                     if (isRawInnards)
                     {
@@ -1349,12 +1420,23 @@ namespace LechonSystem.Api.Services
                         }
                     }
 
-                    if (sarsaQty > 0) pills.Add(new PackItemPillDto { ItemName = "Sarsa", Quantity = sarsaQty, BadgeType = "Freebie", Label = $"{sarsaQty}x Sarsa" });
+                    if (sarsaQty > 0) pills.Add(new PackItemPillDto
+                    {
+                        ItemName = "Sarsa",
+                        Quantity = sarsaQty,
+                        BadgeType = isNoFreebies ? "NoFreebies" : "Freebie",
+                        Label = isNoFreebies
+                            ? $"{promoPackage?.Name ?? "No Freebies"} • {sarsaQty}x Sarsa Only"
+                            : $"{sarsaQty}x Sarsa"
+                    });
                     if (pancitQty > 0) pills.Add(new PackItemPillDto { ItemName = "Pancit", Quantity = pancitQty, BadgeType = "Freebie", Label = $"{pancitQty}x Pancit" });
                     if (palabokQty > 0) pills.Add(new PackItemPillDto { ItemName = "Palabok", Quantity = palabokQty, BadgeType = "Freebie", Label = $"{palabokQty}x Palabok" });
                     if (spagQty > 0) pills.Add(new PackItemPillDto { ItemName = "Spaghetti", Quantity = spagQty, BadgeType = "Freebie", Label = $"{spagQty}x Spaghetti" });
                     if (putoQty > 0) pills.Add(new PackItemPillDto { ItemName = "Puto", Quantity = putoQty, BadgeType = "Freebie", Label = $"{putoQty}x Puto" });
                     if (cokeQty > 0) pills.Add(new PackItemPillDto { ItemName = "1.5L Coke", Quantity = cokeQty, BadgeType = "Freebie", Label = $"{cokeQty}x 1.5L Coke" });
+                    if (friedChickenQty > 0) pills.Add(new PackItemPillDto { ItemName = "Fried Chicken", Quantity = friedChickenQty, BadgeType = "Freebie", Label = $"{friedChickenQty}x Fried Chicken" });
+                    if (shanghaiQty > 0) pills.Add(new PackItemPillDto { ItemName = "Shanghai", Quantity = shanghaiQty, BadgeType = "Freebie", Label = $"{shanghaiQty}x Shanghai" });
+                    if (bopisQty > 0) pills.Add(new PackItemPillDto { ItemName = "Bopis", Quantity = bopisQty, BadgeType = "Freebie", Label = $"{bopisQty}x Bopis" });
                 }
             }
 
@@ -1366,10 +1448,13 @@ namespace LechonSystem.Api.Services
                 if (normalized == "Sarsa")
                 {
                     summary.Sarsa.BellyFreebies += qty;
-                    if (!isNoFreebies || wholePigCount == 0)
+                    pills.Add(new PackItemPillDto
                     {
-                        pills.Add(new PackItemPillDto { ItemName = "Sarsa", Quantity = qty, BadgeType = "Freebie", Label = $"{qty}x Sarsa" });
-                    }
+                        ItemName = "Sarsa",
+                        Quantity = qty,
+                        BadgeType = "Freebie",
+                        Label = $"{qty}x Sarsa (Belly Freebie)"
+                    });
                 }
                 else if (normalized == "1.5L Coke")
                 {
@@ -1442,6 +1527,15 @@ namespace LechonSystem.Api.Services
                     case "Raw Innards":
                         summary.RawInnardsHilaw.PaidAddOns += qty;
                         break;
+                    case "Fried Chicken":
+                        summary.FriedChicken.PaidAddOns += qty;
+                        break;
+                    case "Shanghai":
+                        summary.Shanghai.PaidAddOns += qty;
+                        break;
+                    case "Bopis":
+                        summary.Bopis.PaidAddOns += qty;
+                        break;
                 }
 
                 pills.Add(new PackItemPillDto
@@ -1496,19 +1590,30 @@ namespace LechonSystem.Api.Services
                 IsNoFreebies = isNoFreebies,
                 IsRawInnards = isRawInnards,
                 HasBellyCokeSwap = hasBellyCokeSwap,
+                IsPromoCustomized = isPromoCustomized,
                 FreebiesSummary = order.FreebiesSummary,
+                PromoPackageCode = order.PromoPackageCode,
+                PromoPackageLabel = AppendCustomSwapBadge(
+                    order.PromoPackageLabel ?? promoPackage?.Name,
+                    isPromoCustomized),
                 ChecklistPills = pills,
                 Remarks = order.Remarks ?? string.Empty,
                 CreatedBy = order.CreatedBy
             };
         }
 
-        private (bool isNoFreebies, bool isRawInnards, bool hasBellyCokeSwap, Dictionary<string, int> counts, Dictionary<string, int> bellyCounts)
-            ResolveFreebiesState(Order order, int wholePigCount, List<OrderItem> bellyItems)
+        private (bool isNoFreebies, bool isRawInnards, bool hasBellyCokeSwap, bool isPromoCustomized, Dictionary<string, int> counts, Dictionary<string, int> bellyCounts)
+            ResolveFreebiesState(
+                Order order,
+                int wholePigCount,
+                List<OrderItem> bellyItems,
+                PromoPackage? promoPackage)
         {
             bool isNoFreebies = false;
             bool isRawInnards = false;
             bool hasBellyCokeSwap = false;
+            bool promoCustomizationRequested = false;
+            Dictionary<string, int>? promoCustomCounts = null;
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var bellyCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -1527,6 +1632,10 @@ namespace LechonSystem.Api.Services
                         isNoFreebies = true;
                     if (root.TryGetProperty("rawInnards", out var rawProp) && rawProp.GetBoolean())
                         isRawInnards = true;
+
+                    promoCustomizationRequested =
+                        root.TryGetProperty("promoCustomized", out var customizedProp) &&
+                        customizedProp.ValueKind is JsonValueKind.True;
 
                     if (root.TryGetProperty("counts", out var countsProp) && countsProp.ValueKind == JsonValueKind.Object)
                     {
@@ -1550,6 +1659,25 @@ namespace LechonSystem.Api.Services
                             }
                         }
                     }
+
+                    if (promoCustomizationRequested)
+                    {
+                        foreach (var propertyName in new[]
+                                 {
+                                     "promoCounts",
+                                     "wholeLechonFreebies",
+                                     "wholeLechonFreebiesJson",
+                                     "counts"
+                                 })
+                        {
+                            if (root.TryGetProperty(propertyName, out var customCountsProp) &&
+                                TryDeserializeItemMap(customCountsProp, out var parsedCustomCounts))
+                            {
+                                promoCustomCounts = parsedCustomCounts;
+                                break;
+                            }
+                        }
+                    }
                 }
                 catch
                 {
@@ -1557,11 +1685,63 @@ namespace LechonSystem.Api.Services
                 }
             }
 
+            var isPromoCustomized =
+                !string.IsNullOrWhiteSpace(order.PromoPackageCode) &&
+                promoCustomizationRequested &&
+                promoCustomCounts != null;
+
+            if (isPromoCustomized)
+            {
+                // Explicit custom allocations are the immutable order snapshot and
+                // take precedence over later CMS edits to the selected package.
+                counts = PromoKitchenItemNames.ToDictionary(
+                    itemName => itemName,
+                    _ => 0,
+                    StringComparer.OrdinalIgnoreCase);
+                foreach (var (itemName, quantity) in promoCustomCounts!)
+                {
+                    var normalized = NormalizeSideItemName(itemName);
+                    if (counts.ContainsKey(normalized))
+                    {
+                        counts[normalized] = Math.Max(0, quantity);
+                    }
+                }
+            }
+            else if (promoPackage != null)
+            {
+                // Promo JSON is quantity-per-Whole-Lechon. Explicit zero entries
+                // prevent legacy Standard-7 defaults from filling omitted dishes.
+                counts.Clear();
+                foreach (var itemName in PromoKitchenItemNames)
+                {
+                    counts[itemName] = 0;
+                }
+
+                foreach (var (itemName, quantityPerWhole) in
+                         DeserializePrepItems(promoPackage.IncludedItemsJson))
+                {
+                    if (quantityPerWhole <= 0)
+                    {
+                        continue;
+                    }
+
+                    var normalized = NormalizeSideItemName(itemName);
+                    counts[normalized] = counts.GetValueOrDefault(normalized) +
+                                         (quantityPerWhole * wholePigCount);
+                }
+
+                isNoFreebies = promoPackage.DiscountAmount > 0;
+            }
+
             // Inspect FreebiesSummary and Remarks as secondary authority / fallback
             string combinedText = $"{order.FreebiesSummary ?? ""} {order.Remarks ?? ""}";
             if (!isNoFreebies && Regex.IsMatch(combinedText, @"no\s*freebies|less\s*(?:₱\s*)?2(?:,000|k)?", RegexOptions.IgnoreCase))
             {
                 isNoFreebies = true;
+            }
+            if (promoPackage != null)
+            {
+                isNoFreebies = promoPackage.DiscountAmount > 0;
             }
             if (!isRawInnards && Regex.IsMatch(combinedText, @"raw\s*innards|walang\s*dinuguan|hilaw|lamang-loob", RegexOptions.IgnoreCase))
             {
@@ -1609,7 +1789,45 @@ namespace LechonSystem.Api.Services
                 }
             }
 
-            return (isNoFreebies, isRawInnards, hasBellyCokeSwap, counts, bellyCounts);
+            return (isNoFreebies, isRawInnards, hasBellyCokeSwap, isPromoCustomized, counts, bellyCounts);
+        }
+
+        private static string? AppendCustomSwapBadge(string? label, bool isPromoCustomized)
+        {
+            if (!isPromoCustomized || string.IsNullOrWhiteSpace(label) ||
+                label.Contains("Custom", StringComparison.OrdinalIgnoreCase))
+            {
+                return label;
+            }
+
+            return $"{label} • Custom Swap";
+        }
+
+        private static bool TryDeserializeItemMap(
+            JsonElement element,
+            out Dictionary<string, int> items)
+        {
+            items = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                items = DeserializePrepItems(element.GetString() ?? string.Empty);
+                return items.Count > 0;
+            }
+
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.Value.TryGetInt32(out var quantity))
+                {
+                    items[property.Name] = Math.Max(0, quantity);
+                }
+            }
+
+            return true;
         }
 
         private Dictionary<string, int> ExtractPaidAddOns(Order order, List<OrderItem> paidAddOnItems)
@@ -1628,7 +1846,7 @@ namespace LechonSystem.Api.Services
             else if (!string.IsNullOrWhiteSpace(order.AddOns) && order.AddOns != "-")
             {
                 // Fallback: parse free-text AddOns string (e.g. "+ 1x Palabok", "Additional Sarsa (₱120)")
-                var matches = Regex.Matches(order.AddOns, @"(?:(\d+)\s*x?\s*)?(Pancit|Palabok|Spaghetti|Dinuguan|Puto|Sarsa|Coke|Raw Innards)", RegexOptions.IgnoreCase);
+                var matches = Regex.Matches(order.AddOns, @"(?:(\d+)\s*x?\s*)?(Fried Chicken|Shanghai|Bopis|Pancit|Palabok|Spaghetti|Dinuguan|Puto|Sarsa|Coke|Raw Innards)", RegexOptions.IgnoreCase);
                 foreach (Match match in matches)
                 {
                     int qty = 1;
@@ -1663,6 +1881,12 @@ namespace LechonSystem.Api.Services
                 return "Dinuguan";
             if (trimmed.Contains("Puto", StringComparison.OrdinalIgnoreCase))
                 return "Puto";
+            if (trimmed.Contains("Fried Chicken", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Chicken", StringComparison.OrdinalIgnoreCase))
+                return "Fried Chicken";
+            if (trimmed.Contains("Shanghai", StringComparison.OrdinalIgnoreCase))
+                return "Shanghai";
+            if (trimmed.Contains("Bopis", StringComparison.OrdinalIgnoreCase))
+                return "Bopis";
             if (trimmed.Contains("Raw", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("Lamang", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("Hilaw", StringComparison.OrdinalIgnoreCase))
                 return "Raw Innards";
             return trimmed;

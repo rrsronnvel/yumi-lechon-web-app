@@ -19,6 +19,16 @@
 - LechonSystem.Api/Controllers/LogisticsController.cs: Handles HTTP requests for retrieving unassigned ReadyForDelivery items, committing batch rider dispatches, tri-modal counter settlements, and Lalamove pre-release verification.
     
 - LechonSystem.Api/Controllers/OrdersController.cs: Provides endpoints for order ingestion with user attribution (CreatedBy), daily OrderReference generation (`MMDDYY-XXX`), dual-contact numbers (`ContactNumber` max length 45 for primary CP #1 and secondary CP #2), manual lifecycle state transitions, cancellation workflows, Master Ledger directory retrieval, safe order modifications, Owner-only payment voiding, and immutable change audit logs.
+
+- LechonSystem.Api/Controllers/PromosController.cs: Authenticated promo-catalog reads (`GET /api/promos`, `GET /api/promos/for-date`) plus Owner-only create/update/delete management. Date filtering distinguishes Regular, December Regular, and December 24/31 Peak scopes and honors `AllowOnPeakDates`.
+
+- LechonSystem.Api/Models/PromoPackage.cs: CMS entity for stable promo codes, grouping/display metadata, season scope, per-Whole-Lechon discount, included kitchen items JSON, peak-date allowance, active status, and sort order.
+
+- `FreebiesConfigJson` promo override extension: `promoCustomized: true` plus a complete `promoCounts` map records deliberate December/Peak swaps without changing the selected promo code or base label. `SchedulingService` gives this map precedence over `PromoPackage.IncludedItemsJson` and projects the effective custom checklist/badge to daily-sheet clients.
+
+- Unicode startup hardening (`Program.cs` / `LechonDbContext.cs`): idempotently enforces `NVARCHAR` for promo labels/descriptions and `Orders.PromoPackageLabel`, then repairs only known `?2,000` corruption to canonical peso/en-dash text.
+
+- LechonSystem.Api/Data/December2026PromoQaSeed.cs: Development-only, insert-only fixture writer for five reserved December 2026 QA orders and their Whole Lechon item/schedule rows.
     
 - LechonSystem.Api/Common/UserIdentityHelper.cs: Centralized user resolution utility extracting FullName and Username from ClaimsPrincipal or database lookup into `{FullName} (@{Username})` for audit logs, order creation, and drawer validation.
     
@@ -798,3 +808,36 @@ Expense form / preset
 - `KitchenViewTab.tsx`, `RiderViewTab.tsx`, and `FreebiesPrepViewTab.tsx`: Horizontal overflow and minimum-width non-wrapping time columns prevent tablet clock collisions.
 - Web `OrderForm.tsx` and Mobile `PosScreen.tsx`: A successful save clears pasted Messenger text and resets the order; exact name/phone/date/items matches use the explicit `ORDER ALREADY SAVED IN SYSTEM` warning.
 - `ExpensesPage.tsx`: An empty selected month offers a one-click route to October 2026.
+
+## 13. 2026-11-20 Seasonal Promo CMS, Kitchen Prep Sheets & Belly Auto-Swap
+
+### Backend (.NET 10 Web API)
+
+- `LechonSystem.Api/Models/PromoPackage.cs`: CMS entity for seasonal promo packages (`Code`, `GroupName`, `Name`, `Description`, `SeasonScope`, `DiscountAmount`, `IncludedItemsJson`, `AllowOnPeakDates`, `IsActive`, `SortOrder`).
+- `LechonSystem.Api/Models/Order.cs`: Additive nullable columns `PromoPackageCode` and `PromoPackageLabel` snapshotting promo package selection.
+- `LechonSystem.Api/Controllers/PromosController.cs`: `GET /api/promos` (CMS package catalog), `GET /api/promos/for-date?date=YYYY-MM-DD` (date-aware active package lookup supporting Regular, December Regular Options 1–3, and December 24/31 Peak plus allowed packages), and Owner-only CRUD (`POST /api/promos`, `PUT /api/promos/{id}`, `DELETE /api/promos/{id}`).
+- `LechonSystem.Api/DTOs/FreebiesPrepDtos.cs` & `Services/SchedulingService.cs`: Extended prep summary with 3 new kitchen dish channels: `FriedChicken` (12" Bilao), `Shanghai` (30–40 pcs), and `Bopis` (750ml), each with `TotalCount`, `MorningCount` (<= 12:30:59 PM), and `AfternoonCount` (>= 12:31:00 PM). Automatically resolves promo packages using `IncludedItemsJson` scaled by Whole Lechon quantity, while maintaining legacy 7-freebie / Less-2k / Belly logic when `PromoPackageCode` is null.
+- `LechonSystem.Api/Data/PromoPackageSeed.cs`: Production-safe idempotent seeding of default promo packages (2 Regular, 9 December Regular Options 1–3, and 2 December Peak).
+- `LechonSystem.Api/Data/December2026PromoQaSeed.cs`: Development-only fixture seeding 5 test orders for 2026-12-05 and 2026-12-24 to verify exact AM/PM prep counts.
+- `LechonSystem.Api/Program.cs`: Idempotent DDL startup migrations for `PromoPackages` table, unique index on `Code`, and additive order columns.
+
+### Web (React 19 + TypeScript + Vite)
+
+- `lechon-system-web/src/pages/CmsPage.tsx` & `src/components/cms/PromoPackagesCms.tsx`: Owner-only CMS tab in Settings for promo packages grouped by Regular, December Promo (Option 1/2/3), and Peak Freebies; includes package modal, active toggling, and dedicated `Allow on Dec 24 & 31 Peak Dates` switch on Option 3.
+- `lechon-system-web/src/hooks/usePromos.ts`: React Query hooks for promo catalog and date-filtered packages.
+- `lechon-system-web/src/components/ui/orders/PromoPackageSelector.tsx`: Date-aware Whole Lechon promo package selector integrated into `OrderForm.tsx` and `EditOrderForm.tsx`.
+- `lechon-system-web/src/components/daily-sheets/FreebiesPrepViewTab.tsx`: Morning/Afternoon aggregate board displaying the core 8 cards plus 3 new December dish cards (`🍗 Fried Chicken`, `🥟 Shanghai`, `🍲 Bopis`) when in December or count > 0; chronological packing roster table with promo badges.
+- `lechon-system-web/src/components/daily-sheets/StorePalutoModal.tsx`: Added quantity steppers for Fried Chicken, Shanghai, and Bopis for staff and store buffer requests.
+- `lechon-system-web/src/components/daily-sheets/KitchenViewTab.tsx`: Distinct visual promo badges rendered in remarks.
+- `lechon-system-web/src/utils/messengerTextParser.ts`: Auto-parsing of December promo options and Belly "Liver Sauce Only" / swap auto-detection allocating `2 * bellyQty` Sarsa slots.
+
+### Mobile (React Native + Expo)
+
+- `lechon-system-mobile/src/components/orders/PromoPackageSelector.tsx`: Date-aware promo selector for mobile POS.
+- `lechon-system-mobile/src/screens/PosScreen.tsx` & `src/components/orders/EditOrderModal.tsx`: Promo package integration and Belly "Liver Sauce Only" swap auto-detection badge notice.
+- `lechon-system-mobile/src/utils/messengerTextParser.ts`: Synchronized mobile parser behavior matching Web.
+
+### QA and Verification
+
+- Live API endpoints verified: `GET /api/promos/for-date?date=2026-12-05` (9 options: Option 1 (4), Option 2 (4), Option 3 (1)), `GET /api/promos/for-date?date=2026-12-24` (2 Peak options: `DEC_PEAK_DINUGUAN`, `DEC_PEAK_BOPIS`), and `GET /api/schedules/freebies-prep` for 2026-12-05 and 2026-12-24 with 100% AM/PM count accuracy.
+

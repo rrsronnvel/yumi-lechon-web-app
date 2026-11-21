@@ -43,6 +43,7 @@ import { EditCategoryModal } from "@/components/cms/EditCategoryModal";
 import { CreateUserModal } from "@/components/cms/CreateUserModal";
 import { ResetPasswordModal } from "@/components/cms/ResetPasswordModal";
 import { EditUserModal } from "@/components/cms/EditUserModal";
+import PromoPackagesCms from "@/components/cms/PromoPackagesCms";
 import {
   useUsersQuery,
   useToggleUserStatusMutation,
@@ -67,13 +68,14 @@ import {
   Calculator,
   Save,
   Trash2,
+  Gift,
 } from "lucide-react";
 
 type FilterStatus = "all" | "active" | "hidden";
 
 export default function CmsPage() {
   const { isOwner, user: currentUser } = useAuth();
-  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "riders" | "staff">("catalog");
+  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "promos" | "riders" | "staff">("catalog");
   const { data: users = [], isLoading: isLoadingUsers } = useUsersQuery();
   const toggleUserStatusMutation = useToggleUserStatusMutation();
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
@@ -322,6 +324,21 @@ export default function CmsPage() {
           <UtensilsCrossed className="w-4 h-4" />
           <span>Menu Catalog &amp; Delivery Pricing</span>
         </button>
+
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => setActiveMainTab("promos")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+              activeMainTab === "promos"
+                ? "bg-[#181312] text-amber-400 shadow-sm"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+            }`}
+          >
+            <Gift className="w-4 h-4" />
+            <span>🎁 Promo Packages CMS</span>
+          </button>
+        )}
 
         {isOwner && (
           <button
@@ -879,6 +896,8 @@ export default function CmsPage() {
       </Card>
         </>
       )}
+
+      {activeMainTab === "promos" && isOwner && <PromoPackagesCms />}
 
       {activeMainTab === "riders" && isOwner && (
         <Card className="overflow-hidden rounded-xl border-stone-200/90 bg-white shadow-sm">

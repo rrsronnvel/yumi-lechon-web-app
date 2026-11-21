@@ -103,6 +103,9 @@ const PREP_ITEMS: PrepItemOption[] = [
   { key: "Puto", name: "Puto", unit: "Pack", icon: "🥟" },
   { key: "Sarsa", name: "Sarsa", unit: "Bottle", icon: "🥣" },
   { key: "1.5L Coke", name: "1.5L Coke", unit: "Bottle", icon: "🥤" },
+  { key: "Fried Chicken", name: "Fried Chicken", unit: "Bilao", icon: "🍗" },
+  { key: "Shanghai", name: "Shanghai", unit: "Pack", icon: "🥟" },
+  { key: "Bopis", name: "Bopis", unit: "Tub", icon: "🍲" },
 ];
 
 const TIME_PRESETS = [
@@ -157,6 +160,9 @@ export function StorePalutoModal({
     Puto: 0,
     Sarsa: 0,
     "1.5L Coke": 0,
+    "Fried Chicken": 0,
+    Shanghai: 0,
+    Bopis: 0,
   }));
 
   const createMutation = useCreatePrepRequestMutation();
@@ -206,6 +212,9 @@ export function StorePalutoModal({
       Puto: 0,
       Sarsa: 0,
       "1.5L Coke": 0,
+      "Fried Chicken": 0,
+      Shanghai: 0,
+      Bopis: 0,
     });
   };
 

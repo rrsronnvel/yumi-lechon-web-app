@@ -31,6 +31,8 @@ import {
   RIDER_DEPARTURE_NUDGE_PILLS,
 } from '../../utils/messengerTemplates';
 import FreebiesSelector from './FreebiesSelector';
+import PromoPackageSelector from './PromoPackageSelector';
+import { parsePromoItems, PromoPackageDto, usePromosForDate } from '../../hooks/usePromos';
 import { evaluateDuplicateOrders, formatCalendarDateLabel } from '../../utils/similarityHelper';
 import { normalizeDateInput } from '../../utils/dateNormalizer';
 import {
@@ -42,8 +44,13 @@ import {
 } from '../../utils/deliveryDateWarnings';
 import {
   FreebiesConfig,
+  applyPromoCustomCounts,
+  applyPromoToFreebiesConfig,
+  arePromoCountsEqual,
+  createPromoPackageCounts,
   createDefaultFreebiesConfig,
   formatFreebiesSummary,
+  getPromoSlotsUsed,
   getPigsWithFreebies,
   normalizeFreebiesConfig,
   parseFreebiesConfig,
@@ -165,6 +172,9 @@ export default function EditOrderModal({
   const [freebiesConfig, setFreebiesConfig] = useState<FreebiesConfig>(() =>
     createDefaultFreebiesConfig(0)
   );
+  const [promoPackageCode, setPromoPackageCode] = useState<string | null>(null);
+  const [promoPackageLabel, setPromoPackageLabel] = useState<string | null>(null);
+  const [preserveLegacyPromo, setPreserveLegacyPromo] = useState(false);
   const freebiesDiscountApplied = useRef(0);
   const previousWholePigCount = useRef(0);
   const pendingHydratedWholePigCount = useRef<number | null>(null);
@@ -234,6 +244,9 @@ export default function EditOrderModal({
     if (!visible || !order) return;
 
     setValidationError(null);
+    setPromoPackageCode(order.promoPackageCode || null);
+    setPromoPackageLabel(order.promoPackageLabel || null);
+    setPreserveLegacyPromo(!order.promoPackageCode);
     setIsDraft(order.isDraft ?? false);
     setIsTimeTbd(order.isTimeTbd ?? false);
     setCustomerName(order.customerName || '');
@@ -672,6 +685,167 @@ export default function EditOrderModal({
     return Array.from(grouped, ([kg, quantity]) => ({ kg, quantity }));
   }, [cartItems]);
 
+  const isDecemberPromoDate = /^\d{4}-12-\d{2}$/.test(targetDate);
+  const { data: availablePromos = [], isLoading: promosLoading } = usePromosForDate(
+    targetDate,
+    visible && wholeLechonCount > 0,
+  );
+  const selectedPromo =
+    availablePromos.find((promo) => promo.code === promoPackageCode) ?? null;
+
+  const applyPromoPackage = (promo: PromoPackageDto) => {
+    setPreserveLegacyPromo(false);
+    setPromoPackageCode(promo.code);
+    setPromoPackageLabel(promo.name);
+    setFreebiesConfig((current) =>
+      applyPromoToFreebiesConfig(
+        current,
+        wholeLechonCount,
+        parsePromoItems(promo),
+        Number(promo.discountAmount),
+        bellyItems,
+      ),
+    );
+  };
+
+  const handlePromoCountsChange = (requestedCounts: Record<string, number>) => {
+    if (!selectedPromo || Number(selectedPromo.discountAmount) !== 0) return;
+    const defaultCounts = createPromoPackageCounts(
+      parsePromoItems(selectedPromo),
+      wholeLechonCount,
+    );
+    const comparableDefaults = { ...defaultCounts };
+    const comparableRequested = { ...requestedCounts };
+    if (freebiesConfig.rawInnards) {
+      comparableDefaults.Dinuguan = 0;
+      comparableRequested.Dinuguan = 0;
+    }
+    const customized = !arePromoCountsEqual(comparableRequested, comparableDefaults);
+    setPromoPackageLabel(`${selectedPromo.name}${customized ? ' (Customized)' : ''}`);
+    setFreebiesConfig((current) =>
+      applyPromoCustomCounts(
+        current,
+        wholeLechonCount,
+        comparableRequested,
+        defaultCounts,
+        bellyItems,
+      ),
+    );
+  };
+
+  const togglePromoRawInnards = () => {
+    if (!selectedPromo) return;
+    const rawInnards = !freebiesConfig.rawInnards;
+    const defaultCounts = createPromoPackageCounts(
+      parsePromoItems(selectedPromo),
+      wholeLechonCount,
+    );
+    if (freebiesConfig.promoCustomized && freebiesConfig.promoCounts) {
+      const requestedCounts = { ...freebiesConfig.promoCounts };
+      requestedCounts.Dinuguan = rawInnards ? 0 : defaultCounts.Dinuguan;
+      const next = applyPromoCustomCounts(
+        { ...freebiesConfig, rawInnards },
+        wholeLechonCount,
+        requestedCounts,
+        defaultCounts,
+        bellyItems,
+      );
+      setPromoPackageLabel(`${selectedPromo.name}${next.promoCustomized ? ' (Customized)' : ''}`);
+      setFreebiesConfig(next);
+      return;
+    }
+    setFreebiesConfig(
+      applyPromoToFreebiesConfig(
+        { ...freebiesConfig, rawInnards },
+        wholeLechonCount,
+        parsePromoItems(selectedPromo),
+        Number(selectedPromo.discountAmount),
+        bellyItems,
+      ),
+    );
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    if (wholeLechonCount <= 0) {
+      setPromoPackageCode(null);
+      setPromoPackageLabel(null);
+      return;
+    }
+
+    if (!isDecemberPromoDate) {
+      const pigsWithFreebies = getPigsWithFreebies(freebiesConfig, wholeLechonCount);
+      if (pigsWithFreebies === 0) {
+        setPromoPackageCode('REGULAR_LESS_2K');
+        setPromoPackageLabel('No Freebies (Less ₱2,000)');
+      } else if (pigsWithFreebies === wholeLechonCount) {
+        setPromoPackageCode('REGULAR_7');
+        setPromoPackageLabel('Standard 7 Freebies');
+      } else {
+        // Partial multi-pig legacy selections are represented only by FreebiesConfigJson.
+        setPromoPackageCode(null);
+        setPromoPackageLabel(null);
+      }
+      return;
+    }
+
+    if (availablePromos.length === 0) return;
+    const currentPromo = promoPackageCode
+      ? availablePromos.find((promo) => promo.code === promoPackageCode)
+      : null;
+    if (currentPromo) {
+      if (Number(currentPromo.discountAmount) > 0) {
+        setPromoPackageLabel(currentPromo.name);
+        return;
+      }
+      if (freebiesConfig.promoCustomized && freebiesConfig.promoCounts) {
+        setPromoPackageLabel(`${currentPromo.name} (Customized)`);
+        return;
+      }
+      const expectedCounts = createPromoPackageCounts(
+        parsePromoItems(currentPromo),
+        wholeLechonCount,
+      );
+      if (!arePromoCountsEqual(freebiesConfig.promoCounts ?? {}, expectedCounts)) {
+        setPromoPackageLabel(currentPromo.name);
+        setFreebiesConfig((current) =>
+          applyPromoToFreebiesConfig(
+            current,
+            wholeLechonCount,
+            parsePromoItems(currentPromo),
+            Number(currentPromo.discountAmount),
+            bellyItems,
+          ),
+        );
+      }
+      return;
+    }
+    if (!promoPackageCode && preserveLegacyPromo) return;
+
+    const defaultPromo = availablePromos[0];
+    setPreserveLegacyPromo(false);
+    setPromoPackageCode(defaultPromo.code);
+    setPromoPackageLabel(defaultPromo.name);
+    setFreebiesConfig((current) =>
+      applyPromoToFreebiesConfig(
+        current,
+        wholeLechonCount,
+        parsePromoItems(defaultPromo),
+        Number(defaultPromo.discountAmount),
+        bellyItems,
+      ),
+    );
+  }, [
+    availablePromos,
+    bellyItems,
+    freebiesConfig,
+    isDecemberPromoDate,
+    preserveLegacyPromo,
+    promoPackageCode,
+    visible,
+    wholeLechonCount,
+  ]);
+
   useEffect(() => {
     if (pendingHydratedWholePigCount.current !== null) {
       if (wholeLechonCount === pendingHydratedWholePigCount.current) {
@@ -731,6 +905,19 @@ export default function EditOrderModal({
 
   const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
     setFreebiesConfig(nextConfig);
+    if (!isDecemberPromoDate && wholeLechonCount > 0) {
+      const pigsWithFreebies = getPigsWithFreebies(nextConfig, wholeLechonCount);
+      if (pigsWithFreebies === 0) {
+        setPromoPackageCode('REGULAR_LESS_2K');
+        setPromoPackageLabel('No Freebies (Less ₱2,000)');
+      } else if (pigsWithFreebies === wholeLechonCount) {
+        setPromoPackageCode('REGULAR_7');
+        setPromoPackageLabel('Standard 7 Freebies');
+      } else {
+        setPromoPackageCode(null);
+        setPromoPackageLabel(null);
+      }
+    }
   };
 
   const lockedDownpayment = Number(order?.downpayment || 0);
@@ -821,6 +1008,26 @@ export default function EditOrderModal({
       }
       if (validCartItems.length === 0) {
         setValidationError('Order must contain at least one item.');
+        return;
+      }
+    }
+
+    if (
+      freebiesConfig.promoCustomized &&
+      freebiesConfig.promoCounts &&
+      selectedPromo
+    ) {
+      const allowedPromoSlots = Object.values(
+        createPromoPackageCounts(parsePromoItems(selectedPromo), wholeLechonCount),
+      ).reduce((sum, quantity) => sum + quantity, 0);
+      const usedPromoSlots = getPromoSlotsUsed(
+        freebiesConfig.promoCounts,
+        freebiesConfig.rawInnards ? wholeLechonCount : 0,
+      );
+      if (usedPromoSlots !== allowedPromoSlots) {
+        setValidationError(
+          `Complete the promo swap before saving (${usedPromoSlots}/${allowedPromoSlots} slots used).`,
+        );
         return;
       }
     }
@@ -929,6 +1136,8 @@ export default function EditOrderModal({
         freebiesConfigJson: isNonLechonMode || (wholeLechonCount === 0 && bellyItems.length === 0)
           ? undefined
           : JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholeLechonCount, bellyItems)),
+        promoPackageCode: isNonLechonMode ? null : promoPackageCode,
+        promoPackageLabel: isNonLechonMode ? null : promoPackageLabel,
         discount: effectiveDiscount,
         grandTotal,
         assignedRiderName: assignedRiderName.trim(),
@@ -1835,13 +2044,32 @@ export default function EditOrderModal({
                 ))}
               </View>
             )}
-            {!isNonLechonMode && <FreebiesSelector
-              wholePigCount={wholeLechonCount}
-              bellyItems={bellyItems}
-              noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
-              config={freebiesConfig}
-              onChange={handleFreebiesChange}
-            />}
+            {!isNonLechonMode && (
+              <>
+                <PromoPackageSelector
+                  date={targetDate}
+                  wholePigCount={wholeLechonCount}
+                  promos={availablePromos}
+                  selectedCode={promoPackageCode}
+                  isLoading={promosLoading}
+                  rawInnards={freebiesConfig.rawInnards}
+                  onSelect={applyPromoPackage}
+                  onToggleRawInnards={togglePromoRawInnards}
+                  allowLegacyUnselected={isDecemberPromoDate && preserveLegacyPromo}
+                  promoCounts={freebiesConfig.promoCounts}
+                  promoCustomized={freebiesConfig.promoCustomized}
+                  onPromoCountsChange={handlePromoCountsChange}
+                />
+                <FreebiesSelector
+                  wholePigCount={wholeLechonCount}
+                  bellyItems={bellyItems}
+                  noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
+                  config={freebiesConfig}
+                  onChange={handleFreebiesChange}
+                  hideWholeLechon={isDecemberPromoDate}
+                />
+              </>
+            )}
           </View>
 
           {/* Financials Section */}

@@ -8,6 +8,21 @@ export const FREEBIE_ITEMS = [
   "Puto",
 ] as const;
 
+export const PROMO_KITCHEN_ITEMS = [
+  "Sarsa",
+  "Pancit",
+  "Palabok",
+  "Spaghetti",
+  "Dinuguan",
+  "Bopis",
+  "Fried Chicken",
+  "Shanghai",
+  "Puto",
+  "1.5L Coke",
+] as const;
+
+export type PromoKitchenItem = (typeof PROMO_KITCHEN_ITEMS)[number];
+
 export type FreebieItem = (typeof FREEBIE_ITEMS)[number];
 
 export interface FreebiesConfig {
@@ -19,7 +34,49 @@ export interface FreebiesConfig {
   bellyCounts?: Record<string, number>;
   bellyCustomizationNote?: string;
   bellySignature?: string;
+  /** Explicit December/peak allocation. Backend prep gives this precedence over the preset. */
+  promoCustomized?: boolean;
+  promoCounts?: Record<string, number>;
 }
+
+export const normalizePromoKitchenCounts = (
+  counts: Record<string, number> = {},
+): Record<string, number> => Object.fromEntries(
+  PROMO_KITCHEN_ITEMS.map((item) => [
+    item,
+    Math.max(0, Math.floor(Number(counts[item]) || 0)),
+  ]),
+);
+
+export const createPromoPackageCounts = (
+  includedItems: Record<string, number> = {},
+  wholePigCount = 0,
+): Record<string, number> => {
+  const multiplier = Math.max(0, Math.floor(wholePigCount));
+  return normalizePromoKitchenCounts(Object.fromEntries(
+    PROMO_KITCHEN_ITEMS.map((item) => [
+      item,
+      Math.max(0, Number(includedItems[item]) || 0) * multiplier,
+    ]),
+  ));
+};
+
+export const getPromoSlotsUsed = (
+  counts: Record<string, number> = {},
+  rawInnardsCount = 0,
+): number => Object.values(normalizePromoKitchenCounts(counts))
+  .reduce((sum, quantity) => sum + quantity, Math.max(0, Math.floor(rawInnardsCount)));
+
+export const arePromoCountsEqual = (
+  left: Record<string, number> = {},
+  right: Record<string, number> = {},
+): boolean => {
+  const normalizedLeft = normalizePromoKitchenCounts(left);
+  const normalizedRight = normalizePromoKitchenCounts(right);
+  return PROMO_KITCHEN_ITEMS.every(
+    (item) => normalizedLeft[item] === normalizedRight[item],
+  );
+};
 
 export interface BellyFreebieSource {
   kg: number;
@@ -332,6 +389,12 @@ export const normalizeFreebiesConfig = (
     bellyCustomizationNote: config.bellyCustomizationNote?.trim() || "",
     bellySignature,
   };
+  const promoFields = {
+    promoCustomized: Boolean(config.promoCustomized),
+    promoCounts: config.promoCounts
+      ? normalizePromoKitchenCounts(config.promoCounts)
+      : undefined,
+  };
 
   if (pigsWithFreebies === 0 || safeWholePigCount === 0) {
     return {
@@ -341,6 +404,7 @@ export const normalizeFreebiesConfig = (
       counts: Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, 0])),
       customizationNote: config.customizationNote?.trim() || "",
       ...bellyFields,
+      ...promoFields,
     };
   }
 
@@ -355,6 +419,7 @@ export const normalizeFreebiesConfig = (
     counts,
     customizationNote: config.customizationNote?.trim() || "",
     ...bellyFields,
+    ...promoFields,
   };
 };
 
@@ -386,6 +451,8 @@ export const updatePigsWithFreebies = (
       bellyCounts: inputConfig.bellyCounts,
       bellyCustomizationNote: inputConfig.bellyCustomizationNote,
       bellySignature: inputConfig.bellySignature,
+      promoCustomized: inputConfig.promoCustomized,
+      promoCounts: inputConfig.promoCounts,
     };
   }
 
@@ -412,6 +479,75 @@ export const updatePigsWithFreebies = (
     bellyCounts: inputConfig.bellyCounts,
     bellyCustomizationNote: inputConfig.bellyCustomizationNote,
     bellySignature: inputConfig.bellySignature,
+    promoCustomized: inputConfig.promoCustomized,
+    promoCounts: inputConfig.promoCounts,
+  };
+};
+
+export const applyPromoToFreebiesConfig = (
+  inputConfig: FreebiesConfig,
+  wholePigCount: number,
+  includedItems: Record<string, number>,
+  discountAmount: number,
+  bellyItems: BellyFreebieSource[] = [],
+): FreebiesConfig => {
+  const normalized = normalizeFreebiesConfig(inputConfig, wholePigCount, bellyItems);
+  if (Number(discountAmount) > 0) {
+    return {
+      ...updatePigsWithFreebies(normalized, wholePigCount, 0),
+      promoCustomized: false,
+      promoCounts: undefined,
+    };
+  }
+
+  const multiplier = Math.max(0, Math.floor(wholePigCount));
+  const promoCounts = createPromoPackageCounts(includedItems, multiplier);
+  const counts = Object.fromEntries(
+    FREEBIE_ITEMS.map((item) => [
+      item,
+      normalized.rawInnards && item === "Dinuguan"
+        ? 0
+        : promoCounts[item] ?? 0,
+    ]),
+  );
+  if (normalized.rawInnards) promoCounts.Dinuguan = 0;
+
+  return {
+    ...normalized,
+    optOut: false,
+    pigsWithFreebies: multiplier,
+    counts,
+    customizationNote: "",
+    promoCustomized: false,
+    promoCounts,
+  };
+};
+
+export const applyPromoCustomCounts = (
+  inputConfig: FreebiesConfig,
+  wholePigCount: number,
+  requestedCounts: Record<string, number>,
+  defaultCounts: Record<string, number>,
+  bellyItems: BellyFreebieSource[] = [],
+): FreebiesConfig => {
+  const normalized = normalizeFreebiesConfig(inputConfig, wholePigCount, bellyItems);
+  const promoCounts = normalizePromoKitchenCounts(requestedCounts);
+  if (normalized.rawInnards) promoCounts.Dinuguan = 0;
+  const comparableDefaults = normalizePromoKitchenCounts(defaultCounts);
+  if (normalized.rawInnards) comparableDefaults.Dinuguan = 0;
+  const promoCustomized = !arePromoCountsEqual(promoCounts, comparableDefaults);
+  const counts = Object.fromEntries(
+    FREEBIE_ITEMS.map((item) => [item, promoCounts[item] ?? 0]),
+  );
+
+  return {
+    ...normalized,
+    optOut: false,
+    pigsWithFreebies: Math.max(0, Math.floor(wholePigCount)),
+    counts,
+    customizationNote: promoCustomized ? "Promo package custom swap" : "",
+    promoCustomized,
+    promoCounts,
   };
 };
 
@@ -435,6 +571,8 @@ export const parseFreebiesConfig = (
         bellyCounts: parsed.bellyCounts ?? {},
         bellyCustomizationNote: parsed.bellyCustomizationNote ?? "",
         bellySignature: parsed.bellySignature ?? "",
+        promoCustomized: Boolean(parsed.promoCustomized),
+        promoCounts: parsed.promoCounts ?? undefined,
       },
       wholePigCount,
     );

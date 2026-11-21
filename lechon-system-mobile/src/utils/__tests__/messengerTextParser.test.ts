@@ -300,3 +300,256 @@ describe("Feature 2: Lechon Belly Freebie 2/2 Slot Rules & 5kg Bilao -> 4x Coke 
     assert.strictEqual(calc.totalSlotsAllowed, 4);
   });
 });
+
+describe("December promo package parsing", () => {
+  const parsePromo = (date: string, promo: string, order = "1 Large") =>
+    parseMessengerTextToDraft(
+      [
+        "Name: December QA",
+        `Order / Size: ${order}`,
+        `Date & Time: ${date}`,
+        `Selected December Promo: ${promo}`,
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+
+  const optionOneCases = [
+    ["Option 1 – Pancit + Dinuguan", "DEC_OPT1_PANCIT_DINUGUAN"],
+    ["Option 1 – Pancit + Bopis", "DEC_OPT1_PANCIT_BOPIS"],
+    ["Option 1 – Palabok + Dinuguan", "DEC_OPT1_PALABOK_DINUGUAN"],
+    ["Option 1 – Palabok + Bopis", "DEC_OPT1_PALABOK_BOPIS"],
+  ] as const;
+
+  for (const [label, code] of optionOneCases) {
+    it(`maps ${label} to ${code}`, () => {
+      const draft = parsePromo("December 5, 2026 10:00 AM", label);
+      assert.strictEqual(draft.promoPackageCode, code);
+      assert.strictEqual(draft.promoPackageLabel, label);
+      assert.strictEqual(draft.freebiesOptOut, false);
+    });
+  }
+
+  const optionTwoCases = [
+    ["Option 2 – Chicken + Dinuguan", "DEC_OPT2_CHICKEN_DINUGUAN"],
+    ["Option 2 – Chicken + Bopis", "DEC_OPT2_CHICKEN_BOPIS"],
+    ["Option 2 – Shanghai + Dinuguan", "DEC_OPT2_SHANGHAI_DINUGUAN"],
+    ["Option 2 – Shanghai + Bopis", "DEC_OPT2_SHANGHAI_BOPIS"],
+  ] as const;
+
+  for (const [label, code] of optionTwoCases) {
+    it(`maps ${label} to ${code}`, () => {
+      const draft = parsePromo("2026-12-18 2:00 PM", label);
+      assert.strictEqual(draft.promoPackageCode, code);
+      assert.strictEqual(draft.promoPackageLabel, label);
+      assert.strictEqual(draft.freebiesOptOut, false);
+    });
+  }
+
+  it("maps Option 3 and applies the 2,000 discount per whole lechon", () => {
+    const draft = parsePromo(
+      "December 20, 2026 3:00 PM",
+      "Option 3 – ₱2,000 Cash Discount",
+      "2 Large",
+    );
+    assert.strictEqual(draft.promoPackageCode, "DEC_OPT3_LESS_2K");
+    assert.strictEqual(draft.freebiesOptOut, true);
+    assert.strictEqual(draft.discount, 4000);
+  });
+
+  it("accepts the Less 2k alias for Option 3 on a December regular date", () => {
+    const draft = parsePromo("2026-12-29 11:00 AM", "Less 2k");
+    assert.strictEqual(draft.promoPackageCode, "DEC_OPT3_LESS_2K");
+    assert.strictEqual(draft.discount, 2000);
+  });
+
+  it("maps Bopis on Dec 24 to the peak Bopis package", () => {
+    const draft = parsePromo("December 24, 2026 4:00 PM", "Dec 24/31 – Bopis");
+    assert.strictEqual(draft.promoPackageCode, "DEC_PEAK_BOPIS");
+    assert.strictEqual(draft.promoPackageLabel, "Dec 24/31 – Bopis");
+  });
+
+  it("defaults a Dec 31 selection without Bopis to peak Dinuguan", () => {
+    const draft = parsePromo("December 31, 2026 11:00 AM", "Peak Holiday Freebies");
+    assert.strictEqual(draft.promoPackageCode, "DEC_PEAK_DINUGUAN");
+    assert.strictEqual(draft.promoPackageLabel, "Dec 24/31 – Dinuguan");
+  });
+});
+
+describe("Belly Liver Sauce Only auto-swap", () => {
+  it("allocates both belly slots to Sarsa and exposes the verification notice flag", () => {
+    const draft = parseMessengerTextToDraft(
+      [
+        "Name: Belly QA",
+        "Order / Size: 1 Belly 3kg",
+        "Date & Time: December 5, 2026 10:00 AM",
+        "Remarks: w/LIVER SAUCE ONLY",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+
+    assert.strictEqual(draft.customizeBellyFreebies, true);
+    assert.strictEqual(draft.bellyFreebiesAutoSwap, true);
+    assert.ok(draft.freebieOverrides);
+    assert.strictEqual(draft.freebieOverrides.Sarsa, 2);
+    assert.strictEqual(draft.freebieOverrides.Pancit, 0);
+    assert.strictEqual(draft.bellyFreebieOverrides?.Sarsa, 2);
+    assert.strictEqual(draft.bellyFreebieOverrides?.Pancit, 0);
+    assert.strictEqual(draft.bellyFreebieOverrides?.Dinuguan, 0);
+    assert.strictEqual(draft.bellyFreebieOverrides?.Puto, 0);
+
+    const hydrated = hydrateBellyFreebiesFromOverrides(
+      draft.freebieOverrides,
+      [{ kg: 3, quantity: 1 }],
+      draft.freebiesCustomizationNote ?? "",
+    );
+    assert.strictEqual(hydrated.Sarsa, 2);
+    assert.strictEqual(hydrated.Dinuguan, 0);
+    assert.strictEqual(calculateBellySlotsUsed(hydrated, [{ kg: 3, quantity: 1 }]).slotsUsed, 2);
+  });
+
+  const bellyPhrases = [
+    "w/LIVER SAUCE ONLY",
+    "liver sauce only",
+    "sarsa only",
+    "palit sarsa",
+    "replace pancit with sarsa",
+  ];
+  for (const phrase of bellyPhrases) {
+    it(`auto-allocates Belly slots to Sarsa for phrase: "${phrase}"`, () => {
+      const draft = parseMessengerTextToDraft(
+        [
+          "Name: Belly QA",
+          "Date & Time: December 5, 2026 10:00 AM",
+          "Order / Size: 1 Belly 3kg",
+          `Remarks: ${phrase}`,
+        ].join("\n"),
+        MOCK_CATEGORIES,
+      );
+      assert.strictEqual(draft.customizeBellyFreebies, true);
+      assert.strictEqual(draft.bellyFreebiesAutoSwap, true);
+      assert.strictEqual(draft.bellyFreebieOverrides?.Sarsa, 2);
+      assert.strictEqual(draft.bellyFreebieOverrides?.Pancit, 0);
+      assert.strictEqual(draft.bellyFreebieOverrides?.Dinuguan, 0);
+      assert.strictEqual(draft.bellyFreebieOverrides?.Puto, 0);
+    });
+  }
+
+  it("scales belly Sarsa overrides for multi-belly orders (2 bellies -> 4, 3 bellies -> 6)", () => {
+    const draft2 = parseMessengerTextToDraft(
+      [
+        "Name: Belly Multi 2",
+        "Date & Time: December 5, 2026 10:00 AM",
+        "Order / Size: 2x Belly 3kg",
+        "Remarks: sarsa only",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(draft2.bellyFreebieOverrides?.Sarsa, 4);
+    assert.strictEqual(draft2.bellyFreebieOverrides?.Pancit, 0);
+
+    const draft3 = parseMessengerTextToDraft(
+      [
+        "Name: Belly Multi 3",
+        "Date & Time: December 5, 2026 10:00 AM",
+        "Order / Size: 3x Belly 4kg",
+        "Remarks: liver sauce only",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(draft3.bellyFreebieOverrides?.Sarsa, 6);
+    assert.strictEqual(draft3.bellyFreebieOverrides?.Pancit, 0);
+  });
+
+  it("isolates Belly Liver Sauce Only overrides from Whole Lechon in mixed order", () => {
+    const draft = parseMessengerTextToDraft(
+      [
+        "Name: Mixed Order QA",
+        "Date & Time: December 5, 2026 10:00 AM",
+        "Order / Size: 1 Large, 1 Belly 3kg",
+        "Selected December Promo: Option 1 – Pancit + Dinuguan",
+        "Remarks: w/LIVER SAUCE ONLY",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(draft.items.length, 2);
+    // Whole Lechon promo is preserved and unaffected
+    assert.strictEqual(draft.promoPackageCode, "DEC_OPT1_PANCIT_DINUGUAN");
+    assert.strictEqual(draft.promoPackageLabel, "Option 1 – Pancit + Dinuguan");
+    // Belly auto-swap triggers
+    assert.strictEqual(draft.customizeBellyFreebies, true);
+    assert.strictEqual(draft.bellyFreebiesAutoSwap, true);
+    assert.strictEqual(draft.bellyFreebieOverrides?.Sarsa, 2);
+    assert.strictEqual(draft.bellyFreebieOverrides?.Pancit, 0);
+  });
+
+  const headerVariants = [
+    "Selected Promo:",
+    "December Promo:",
+    "Selected December Promo:",
+  ];
+  for (const header of headerVariants) {
+    it(`parses December promo using header "${header}"`, () => {
+      const draft = parseMessengerTextToDraft(
+        [
+          "Name: Header QA",
+          "Date & Time: December 5, 2026 10:00 AM",
+          "Order / Size: 1 Large",
+          `${header} Option 2 – Shanghai + Bopis`,
+        ].join("\n"),
+        MOCK_CATEGORIES,
+      );
+      assert.strictEqual(draft.promoPackageCode, "DEC_OPT2_SHANGHAI_BOPIS");
+      assert.strictEqual(draft.promoPackageLabel, "Option 2 – Shanghai + Bopis");
+    });
+  }
+
+  it("correctly matches Dec 24 and Dec 31 peak date choices (Bopis vs Dinuguan)", () => {
+    // Dec 24 with Bopis
+    const d24Bopis = parseMessengerTextToDraft(
+      [
+        "Name: Peak 24 Bopis",
+        "Date & Time: December 24, 2026 4:00 PM",
+        "Order / Size: 1 Large",
+        "Selected Promo: Dec 24/31 – Bopis",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(d24Bopis.promoPackageCode, "DEC_PEAK_BOPIS");
+
+    // Dec 24 default Dinuguan
+    const d24Dinuguan = parseMessengerTextToDraft(
+      [
+        "Name: Peak 24 Dinuguan",
+        "Date & Time: December 24, 2026 11:00 AM",
+        "Order / Size: 1 Large",
+        "Selected Promo: Peak Holiday Freebies",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(d24Dinuguan.promoPackageCode, "DEC_PEAK_DINUGUAN");
+
+    // Dec 31 with Bopis
+    const d31Bopis = parseMessengerTextToDraft(
+      [
+        "Name: Peak 31 Bopis",
+        "Date & Time: December 31, 2026 5:00 PM",
+        "Order / Size: 1 Large",
+        "December Promo: Dec 24/31 – Bopis",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(d31Bopis.promoPackageCode, "DEC_PEAK_BOPIS");
+
+    // Dec 31 default Dinuguan
+    const d31Dinuguan = parseMessengerTextToDraft(
+      [
+        "Name: Peak 31 Dinuguan",
+        "Date & Time: December 31, 2026 10:00 AM",
+        "Order / Size: 1 Large",
+        "Selected December Promo: Dec 24/31 – Dinuguan",
+      ].join("\n"),
+      MOCK_CATEGORIES,
+    );
+    assert.strictEqual(d31Dinuguan.promoPackageCode, "DEC_PEAK_DINUGUAN");
+  });
+});

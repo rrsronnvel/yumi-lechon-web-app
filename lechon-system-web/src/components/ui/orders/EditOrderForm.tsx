@@ -1,6 +1,6 @@
 import { useAuth } from '@/context/AuthContext';
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { useEditOrder } from "@/hooks/useEditOrder";
 import { useDeliveryPricing } from "@/hooks/useCms";
@@ -39,15 +39,21 @@ import {
   syncDatePart,
 } from "@/utils/dateNormalizer";
 import FreebiesSelector from "./FreebiesSelector";
+import PromoPackageSelector from "./PromoPackageSelector";
+import type { PromoPackage } from "@/hooks/usePromos";
 import type { PaymentChannel } from "./PaymentChannelPills";
 import {
   createDefaultFreebiesConfig,
-  formatFreebiesSummary,
+  createPromoPackageCounts,
   FreebiesConfig,
+  FREEBIE_ITEMS,
   getPigsWithFreebies,
   normalizeFreebiesConfig,
   parseFreebiesConfig,
   updatePigsWithFreebies,
+  formatPromoOrderFreebiesSummary,
+  getPromoDateKind,
+  parsePromoIncludedItems,
 } from "@/utils/freebiesHelper";
 
 interface AddOnItem {
@@ -86,6 +92,7 @@ export default function EditOrderForm({
     createDefaultFreebiesConfig(0),
   );
   const appliedFreebiesDiscount = useRef(0);
+  const [selectedPromo, setSelectedPromo] = useState<PromoPackage | null>(null);
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
   const [assignedRiderName, setAssignedRiderName] = useState(
@@ -143,6 +150,8 @@ export default function EditOrderForm({
     downpaymentMethod: PaymentChannel | "None";
     freebiesSummary?: string | null;
     freebiesConfigJson?: string | null;
+    promoPackageCode?: string | null;
+    promoPackageLabel?: string | null;
     discount: number;
     items: any[];
     dynamicAddOns: AddOnItem[];
@@ -171,6 +180,8 @@ export default function EditOrderForm({
       downpaymentMethod: "None",
       freebiesSummary: null,
       freebiesConfigJson: null,
+      promoPackageCode: null,
+      promoPackageLabel: null,
       discount: 0,
       dynamicAddOns: [],
     },
@@ -391,6 +402,8 @@ export default function EditOrderForm({
             : "None",
         freebiesSummary: order.freebiesSummary || null,
         freebiesConfigJson: order.freebiesConfigJson || null,
+        promoPackageCode: order.promoPackageCode || null,
+        promoPackageLabel: order.promoPackageLabel || null,
         fulfillment: resolvedFulfillment,
         dynamicAddOns: hydratedAddOns,
         items: mappedOrderItems,
@@ -414,6 +427,7 @@ export default function EditOrderForm({
   const watchedIsTimeTbd = form.watch("isTimeTbd");
   const watchedFacebookName = form.watch("facebookName");
   const watchedDownpaymentMethod = form.watch("downpaymentMethod");
+  const watchedPromoPackageCode = form.watch("promoPackageCode");
   const { data: customerProfile } = useCustomerLookup(
     watchedContactNumber || "",
     watchedFacebookName || "",
@@ -666,7 +680,7 @@ export default function EditOrderForm({
     });
   }, [wholePigCount]);
 
-  const handleFreebiesChange = (nextConfig: FreebiesConfig) => {
+  const handleFreebiesChange = useCallback((nextConfig: FreebiesConfig) => {
     setFreebiesConfig(nextConfig);
     const currentPigsWithDiscount = nextConfig.optOut
       ? wholePigCount
@@ -677,7 +691,71 @@ export default function EditOrderForm({
       shouldValidate: true,
     });
     appliedFreebiesDiscount.current = nextFreebiesDiscount;
-  };
+    if (getPromoDateKind(targetDeliveryTime) === "regular" && wholePigCount > 0) {
+      form.setValue(
+        "promoPackageCode",
+        nextConfig.optOut ? "REGULAR_LESS_2K" : "REGULAR_7",
+        { shouldDirty: true },
+      );
+      form.setValue(
+        "promoPackageLabel",
+        nextConfig.optOut
+          ? "No Freebies (Less ₱2,000)"
+          : "Standard 7 Freebies",
+        { shouldDirty: true },
+      );
+    }
+  }, [form, noFreebiesDiscountPerPig, targetDeliveryTime, wholePigCount]);
+
+  const handlePromoChange = useCallback((promo: PromoPackage) => {
+    setSelectedPromo(promo);
+    form.setValue("promoPackageCode", promo.code, { shouldDirty: true });
+    form.setValue("promoPackageLabel", promo.name, { shouldDirty: true });
+    form.setValue("discount", promo.discountAmount * wholePigCount, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    appliedFreebiesDiscount.current = promo.discountAmount * wholePigCount;
+    setFreebiesConfig((current) => {
+      const next = createDefaultFreebiesConfig(wholePigCount, bellyItems);
+      next.bellyCounts = current.bellyCounts;
+      next.bellyCustomizationNote = current.bellyCustomizationNote;
+      next.bellySignature = current.bellySignature;
+      next.promoCustomized = false;
+      next.promoCounts = createPromoPackageCounts(
+        parsePromoIncludedItems(promo.includedItemsJson),
+        wholePigCount,
+      );
+      if (promo.discountAmount > 0) {
+        next.optOut = true;
+        next.pigsWithFreebies = 0;
+        next.counts = Object.fromEntries(Object.keys(next.counts).map((key) => [key, 0]));
+      }
+      return next;
+    });
+  }, [bellyItems, form, wholePigCount]);
+
+  const handlePromoCustomizationChange = useCallback((
+    customized: boolean,
+    counts: Record<string, number>,
+  ) => {
+    setFreebiesConfig((current) => ({
+      ...current,
+      promoCustomized: customized,
+      promoCounts: counts,
+      counts: {
+        ...current.counts,
+        ...Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, counts[item] ?? 0])),
+      },
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPromo || getPromoDateKind(targetDeliveryTime) === "regular") return;
+    const promoDiscount = selectedPromo.discountAmount * wholePigCount;
+    form.setValue("discount", promoDiscount, { shouldDirty: true });
+    appliedFreebiesDiscount.current = promoDiscount;
+  }, [form, selectedPromo, targetDeliveryTime, wholePigCount]);
   const currentFulfillment = Number(fulfillment);
   const activeDeliveryFee =
     currentFulfillment === 0 || currentFulfillment === 2
@@ -896,7 +974,9 @@ export default function EditOrderForm({
         Number(data.downpayment) > 0 ? data.downpaymentMethod : "None",
       freebiesSummary: isNonLechonMode
         ? null
-        : formatFreebiesSummary(
+        : formatPromoOrderFreebiesSummary(
+            data.promoPackageCode,
+            data.promoPackageLabel,
             freebiesConfig,
             wholePigCount,
             noFreebiesDiscountPerPig,
@@ -906,6 +986,8 @@ export default function EditOrderForm({
         !isNonLechonMode && (wholePigCount > 0 || bellyItems.length > 0)
           ? JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholePigCount, bellyItems))
           : null,
+      promoPackageCode: isNonLechonMode ? null : data.promoPackageCode || null,
+      promoPackageLabel: isNonLechonMode ? null : data.promoPackageLabel || null,
       grandTotal: dynamicGrandTotal,
       assignedRiderName: assignedRiderName.trim(),
       updatedBy: user ? (user.fullName ? `${user.fullName} (@${user.username})` : user.username) : undefined,
@@ -1783,13 +1865,32 @@ export default function EditOrderForm({
               / Delivery Time or Size will recalculate the Kitchen timeline.
             </p>
             <div className="mt-3">
-              <FreebiesSelector
-                wholePigCount={wholePigCount}
-                bellyItems={bellyItems}
-                noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
-                config={freebiesConfig}
-                onChange={handleFreebiesChange}
-              />
+              <div className="space-y-3">
+                <PromoPackageSelector
+                  targetDeliveryTime={targetDeliveryTime}
+                  wholePigCount={wholePigCount}
+                  value={watchedPromoPackageCode}
+                  autoSelectDefault={false}
+                  onChange={handlePromoChange}
+                  onResolved={setSelectedPromo}
+                  promoCustomized={freebiesConfig.promoCustomized}
+                  promoCounts={freebiesConfig.promoCounts}
+                  onCustomizationChange={handlePromoCustomizationChange}
+                />
+                <FreebiesSelector
+                  wholePigCount={wholePigCount}
+                  bellyItems={bellyItems}
+                  noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
+                  config={freebiesConfig}
+                  onChange={handleFreebiesChange}
+                  hideWholeLechon={getPromoDateKind(targetDeliveryTime) !== "regular"}
+                />
+                {getPromoDateKind(targetDeliveryTime) !== "regular" && !watchedPromoPackageCode && (
+                  <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-900">
+                    Legacy December order: its existing freebies remain unchanged until you explicitly select a promo package.
+                  </p>
+                )}
+              </div>
             </div>
           </div>}
 

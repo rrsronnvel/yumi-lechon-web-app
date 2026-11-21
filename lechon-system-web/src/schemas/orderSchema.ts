@@ -32,6 +32,8 @@ export const orderFormSchema = z
       .default("None"),
     freebiesSummary: z.string().nullable().optional(),
     freebiesConfigJson: z.string().nullable().optional(),
+    promoPackageCode: z.string().nullable().optional(),
+    promoPackageLabel: z.string().nullable().optional(),
     isTrustedCustomer: z.boolean().default(false),
 
     items: z
@@ -160,6 +162,11 @@ export interface ParsedOrderDraftDto {
   rawInnards?: boolean | null;
   freebiesMode?: "standard" | "custom" | "optOut" | null;
   freebieOverrides?: Record<string, number> | null;
+  bellyFreebieOverrides?: Record<string, number> | null;
   freebiesCustomizationNote?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
+  bellyFreebiesAutoSwap?: boolean | null;
+  customizeBellyFreebies?: boolean | null;
   items: ParsedOrderItemDto[];
 }

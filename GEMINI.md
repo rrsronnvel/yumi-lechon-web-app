@@ -6,6 +6,28 @@
 
 ---
 
+## November 21, 2026 December Promo Polish Invariants
+
+- **Custom promo allocation:** Zero-discount December/Peak presets support free swaps within the package slot budget across all ten kitchen items. Persist custom allocations only as `promoCustomized: true` plus a complete `promoCounts` map; never infer customization merely because legacy `counts` exists.
+- **Resolution order:** For promo-coded orders, explicit `promoCounts` wins over CMS `IncludedItemsJson`; otherwise the CMS preset wins. Raw Innards then suppresses Dinuguan. Belly freebies and paid add-ons are separate contributions and must never be overwritten by promo synchronization.
+- **Preset reset semantics:** Selecting another package or Standard Package Items restores `IncludedItemsJson × Whole Lechon quantity`, clears the custom marker, and collapses custom mode. Quantity changes rescale the preset; a custom allocation remains valid only within the recalculated slot budget.
+- **Paste race guard:** A parsed Belly `Liver Sauce Only` swap must survive the next cart/signature render and submit exactly `2 × Belly quantity` Sarsa with all alternative Belly dishes zero.
+- **Unicode safety:** `PromoPackages.GroupName/Name/Description` and `Orders.PromoPackageLabel` are EF Unicode and SQL `NVARCHAR`. Parameterized EF seeds plus the narrow startup repair own canonical `Option 3 – ₱2,000 Cash Discount` text; never use unprefixed SQL literals for peso/en-dash data.
+
+---
+
+## November 20, 2026 December Promo & Prep Invariants
+
+- **Promo catalog ownership:** `PromoPackages` and `/api/promos` own all seasonal choices. Codes are stable identifiers; labels are editable presentation. Never infer a December package from the legacy seven-freebie JSON after an order has a `PromoPackageCode`.
+- **Date-aware selection:** Web and Mobile request `/api/promos/for-date` from the selected Philippine delivery date. Non-December keeps the two fast Regular choices; December regular dates expose Options 1–3; December 24/31 expose Peak Dinuguan/Bopis plus only those December Regular packages whose `AllowOnPeakDates` is enabled.
+- **Financial mapping:** A promo's `DiscountAmount` is per Whole Lechon and maps to the established `Order.Discount` field. Option 3 is `₱2,000 × quantity`, sets the Whole Lechon freebies config to opt-out, and still prepares one Sarsa per Whole Lechon. Switching to a zero-discount package removes only the discount previously contributed by the promo.
+- **Order snapshots and old-order safety:** Persist both `PromoPackageCode` and `PromoPackageLabel` through create, edit, details, and directory contracts. Null means legacy behavior; editing an old December order must preserve its current freebies until staff deliberately selects a package.
+- **Prep resolution:** Promo-coded Whole Lechon orders use the matching `IncludedItemsJson`, multiplied by Whole Lechon quantity, for Sarsa, Pancit, Palabok, Spaghetti, Dinuguan, Puto, Coke, Fried Chicken, Shanghai, and Bopis. Raw-innards instructions still suppress cooked Dinuguan. Belly counts and paid add-ons remain independent and unchanged.
+- **Belly parser fix:** `Liver Sauce Only`/`sarsa only`/`palit sarsa`/`replace pancit with sarsa` on a Belly order enables a custom Belly selection, clears the second default dish, and allocates `2 × belly quantity` Sarsa slots. The UI must show the parser-generated verification notice without merging paid Sarsa into free slots.
+- **Data safety:** Default promo seeding is idempotent and production-safe. `December2026PromoQaSeed` runs only in Development and only inserts missing reserved references. Startup must never delete historical QA or operational expenses, orders, customers, inventory, payments, or schedules.
+
+---
+
 ## November 13, 2026 Operational Invariants
 
 - **Store Pickup Digital Transfers & Owner Hop 2 Digital Verification:** In `ManifestPage.tsx`, `PickupSettlementTab.tsx`, and mobile `DrawerScreen.tsx`, Store Pickup orders with non-cash settlements (`DigitalTransferAmount > 0`, e.g. `#111326-901 Robin Evangelio` with ₱10,500 GCash) render the blue custody badge `🏦 Awaiting Digital Check (₱{amount} • {method})` and explicitly display the pending digital amount. The top blue KPI card (`🏦 Pending Owner Digital Check`) is an interactive toggle filter that unmasks pending digital orders even when physical drawer cash is ₱0. In both Web and Mobile, users with `role === 'Owner'` see `[ 👑 Verify Digital Deposit ]`. Native `window.confirm` (Web) and `Alert.alert` (Mobile) are replaced with a styled `VerifyDigitalDepositModal` / React Native `<Modal>` card detailing `#orderReference • customerName`, fulfillment type (`🏪 Store Pickup` or `🛵 Rider`), payment channel badge, reference/bank note, and large bold `₱Amount` with `[ Cancel ]` and `[ 👑 Confirm & Settle ]` buttons. The backend endpoint `POST /api/logistics/settlements/orders/{orderId}/verify-digital` records ledger payment logs, clears custody to `Settled`, and sets `BalanceDue = 0` WITHOUT mutating or inflating the advance booking `Order.Downpayment`. Mobile `👑 Drawer Handover` tab visibility invariant guarantees visibility whenever `physicalCashCount + pendingDigitalCount > 0` or `activeTab === 'hop2'`.

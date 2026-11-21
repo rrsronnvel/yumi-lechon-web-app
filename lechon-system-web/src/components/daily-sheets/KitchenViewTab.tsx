@@ -2,7 +2,12 @@ import { useState } from "react";
 import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
 import { Pencil } from "lucide-react";
-import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import {
+  sanitizeFreebiesSummary,
+  formatPromoBadge,
+  parsePromoCustomization,
+  PROMO_FREEBIE_ITEMS,
+} from "@/utils/freebiesHelper";
 import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
@@ -102,6 +107,12 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
       ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
       : "";
     const freebiesSummary = sanitizeFreebiesSummary(item.freebiesSummary);
+    const promoCustomization = parsePromoCustomization(item.freebiesConfigJson);
+    const promoBadge = formatPromoBadge(
+      item.promoPackageCode,
+      item.promoPackageLabel,
+      promoCustomization.customized,
+    );
     const sanitizedRemarks = sanitizeMojibake(item.remarks);
     const minW = Number(item.minimumWeightKg ?? item.minWeight ?? 0);
     const displayWeight = minW > 0
@@ -264,11 +275,31 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         <td
           onClick={() => hasTahi && !isTimeTbd && handleCellClick(item)}
           className={`px-1.5 py-2 text-slate-800 border-r border-slate-300 text-[10.5px] sm:text-[11px] font-medium leading-tight break-words ${editableCellClass}`}
-          title={[freebiesSummary, sanitizedRemarks].filter(Boolean).join(" • ") || undefined}
+          title={[promoBadge, freebiesSummary && freebiesSummary !== promoBadge ? freebiesSummary : null, sanitizedRemarks].filter(Boolean).join(" • ") || undefined}
         >
           <div className="flex items-start justify-between gap-1">
             <div className="space-y-1">
-              {freebiesSummary && (
+              {promoBadge && (
+                <span
+                  className={`inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${
+                    item.promoPackageCode === "DEC_OPT3_LESS_2K"
+                      ? "bg-rose-100 text-rose-800 border-rose-300"
+                      : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                  }`}
+                >
+                  {promoBadge}
+                </span>
+              )}
+              {promoCustomization.customized && (
+                <span className="flex flex-wrap gap-0.5">
+                  {PROMO_FREEBIE_ITEMS.filter((name) => (promoCustomization.counts[name] ?? 0) > 0).map((name) => (
+                    <span key={name} className="inline-flex rounded border border-violet-200 bg-violet-50 px-1 py-0.5 text-[8px] font-semibold text-violet-900">
+                      {promoCustomization.counts[name]}x {name}
+                    </span>
+                  ))}
+                </span>
+              )}
+              {freebiesSummary && freebiesSummary !== promoBadge && !freebiesSummary.startsWith(promoBadge || "") && (
                 <span
                   className={`inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
                     freebiesSummary === "🚫 No Freebies"

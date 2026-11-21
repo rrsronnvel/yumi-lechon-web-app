@@ -45,6 +45,8 @@ public class DailySheetItemDto
     public string Remarks { get; set; } = string.Empty;
     public string? FreebiesSummary { get; set; }
     public string? FreebiesConfigJson { get; set; }
+    public string? PromoPackageCode { get; set; }
+    public string? PromoPackageLabel { get; set; }
     public string AddOns { get; set; } = "-";
     public decimal Price { get; set; }
     public decimal LechonPrice { get; set; }

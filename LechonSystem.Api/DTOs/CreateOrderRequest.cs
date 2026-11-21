@@ -31,6 +31,8 @@ namespace LechonSystem.Api.DTOs
         public string DownpaymentMethod { get; set; } = "None";
         public string? FreebiesSummary { get; set; }
         public string? FreebiesConfigJson { get; set; }
+        public string? PromoPackageCode { get; set; }
+        public string? PromoPackageLabel { get; set; }
         public bool IsOwnerConfirmed { get; set; }
         public DateTime? OwnerConfirmedAt { get; set; }
         public string? OwnerConfirmedBy { get; set; }

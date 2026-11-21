@@ -15,6 +15,7 @@ import {
   PackItemPillDto,
 } from "@/hooks/useFreebiesPrep";
 import { Button } from "@/components/ui/button";
+import { formatPromoBadge } from "@/utils/freebiesHelper";
 
 export interface FreebiesPrepViewTabProps {
   mode?: "edit" | "clean";
@@ -89,6 +90,16 @@ export function FreebiesPrepViewTab({
   }
 
   const { summary, roster = [] } = data;
+
+  const isDecember = selectedDate
+    ? Number(selectedDate.slice(0, 10).split("-")[1]) === 12
+    : false;
+
+  const showDecemberCards =
+    isDecember ||
+    (summary.friedChicken?.total ?? 0) > 0 ||
+    (summary.shanghai?.total ?? 0) > 0 ||
+    (summary.bopis?.total ?? 0) > 0;
 
   const handleDeletePaluto = async (id: number) => {
     if (isClean || deleteMutation.isPending) return;
@@ -212,6 +223,11 @@ export function FreebiesPrepViewTab({
   const renderRosterRow = (row: FreebiePrepRosterRowDto) => {
     const isPaluto = row.isPrepRequest;
     const sanitizedRemarks = sanitizeMojibake(row.remarks);
+    const promoBadge = formatPromoBadge(
+      row.promoPackageCode,
+      row.promoPackageLabel,
+      row.isPromoCustomized,
+    );
 
     return (
       <tr
@@ -252,6 +268,17 @@ export function FreebiesPrepViewTab({
                 facebookName={row.facebookName}
                 clean={isClean}
               />
+              {promoBadge && (
+                <span
+                  className={
+                    isClean
+                      ? "inline-flex items-center px-1.5 py-0.5 border border-black bg-emerald-100 text-[10px] font-black text-black"
+                      : "inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-900 shadow-xs"
+                  }
+                >
+                  {promoBadge}
+                </span>
+              )}
             </div>
             <span className="font-semibold text-stone-800 line-clamp-1">
               {row.recipient}
@@ -376,12 +403,16 @@ export function FreebiesPrepViewTab({
           </div>
         )}
 
-        {/* 8 High-Contrast Summary Cards */}
+        {/* Summary Cards (8 Core + 3 December Dishes) */}
         <div
           className={
             isClean
-              ? "grid grid-cols-4 gap-2 lg:grid-cols-8"
-              : "grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-4 2xl:grid-cols-8"
+              ? showDecemberCards
+                ? "grid grid-cols-11 gap-2"
+                : "grid grid-cols-4 gap-2 lg:grid-cols-8"
+              : showDecemberCards
+                ? "grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-4 2xl:grid-cols-11"
+                : "grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-4 2xl:grid-cols-8"
           }
         >
           {/* Card 1: Sarsa */}
@@ -621,6 +652,94 @@ export function FreebiesPrepViewTab({
               </div>
             </div>
           </div>
+
+          {showDecemberCards && (
+            <>
+              {/* Card 9: Fried Chicken */}
+              <div
+                className={`rounded-md p-2.5 flex flex-col justify-between ${
+                  isClean
+                    ? "border-2 border-black bg-white text-black"
+                    : "border border-amber-400 bg-amber-50/70 shadow-xs"
+                }`}
+              >
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wide text-amber-950">
+                    🍗 Fried Chicken
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl sm:text-3xl font-black text-amber-950 font-mono">
+                      {summary.friedChicken?.total ?? 0}
+                    </span>
+                    <span className="text-[10px] font-bold text-amber-800">bilaos</span>
+                  </div>
+                  <ShiftBreakdown counts={summary.friedChicken ?? { morningCount: 0, afternoonCount: 0 }} clean={isClean} />
+                </div>
+                <div className="mt-2 text-[10px] text-amber-900 leading-tight">
+                  <div>{summary.friedChicken?.freebies ?? 0} Freebies</div>
+                  <div className="font-semibold text-amber-800">
+                    +{summary.friedChicken?.paidAddOns ?? 0} Add-on +{summary.friedChicken?.paluto ?? 0} Paluto
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 10: Shanghai */}
+              <div
+                className={`rounded-md p-2.5 flex flex-col justify-between ${
+                  isClean
+                    ? "border-2 border-black bg-white text-black"
+                    : "border border-teal-300 bg-teal-50/70 shadow-xs"
+                }`}
+              >
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wide text-teal-950">
+                    🥟 Shanghai
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl sm:text-3xl font-black text-teal-950 font-mono">
+                      {summary.shanghai?.total ?? 0}
+                    </span>
+                    <span className="text-[10px] font-bold text-teal-800">packs</span>
+                  </div>
+                  <ShiftBreakdown counts={summary.shanghai ?? { morningCount: 0, afternoonCount: 0 }} clean={isClean} />
+                </div>
+                <div className="mt-2 text-[10px] text-teal-900 leading-tight">
+                  <div>{summary.shanghai?.freebies ?? 0} Freebies</div>
+                  <div className="font-semibold text-teal-800">
+                    +{summary.shanghai?.paidAddOns ?? 0} Add-on +{summary.shanghai?.paluto ?? 0} Paluto
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 11: Bopis */}
+              <div
+                className={`rounded-md p-2.5 flex flex-col justify-between ${
+                  isClean
+                    ? "border-2 border-black bg-white text-black"
+                    : "border border-orange-300 bg-orange-50/70 shadow-xs"
+                }`}
+              >
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wide text-orange-950">
+                    🍲 Bopis
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl sm:text-3xl font-black text-orange-950 font-mono">
+                      {summary.bopis?.total ?? 0}
+                    </span>
+                    <span className="text-[10px] font-bold text-orange-800">tubs</span>
+                  </div>
+                  <ShiftBreakdown counts={summary.bopis ?? { morningCount: 0, afternoonCount: 0 }} clean={isClean} />
+                </div>
+                <div className="mt-2 text-[10px] text-orange-900 leading-tight">
+                  <div>{summary.bopis?.freebies ?? 0} Freebies</div>
+                  <div className="font-semibold text-orange-800">
+                    +{summary.bopis?.paidAddOns ?? 0} Add-on +{summary.bopis?.paluto ?? 0} Paluto
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -56,6 +56,8 @@ export interface CreateOrderPayload {
   downpaymentMethod: string;
   freebiesSummary?: string | null;
   freebiesConfigJson?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
   grandTotal: number;
   totalAmount?: number;
   isTrustedCustomer: boolean;
@@ -93,6 +95,8 @@ export interface UpdateOrderPayload {
   downpaymentMethod: string;
   freebiesSummary?: string | null;
   freebiesConfigJson?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
   discount: number;
   grandTotal: number;
   items: UpdateOrderItemPayload[];

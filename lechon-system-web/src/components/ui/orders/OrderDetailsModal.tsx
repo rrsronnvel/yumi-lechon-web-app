@@ -10,7 +10,12 @@ import { useAssignRider } from "@/hooks/useLogistics";
 import { useRidersQuery } from "@/hooks/useRiders";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { generateBookingConfirmation } from "@/utils/messengerTemplates";
-import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
+import {
+  formatPromoBadge,
+  parsePromoCustomization,
+  PROMO_FREEBIE_ITEMS,
+  sanitizeFreebiesSummary,
+} from "@/utils/freebiesHelper";
 import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
 import apiClient from "@/services/apiClient";
@@ -233,6 +238,15 @@ export default function OrderDetailsModal({
     if (!orderDetails) return "";
     return sanitizeFreebiesSummary(orderDetails.freebiesSummary);
   }, [orderDetails]);
+  const promoCustomization = useMemo(
+    () => parsePromoCustomization(orderDetails?.freebiesConfigJson),
+    [orderDetails?.freebiesConfigJson],
+  );
+  const promoBadge = formatPromoBadge(
+    orderDetails?.promoPackageCode,
+    orderDetails?.promoPackageLabel,
+    promoCustomization.customized,
+  );
   const sanitizedRemarks = sanitizeMojibake(orderDetails?.remarks);
   const heldByStaffAmount = Number(orderDetails?.heldByStaffAmount || 0);
   const heldPaymentMethod = String(orderDetails?.heldPaymentMethod || "")
@@ -509,10 +523,30 @@ export default function OrderDetailsModal({
                   <span>Order Items</span>
                 </h3>
 
-                {freebiesSummary && (
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
-                    {freebiesSummary}
-                  </Badge>
+                <div className="flex flex-wrap gap-1.5">
+                  {promoBadge && (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
+                      {promoBadge}
+                    </Badge>
+                  )}
+                  {freebiesSummary && freebiesSummary !== promoBadge && (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
+                      {freebiesSummary}
+                    </Badge>
+                  )}
+                </div>
+
+                {promoCustomization.customized && (
+                  <div className="rounded-lg border border-violet-200 bg-violet-50 p-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wide text-violet-900">Actual Custom Package Items</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {PROMO_FREEBIE_ITEMS.filter((item) => (promoCustomization.counts[item] ?? 0) > 0).map((item) => (
+                        <span key={item} className="rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-violet-900">
+                          {promoCustomization.counts[item]}x {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 <div className="space-y-2">

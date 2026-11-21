@@ -171,12 +171,104 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IX_Expenses_ExpenseDate ON Expenses (ExpenseDate);
     ");
 
-    // Remove only the obsolete November QA expense fixtures. User-entered rows,
-    // including all operational November expenses, are deliberately untouched.
-    await context.Expenses
-        .Where(expense => expense.ExpenseDate >= new DateTime(2026, 11, 1) &&
-                          expense.EncodedBy == "System QA Seed")
-        .ExecuteDeleteAsync();
+    // Additive seasonal-promo schema. No existing order, customer, inventory,
+    // expense, or CMS data is deleted or overwritten by this startup upgrade.
+    await context.Database.ExecuteSqlRawAsync(@"
+        IF OBJECT_ID('PromoPackages', 'U') IS NULL
+        BEGIN
+            CREATE TABLE PromoPackages (
+                Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_PromoPackages PRIMARY KEY,
+                Code nvarchar(100) NOT NULL,
+                GroupName nvarchar(100) NOT NULL,
+                Name nvarchar(200) NOT NULL,
+                Description nvarchar(1000) NULL,
+                SeasonScope nvarchar(50) NOT NULL,
+                DiscountAmount decimal(18,2) NOT NULL CONSTRAINT DF_PromoPackages_DiscountAmount DEFAULT (0),
+                IncludedItemsJson nvarchar(max) NOT NULL CONSTRAINT DF_PromoPackages_IncludedItemsJson DEFAULT (N'{{}}'),
+                AllowOnPeakDates bit NOT NULL CONSTRAINT DF_PromoPackages_AllowOnPeakDates DEFAULT (0),
+                IsActive bit NOT NULL CONSTRAINT DF_PromoPackages_IsActive DEFAULT (1),
+                SortOrder int NOT NULL CONSTRAINT DF_PromoPackages_SortOrder DEFAULT (0)
+            );
+        END;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes
+            WHERE name = N'IX_PromoPackages_Code'
+              AND object_id = OBJECT_ID(N'PromoPackages'))
+            CREATE UNIQUE INDEX IX_PromoPackages_Code ON PromoPackages (Code);
+
+        IF COL_LENGTH('Orders', 'PromoPackageCode') IS NULL
+            ALTER TABLE Orders ADD PromoPackageCode nvarchar(100) NULL;
+
+        IF COL_LENGTH('Orders', 'PromoPackageLabel') IS NULL
+            ALTER TABLE Orders ADD PromoPackageLabel nvarchar(200) NULL;
+
+        IF OBJECT_ID(N'PromoPackages', N'U') IS NOT NULL
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'PromoPackages') AND name = N'GroupName'
+                  AND (TYPE_NAME(user_type_id) <> N'nvarchar' OR max_length <> 200))
+                ALTER TABLE PromoPackages ALTER COLUMN GroupName nvarchar(100) NOT NULL;
+            IF EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'PromoPackages') AND name = N'Name'
+                  AND (TYPE_NAME(user_type_id) <> N'nvarchar' OR max_length <> 400))
+                ALTER TABLE PromoPackages ALTER COLUMN Name nvarchar(200) NOT NULL;
+            IF EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'PromoPackages') AND name = N'Description'
+                  AND (TYPE_NAME(user_type_id) <> N'nvarchar' OR max_length <> 2000))
+                ALTER TABLE PromoPackages ALTER COLUMN Description nvarchar(1000) NULL;
+        END;
+
+        IF EXISTS (
+            SELECT 1 FROM sys.columns
+            WHERE object_id = OBJECT_ID(N'Orders') AND name = N'PromoPackageLabel'
+              AND (TYPE_NAME(user_type_id) <> N'nvarchar' OR max_length <> 400))
+            ALTER TABLE Orders ALTER COLUMN PromoPackageLabel nvarchar(200) NULL;
+    ");
+
+    // Seed by immutable Code only. Existing CMS customizations remain untouched.
+    await PromoPackageSeed.SeedAsync(context);
+
+    // Idempotent Unicode repair. Values are supplied as SQL parameters so the
+    // peso sign and en dash are never downgraded through a varchar literal.
+    var brokenPesoAmount = "?2,000";
+    var correctPesoAmount = "₱2,000";
+    var asciiOption3Label = "Option 3 - ₱2,000 Cash Discount";
+    var canonicalOption3Label = "Option 3 – ₱2,000 Cash Discount";
+    await context.Database.ExecuteSqlInterpolatedAsync($@"
+        UPDATE PromoPackages
+        SET Name = REPLACE(
+                REPLACE(Name, {brokenPesoAmount}, {correctPesoAmount}),
+                {asciiOption3Label}, {canonicalOption3Label}),
+            GroupName = REPLACE(GroupName, {brokenPesoAmount}, {correctPesoAmount}),
+            Description = REPLACE(Description, {brokenPesoAmount}, {correctPesoAmount})
+        WHERE Name LIKE N'%' + {brokenPesoAmount} + N'%'
+           OR GroupName LIKE N'%' + {brokenPesoAmount} + N'%'
+           OR Name = {asciiOption3Label}
+           OR Description LIKE N'%' + {brokenPesoAmount} + N'%';
+
+        UPDATE PromoPackages
+        SET Name = {canonicalOption3Label},
+            Description = N'₱2,000 cash discount per Whole Lechon with one Liver Sauce.'
+        WHERE Code = 'DEC_OPT3_LESS_2K';
+
+        UPDATE PromoPackages
+        SET Name = N'No Freebies (Less ₱2,000)',
+            Description = N'₱2,000 cash discount per Whole Lechon with one Liver Sauce.'
+        WHERE Code = 'REGULAR_LESS_2K';
+
+        UPDATE Orders
+        SET PromoPackageLabel = REPLACE(
+                REPLACE(PromoPackageLabel, {brokenPesoAmount}, {correctPesoAmount}),
+                {asciiOption3Label}, {canonicalOption3Label}),
+            FreebiesSummary = REPLACE(FreebiesSummary, {brokenPesoAmount}, {correctPesoAmount})
+        WHERE PromoPackageLabel LIKE N'%' + {brokenPesoAmount} + N'%'
+           OR PromoPackageLabel LIKE N'%' + {asciiOption3Label} + N'%'
+           OR FreebiesSummary LIKE N'%' + {brokenPesoAmount} + N'%';
+    ");
 
     // The real October ledger is compiled into the API so Development and
     // Production seed identically without requiring the source workbook.
@@ -257,6 +349,7 @@ using (var scope = app.Services.CreateScope())
     if (app.Environment.IsDevelopment())
     {
         await November15QaDataSeed.SeedAsync(context);
+        await December2026PromoQaSeed.SeedAsync(context);
     }
 
     // Idempotent text repair only: correct known historical UTF-8/Windows-1252

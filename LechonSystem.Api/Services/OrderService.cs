@@ -199,6 +199,12 @@ namespace LechonSystem.Api.Services
                 DownpaymentMethod = downpaymentMethod,
                 FreebiesSummary = request.FreebiesSummary,
                 FreebiesConfigJson = request.FreebiesConfigJson,
+                PromoPackageCode = string.IsNullOrWhiteSpace(request.PromoPackageCode)
+                    ? null
+                    : request.PromoPackageCode.Trim(),
+                PromoPackageLabel = string.IsNullOrWhiteSpace(request.PromoPackageLabel)
+                    ? null
+                    : request.PromoPackageLabel.Trim(),
                 IsOwnerConfirmed = isOwnerConfirmed,
                 OwnerConfirmedAt = isOwnerConfirmed ? DateTime.UtcNow : null,
                 OwnerConfirmedBy = isOwnerConfirmed ? CurrentUser : null,
@@ -282,6 +288,8 @@ namespace LechonSystem.Api.Services
                 order.RiderDepartureTime = null;
                 order.FreebiesSummary = null;
                 order.FreebiesConfigJson = null;
+                order.PromoPackageCode = null;
+                order.PromoPackageLabel = null;
             }
 
             _context.Orders.Add(order);
@@ -593,6 +601,8 @@ namespace LechonSystem.Api.Services
                     DownpaymentMethod = o.DownpaymentMethod,
                     FreebiesSummary = o.FreebiesSummary,
                     FreebiesConfigJson = o.FreebiesConfigJson,
+                    PromoPackageCode = o.PromoPackageCode,
+                    PromoPackageLabel = o.PromoPackageLabel,
                     BalanceDue = o.SettlementCustodyStatus == "Settled"
                         ? 0
                         : o.Fulfillment == FulfillmentType.Delivery
@@ -826,6 +836,9 @@ namespace LechonSystem.Api.Services
                 !string.Equals(order.FreebiesSummary, request.FreebiesSummary, StringComparison.Ordinal);
             var freebiesConfigChanged = request.FreebiesConfigJson != null &&
                 !string.Equals(order.FreebiesConfigJson, request.FreebiesConfigJson, StringComparison.Ordinal);
+            var promoPackageChanged = request.PromoPackageCode != null &&
+                (!string.Equals(order.PromoPackageCode, request.PromoPackageCode, StringComparison.OrdinalIgnoreCase) ||
+                 !string.Equals(order.PromoPackageLabel, request.PromoPackageLabel, StringComparison.Ordinal));
 
             if (freebiesSummaryChanged)
             {
@@ -834,6 +847,11 @@ namespace LechonSystem.Api.Services
             else if (freebiesConfigChanged)
             {
                 auditChanges.Add($"Freebies package customization changed for '{request.FreebiesSummary ?? order.FreebiesSummary ?? "Standard Freebies"}'");
+            }
+
+            if (promoPackageChanged)
+            {
+                auditChanges.Add($"Promo package changed from '{order.PromoPackageLabel ?? order.PromoPackageCode ?? "Legacy"}' to '{request.PromoPackageLabel ?? request.PromoPackageCode ?? "Legacy"}'");
             }
 
             if (order.Discount != request.Discount)
@@ -972,6 +990,8 @@ namespace LechonSystem.Api.Services
             {
                 order.FreebiesSummary = null;
                 order.FreebiesConfigJson = null;
+                order.PromoPackageCode = null;
+                order.PromoPackageLabel = null;
             }
             else if (!string.IsNullOrWhiteSpace(request.FreebiesSummary))
             {
@@ -980,6 +1000,15 @@ namespace LechonSystem.Api.Services
             if (!isNonLechonOrder && request.FreebiesConfigJson != null)
             {
                 order.FreebiesConfigJson = request.FreebiesConfigJson;
+            }
+            if (!isNonLechonOrder && request.PromoPackageCode != null)
+            {
+                order.PromoPackageCode = string.IsNullOrWhiteSpace(request.PromoPackageCode)
+                    ? null
+                    : request.PromoPackageCode.Trim();
+                order.PromoPackageLabel = string.IsNullOrWhiteSpace(request.PromoPackageLabel)
+                    ? null
+                    : request.PromoPackageLabel.Trim();
             }
             order.Discount = request.Discount;
             order.GrandTotal = request.GrandTotal;
@@ -1335,6 +1364,8 @@ namespace LechonSystem.Api.Services
                 DownpaymentMethod = order.DownpaymentMethod,
                 FreebiesSummary = order.FreebiesSummary,
                 FreebiesConfigJson = order.FreebiesConfigJson,
+                PromoPackageCode = order.PromoPackageCode,
+                PromoPackageLabel = order.PromoPackageLabel,
                 Discount = order.Discount,
                 GrandTotal = order.GrandTotal,
                 BalanceDue = CalculateOperationalBalanceDue(order, order.Downpayment),

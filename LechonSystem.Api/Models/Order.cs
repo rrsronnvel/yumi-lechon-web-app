@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 
 namespace LechonSystem.Api.Models;
 
@@ -33,6 +34,12 @@ public class Order : BaseEntity
 
     public string? FreebiesSummary { get; set; }
     public string? FreebiesConfigJson { get; set; }
+    [MaxLength(100)]
+    [Unicode]
+    public string? PromoPackageCode { get; set; }
+    [MaxLength(200)]
+    [Unicode]
+    public string? PromoPackageLabel { get; set; }
 
     public bool IsOwnerConfirmed { get; set; } = true;
     public DateTime? OwnerConfirmedAt { get; set; }

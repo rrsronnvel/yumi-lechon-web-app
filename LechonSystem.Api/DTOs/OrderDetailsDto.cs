@@ -25,6 +25,8 @@ public class OrderDetailsDto
     public string DownpaymentMethod { get; set; } = "None";
     public string? FreebiesSummary { get; set; }
     public string? FreebiesConfigJson { get; set; }
+    public string? PromoPackageCode { get; set; }
+    public string? PromoPackageLabel { get; set; }
     public decimal Discount { get; set; }
     public decimal GrandTotal { get; set; }
     public decimal BalanceDue { get; set; }

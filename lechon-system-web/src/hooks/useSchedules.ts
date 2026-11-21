@@ -49,6 +49,8 @@ export interface RoastingScheduleItem {
   status?: string;
   isManualOverride?: boolean;
   isTimeTbd?: boolean;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
   [key: string]: any;
 }
 

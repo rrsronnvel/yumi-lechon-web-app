@@ -52,17 +52,24 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import FreebiesSelector from "./FreebiesSelector";
+import PromoPackageSelector from "./PromoPackageSelector";
+import type { PromoPackage } from "@/hooks/usePromos";
 import PaymentChannelPills, {
   PaymentChannel,
 } from "./PaymentChannelPills";
 import {
   createDefaultFreebiesConfig,
-  formatFreebiesSummary,
+  createPromoPackageCounts,
   FreebiesConfig,
+  FREEBIE_ITEMS,
+  getBellySignature,
   getPigsWithFreebies,
   hydrateBellyFreebiesFromOverrides,
   normalizeFreebiesConfig,
   updatePigsWithFreebies,
+  formatPromoOrderFreebiesSummary,
+  getPromoDateKind,
+  parsePromoIncludedItems,
 } from "@/utils/freebiesHelper";
 
 import {
@@ -139,6 +146,8 @@ export default function OrderForm({
     createDefaultFreebiesConfig(0),
   );
   const [appliedFreebiesDiscount, setAppliedFreebiesDiscount] = useState(0);
+  const [selectedPromo, setSelectedPromo] = useState<PromoPackage | null>(null);
+  const [bellyAutoSwapNotice, setBellyAutoSwapNotice] = useState(false);
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const [showAssistedByAdmin, setShowAssistedByAdmin] = useState(false);
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
@@ -150,6 +159,7 @@ export default function OrderForm({
     optOut: boolean;
     rawInnards: boolean;
     overrides: Record<string, number>;
+    bellyOverrides: Record<string, number>;
     customizationNote: string;
     bellyItems: { kg: number; quantity: number }[];
   } | null>(null);
@@ -207,6 +217,8 @@ export default function OrderForm({
       downpaymentMethod: "None",
       freebiesSummary: null,
       freebiesConfigJson: null,
+      promoPackageCode: null,
+      promoPackageLabel: null,
       isTrustedCustomer: false,
       discount: 0,
       grandTotal: 0,
@@ -249,6 +261,7 @@ export default function OrderForm({
   const watchedCustomerPhone2 = form.watch("customerPhone2");
   const watchedFacebookName = form.watch("facebookName");
   const watchedDeliveryAddress = form.watch("address");
+  const watchedPromoPackageCode = form.watch("promoPackageCode");
 
   const { data: customerProfile } = useCustomerLookup(
     watchedCustomerPhone || "",
@@ -270,6 +283,8 @@ export default function OrderForm({
     replace([]);
     setFreebiesConfig(createDefaultFreebiesConfig(0));
     setAppliedFreebiesDiscount(0);
+    setSelectedPromo(null);
+    setBellyAutoSwapNotice(false);
     setShowSecondaryPhone(false);
     setShowAssistedByAdmin(false);
     setIsNonLechonMode(false);
@@ -405,6 +420,7 @@ export default function OrderForm({
     });
     return Array.from(grouped, ([kg, quantity]) => ({ kg, quantity }));
   }, [watchedItems, categories]);
+  const bellySignature = useMemo(() => getBellySignature(bellyItems), [bellyItems]);
 
   useEffect(() => {
     const previousCount = previousWholePigCount.current;
@@ -413,7 +429,7 @@ export default function OrderForm({
       if (pending) {
         pendingParsedFreebies.current = null;
         if (pending.optOut) {
-          return {
+          const optedOut = {
             optOut: true,
             pigsWithFreebies: 0,
             rawInnards: false,
@@ -422,7 +438,15 @@ export default function OrderForm({
                 (item) => [item, 0],
               ),
             ),
+            bellyCounts: hydrateBellyFreebiesFromOverrides(
+              pending.bellyOverrides,
+              pending.bellyItems,
+              pending.customizationNote,
+            ),
+            bellyCustomizationNote: pending.customizationNote,
+            bellySignature: getBellySignature(pending.bellyItems),
           };
+          return optedOut;
         }
         const defaults = createDefaultFreebiesConfig(wholePigCount, pending.bellyItems);
         if (pending.rawInnards) {
@@ -433,11 +457,11 @@ export default function OrderForm({
         defaults.customizationNote = pending.customizationNote;
         if (pending.bellyItems.length > 0) {
           defaults.bellyCounts = hydrateBellyFreebiesFromOverrides(
-            pending.overrides,
+            pending.bellyOverrides,
             pending.bellyItems,
             pending.customizationNote,
           );
-          defaults.bellyCustomizationNote = "";
+          defaults.bellyCustomizationNote = pending.customizationNote;
         }
         return defaults;
       }
@@ -458,11 +482,13 @@ export default function OrderForm({
       );
     });
     previousWholePigCount.current = wholePigCount;
-  }, [wholePigCount]);
+  }, [wholePigCount, bellySignature]);
 
   const desiredFreebiesDiscount =
-    (wholePigCount - getPigsWithFreebies(freebiesConfig, wholePigCount)) *
-    noFreebiesDiscountPerPig;
+    getPromoDateKind(watchedTargetTime) !== "regular" && selectedPromo
+      ? selectedPromo.discountAmount * wholePigCount
+      : (wholePigCount - getPigsWithFreebies(freebiesConfig, wholePigCount)) *
+        noFreebiesDiscountPerPig;
 
   useEffect(() => {
     if (desiredFreebiesDiscount === appliedFreebiesDiscount) return;
@@ -481,7 +507,73 @@ export default function OrderForm({
     appliedFreebiesDiscount,
     form,
     noFreebiesDiscountPerPig,
+    selectedPromo,
+    watchedTargetTime,
   ]);
+
+  const handlePromoChange = useCallback((promo: PromoPackage) => {
+    setSelectedPromo(promo);
+    form.setValue("promoPackageCode", promo.code, { shouldDirty: true });
+    form.setValue("promoPackageLabel", promo.name, { shouldDirty: true });
+    setFreebiesConfig((current) => {
+      const next = createDefaultFreebiesConfig(wholePigCount, bellyItems);
+      next.bellyCounts = current.bellyCounts;
+      next.bellyCustomizationNote = current.bellyCustomizationNote;
+      next.bellySignature = current.bellySignature;
+      next.promoCustomized = false;
+      next.promoCounts = createPromoPackageCounts(
+        parsePromoIncludedItems(promo.includedItemsJson),
+        wholePigCount,
+      );
+      if (promo.discountAmount > 0) {
+        next.optOut = true;
+        next.pigsWithFreebies = 0;
+        next.counts = Object.fromEntries(
+          Object.keys(next.counts).map((key) => [key, 0]),
+        );
+      }
+      return next;
+    });
+  }, [bellyItems, form, wholePigCount]);
+
+  const handlePromoCustomizationChange = useCallback((
+    customized: boolean,
+    counts: Record<string, number>,
+  ) => {
+    setFreebiesConfig((current) => ({
+      ...current,
+      promoCustomized: customized,
+      promoCounts: counts,
+      counts: {
+        ...current.counts,
+        ...Object.fromEntries(FREEBIE_ITEMS.map((item) => [item, counts[item] ?? 0])),
+      },
+    }));
+  }, []);
+
+  const handleFreebiesConfigChange = useCallback((next: FreebiesConfig) => {
+    setFreebiesConfig(next);
+    if (getPromoDateKind(watchedTargetTime) !== "regular" || wholePigCount <= 0) return;
+    const code = next.optOut ? "REGULAR_LESS_2K" : "REGULAR_7";
+    const label = next.optOut
+      ? "No Freebies (Less ₱2,000)"
+      : "Standard 7 Freebies";
+    form.setValue("promoPackageCode", code, { shouldDirty: true });
+    form.setValue("promoPackageLabel", label, { shouldDirty: true });
+  }, [form, watchedTargetTime, wholePigCount]);
+
+  useEffect(() => {
+    if (getPromoDateKind(watchedTargetTime) !== "regular") return;
+    setSelectedPromo(null);
+    if (wholePigCount <= 0) {
+      form.setValue("promoPackageCode", null);
+      form.setValue("promoPackageLabel", null);
+      return;
+    }
+    handleFreebiesConfigChange(freebiesConfig);
+    // Config changes are handled by handleFreebiesConfigChange; this synchronizes date/head changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedTargetTime, wholePigCount]);
 
   useEffect(() => {
     const amount = Number(watchedDownpayment) || 0;
@@ -862,7 +954,9 @@ export default function OrderForm({
         Number(data.downpayment) > 0 ? data.downpaymentMethod : "None",
       freebiesSummary: isNonLechonMode
         ? null
-        : formatFreebiesSummary(
+        : formatPromoOrderFreebiesSummary(
+            data.promoPackageCode,
+            data.promoPackageLabel,
             freebiesConfig,
             wholePigCount,
             noFreebiesDiscountPerPig,
@@ -872,6 +966,8 @@ export default function OrderForm({
         !isNonLechonMode && (wholePigCount > 0 || bellyItems.length > 0)
           ? JSON.stringify(normalizeFreebiesConfig(freebiesConfig, wholePigCount, bellyItems))
           : null,
+      promoPackageCode: isNonLechonMode ? null : data.promoPackageCode || null,
+      promoPackageLabel: isNonLechonMode ? null : data.promoPackageLabel || null,
       grandTotal: computedGrandTotal,
       totalAmount: computedGrandTotal,
       isTrustedCustomer: Boolean(data.isTrustedCustomer),
@@ -1054,7 +1150,8 @@ export default function OrderForm({
       const parsedFreebies = {
         optOut: draft.freebiesOptOut === true,
         rawInnards: draft.rawInnards === true,
-        overrides: draft.freebieOverrides || {},
+        overrides: draft.customizeBellyFreebies ? {} : draft.freebieOverrides || {},
+        bellyOverrides: draft.bellyFreebieOverrides || draft.freebieOverrides || {},
         customizationNote: draft.freebiesCustomizationNote || "",
       };
       const parsedConfig = createDefaultFreebiesConfig(parsedWholePigCount, parsedBellyItems);
@@ -1075,17 +1172,22 @@ export default function OrderForm({
       parsedConfig.customizationNote = parsedFreebies.customizationNote;
       if (parsedBellyItems.length > 0) {
         parsedConfig.bellyCounts = hydrateBellyFreebiesFromOverrides(
-          parsedFreebies.overrides,
+          parsedFreebies.bellyOverrides,
           parsedBellyItems,
           parsedFreebies.customizationNote,
         );
         parsedConfig.bellyCustomizationNote = "";
       }
-      setFreebiesConfig(parsedConfig);
-      pendingParsedFreebies.current =
-        parsedWholePigCount !== wholePigCount
-          ? { ...parsedFreebies, bellyItems: parsedBellyItems }
-          : null;
+      const parsedBellySignature = getBellySignature(parsedBellyItems);
+      const shouldDeferFreebiesHydration =
+        parsedWholePigCount !== wholePigCount ||
+        parsedBellySignature !== bellySignature;
+      pendingParsedFreebies.current = shouldDeferFreebiesHydration
+        ? { ...parsedFreebies, bellyItems: parsedBellyItems }
+        : null;
+      if (!shouldDeferFreebiesHydration) {
+        setFreebiesConfig(parsedConfig);
+      }
       replace(mappedItems);
     } else if (
       draft.freebiesOptOut != null ||
@@ -1129,6 +1231,13 @@ export default function OrderForm({
     setAppliedFreebiesDiscount(
       draft.freebiesOptOut === true ? explicitDiscount : 0,
     );
+    form.setValue("promoPackageCode", draft.promoPackageCode || null, {
+      shouldDirty: true,
+    });
+    form.setValue("promoPackageLabel", draft.promoPackageLabel || null, {
+      shouldDirty: true,
+    });
+    setBellyAutoSwapNotice(Boolean(draft.bellyFreebiesAutoSwap));
 
     const parsedTotalBalance = draft.parsedTotalBalance ?? null;
     if (parsedTotalBalance !== null) {
@@ -1441,7 +1550,7 @@ export default function OrderForm({
               className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-xs cursor-pointer flex items-center justify-center gap-2 border border-amber-700/30 rounded-lg transition-colors"
             >
               <ClipboardPaste className="w-5 h-5 text-white" />
-              <span>📋 Paste Messenger Form (Ctrl+V) (Ctrl+V)</span>
+              <span>📋 Paste Messenger Form (Ctrl+V)</span>
             </Button>
           </div>
 
@@ -2197,13 +2306,27 @@ export default function OrderForm({
             </div>
 
             {!isNonLechonMode && (
-              <FreebiesSelector
-                wholePigCount={wholePigCount}
-                bellyItems={bellyItems}
-                noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
-                config={freebiesConfig}
-                onChange={setFreebiesConfig}
-              />
+              <div className="space-y-3">
+                <PromoPackageSelector
+                  targetDeliveryTime={watchedTargetTime}
+                  wholePigCount={wholePigCount}
+                  value={watchedPromoPackageCode}
+                  onChange={handlePromoChange}
+                  onResolved={setSelectedPromo}
+                  promoCustomized={freebiesConfig.promoCustomized}
+                  promoCounts={freebiesConfig.promoCounts}
+                  onCustomizationChange={handlePromoCustomizationChange}
+                />
+                <FreebiesSelector
+                  wholePigCount={wholePigCount}
+                  bellyItems={bellyItems}
+                  noFreebiesDiscountPerPig={noFreebiesDiscountPerPig}
+                  config={freebiesConfig}
+                  onChange={handleFreebiesConfigChange}
+                  hideWholeLechon={getPromoDateKind(watchedTargetTime) !== "regular"}
+                  bellyAutoSwapNotice={bellyAutoSwapNotice}
+                />
+              </div>
             )}
 
             {/* Cart Subtotal Footer */}

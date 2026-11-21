@@ -33,6 +33,7 @@ public class LechonDbContext : DbContext
     public DbSet<CustomerProfile> CustomerProfiles => Set<CustomerProfile>();
     public DbSet<KitchenPrepRequest> KitchenPrepRequests => Set<KitchenPrepRequest>();
     public DbSet<ExpenseRecord> Expenses => Set<ExpenseRecord>();
+    public DbSet<PromoPackage> PromoPackages => Set<PromoPackage>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -182,5 +183,24 @@ public class LechonDbContext : DbContext
 
         modelBuilder.Entity<ExpenseRecord>()
             .HasIndex(expense => expense.ExpenseDate);
+
+        var promoPackage = modelBuilder.Entity<PromoPackage>();
+        promoPackage.Property(promo => promo.Code).IsUnicode().HasMaxLength(100);
+        promoPackage.Property(promo => promo.GroupName).IsUnicode().HasMaxLength(100);
+        promoPackage.Property(promo => promo.Name).IsUnicode().HasMaxLength(200);
+        promoPackage.Property(promo => promo.Description).IsUnicode().HasMaxLength(1000);
+        promoPackage.Property(promo => promo.SeasonScope).IsUnicode().HasMaxLength(50);
+        promoPackage.Property(promo => promo.IncludedItemsJson).IsUnicode().HasColumnType("nvarchar(max)");
+        promoPackage
+            .HasIndex(promo => promo.Code)
+            .IsUnique();
+
+        var order = modelBuilder.Entity<Order>();
+        order.Property(entity => entity.PromoPackageCode)
+            .IsUnicode()
+            .HasMaxLength(100);
+        order.Property(entity => entity.PromoPackageLabel)
+            .IsUnicode()
+            .HasMaxLength(200);
     }
 }

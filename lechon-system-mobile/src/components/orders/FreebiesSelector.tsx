@@ -23,6 +23,8 @@ interface FreebiesSelectorProps {
   config: FreebiesConfig;
   bellyItems?: BellyFreebieSource[];
   onChange: (config: FreebiesConfig) => void;
+  hideWholeLechon?: boolean;
+  preserveBellyHydration?: boolean;
 }
 
 export default function FreebiesSelector({
@@ -31,6 +33,8 @@ export default function FreebiesSelector({
   config,
   bellyItems = [],
   onChange,
+  hideWholeLechon = false,
+  preserveBellyHydration = false,
 }: FreebiesSelectorProps) {
   // 1. ALL HOOKS UNCONDITIONALLY AT THE VERY TOP
   const [isExpanded, setIsExpanded] = useState(false);
@@ -81,9 +85,10 @@ export default function FreebiesSelector({
 
   useEffect(() => {
     if (config.bellySignature !== getBellySignature(bellyItems)) {
+      if (preserveBellyHydration) return;
       onChange(normalized);
     }
-  }, [bellyItems, config.bellySignature, normalized, onChange]);
+  }, [bellyItems, config.bellySignature, normalized, onChange, preserveBellyHydration]);
 
   // 2. EARLY RETURN STRICTLY AFTER ALL HOOKS
   if (wholePigCount <= 0 && bellyItems.length === 0) return null;
@@ -201,7 +206,7 @@ export default function FreebiesSelector({
 
   return (
     <>
-      {wholePigCount > 0 && (
+      {!hideWholeLechon && wholePigCount > 0 && (
         <View style={styles.container}>
           <Text style={styles.heading}>🎁 Whole Lechon Freebies</Text>
           {wholePigCount === 1 ? (
@@ -345,6 +350,12 @@ export default function FreebiesSelector({
       {bellyItems.length > 0 && (
         <View style={styles.bellyContainer}>
           <Text style={styles.bellyHeading}>🎁 Lechon Belly Freebies</Text>
+
+          {normalized.bellyCustomizationNote ? (
+            <Text style={styles.bellyAutoSwapNotice}>
+              {normalized.bellyCustomizationNote}
+            </Text>
+          ) : null}
 
           <View style={styles.bellyDefaultsWrap}>
             {bellyItems.map((item, index) => (
@@ -589,6 +600,19 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   bellyHeading: { color: '#701A75', fontSize: 13, fontWeight: '900' },
+  bellyAutoSwapNotice: {
+    color: '#6B21A8',
+    backgroundColor: '#FAE8FF',
+    borderColor: '#D946EF',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    marginTop: 7,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '800',
+  },
   bellyDefaultsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 7 },
   bellyDefaultPill: {
     color: '#86198F',

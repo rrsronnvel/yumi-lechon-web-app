@@ -30,6 +30,9 @@ public class FreebiesPrepSummaryDto
     public FreebieItemSummaryDto Puto { get; set; } = new();
     public CokeSummaryDto Coke15L { get; set; } = new();
     public RawInnardsSummaryDto RawInnardsHilaw { get; set; } = new();
+    public FreebieItemSummaryDto FriedChicken { get; set; } = new();
+    public FreebieItemSummaryDto Shanghai { get; set; } = new();
+    public FreebieItemSummaryDto Bopis { get; set; } = new();
 }
 
 /// <summary>
@@ -123,7 +126,10 @@ public class FreebiePrepRosterRowDto
     public bool IsNoFreebies { get; set; }
     public bool IsRawInnards { get; set; }
     public bool HasBellyCokeSwap { get; set; }
+    public bool IsPromoCustomized { get; set; }
     public string? FreebiesSummary { get; set; }
+    public string? PromoPackageCode { get; set; }
+    public string? PromoPackageLabel { get; set; }
     public List<PackItemPillDto> ChecklistPills { get; set; } = new();
     public string Remarks { get; set; } = string.Empty;
     public string? CreatedBy { get; set; }

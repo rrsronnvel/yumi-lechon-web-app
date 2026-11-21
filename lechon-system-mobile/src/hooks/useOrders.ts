@@ -26,6 +26,8 @@ export interface OrderDirectoryDto {
   downpaymentMethod: string;
   freebiesSummary?: string | null;
   freebiesConfigJson?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
   balanceDue: number;
   isTrustedCustomer: boolean;
   isCancelled: boolean;
@@ -96,6 +98,8 @@ export interface OrderDetailsDto {
   downpaymentMethod: string;
   freebiesSummary?: string | null;
   freebiesConfigJson?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
   discount: number;
   grandTotal: number;
   balanceDue: number;

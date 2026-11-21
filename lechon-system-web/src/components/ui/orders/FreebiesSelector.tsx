@@ -23,6 +23,8 @@ interface FreebiesSelectorProps {
   config: FreebiesConfig;
   bellyItems?: BellyFreebieSource[];
   onChange: (config: FreebiesConfig) => void;
+  hideWholeLechon?: boolean;
+  bellyAutoSwapNotice?: boolean;
 }
 
 export default function FreebiesSelector({
@@ -31,6 +33,8 @@ export default function FreebiesSelector({
   config,
   bellyItems = [],
   onChange,
+  hideWholeLechon = false,
+  bellyAutoSwapNotice = false,
 }: FreebiesSelectorProps) {
   // 1. ALL HOOKS UNCONDITIONALLY AT THE VERY TOP
   const [isExpanded, setIsExpanded] = useState(false);
@@ -80,10 +84,13 @@ export default function FreebiesSelector({
   }, [isBellyCustomized]);
 
   useEffect(() => {
-    if (config.bellySignature !== getBellySignature(bellyItems)) {
+    // A pasted "Liver Sauce Only" allocation is applied by the parent after
+    // the cart's Belly rows render. Do not race that pending allocation by
+    // writing the standard Belly defaults from this signature-sync effect.
+    if (!bellyAutoSwapNotice && config.bellySignature !== getBellySignature(bellyItems)) {
       onChange(normalized);
     }
-  }, [bellyItems, config.bellySignature, normalized, onChange]);
+  }, [bellyAutoSwapNotice, bellyItems, config.bellySignature, normalized, onChange]);
 
   // 2. EARLY RETURN STRICTLY AFTER ALL HOOKS
   if (wholePigCount <= 0 && bellyItems.length === 0) return null;
@@ -196,7 +203,7 @@ export default function FreebiesSelector({
 
   return (
     <>
-      {wholePigCount > 0 && (
+      {wholePigCount > 0 && !hideWholeLechon && (
         <div className="rounded-xl border border-amber-300 bg-amber-50/70 p-3 space-y-2.5">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-xs font-bold text-amber-950">
@@ -340,6 +347,11 @@ export default function FreebiesSelector({
 
       {bellyItems.length > 0 && (
         <div className="mt-3 space-y-3 rounded-xl border border-fuchsia-300 bg-fuchsia-50/70 p-3">
+          {bellyAutoSwapNotice && (
+            <div className="rounded-lg border border-fuchsia-400 bg-white px-3 py-2 text-[11px] font-bold text-fuchsia-950 shadow-sm">
+              ✨ Auto-swapped from &quot;Liver Sauce Only&quot; remark — verify slots before submitting
+            </div>
+          )}
           <div>
             <p className="text-xs font-black text-fuchsia-950">🎁 Lechon Belly Freebies</p>
             <div className="mt-1 flex flex-wrap gap-1.5">

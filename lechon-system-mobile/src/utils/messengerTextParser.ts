@@ -40,7 +40,12 @@ export interface ParsedOrderDraftDto {
   rawInnards?: boolean | null;
   freebiesMode?: "standard" | "custom" | "optOut" | null;
   freebieOverrides?: Record<string, number> | null;
+  bellyFreebieOverrides?: Record<string, number> | null;
   freebiesCustomizationNote?: string | null;
+  promoPackageCode?: string | null;
+  promoPackageLabel?: string | null;
+  customizeBellyFreebies?: boolean | null;
+  bellyFreebiesAutoSwap?: boolean | null;
   items: ParsedOrderItemDto[];
 }
 
@@ -60,7 +65,7 @@ const CULINARY_PREP_PATTERN =
   /\b(?:liver\s*sauce(?:\s*only)?|sarsa\s*lang|sauce\s*lang|walang\s*dinuguan|raw\s*innards?|hilaw\s*na\s*(?:laman\s*loob|innards?)|extra\s*crispy|crispy\s*skin|crispy|chopped|hiwain|chop|shoutout|print|happy\s*birthday|dedication|walang\s*betsin|less\s*salt|spicy)\b/i;
 
 const FREEBIE_ITEM_PATTERN =
-  /\b(?:palabok|pancit|pansit|bihon|canton|spaghetti|spag|puto|biko|sarsa|liver\s+sauce|coke|pepsi|mountain\s*dew|7\s*up|mirinda|softdrinks?)\b/i;
+  /\b(?:palabok|pancit|pansit|bihon|canton|spaghetti|spag|puto|biko|sarsa|liver\s+sauce|dinuguan|bopis|fried\s+chicken|chicken|shanghai|coke|pepsi|mountain\s*dew|7\s*up|mirinda|softdrinks?)\b/i;
 
 function cleanNoteText(str: string): string {
   if (!str) return "";
@@ -106,7 +111,7 @@ function extractNonFreebieRemarks(value: string): string[] {
 }
 
 const FIELD_LABEL_PATTERN =
-  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?promo(?:\s*\([^)]*\))?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)[^\S\r\n]*[:\-]/i;
+  /^(?:name|customer(?:\s*name)?|buyer|client|ordered\s*by|fb|facebook(?:\s*name)?|messenger(?:\s*name)?|cp\s*#?\s*[12]?|contact(?:\s*number)?\s*#?[12]?|phone|mobile(?:\s*number)?|cellphone|pickup\s*or\s*deliver|fulfillment|del\s*add|deliver(?:y\s*address)?|delivery|address|location|landmark|palatandaan|near|type\s*of\s*event|event(?:\s*type)?|occasion|okasyon|date\s*(?:&|and)\s*time(?:\s*\([^)]*\))?|date|delivery\s*date|target\s*date|schedule|petsa|time|delivery\s*time|target\s*time|oras|order\s*\/\s*size|order(?:\s*size)?|size|(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?(?:december\s+)?promo(?:\s*\([^)]*\))?|add[\s-]*ons?(?:\s*\([^)]*\))?|additional\s+.+|special\s*requests?(?:\s*\([^)]*\))?|remarks?|notes?|bilin|instructions?|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|dp\s*payment\s*method(?:\s*\([^)]*\))?|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|assisted\s*by\s*admin|discount|price|total\s*balance|balance\s*due)[^\S\r\n]*[:\-]/i;
 
 const SINGLE_LINE_HEADER_PATTERN =
   /^(?:total\s*balance|balance\s*due|price|discount|dp\s*(?:&|and)\s*mode(?:\s*\([^)]*\))?|dp|down\s*payment(?:\s*\([^)]*\))?(?:\s*&\s*mode)?|downpayment(?:\s*&\s*mode)?|deposit|dp\s*payment\s*method(?:\s*\([^)]*\))?|delivery\s*(?:charge|fee)|deliver\s*charge|del\.?\s*fee|df|delivery\s*distance(?:\s*\([^)]*\))?|distance(?:\s*km)?|assisted\s*by\s*admin)$/i;
@@ -394,7 +399,8 @@ const parseFlexibleDateTimeAndTbd = (
 ): { targetDeliveryTime: string | null; isTimeTbd: boolean } => {
   if (!source) return { targetDeliveryTime: null, isTimeTbd: false };
 
-  const clean = source.replace(/,?\s*\/\s*/g, " ").replace(/\s+/g, " ").trim();
+  // Preserve numeric date separators (12/24/2026); only normalize the template's ", /" joiner.
+  const clean = source.replace(/,\s*\/\s*/g, " ").replace(/\s+/g, " ").trim();
   const lower = clean.toLowerCase();
 
   const isExplicitTbd =
@@ -642,7 +648,7 @@ export function parseMessengerTextToDraft(
         currentHeader !== null && SINGLE_LINE_HEADER_PATTERN.test(currentHeader);
       const isFreebiesHeaderWithContent =
         currentHeader !== null &&
-        /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?promo(?:\s*\([^)]*\))?)$/i.test(
+        /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?(?:december\s+)?promo(?:\s*\([^)]*\))?)$/i.test(
           currentHeader,
         ) &&
         currentLines.length > 0;
@@ -785,7 +791,7 @@ export function parseMessengerTextToDraft(
     } else if (/^(?:order\s*\/\s*size|order(?:\s*size)?|size)$/i.test(header)) {
       orderSources.push(value);
     } else if (
-      /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?promo(?:\s*\([^)]*\))?)$/i.test(
+      /^(?:(?:promo\s*)?freebies?\s*or\s*(?:less\s*2\s*k|cash\s*discount)|freebies?|(?:selected\s+)?(?:december\s+)?promo(?:\s*\([^)]*\))?)$/i.test(
         header,
       )
     ) {
@@ -950,11 +956,17 @@ export function parseMessengerTextToDraft(
   // Freebies / Less 2k
   for (const fVal of freebieValues) {
     const cleanedFreebies = cleanNoteText(fVal).replace(/\s+/g, " ").trim();
-    const overrides = parseFreebieOverrides(cleanedFreebies);
-    if (Object.keys(overrides).length > 0 || FREEBIE_ITEM_PATTERN.test(cleanedFreebies)) {
-      freebiesMode = "custom";
-      Object.assign(freebieOverrides, overrides);
-      if (cleanedFreebies) freebiesCustomizationNotes.push(cleanedFreebies);
+    const isDecemberPackageChoice =
+      /\boption\s*[123]\b|\bdec(?:ember)?\s*24\s*(?:\/|&|and)\s*31\b/i.test(
+        cleanedFreebies,
+      );
+    if (!isDecemberPackageChoice) {
+      const overrides = parseFreebieOverrides(cleanedFreebies);
+      if (Object.keys(overrides).length > 0 || FREEBIE_ITEM_PATTERN.test(cleanedFreebies)) {
+        freebiesMode = "custom";
+        Object.assign(freebieOverrides, overrides);
+        if (cleanedFreebies) freebiesCustomizationNotes.push(cleanedFreebies);
+      }
     }
     if (
       /less\s*2\s*k|less\s*2,?000|cash\s*discount|no\s*freebie|walang\s*freebie/i.test(
@@ -1151,6 +1163,96 @@ export function parseMessengerTextToDraft(
     }),
   );
 
+  const wholeLechonQuantity = items.reduce((sum, item) => {
+    const category = activeCategories.find((candidate) => candidate.id === item.itemCategoryId);
+    return category && category.minimumWeightKg >= 13 && !/belly/i.test(category.name)
+      ? sum + item.quantity
+      : sum;
+  }, 0);
+  const bellyQuantity = items.reduce((sum, item) => {
+    const category = activeCategories.find((candidate) => candidate.id === item.itemCategoryId);
+    return category &&
+      (category.minimumWeightKg > 0 && category.minimumWeightKg < 13) &&
+      /belly/i.test(category.name)
+      ? sum + item.quantity
+      : sum;
+  }, 0);
+
+  let promoPackageCode: string | null = null;
+  let promoPackageLabel: string | null = null;
+  const promoText = freebieValues.join(" ").replace(/\s+/g, " ").trim();
+  const deliveryDate = targetDeliveryTime?.slice(0, 10) ?? "";
+  const deliveryMonth = Number(deliveryDate.slice(5, 7));
+  const deliveryDay = Number(deliveryDate.slice(8, 10));
+
+  if (wholeLechonQuantity > 0 && deliveryMonth === 12) {
+    const isPeakDate = deliveryDay === 24 || deliveryDay === 31;
+    if (isPeakDate) {
+      if (/\bbopis\b/i.test(promoText)) {
+        promoPackageCode = "DEC_PEAK_BOPIS";
+        promoPackageLabel = "Dec 24/31 – Bopis";
+      } else {
+        promoPackageCode = "DEC_PEAK_DINUGUAN";
+        promoPackageLabel = "Dec 24/31 – Dinuguan";
+      }
+      freebiesOptOut = false;
+      freebiesMode = "standard";
+    } else if (
+      /\boption\s*3\b|\b2\s*,?\s*000\s*(?:cash\s*)?discount\b|\bless\s*2\s*k\b/i.test(
+        promoText,
+      )
+    ) {
+      promoPackageCode = "DEC_OPT3_LESS_2K";
+      promoPackageLabel = "Option 3 – ₱2,000 Cash Discount";
+      freebiesOptOut = true;
+      freebiesMode = "optOut";
+      const configuredDiscount = Number(pricingConfig?.noFreebiesDiscountPerPig ?? 2000);
+      discount = (Number.isFinite(configuredDiscount) ? Math.max(0, configuredDiscount) : 2000) *
+        wholeLechonQuantity;
+    } else if (/\boption\s*1\b/i.test(promoText)) {
+      const noodle = /\bpalabok\b/i.test(promoText) ? "PALABOK" : /\bpancit|pansit\b/i.test(promoText) ? "PANCIT" : null;
+      const stew = /\bbopis\b/i.test(promoText) ? "BOPIS" : /\bdinuguan\b/i.test(promoText) ? "DINUGUAN" : null;
+      if (noodle && stew) {
+        promoPackageCode = `DEC_OPT1_${noodle}_${stew}`;
+        promoPackageLabel = `Option 1 – ${noodle === "PANCIT" ? "Pancit" : "Palabok"} + ${stew === "BOPIS" ? "Bopis" : "Dinuguan"}`;
+        freebiesOptOut = false;
+        freebiesMode = "standard";
+      }
+    } else if (/\boption\s*2\b/i.test(promoText)) {
+      const dish = /\bshanghai\b/i.test(promoText) ? "SHANGHAI" : /\b(?:fried\s*)?chicken\b/i.test(promoText) ? "CHICKEN" : null;
+      const stew = /\bbopis\b/i.test(promoText) ? "BOPIS" : /\bdinuguan\b/i.test(promoText) ? "DINUGUAN" : null;
+      if (dish && stew) {
+        promoPackageCode = `DEC_OPT2_${dish}_${stew}`;
+        promoPackageLabel = `Option 2 – ${dish === "CHICKEN" ? "Chicken" : "Shanghai"} + ${stew === "BOPIS" ? "Bopis" : "Dinuguan"}`;
+        freebiesOptOut = false;
+        freebiesMode = "standard";
+      }
+    }
+  }
+
+  const bellyLiverSauceOnly =
+    bellyQuantity > 0 &&
+    /\b(?:w\s*\/\s*)?liver\s*sauce\s*only\b|\bsarsa\s*(?:only|lang)\b|\bpalit\s+(?:sa\s+)?sarsa\b|\breplace\s+(?:pancit|palabok|dinuguan|puto|bilao)\s+with\s+(?:liver\s*sauce|sarsa)\b/i.test(
+      sanitizedText,
+    );
+  let bellyFreebieOverrides: Record<string, number> | null = null;
+  if (bellyLiverSauceOnly) {
+    bellyFreebieOverrides = {
+      Sarsa: 2 * bellyQuantity,
+      Pancit: 0,
+      Palabok: 0,
+      Spaghetti: 0,
+      Dinuguan: 0,
+      Puto: 0,
+      "1.5L Coke": 0,
+    };
+    Object.assign(freebieOverrides, bellyFreebieOverrides);
+    freebiesMode = "custom";
+    if (!freebiesCustomizationNotes.some((note) => /liver\s*sauce\s*only|sarsa\s*(?:only|lang)/i.test(note))) {
+      freebiesCustomizationNotes.push("Liver Sauce Only – auto-swapped belly slots");
+    }
+  }
+
   return {
     customerName,
     facebookName,
@@ -1177,8 +1279,13 @@ export function parseMessengerTextToDraft(
     freebiesOptOut,
     rawInnards,
     freebiesMode,
+    promoPackageCode,
+    promoPackageLabel,
+    customizeBellyFreebies: bellyLiverSauceOnly,
+    bellyFreebiesAutoSwap: bellyLiverSauceOnly,
     freebieOverrides:
       Object.keys(freebieOverrides).length > 0 ? freebieOverrides : null,
+    bellyFreebieOverrides,
     freebiesCustomizationNote:
       freebiesCustomizationNotes.length > 0
         ? freebiesCustomizationNotes.join(" | ")
