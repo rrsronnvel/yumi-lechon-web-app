@@ -98,21 +98,49 @@ export interface PendingLalamoveSettlement {
 }
 
 export interface DownpaymentTrackerItem {
+  paymentLogId?: number | null;
   orderId: number;
   orderReference: string;
   customerName: string;
   phoneNumber?: string | null;
   bookingSource?: string | null;
   downpaymentAmount: number;
+  amount?: number;
   downpaymentMethod?: string | null;
+  paymentMethod?: string | null;
   targetDeliveryTime?: string | null;
+  eventDate?: string | null;
   isDateTbd?: boolean;
-  createdAt: string;
+  createdAt?: string;
+  paidAt?: string | null;
+  referenceNumber?: string | null;
   encodedBy?: string | null;
-  isDpRemittedToOwner: boolean;
+  installmentIndex?: number | null;
+  installmentCount?: number | null;
+  isDpRemittedToOwner?: boolean;
+  isRemittedToOwner?: boolean;
   dpRemittedAt?: string | null;
+  remittedAt?: string | null;
   dpRemittedBy?: string | null;
+  remittedBy?: string | null;
 }
+
+export const computeEffectiveNetRemittance = (drop: {
+  netRemittance?: number;
+  totalCollected: number;
+  riderDeliveryFee: number;
+  custodyStatus?: string;
+  settlementCustodyStatus?: string;
+}): number => {
+  if (typeof drop.netRemittance === "number" && drop.netRemittance > 0) {
+    return drop.netRemittance;
+  }
+  const custody = drop.custodyStatus || drop.settlementCustodyStatus;
+  if (custody === "Uncollected" || !custody) {
+    return Math.max(0, Number(drop.totalCollected || 0) - Number(drop.riderDeliveryFee || 0));
+  }
+  return drop.netRemittance ?? 0;
+};
 
 type PendingDigitalFields = {
   pendingDigitalAmount?: number | null;
@@ -317,14 +345,29 @@ export const useDownpaymentsQuery = () => {
   });
 };
 
+export interface ToggleDownpaymentPayload {
+  paymentLogId?: number | null;
+  orderId: number;
+}
+
 export const useToggleDownpaymentRemittanceMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (orderId: number) => {
-      const response = await apiClient.post(
-        `/logistics/downpayments/${orderId}/verify`,
-      );
+    mutationFn: async (payload: ToggleDownpaymentPayload | number) => {
+      const isObj = typeof payload === "object" && payload !== null;
+      const paymentLogId = isObj ? payload.paymentLogId : null;
+      const orderId = isObj ? payload.orderId : payload;
+
+      if (paymentLogId) {
+        const response = await apiClient.post(
+          `/logistics/downpayments/logs/${paymentLogId}/toggle-remittance`,
+        );
+        return response.data;
+      }
+      const response = await apiClient
+        .post(`/logistics/downpayments/${orderId}/toggle-remittance`)
+        .catch(() => apiClient.post(`/logistics/downpayments/${orderId}/verify`));
       return response.data;
     },
     onSuccess: () => {

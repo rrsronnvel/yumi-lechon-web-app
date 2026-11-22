@@ -16,7 +16,15 @@
     
 - LechonSystem.Api/Controllers/InventoryController.cs: Exposes endpoints to retrieve item categories, dual-stock live balances (physical on-hand vs. 14-day forward commitments), direct freezer receiving, and an auditable chronological history of physical stock ledger movements.
     
-- LechonSystem.Api/Controllers/LogisticsController.cs: Handles HTTP requests for retrieving unassigned ReadyForDelivery items, committing batch rider dispatches, tri-modal counter settlements, and Lalamove pre-release verification.
+- LechonSystem.Api/Models/PaymentLog.cs: Added `IsRemittedToOwner` (bool, default false), `RemittedAt` (DateTime?), and `RemittedBy` (string?) enabling per-installment remittance tracking from the cash drawer to owner custody.
+
+- LechonSystem.Api/DTOs/DownpaymentTrackerDtos.cs: Dual-aliased contract (`Amount`/`DownpaymentAmount`, `PaymentMethod`/`DownpaymentMethod`, `EventDate`/`TargetDeliveryTime`, `IsRemittedToOwner`/`IsDpRemittedToOwner`, `RemittedAt`/`DpRemittedAt`, `RemittedBy`/`DpRemittedBy`) and installment fields (`PaymentLogId`, `PaidAt`, `ReferenceNumber`, `InstallmentIndex`, `InstallmentCount`) preserving backwards compatibility across Web and Mobile.
+
+- LechonSystem.Api/Data/November23QaDataSeed.cs: Development-only, insert-only fixture writer for November 23 QA orders (`#112326-901` with 3 installments totaling ₱6,500 split cash/GCash; `#112326-902` with ₱11,700 uncollected freelance net remittance).
+
+- lechon-system-mobile/src/utils/paymentChannelHelper.ts: Pure TypeScript helper for channel badge formatting (`getPaymentChannelBadgeText`) guaranteeing multi-channel `🔀 Split (GCash + Cash)` badge rendering across dossier modals and unit test environments.
+
+- LechonSystem.Api/Controllers/LogisticsController.cs: Handles HTTP requests for retrieving unassigned ReadyForDelivery items, committing batch rider dispatches, tri-modal counter settlements, Lalamove pre-release verification, and per-installment remittance toggling (`POST /api/logistics/downpayments/logs/{paymentLogId}/toggle-remittance`).
     
 - LechonSystem.Api/Controllers/OrdersController.cs: Provides endpoints for order ingestion with user attribution (CreatedBy), daily OrderReference generation (`MMDDYY-XXX`), dual-contact numbers (`ContactNumber` max length 45 for primary CP #1 and secondary CP #2), manual lifecycle state transitions, cancellation workflows, Master Ledger directory retrieval, safe order modifications, Owner-only payment voiding, and immutable change audit logs.
 

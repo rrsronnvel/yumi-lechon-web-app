@@ -97,6 +97,13 @@ namespace LechonSystem.Api.Services
             {
                 var oldRider = order.DeliveryTrip?.RiderName?.Trim() ?? "";
                 order.RoutingStatus = DeliveryStatus.Assigned;
+                if (string.IsNullOrEmpty(order.SettlementCustodyStatus) ||
+                    string.Equals(order.SettlementCustodyStatus, "Uncollected", StringComparison.OrdinalIgnoreCase))
+                {
+                    order.HeldByStaffAmount = null;
+                    order.RiderRemittedAmount = null;
+                    order.RiderSignedBy = null;
+                }
                 newTrip.Orders.Add(order);
 
                 string message = $"Internal Log: Rider {cleanRiderName} assigned for tomorrow's delivery route.";
@@ -257,13 +264,20 @@ namespace LechonSystem.Api.Services
                         ? o.GrandTotal
                         : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment,
                     RiderDeliveryFee = o.DeliveryFee,
-                    NetRemittance = (o.DigitalTransferAmount ?? 0m) > 0m
-                        ? Math.Max(0m, (o.HeldByStaffAmount ?? 0m) + (o.DigitalTransferAmount ?? 0m))
-                        : o.HeldByStaffAmount ?? o.RiderRemittedAmount ?? Math.Max(0,
-                            ((o.GrandTotal > 0
-                                ? o.GrandTotal
-                                : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) - o.DeliveryFee),
                     CustodyStatus = string.IsNullOrEmpty(o.SettlementCustodyStatus) ? "Uncollected" : o.SettlementCustodyStatus,
+                    NetRemittance = (string.IsNullOrEmpty(o.SettlementCustodyStatus) || o.SettlementCustodyStatus == "Uncollected")
+                        ? Math.Max(0m, ((o.GrandTotal > 0
+                            ? o.GrandTotal
+                            : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) - o.DeliveryFee)
+                        : (o.DigitalTransferAmount ?? 0m) > 0m
+                            ? Math.Max(0m, (o.HeldByStaffAmount ?? 0m) + (o.DigitalTransferAmount ?? 0m))
+                            : (o.HeldByStaffAmount.HasValue && o.HeldByStaffAmount.Value > 0m)
+                                ? o.HeldByStaffAmount.Value
+                                : (o.RiderRemittedAmount.HasValue && o.RiderRemittedAmount.Value > 0m)
+                                    ? o.RiderRemittedAmount.Value
+                                    : Math.Max(0m, ((o.GrandTotal > 0
+                                        ? o.GrandTotal
+                                        : (o.Price + o.DeliveryFee - o.Discount)) - o.Downpayment) - o.DeliveryFee),
                     RiderSignedBy = o.RiderSignedBy,
                     HeldByStaffName = o.StaffValidatedBy,
                     HeldPaymentMethod = o.HeldByStaffMethod,
@@ -391,59 +405,191 @@ namespace LechonSystem.Api.Services
 
         public async Task<IEnumerable<DownpaymentTrackerItemDto>> GetDownpaymentsAsync()
         {
-            var items = await _context.Orders
+            // Query non-voided advance PaymentLog records
+            var advanceLogs = await _context.PaymentLogs
+                .AsNoTracking()
+                .Include(p => p.Order)
+                .Where(p => !p.IsVoided && p.Amount > 0m
+                         && p.Status == PaymentStatus.Success
+                         && p.Order != null
+                         && !p.Order.IsDraft
+                         && !p.Order.IsCancelled
+                         && !p.GatewayReferenceId.StartsWith("OWNER_")
+                         && !p.GatewayReferenceId.StartsWith("QR_SETTLE_")
+                         && !p.GatewayReferenceId.StartsWith("SETTLE_")
+                         && !p.GatewayReferenceId.Contains("_ORDER_"))
+                .ToListAsync();
+
+            var logsByOrder = advanceLogs
+                .GroupBy(p => p.OrderId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id).ToList()
+                );
+
+            var items = new List<DownpaymentTrackerItemDto>();
+            var processedOrderIds = new HashSet<int>();
+
+            foreach (var kvp in logsByOrder)
+            {
+                var orderLogs = kvp.Value;
+                var totalInstallments = orderLogs.Count;
+                processedOrderIds.Add(kvp.Key);
+
+                for (int i = 0; i < totalInstallments; i++)
+                {
+                    var log = orderLogs[i];
+                    var order = log.Order!;
+
+                    items.Add(new DownpaymentTrackerItemDto
+                    {
+                        PaymentLogId = log.Id,
+                        OrderId = order.Id,
+                        OrderReference = order.OrderReference,
+                        CustomerName = order.CustomerName,
+                        PhoneNumber = order.ContactNumber ?? string.Empty,
+                        BookingSource = order.Source ?? string.Empty,
+                        DownpaymentAmount = log.Amount,
+                        DownpaymentMethod = PaymentChannels.Normalize(log.PaymentMethod, "Cash"),
+                        TargetDeliveryTime = order.TargetDeliveryTime,
+                        IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
+                        CreatedAt = order.CreatedAt,
+                        PaidAt = log.CreatedAt,
+                        ReferenceNumber = log.GatewayReferenceId,
+                        EncodedBy = log.RecordedBy ?? order.CreatedBy,
+                        InstallmentIndex = i + 1,
+                        InstallmentCount = totalInstallments,
+                        IsDpRemittedToOwner = log.IsRemittedToOwner,
+                        DpRemittedAt = log.RemittedAt,
+                        DpRemittedBy = log.RemittedBy
+                    });
+                }
+            }
+
+            // Legacy fallback: for active orders with Downpayment > 0 but no matching advance PaymentLog
+            var legacyOrders = await _context.Orders
                 .AsNoTracking()
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
-                         && o.Downpayment > 0m)
-                .OrderBy(o => (o.IsTimeTbd || !o.TargetDeliveryTime.HasValue) ? 1 : 0)
-                .ThenBy(o => o.TargetDeliveryTime)
-                .ThenBy(o => o.Id)
-                .Select(o => new DownpaymentTrackerItemDto
+                         && o.Downpayment > 0m
+                         && !processedOrderIds.Contains(o.Id))
+                .ToListAsync();
+
+            foreach (var order in legacyOrders)
+            {
+                items.Add(new DownpaymentTrackerItemDto
                 {
-                    OrderId = o.Id,
-                    OrderReference = o.OrderReference,
-                    CustomerName = o.CustomerName,
-                    PhoneNumber = o.ContactNumber ?? string.Empty,
-                    BookingSource = o.Source ?? string.Empty,
-                    DownpaymentAmount = o.Downpayment,
-                    DownpaymentMethod = o.DownpaymentMethod,
-                    TargetDeliveryTime = o.TargetDeliveryTime,
-                    IsDateTbd = o.IsTimeTbd || !o.TargetDeliveryTime.HasValue,
-                    CreatedAt = o.CreatedAt,
-                    EncodedBy = o.CreatedBy,
-                    IsDpRemittedToOwner = o.IsDpRemittedToOwner,
-                    DpRemittedAt = o.DpRemittedAt,
-                    DpRemittedBy = o.DpRemittedBy
-                })
-                .ToListAsync();
-
-            if (items.Count == 0)
-            {
-                return items;
+                    PaymentLogId = null,
+                    OrderId = order.Id,
+                    OrderReference = order.OrderReference,
+                    CustomerName = order.CustomerName,
+                    PhoneNumber = order.ContactNumber ?? string.Empty,
+                    BookingSource = order.Source ?? string.Empty,
+                    DownpaymentAmount = order.Downpayment,
+                    DownpaymentMethod = PaymentChannels.Normalize(order.DownpaymentMethod, "Cash"),
+                    TargetDeliveryTime = order.TargetDeliveryTime,
+                    IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
+                    CreatedAt = order.CreatedAt,
+                    PaidAt = order.CreatedAt,
+                    ReferenceNumber = null,
+                    EncodedBy = order.CreatedBy,
+                    InstallmentIndex = 1,
+                    InstallmentCount = 1,
+                    IsDpRemittedToOwner = order.IsDpRemittedToOwner,
+                    DpRemittedAt = order.DpRemittedAt,
+                    DpRemittedBy = order.DpRemittedBy
+                });
             }
 
-            var orderIds = items.Select(item => item.OrderId).ToList();
-            var paymentMethods = await _context.PaymentLogs
-                .AsNoTracking()
-                .Where(payment => orderIds.Contains(payment.OrderId)
-                                  && payment.Status == PaymentStatus.Success
-                                  && !payment.IsVoided)
-                .OrderBy(payment => payment.CreatedAt)
-                .ThenBy(payment => payment.Id)
-                .Select(payment => new { payment.OrderId, payment.PaymentMethod })
-                .ToListAsync();
-            var firstPaymentMethodByOrder = paymentMethods
-                .GroupBy(payment => payment.OrderId)
-                .ToDictionary(group => group.Key, group => group.First().PaymentMethod);
+            // Sorting: chronological by EventDate (IsDateTbd at bottom), then PaidAt asc, then PaymentLogId asc, then OrderId asc
+            return items
+                .OrderBy(item => item.IsDateTbd ? 1 : 0)
+                .ThenBy(item => item.TargetDeliveryTime)
+                .ThenBy(item => item.PaidAt ?? item.CreatedAt)
+                .ThenBy(item => item.PaymentLogId ?? 0)
+                .ThenBy(item => item.OrderId)
+                .ToList();
+        }
 
-            foreach (var item in items)
+        public async Task<DownpaymentTrackerItemDto> TogglePaymentLogRemittanceAsync(int paymentLogId, string currentUser)
+        {
+            var payment = await _context.PaymentLogs
+                .Include(p => p.Order)
+                .FirstOrDefaultAsync(p => p.Id == paymentLogId);
+
+            if (payment == null || payment.Order == null || payment.Order.IsDraft || payment.Order.IsCancelled)
             {
-                firstPaymentMethodByOrder.TryGetValue(item.OrderId, out var firstPaymentMethod);
-                item.DownpaymentMethod = ResolveDownpaymentMethod(item.DownpaymentMethod, firstPaymentMethod);
+                throw new KeyNotFoundException($"Payment log #{paymentLogId} was not found.");
+            }
+            if (payment.IsVoided || payment.Amount <= 0m)
+            {
+                throw new InvalidOperationException($"Payment log #{paymentLogId} is voided or invalid.");
             }
 
-            return items;
+            payment.IsRemittedToOwner = !payment.IsRemittedToOwner;
+            payment.RemittedAt = payment.IsRemittedToOwner ? PhilippineTime.Now : null;
+            payment.RemittedBy = payment.IsRemittedToOwner ? currentUser : null;
+            payment.UpdatedAt = DateTime.UtcNow;
+
+            var order = payment.Order;
+            var orderId = order.Id;
+
+            // Check all active advance payment logs for this order to synchronize order-level flag
+            var allAdvanceLogs = await _context.PaymentLogs
+                .Where(p => p.OrderId == orderId && !p.IsVoided && p.Amount > 0m
+                            && !p.GatewayReferenceId.StartsWith("OWNER_")
+                            && !p.GatewayReferenceId.StartsWith("QR_SETTLE_")
+                            && !p.GatewayReferenceId.StartsWith("SETTLE_")
+                            && !p.GatewayReferenceId.Contains("_ORDER_"))
+                .OrderBy(p => p.CreatedAt)
+                .ThenBy(p => p.Id)
+                .ToListAsync();
+
+            var allRemitted = allAdvanceLogs.Count > 0 && allAdvanceLogs.All(p => p.Id == payment.Id ? payment.IsRemittedToOwner : p.IsRemittedToOwner);
+            order.IsDpRemittedToOwner = allRemitted;
+            order.DpRemittedAt = allRemitted ? PhilippineTime.Now : null;
+            order.DpRemittedBy = allRemitted ? currentUser : null;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            var action = payment.IsRemittedToOwner ? "DP Installment Verified" : "DP Installment Unverified";
+            var changes = payment.IsRemittedToOwner
+                ? $"[DP Verified] Installment #{payment.Id} of ₱{payment.Amount:N2} ({payment.PaymentMethod}) marked as remitted/verified by Owner."
+                : $"[DP Unverified] Installment #{payment.Id} of ₱{payment.Amount:N2} ({payment.PaymentMethod}) returned to Unremitted by Owner.";
+
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = action,
+                Changes = changes,
+                ChangedBy = currentUser,
+                Timestamp = PhilippineTime.Now
+            });
+
+            await _context.SaveChangesAsync();
+
+            var index = allAdvanceLogs.FindIndex(p => p.Id == payment.Id) + 1;
+            return new DownpaymentTrackerItemDto
+            {
+                PaymentLogId = payment.Id,
+                OrderId = order.Id,
+                OrderReference = order.OrderReference,
+                CustomerName = order.CustomerName,
+                PhoneNumber = order.ContactNumber ?? string.Empty,
+                BookingSource = order.Source ?? string.Empty,
+                DownpaymentAmount = payment.Amount,
+                DownpaymentMethod = PaymentChannels.Normalize(payment.PaymentMethod, "Cash"),
+                TargetDeliveryTime = order.TargetDeliveryTime,
+                IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
+                CreatedAt = order.CreatedAt,
+                PaidAt = payment.CreatedAt,
+                ReferenceNumber = payment.GatewayReferenceId,
+                EncodedBy = payment.RecordedBy ?? order.CreatedBy,
+                InstallmentIndex = index > 0 ? index : 1,
+                InstallmentCount = allAdvanceLogs.Count > 0 ? allAdvanceLogs.Count : 1,
+                IsDpRemittedToOwner = payment.IsRemittedToOwner,
+                DpRemittedAt = payment.RemittedAt,
+                DpRemittedBy = payment.RemittedBy
+            };
         }
 
         public async Task<DownpaymentTrackerItemDto> ToggleDownpaymentRemittanceAsync(int orderId, string currentUser)
@@ -463,15 +609,28 @@ namespace LechonSystem.Api.Services
             order.DpRemittedBy = order.IsDpRemittedToOwner ? currentUser : null;
             order.UpdatedAt = DateTime.UtcNow;
 
-            var firstPaymentMethod = await _context.PaymentLogs
-                .AsNoTracking()
-                .Where(payment => payment.OrderId == order.Id
-                                  && payment.Status == PaymentStatus.Success
-                                  && !payment.IsVoided)
+            // Synchronize all advance payment logs
+            var advanceLogs = await _context.PaymentLogs
+                .Where(p => p.OrderId == order.Id && !p.IsVoided && p.Amount > 0m
+                            && !p.GatewayReferenceId.StartsWith("OWNER_")
+                            && !p.GatewayReferenceId.StartsWith("QR_SETTLE_")
+                            && !p.GatewayReferenceId.StartsWith("SETTLE_")
+                            && !p.GatewayReferenceId.Contains("_ORDER_"))
+                .ToListAsync();
+
+            foreach (var log in advanceLogs)
+            {
+                log.IsRemittedToOwner = order.IsDpRemittedToOwner;
+                log.RemittedAt = order.DpRemittedAt;
+                log.RemittedBy = order.DpRemittedBy;
+                log.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var firstPaymentMethod = advanceLogs
                 .OrderBy(payment => payment.CreatedAt)
                 .ThenBy(payment => payment.Id)
                 .Select(payment => payment.PaymentMethod)
-                .FirstOrDefaultAsync();
+                .FirstOrDefault();
             var method = ResolveDownpaymentMethod(order.DownpaymentMethod, firstPaymentMethod);
 
             _context.OrderAuditLogs.Add(new OrderAuditLog
@@ -489,6 +648,7 @@ namespace LechonSystem.Api.Services
 
             return new DownpaymentTrackerItemDto
             {
+                PaymentLogId = advanceLogs.Count == 1 ? advanceLogs[0].Id : null,
                 OrderId = order.Id,
                 OrderReference = order.OrderReference,
                 CustomerName = order.CustomerName,
@@ -499,7 +659,11 @@ namespace LechonSystem.Api.Services
                 TargetDeliveryTime = order.TargetDeliveryTime,
                 IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
                 CreatedAt = order.CreatedAt,
+                PaidAt = order.CreatedAt,
+                ReferenceNumber = null,
                 EncodedBy = order.CreatedBy,
+                InstallmentIndex = 1,
+                InstallmentCount = advanceLogs.Count > 0 ? advanceLogs.Count : 1,
                 IsDpRemittedToOwner = order.IsDpRemittedToOwner,
                 DpRemittedAt = order.DpRemittedAt,
                 DpRemittedBy = order.DpRemittedBy
@@ -1051,7 +1215,7 @@ namespace LechonSystem.Api.Services
             order.StaffValidatedBy = null;
             order.StaffValidatedAt = null;
             order.HeldByStaffMethod = null;
-            order.HeldByStaffAmount = 0m;
+            order.HeldByStaffAmount = null;
             order.DigitalTransferMethod = null;
             order.DigitalTransferAmount = null;
             order.DigitalReferenceNote = null;

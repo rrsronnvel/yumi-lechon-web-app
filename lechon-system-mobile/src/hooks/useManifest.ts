@@ -79,19 +79,30 @@ export interface PendingLalamoveSettlement {
 }
 
 export interface DownpaymentTrackerItem {
+  paymentLogId?: number | null;
   orderId: number;
   orderReference: string;
   customerName: string;
   phoneNumber?: string | null;
   bookingSource?: string | null;
-  downpaymentAmount: number;
+  amount?: number;
+  downpaymentAmount?: number;
+  paymentMethod?: string | null;
   downpaymentMethod?: string | null;
   targetDeliveryTime?: string | null;
+  eventDate?: string | null;
+  paidAt?: string | null;
+  referenceNumber?: string | null;
   isDateTbd?: boolean;
   createdAt: string;
   encodedBy?: string | null;
-  isDpRemittedToOwner: boolean;
+  installmentIndex?: number | null;
+  installmentCount?: number | null;
+  isRemittedToOwner?: boolean;
+  isDpRemittedToOwner?: boolean;
+  remittedAt?: string | null;
   dpRemittedAt?: string | null;
+  remittedBy?: string | null;
   dpRemittedBy?: string | null;
 }
 
@@ -421,11 +432,26 @@ export const useSettleManualPaymentMutation = () => {
   });
 };
 
+export interface ToggleDownpaymentPayload {
+  paymentLogId?: number | null;
+  orderId: number;
+}
+
 export const useToggleDownpaymentRemittanceMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (orderId: number) => {
+    mutationFn: async (payload: ToggleDownpaymentPayload | number) => {
+      const isObj = typeof payload === 'object' && payload !== null;
+      const paymentLogId = isObj ? payload.paymentLogId : null;
+      const orderId = isObj ? payload.orderId : payload;
+
+      if (paymentLogId != null) {
+        const response = await apiClient.post<DownpaymentTrackerItem>(
+          `/logistics/downpayments/logs/${paymentLogId}/toggle-remittance`
+        );
+        return response.data;
+      }
       const response = await apiClient.post<DownpaymentTrackerItem>(
         `/logistics/downpayments/${orderId}/verify`
       );

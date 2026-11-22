@@ -76,15 +76,16 @@ function isAwaitingOwnerStatus(status?: string | null): boolean {
 }
 
 function isCashDownpayment(item: DownpaymentTrackerItem): boolean {
-  return (item.downpaymentMethod || '').trim().toLowerCase() === 'cash';
+  const method = (item.paymentMethod || item.downpaymentMethod || '').trim().toLowerCase();
+  return method === 'cash' || method === 'countercash';
 }
 
 function isDigitalDownpayment(item: DownpaymentTrackerItem): boolean {
-  const method = (item.downpaymentMethod || '')
+  const method = (item.paymentMethod || item.downpaymentMethod || '')
     .trim()
     .toLowerCase()
-    .replace(/[\s-]+/g, '');
-  return ['gcash', 'directgcash', 'maya', 'banktransfer'].includes(method);
+    .replace(/[\s-_]+/g, '');
+  return ['gcash', 'directgcash', 'manualgcash', 'maya', 'banktransfer'].includes(method);
 }
 
 function formatTrackerDate(value?: string | null): string {
@@ -144,6 +145,18 @@ function sortManifestItemsByDateAscending<T extends ManifestListItem>(items: rea
 
     if (safeATimestamp !== safeBTimestamp) {
       return safeATimestamp - safeBTimestamp; // Ascending: earliest first
+    }
+
+    const aPaid = (a as any).paidAt ? new Date((a as any).paidAt).getTime() : 0;
+    const bPaid = (b as any).paidAt ? new Date((b as any).paidAt).getTime() : 0;
+    if (aPaid !== bPaid) {
+      return aPaid - bPaid;
+    }
+
+    const aLogId = (a as any).paymentLogId ?? 0;
+    const bLogId = (b as any).paymentLogId ?? 0;
+    if (aLogId !== bLogId) {
+      return aLogId - bLogId;
     }
 
     return Number(a.orderId ?? a.id ?? 0) - Number(b.orderId ?? b.id ?? 0);
@@ -274,6 +287,124 @@ function ScheduleBadge({ targetDeliveryTime }: { targetDeliveryTime?: string | n
   );
 }
 
+interface DownpaymentRowCardProps {
+  item: DownpaymentTrackerItem;
+  isOwner: boolean;
+  onToggle: (item: DownpaymentTrackerItem) => void;
+  isPending: boolean;
+}
+
+const DownpaymentRowCard = React.memo(function DownpaymentRowCard({
+  item,
+  isOwner,
+  onToggle,
+  isPending,
+}: DownpaymentRowCardProps) {
+  const isWalkIn = isWalkInOrder({
+    source: item.bookingSource,
+    customerName: item.customerName,
+  });
+  const method = item.paymentMethod || item.downpaymentMethod || 'Unspecified';
+  const amount = Number(item.amount ?? item.downpaymentAmount ?? 0);
+  const isRemitted = Boolean(item.isRemittedToOwner ?? item.isDpRemittedToOwner);
+  const isCash = isCashDownpayment(item);
+  const reference = String(item.orderReference || item.orderId).replace(/^#/, '');
+  const encodedBy = item.encodedBy
+    ? item.encodedBy.startsWith('@')
+      ? item.encodedBy
+      : `@${item.encodedBy}`
+    : '@unknown';
+
+  const paidDateStr = formatTrackerDate(item.paidAt ?? item.createdAt);
+  const eventDateStr = formatTrackerDate(item.eventDate ?? item.targetDeliveryTime);
+
+  const installmentLabel =
+    item.installmentCount && item.installmentCount > 1
+      ? `Paid ${paidDateStr} • Payment ${item.installmentIndex ?? 1}/${item.installmentCount}`
+      : `Paid ${paidDateStr}`;
+
+  return (
+    <View
+      style={[
+        styles.dpTrackerCard,
+        !isRemitted && isCash && styles.dpTrackerCardUrgent,
+      ]}
+    >
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.rowCenterWrap}>
+          <Text style={styles.monoOrderId}>#{reference}</Text>
+          {isWalkIn && (
+            <View style={styles.dpWalkInBadge}>
+              <Text style={styles.dpWalkInBadgeText}>🚶 Walk-in</Text>
+            </View>
+          )}
+          <View style={styles.dpInstallmentPill}>
+            <Text style={styles.dpInstallmentPillText}>{installmentLabel}</Text>
+          </View>
+        </View>
+        <Text
+          style={[
+            styles.dpAmount,
+            !isRemitted && isCash && styles.dpAmountUrgent,
+          ]}
+        >
+          ₱{amount.toLocaleString()}
+        </Text>
+      </View>
+
+      <Text style={styles.dpCustomerMode}>
+        {item.customerName} - {method.toLowerCase()}
+      </Text>
+      <Text style={styles.dpMetaText}>
+        📅 Event: {eventDateStr} • Encoded by {encodedBy}
+      </Text>
+      <Text style={styles.dpMetaText}>
+        📞 {item.phoneNumber || 'No phone'} •{' '}
+        {item.bookingSource || 'Source not recorded'}
+      </Text>
+
+      {isRemitted ? (
+        <View style={styles.dpRemittedPanel}>
+          <Text style={styles.dpRemittedBadge}>✅ Remitted to Owner</Text>
+          <Text style={styles.dpRemittedMeta}>
+            {formatTrackerDateTime(item.remittedAt ?? item.dpRemittedAt)}
+            {item.remittedBy || item.dpRemittedBy ? ` • by ${item.remittedBy || item.dpRemittedBy}` : ''}
+          </Text>
+          {isOwner && (
+            <Pressable
+              style={styles.dpUndoButton}
+              disabled={isPending}
+              onPress={() => onToggle(item)}
+            >
+              <Text style={styles.dpUndoButtonText}>↩ Mark Unverified</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <View style={styles.dpUnremittedPanel}>
+          <Text style={styles.dpUnremittedBadge}>⏳ Unremitted</Text>
+          {isOwner ? (
+            <Pressable
+              style={[
+                styles.dpVerifyButton,
+                isPending && styles.disabledBtn,
+              ]}
+              disabled={isPending}
+              onPress={() => onToggle(item)}
+            >
+              <Text style={styles.dpVerifyButtonText}>✓ Mark Remitted</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.dpOwnerOnlyHint}>
+              Owner verification required
+            </Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
+
 export default function DrawerScreen() {
   const { user, isOwner } = useAuth();
 
@@ -283,6 +414,11 @@ export default function DrawerScreen() {
   const [hop2SubFilter, setHop2SubFilter] = useState<'all' | 'digital' | 'cash'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [dpFilter, setDpFilter] = useState<DpFilterKey>('unremitted');
+  const [dpVisibleCount, setDpVisibleCount] = useState<number>(25);
+
+  useEffect(() => {
+    setDpVisibleCount(25);
+  }, [dpFilter, searchQuery, activeTab]);
   const [digitalVerifyModalItem, setDigitalVerifyModalItem] = useState<DigitalVerifyTarget | null>(null);
 
   const {
@@ -634,9 +770,10 @@ export default function DrawerScreen() {
     let unremittedCount = 0;
 
     for (const item of downpaymentItems) {
-      const amount = Number(item.downpaymentAmount || 0);
+      const amount = Number(item.amount ?? item.downpaymentAmount ?? 0);
       if (amount <= 0) continue;
-      if (item.isDpRemittedToOwner) {
+      const isRemitted = Boolean(item.isRemittedToOwner ?? item.isDpRemittedToOwner);
+      if (isRemitted) {
         verifiedTotal += amount;
         continue;
       }
@@ -660,17 +797,20 @@ export default function DrawerScreen() {
   }, [downpaymentItems]);
 
   const filteredDownpaymentItems = useMemo(() => {
+    if (activeTab !== 'downpayments') return [];
     const normalizedSearch = searchQuery.trim().toLowerCase();
     return sortManifestItemsByDateAscending(downpaymentItems.filter((item) => {
-      if (Number(item.downpaymentAmount || 0) <= 0) return false;
+      const amount = Number(item.amount ?? item.downpaymentAmount ?? 0);
+      if (amount <= 0) return false;
+      const isRemitted = Boolean(item.isRemittedToOwner ?? item.isDpRemittedToOwner);
       const matchesFilter =
         dpFilter === 'all' ||
         (dpFilter === 'cash' && isCashDownpayment(item)) ||
         (dpFilter === 'digital' && isDigitalDownpayment(item)) ||
         (dpFilter === 'walkin' &&
           isWalkInOrder({ source: item.bookingSource, customerName: item.customerName })) ||
-        (dpFilter === 'unremitted' && !item.isDpRemittedToOwner) ||
-        (dpFilter === 'remitted' && item.isDpRemittedToOwner);
+        (dpFilter === 'unremitted' && !isRemitted) ||
+        (dpFilter === 'remitted' && isRemitted);
 
       if (!matchesFilter) return false;
       if (!normalizedSearch) return true;
@@ -680,11 +820,11 @@ export default function DrawerScreen() {
         item.customerName,
         item.phoneNumber,
         item.bookingSource,
-        item.downpaymentMethod,
+        item.paymentMethod ?? item.downpaymentMethod,
         item.encodedBy,
       ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch));
     }));
-  }, [downpaymentItems, dpFilter, searchQuery]);
+  }, [activeTab, downpaymentItems, dpFilter, searchQuery]);
 
   const activeListCount =
     activeTab === 'hop2'
@@ -1084,11 +1224,16 @@ export default function DrawerScreen() {
     }
 
     try {
-      await toggleDpRemittanceMutation.mutateAsync(item.orderId);
+      await toggleDpRemittanceMutation.mutateAsync({
+        paymentLogId: item.paymentLogId,
+        orderId: item.orderId,
+      });
+      const isRemitted = Boolean(item.isRemittedToOwner ?? item.isDpRemittedToOwner);
+      const ref = String(item.orderReference || item.orderId).replace(/^#/, '');
       showSuccessFeedback(
-        item.isDpRemittedToOwner
-          ? `↩️ Order #${String(item.orderReference).replace(/^#/, '')} downpayment marked unverified.`
-          : `✅ Order #${String(item.orderReference).replace(/^#/, '')} downpayment verified as remitted.`,
+        isRemitted
+          ? `↩️ Order #${ref} installment marked unverified.`
+          : `✅ Order #${ref} installment verified as remitted.`
       );
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -1259,6 +1404,7 @@ export default function DrawerScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.tabsScrollContent}
         >
           {isDrawerHandoverVisible && (
@@ -1375,7 +1521,9 @@ export default function DrawerScreen() {
           )}
         </View>
         <Text style={styles.searchCountText}>
-          Showing {activeListCount} of {activeListTotal}
+          {activeTab === 'downpayments'
+            ? `Showing ${Math.min(dpVisibleCount, filteredDownpaymentItems.length)} of ${filteredDownpaymentItems.length} • Total matching: ${filteredDownpaymentItems.length}`
+            : `Showing ${activeListCount} of ${activeListTotal}`}
         </Text>
       </View>
 
@@ -1390,6 +1538,7 @@ export default function DrawerScreen() {
       <ScrollView
         style={styles.listScroll}
         contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={isRefreshingAny}
@@ -1741,12 +1890,22 @@ export default function DrawerScreen() {
                           -₱{drop.riderDeliveryFee.toLocaleString()}
                         </Text>
                       </View>
-                      <View style={[styles.splitCell, styles.splitCellNet]}>
-                        <Text style={styles.splitCellNetLabel}>Net Remittance</Text>
-                        <Text style={styles.splitCellNetVal}>
-                          ₱{drop.netRemittance.toLocaleString()}
-                        </Text>
-                      </View>
+                      {(() => {
+                        const effectiveNetRemittance =
+                          Number(drop.netRemittance ?? 0) > 0
+                            ? Number(drop.netRemittance)
+                            : drop.custodyStatus === 'Uncollected' || !drop.custodyStatus
+                              ? Math.max(0, Number(drop.totalCollected ?? 0) - Number(drop.riderDeliveryFee ?? 0))
+                              : Number(drop.netRemittance ?? 0);
+                        return (
+                          <View style={[styles.splitCell, styles.splitCellNet]}>
+                            <Text style={styles.splitCellNetLabel}>Net Remittance</Text>
+                            <Text style={styles.splitCellNetVal}>
+                              ₱{effectiveNetRemittance.toLocaleString()}
+                            </Text>
+                          </View>
+                        );
+                      })()}
                     </View>
 
                     {/* Action Row */}
@@ -1816,13 +1975,19 @@ export default function DrawerScreen() {
                             setDirectGcashRef('');
                             setShowManualOverride(isUnassignedRider);
                             setOverrideRiderName(isUnassignedRider ? '' : drop.riderName || '');
-                            setOverrideAmount(String(drop.netRemittance));
+                            const effectiveNetRemittance =
+                              Number(drop.netRemittance ?? 0) > 0
+                                ? Number(drop.netRemittance)
+                                : drop.custodyStatus === 'Uncollected' || !drop.custodyStatus
+                                  ? Math.max(0, Number(drop.totalCollected ?? 0) - Number(drop.riderDeliveryFee ?? 0))
+                                  : Number(drop.netRemittance ?? 0);
+                            setOverrideAmount(String(effectiveNetRemittance));
                             setModalError(null);
                             setModalState({
                               workflow: 'hop1_rider',
                               orderId: targetOrderId,
                               customerName: drop.customerName,
-                              expectedAmount: drop.netRemittance,
+                              expectedAmount: effectiveNetRemittance,
                               riderName: drop.riderName,
                               totalCollected: drop.totalCollected,
                               deliveryFee: drop.riderDeliveryFee,
@@ -2120,6 +2285,7 @@ export default function DrawerScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.dpFilterRow}
             >
               {([
@@ -2189,105 +2355,33 @@ export default function DrawerScreen() {
                 </Text>
               </View>
             ) : (
-              filteredDownpaymentItems.map((item) => {
-                const isWalkIn = isWalkInOrder({
-                  source: item.bookingSource,
-                  customerName: item.customerName,
-                });
-                const method = item.downpaymentMethod || 'Unspecified';
-                const reference = String(item.orderReference || item.orderId).replace(
-                  /^#/,
-                  '',
-                );
-                const encodedBy = item.encodedBy
-                  ? item.encodedBy.startsWith('@')
-                    ? item.encodedBy
-                    : `@${item.encodedBy}`
-                  : '@unknown';
+              <>
+                {filteredDownpaymentItems.slice(0, dpVisibleCount).map((item) => (
+                  <DownpaymentRowCard
+                    key={item.paymentLogId != null ? `log-${item.paymentLogId}` : `order-${item.orderId}`}
+                    item={item}
+                    isOwner={isOwner}
+                    onToggle={handleToggleDpRemittance}
+                    isPending={toggleDpRemittanceMutation.isPending}
+                  />
+                ))}
 
-                return (
-                  <View
-                    key={item.orderId}
-                    style={[
-                      styles.dpTrackerCard,
-                      !item.isDpRemittedToOwner &&
-                        isCashDownpayment(item) &&
-                        styles.dpTrackerCardUrgent,
+                {filteredDownpaymentItems.length > dpVisibleCount && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.loadMoreButton,
+                      pressed && styles.btnPressed,
                     ]}
+                    onPress={() => setDpVisibleCount((prev) => prev + 25)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Load next 25 downpayments, currently showing ${dpVisibleCount} of ${filteredDownpaymentItems.length}`}
                   >
-                    <View style={styles.cardHeaderRow}>
-                      <View style={styles.rowCenterWrap}>
-                        <Text style={styles.monoOrderId}>#{reference}</Text>
-                        {isWalkIn && (
-                          <View style={styles.dpWalkInBadge}>
-                            <Text style={styles.dpWalkInBadgeText}>🚶 Walk-in</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.dpAmount,
-                          !item.isDpRemittedToOwner &&
-                            isCashDownpayment(item) &&
-                            styles.dpAmountUrgent,
-                        ]}
-                      >
-                        ₱{Number(item.downpaymentAmount || 0).toLocaleString()}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.dpCustomerMode}>
-                      {item.customerName} - {method.toLowerCase()}
+                    <Text style={styles.loadMoreButtonText}>
+                      Load Next 25 ({dpVisibleCount} of {filteredDownpaymentItems.length} shown)
                     </Text>
-                    <Text style={styles.dpMetaText}>
-                      📅 {formatTrackerDate(item.targetDeliveryTime)} • Encoded by {encodedBy}
-                    </Text>
-                    <Text style={styles.dpMetaText}>
-                      📞 {item.phoneNumber || 'No phone'} •{' '}
-                      {item.bookingSource || 'Source not recorded'}
-                    </Text>
-
-                    {item.isDpRemittedToOwner ? (
-                      <View style={styles.dpRemittedPanel}>
-                        <Text style={styles.dpRemittedBadge}>✅ Remitted to Owner</Text>
-                        <Text style={styles.dpRemittedMeta}>
-                          {formatTrackerDateTime(item.dpRemittedAt)}
-                          {item.dpRemittedBy ? ` • ${item.dpRemittedBy}` : ''}
-                        </Text>
-                        {isOwner && (
-                          <Pressable
-                            style={styles.dpUndoButton}
-                            disabled={toggleDpRemittanceMutation.isPending}
-                            onPress={() => void handleToggleDpRemittance(item)}
-                          >
-                            <Text style={styles.dpUndoButtonText}>↩ Mark Unverified</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    ) : (
-                      <View style={styles.dpUnremittedPanel}>
-                        <Text style={styles.dpUnremittedBadge}>⏳ Unremitted</Text>
-                        {isOwner ? (
-                          <Pressable
-                            style={[
-                              styles.dpVerifyButton,
-                              toggleDpRemittanceMutation.isPending && styles.disabledBtn,
-                            ]}
-                            disabled={toggleDpRemittanceMutation.isPending}
-                            onPress={() => void handleToggleDpRemittance(item)}
-                          >
-                            <Text style={styles.dpVerifyButtonText}>✓ Mark Remitted</Text>
-                          </Pressable>
-                        ) : (
-                          <Text style={styles.dpOwnerOnlyHint}>
-                            Owner verification required
-                          </Text>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                );
-              })
+                  </Pressable>
+                )}
+              </>
             )}
           </>
         )}
@@ -4559,6 +4653,34 @@ const styles = StyleSheet.create({
     color: '#5B21B6',
     fontSize: 10,
     fontWeight: '900',
+  },
+  dpInstallmentPill: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  dpInstallmentPillText: {
+    color: '#374151',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  loadMoreButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D6D3D1',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  loadMoreButtonText: {
+    color: '#78350F',
+    fontSize: 13,
+    fontWeight: '800',
   },
   dpAmount: {
     color: '#047857',

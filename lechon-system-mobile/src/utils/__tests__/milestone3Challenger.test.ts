@@ -384,10 +384,13 @@ describe('Milestone 3 Challenger: Cache Invalidation Completeness Check', () => 
 
 describe('Milestone 3 Challenger: Typography & Entity Hygiene in DrawerScreen.tsx', () => {
   it('DrawerScreen.tsx must contain 0 occurrences of literal &amp; in user-facing JSX text nodes', () => {
-    const drawerScreenPath = path.resolve(
+    const rootPath = path.resolve(
       process.cwd(),
       'lechon-system-mobile/src/screens/DrawerScreen.tsx'
     );
+    const drawerScreenPath = fs.existsSync(rootPath)
+      ? rootPath
+      : path.resolve(process.cwd(), 'src/screens/DrawerScreen.tsx');
     const content = fs.readFileSync(drawerScreenPath, 'utf8');
 
     const ampMatches = content.match(/&amp;/g);

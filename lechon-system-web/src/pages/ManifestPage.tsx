@@ -7,6 +7,7 @@ import {
   useRevertCustodyMutation,
   useVerifyDigitalSettlementMutation,
   computeCustodyMetrics,
+  computeEffectiveNetRemittance,
   getPendingDigitalAmount,
   getPendingDigitalMethod,
   PendingSettlementDrop,
@@ -120,8 +121,8 @@ export default function ManifestPage() {
     () =>
       downpayments.filter(
         (item) =>
-          Number(item.downpaymentAmount || 0) > 0 &&
-          !item.isDpRemittedToOwner,
+          Number(item.amount ?? item.downpaymentAmount ?? 0) > 0 &&
+          !Boolean(item.isRemittedToOwner ?? item.isDpRemittedToOwner),
       ).length,
     [downpayments],
   );
@@ -263,11 +264,12 @@ export default function ManifestPage() {
   });
 
   const handleOpenRiderToStaff = (drop: PendingSettlementDrop) => {
+    const effectiveNetRemittance = computeEffectiveNetRemittance(drop);
     setQrModalData({
       open: true,
       orderId: drop.orderId || drop.id,
       customerName: drop.customerName,
-      expectedAmount: drop.netRemittance,
+      expectedAmount: effectiveNetRemittance,
       totalCollected: drop.totalCollected,
       deliveryFee: drop.riderDeliveryFee,
       riderName: drop.riderName,
@@ -846,7 +848,7 @@ export default function ManifestPage() {
 
                             {/* Net Remittance */}
                             <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/40 text-xs tabular-nums whitespace-nowrap border-l border-stone-200">
-                              ₱{drop.netRemittance.toLocaleString()}
+                              ₱{computeEffectiveNetRemittance(drop).toLocaleString()}
                             </td>
 
                             {/* REFINED, COHESIVE ACTIONS COLUMN (UNIFORM ALIGNED WIDTH) */}

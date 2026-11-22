@@ -327,6 +327,16 @@ using (var scope = app.Services.CreateScope())
         IF COL_LENGTH('PaymentLogs', 'RecordedBy') IS NULL
             ALTER TABLE PaymentLogs ADD RecordedBy nvarchar(128) NULL;
 
+        IF COL_LENGTH('PaymentLogs', 'IsRemittedToOwner') IS NULL
+            ALTER TABLE PaymentLogs ADD IsRemittedToOwner bit NOT NULL
+                CONSTRAINT DF_PaymentLogs_IsRemittedToOwner DEFAULT (0);
+
+        IF COL_LENGTH('PaymentLogs', 'RemittedAt') IS NULL
+            ALTER TABLE PaymentLogs ADD RemittedAt datetime2 NULL;
+
+        IF COL_LENGTH('PaymentLogs', 'RemittedBy') IS NULL
+            ALTER TABLE PaymentLogs ADD RemittedBy nvarchar(150) NULL;
+
         IF OBJECT_ID('KitchenPrepRequests', 'U') IS NULL
         BEGIN
             CREATE TABLE KitchenPrepRequests (
@@ -343,6 +353,19 @@ using (var scope = app.Services.CreateScope())
         END
     ");
 
+    // Idempotent Data Carryover Migration: carry over order-level remittance to individual payment logs
+    await context.Database.ExecuteSqlRawAsync(@"
+        UPDATE p
+        SET p.IsRemittedToOwner = 1,
+            p.RemittedAt = o.DpRemittedAt,
+            p.RemittedBy = o.DpRemittedBy
+        FROM PaymentLogs p
+        INNER JOIN Orders o ON p.OrderId = o.Id
+        WHERE o.IsDpRemittedToOwner = 1
+          AND p.IsRemittedToOwner = 0
+          AND (o.DpRemittedAt IS NULL OR p.CreatedAt <= o.DpRemittedAt);
+    ");
+
     // Fixed-date QA fixtures are intentionally Development-only. Unlike the
     // opt-in legacy QA seeder below, this routine never deletes or recreates an
     // order; it only upserts the two reserved QA references and one Paluto row.
@@ -350,6 +373,7 @@ using (var scope = app.Services.CreateScope())
     {
         await November15QaDataSeed.SeedAsync(context);
         await December2026PromoQaSeed.SeedAsync(context);
+        await November23QaDataSeed.SeedAsync(context);
     }
 
     // Idempotent text repair only: correct known historical UTF-8/Windows-1252
@@ -464,7 +488,8 @@ using (var scope = app.Services.CreateScope())
         UPDATE o
         SET o.SettlementCustodyStatus = N'Uncollected',
             o.HeldByStaffMethod = NULL,
-            o.HeldByStaffAmount = 0,
+            o.HeldByStaffAmount = NULL,
+            o.RiderRemittedAmount = NULL,
             o.StaffValidatedBy = NULL,
             o.StaffValidatedAt = NULL,
             o.UpdatedAt = GETUTCDATE()
@@ -475,6 +500,13 @@ using (var scope = app.Services.CreateScope())
           AND ISNULL(o.DigitalTransferAmount, 0) = 0
           AND o.TargetDeliveryTime >= CAST(GETDATE() AS date)
           AND lt.TotalPaid < o.GrandTotal;
+
+        -- Self-heal: ensure Uncollected orders have HeldByStaffAmount = NULL and RiderRemittedAmount = NULL (never 0m)
+        UPDATE Orders
+        SET HeldByStaffAmount = NULL,
+            RiderRemittedAmount = NULL
+        WHERE (SettlementCustodyStatus = 'Uncollected' OR SettlementCustodyStatus IS NULL)
+          AND (HeldByStaffAmount = 0 OR RiderRemittedAmount = 0);
     ");
 
     // Non-destructive DP repair: restore advance booking downpayment (₱2,200) for Robin Evangelio #111326-901 if mutated by final pickup settlement

@@ -32,6 +32,9 @@ import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
 import { sanitizeMojibake } from '../../utils/sanitizeDisplayText';
 import WalkInBadge from './WalkInBadge';
 import { useAssignRiderMutation, useRiders } from '../../hooks/useRiders';
+import { getPaymentChannelBadgeText } from '../../utils/paymentChannelHelper';
+
+export { getPaymentChannelBadgeText };
 
 interface OrderDossierModalProps {
   orderId: number | null;
@@ -1279,13 +1282,20 @@ export default function OrderDossierModal({
                     </Text>
                     {Number(
                       orderDetails?.downpayment ?? fallbackOrder?.downpayment ?? 0
-                    ) > 0 && (
-                      <Text style={styles.paymentChannelBadge}>
-                        {orderDetails?.downpaymentMethod ||
-                          fallbackOrder?.downpaymentMethod ||
-                          'GCash'}
-                      </Text>
-                    )}
+                    ) > 0 && (() => {
+                      const channelLabel = getPaymentChannelBadgeText(orderDetails, fallbackOrder?.downpaymentMethod);
+                      const isSplit = channelLabel.startsWith('Split');
+                      return (
+                        <Text
+                          style={[
+                            styles.paymentChannelBadge,
+                            isSplit && styles.splitPaymentChannelBadge,
+                          ]}
+                        >
+                          {isSplit ? `🔀 ${channelLabel}` : channelLabel}
+                        </Text>
+                      );
+                    })()}
                   </View>
                 </View>
 
@@ -1893,6 +1903,12 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     fontSize: 10,
     fontWeight: '900',
+  },
+  splitPaymentChannelBadge: {
+    color: '#4338CA',
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderWidth: 1,
   },
   paymentHistoryBox: {
     backgroundColor: '#FAFAF9',

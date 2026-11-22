@@ -20,6 +20,7 @@ namespace LechonSystem.Api.Services
         Task<bool> ConfirmLalamoveReleaseAsync(int orderId);
         Task<IEnumerable<DownpaymentTrackerItemDto>> GetDownpaymentsAsync();
         Task<DownpaymentTrackerItemDto> ToggleDownpaymentRemittanceAsync(int orderId, string currentUser);
+        Task<DownpaymentTrackerItemDto> TogglePaymentLogRemittanceAsync(int paymentLogId, string currentUser);
 
         // Two-Hop QR Custody Chain
         Task<QrSessionStatusDto> CreateQrSessionAsync(CreateQrSessionRequest request);

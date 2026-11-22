@@ -2161,29 +2161,59 @@ export default function OrdersPage() {
                           ₱{orderDetails.grandTotal?.toLocaleString() || 0}
                         </span>
                       </div>
-                      <div className="flex justify-between text-emerald-700">
-                        <span>Downpayment / Store Paid:</span>
-                        <span className="flex items-center gap-2">
-                          <span className="font-mono">
-                            - ₱{orderDetails.downpayment?.toLocaleString() || 0}
-                          </span>
-                          {Number(orderDetails.downpayment || 0) > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="border-emerald-200 bg-emerald-50 text-emerald-800"
-                            >
-                              {orderDetails.downpaymentMethod === "Cash"
-                                ? "💵"
-                                : orderDetails.downpaymentMethod === "Maya"
-                                  ? "💚"
-                                  : orderDetails.downpaymentMethod === "Bank Transfer"
-                                    ? "🏦"
-                                    : "📱"}{" "}
-                              {orderDetails.downpaymentMethod || "GCash"}
-                            </Badge>
-                          )}
-                        </span>
-                      </div>
+                      {(() => {
+                        const activeLogs = (orderDetails.paymentLogs || []).filter(
+                          (p: any) => !p.isVoided && Number(p.amount || 0) > 0,
+                        );
+                        const logChannels = Array.from(
+                          new Set(activeLogs.map((p: any) => (p.paymentMethod || "").trim()).filter(Boolean)),
+                        );
+                        const summaryChannels = (orderDetails.paymentChannelsSummary || [])
+                          .filter((s: any) => Number(s.amount || 0) > 0)
+                          .map((s: any) => (s.paymentMethod || "").trim())
+                          .filter(Boolean);
+                        const distinctChannels = logChannels.length > 0 ? logChannels : summaryChannels;
+                        const isSplit = distinctChannels.length >= 2 || (orderDetails.downpaymentMethod || "").toLowerCase().startsWith("split");
+                        const badgeLabel = isSplit
+                          ? (distinctChannels.length >= 2 ? `Split (${distinctChannels.join(" + ")})` : orderDetails.downpaymentMethod!)
+                          : (distinctChannels[0] || orderDetails.downpaymentMethod || "GCash");
+
+                        return (
+                          <div className="flex justify-between items-center text-emerald-700">
+                            <span>Downpayment / Store Paid:</span>
+                            <span className="flex items-center gap-2">
+                              <span className="font-mono">
+                                - ₱{orderDetails.downpayment?.toLocaleString() || 0}
+                              </span>
+                              {Number(orderDetails.downpayment || 0) > 0 && (
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    isSplit
+                                      ? "border-purple-300 bg-purple-50 text-purple-900 font-bold"
+                                      : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  }
+                                >
+                                  {isSplit ? (
+                                    `🔀 ${badgeLabel}`
+                                  ) : (
+                                    <>
+                                      {badgeLabel === "Cash"
+                                        ? "💵"
+                                        : badgeLabel === "Maya"
+                                          ? "💚"
+                                          : badgeLabel === "Bank Transfer"
+                                            ? "🏦"
+                                            : "📱"}{" "}
+                                      {badgeLabel}
+                                    </>
+                                  )}
+                                </Badge>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })()}
                       {orderDetails.settlementCustodyStatus === "InStaffDrawer" && (
                         <div className="flex justify-between gap-4 font-semibold text-amber-700">
                           <span>

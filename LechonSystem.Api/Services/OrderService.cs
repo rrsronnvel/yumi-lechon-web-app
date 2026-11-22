@@ -661,7 +661,12 @@ namespace LechonSystem.Api.Services
                     .OrderBy(p => Array.IndexOf(PaymentChannels.Supported, p.PaymentMethod))
                     .ToList();
 
-                if (item.PaymentChannelsSummary.Count == 0 && item.Downpayment > 0)
+                if (item.PaymentChannelsSummary.Count > 1)
+                {
+                    var channels = item.PaymentChannelsSummary.Select(c => c.PaymentMethod).ToList();
+                    item.DownpaymentMethod = $"Split ({string.Join(" + ", channels)})";
+                }
+                else if (item.PaymentChannelsSummary.Count == 0 && item.Downpayment > 0)
                 {
                     item.PaymentChannelsSummary.Add(new PaymentChannelTotalDto
                     {
@@ -1450,13 +1455,28 @@ namespace LechonSystem.Api.Services
                 payment.PaymentMethod = PaymentChannels.Normalize(payment.PaymentMethod);
             }
 
-            var activePayments = dto.PaymentLogs.Where(p => !p.IsVoided).ToList();
+            var activePayments = dto.PaymentLogs.Where(p => !p.IsVoided && p.Amount > 0).ToList();
             if (dto.PaymentLogs.Count > 0)
             {
                 dto.Downpayment = activePayments.Sum(p => p.Amount);
-                dto.DownpaymentMethod = activePayments.Count > 0
-                    ? activePayments[^1].PaymentMethod
-                    : "None";
+                var distinctChannels = activePayments
+                    .Select(p => PaymentChannels.Normalize(p.PaymentMethod, "GCash"))
+                    .Where(m => !string.IsNullOrWhiteSpace(m) && !m.Equals("None", StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (distinctChannels.Count > 1)
+                {
+                    dto.DownpaymentMethod = $"Split ({string.Join(" + ", distinctChannels)})";
+                }
+                else if (distinctChannels.Count == 1)
+                {
+                    dto.DownpaymentMethod = distinctChannels[0];
+                }
+                else
+                {
+                    dto.DownpaymentMethod = "None";
+                }
             }
 
             dto.BalanceDue = CalculateOperationalBalanceDue(order, dto.Downpayment);
@@ -1598,9 +1618,16 @@ namespace LechonSystem.Api.Services
                 .ToListAsync();
 
             order.Downpayment = activePayments.Sum(p => p.Amount);
-            order.DownpaymentMethod = activePayments.Count > 0
-                ? PaymentChannels.Normalize(activePayments[^1].PaymentMethod)
-                : "None";
+            var distinctChannels = activePayments
+                .Select(p => PaymentChannels.Normalize(p.PaymentMethod, "GCash"))
+                .Where(m => !string.IsNullOrWhiteSpace(m) && !m.Equals("None", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            order.DownpaymentMethod = distinctChannels.Count > 1
+                ? $"Split ({string.Join(" + ", distinctChannels)})"
+                : distinctChannels.Count == 1
+                    ? distinctChannels[0]
+                    : "None";
             order.UpdatedAt = voidedAt;
 
             var financialOutstandingAfterVoid = Math.Max(0m, order.GrandTotal - order.Downpayment);
@@ -1617,10 +1644,13 @@ namespace LechonSystem.Api.Services
                 order.StaffValidatedBy = null;
                 order.StaffValidatedAt = null;
                 order.HeldByStaffMethod = null;
-                order.HeldByStaffAmount = 0m;
+                order.HeldByStaffAmount = null;
                 order.DigitalTransferMethod = null;
                 order.DigitalTransferAmount = null;
                 order.DigitalReferenceNote = null;
+                order.RiderSignedBy = null;
+                order.RiderRemittedAmount = null;
+                order.RiderSignedAt = null;
             }
             var newBalance = restoredToUncollected
                 ? CalculateOperationalBalanceDue(order, order.Downpayment)

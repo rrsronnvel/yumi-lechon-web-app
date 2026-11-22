@@ -130,6 +130,47 @@ export default function OrderDetailsModal({
     });
   };
 
+  const { isSplitPaymentChannel, paymentBadgeLabel, displayMethod } = useMemo(() => {
+    if (!orderDetails) return { isSplitPaymentChannel: false, paymentBadgeLabel: "", displayMethod: "None" };
+
+    const activeLogs = (orderDetails.paymentLogs || []).filter(
+      (p: any) => !p.isVoided && Number(p.amount || 0) > 0,
+    );
+    const logChannels = Array.from(
+      new Set(activeLogs.map((p: any) => (p.paymentMethod || "").trim()).filter(Boolean)),
+    );
+    const summaryChannels = (orderDetails.paymentChannelsSummary || [])
+      .filter((s: any) => Number(s.amount || 0) > 0)
+      .map((s: any) => (s.paymentMethod || "").trim())
+      .filter(Boolean);
+
+    const distinctChannels = logChannels.length > 0 ? logChannels : summaryChannels;
+
+    if (distinctChannels.length >= 2) {
+      return {
+        isSplitPaymentChannel: true,
+        paymentBadgeLabel: `Split (${distinctChannels.join(" + ")})`,
+        displayMethod: "Split",
+      };
+    }
+
+    const dpMethod = (orderDetails.downpaymentMethod || "").trim();
+    if (dpMethod.toLowerCase().startsWith("split")) {
+      return {
+        isSplitPaymentChannel: true,
+        paymentBadgeLabel: dpMethod,
+        displayMethod: "Split",
+      };
+    }
+
+    const single = distinctChannels[0] || dpMethod || "Cash";
+    return {
+      isSplitPaymentChannel: false,
+      paymentBadgeLabel: single,
+      displayMethod: single,
+    };
+  }, [orderDetails]);
+
   const handleAssignRider = () => {
     if (!orderId) return;
     const riderName = (customRiderName || selectedRiderName).trim();
@@ -615,9 +656,36 @@ export default function OrderDetailsModal({
                       <span className="font-mono">- ₱{Number(orderDetails.discount).toLocaleString()}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-emerald-700 font-semibold border-t border-stone-100 pt-1">
-                    <span>Downpayment Logged:</span>
-                    <span className="font-mono">- ₱{Number(orderDetails.downpayment || 0).toLocaleString()}</span>
+                  <div className="flex justify-between items-center text-emerald-700 font-semibold border-t border-stone-100 pt-1">
+                    <span>Downpayment / Store Paid:</span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono">- ₱{Number(orderDetails.downpayment || 0).toLocaleString()}</span>
+                      {Number(orderDetails.downpayment || 0) > 0 && (
+                        <Badge
+                          variant="outline"
+                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            isSplitPaymentChannel
+                              ? "border-purple-300 bg-purple-50 text-purple-900 font-bold"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          }`}
+                        >
+                          {isSplitPaymentChannel ? (
+                            `🔀 ${paymentBadgeLabel}`
+                          ) : (
+                            <>
+                              {displayMethod === "Cash"
+                                ? "💵"
+                                : displayMethod === "Maya"
+                                  ? "💚"
+                                  : displayMethod === "Bank Transfer"
+                                    ? "🏦"
+                                    : "📱"}{" "}
+                              {displayMethod}
+                            </>
+                          )}
+                        </Badge>
+                      )}
+                    </span>
                   </div>
                   {hasPhysicalStaffCustody && (
                     <div className="flex justify-between text-amber-800 font-bold bg-amber-50 p-1.5 rounded">

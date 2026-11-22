@@ -139,7 +139,28 @@ namespace LechonSystem.Api.Controllers
             return Ok(downpayments);
         }
 
+        [HttpPost("downpayments/logs/{paymentLogId}/toggle-remittance")]
+        [Authorize(Roles = "Owner")]
+        public async Task<IActionResult> TogglePaymentLogRemittance(int paymentLogId)
+        {
+            try
+            {
+                var currentUser = UserIdentityHelper.ResolveDisplayName(User, "Owner");
+                var item = await _logisticsService.TogglePaymentLogRemittanceAsync(paymentLogId, currentUser);
+                return Ok(item);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPost("downpayments/{orderId}/verify")]
+        [HttpPost("downpayments/{orderId}/toggle-remittance")]
         [Authorize(Roles = "Owner")]
         public async Task<IActionResult> ToggleDownpaymentVerification(int orderId)
         {

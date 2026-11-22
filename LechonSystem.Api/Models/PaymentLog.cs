@@ -43,6 +43,10 @@ namespace LechonSystem.Api.Models
         public DateTime? VoidedAt { get; set; }
         public string? VoidedBy { get; set; }
         public string? VoidReason { get; set; }
+
+        public bool IsRemittedToOwner { get; set; } = false;
+        public DateTime? RemittedAt { get; set; }
+        public string? RemittedBy { get; set; }
         
         // Navigation property linking back to the master order
         public Order? Order { get; set; }
