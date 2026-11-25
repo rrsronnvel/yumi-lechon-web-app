@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import RootLayout from "./components/ui/RootLayout";
 import DashboardPage from "./pages/DashboardPage";
@@ -16,6 +17,9 @@ import QrSignPage from "./pages/QrSignPage";
 import ExpensesPage from "./pages/ExpensesPage";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+
+const PayrollPage = lazy(() => import("./pages/PayrollPage"));
+const BiometricsUploadPage = lazy(() => import("./pages/BiometricsUploadPage"));
 
 export default function App() {
   return (
@@ -61,7 +65,28 @@ export default function App() {
               }
             />
 
+            <Route
+              path="biometrics-upload"
+              element={
+                <ProtectedRoute allowedRoles={["Owner", "Cashier"]}>
+                  <Suspense fallback={<p role="status" className="text-sm text-stone-600">Loading uploads…</p>}>
+                    <BiometricsUploadPage />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+
             {/* Owner-Only Routes */}
+            <Route
+              path="payroll"
+              element={
+                <ProtectedRoute allowedRoles={["Owner"]}>
+                  <Suspense fallback={<p role="status" className="text-sm text-stone-600">Loading payroll…</p>}>
+                    <PayrollPage />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="cms"
               element={

@@ -75,6 +75,10 @@ public sealed class ExpensesController : ControllerBase
         {
             return NotFound(new { message = exception.Message });
         }
+        catch (PayrollConflictException exception)
+        {
+            return Conflict(new { message = exception.Message });
+        }
     }
 
     [HttpDelete("{id:int}")]
@@ -88,6 +92,10 @@ public sealed class ExpensesController : ControllerBase
         catch (KeyNotFoundException exception)
         {
             return NotFound(new { message = exception.Message });
+        }
+        catch (PayrollConflictException exception)
+        {
+            return Conflict(new { message = exception.Message });
         }
     }
 

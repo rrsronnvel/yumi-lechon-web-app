@@ -19,6 +19,7 @@ export interface ExpenseRecordDto {
   remarks: string | null;
   encodedBy: string;
   createdAt: string;
+  isPayrollSynced?: boolean;
 }
 
 export interface ExpenseCategorySummaryDto {

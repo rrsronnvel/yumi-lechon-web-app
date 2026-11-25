@@ -34,6 +34,18 @@ public class LechonDbContext : DbContext
     public DbSet<KitchenPrepRequest> KitchenPrepRequests => Set<KitchenPrepRequest>();
     public DbSet<ExpenseRecord> Expenses => Set<ExpenseRecord>();
     public DbSet<PromoPackage> PromoPackages => Set<PromoPackage>();
+    public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<BiometricImportBatch> BiometricImportBatches => Set<BiometricImportBatch>();
+    public DbSet<RawAttendancePunch> RawAttendancePunches => Set<RawAttendancePunch>();
+    public DbSet<AttendanceDay> AttendanceDays => Set<AttendanceDay>();
+    public DbSet<CashAdvanceLedger> CashAdvanceLedger => Set<CashAdvanceLedger>();
+    public DbSet<DailyRoastProduction> DailyRoastProduction => Set<DailyRoastProduction>();
+    public DbSet<DailyRoastAllocation> DailyRoastAllocations => Set<DailyRoastAllocation>();
+    public DbSet<DailyRoastTeam> DailyRoastTeams => Set<DailyRoastTeam>();
+    public DbSet<DailyRoastTeamMember> DailyRoastTeamMembers => Set<DailyRoastTeamMember>();
+    public DbSet<PayrollHoliday> PayrollHolidays => Set<PayrollHoliday>();
+    public DbSet<PayrollPeriod> PayrollPeriods => Set<PayrollPeriod>();
+    public DbSet<PayrollItem> PayrollItems => Set<PayrollItem>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -44,6 +56,7 @@ public class LechonDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.ConfigurePayroll();
 
         modelBuilder.Entity<OrderItem>()
             .HasOne(item => item.ItemCategory)

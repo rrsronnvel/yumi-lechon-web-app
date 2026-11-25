@@ -77,20 +77,33 @@ public sealed class ExpenseService : IExpenseService
         var records = await query
             .OrderByDescending(expense => expense.ExpenseDate)
             .ThenByDescending(expense => expense.Id)
+            .Select(expense => new
+            {
+                Expense = expense,
+                IsPayrollSynced = _context.PayrollPeriods.Any(period => period.SyncedExpenseId == expense.Id),
+            })
             .ToListAsync();
-        return records.Select(ToDto).ToList();
+        return records.Select(record => ToDto(record.Expense, record.IsPayrollSynced)).ToList();
     }
 
     public async Task<ExpenseRecordDto?> GetExpenseAsync(int id)
     {
         var record = await _context.Expenses.AsNoTracking().FirstOrDefaultAsync(expense => expense.Id == id);
-        return record == null ? null : ToDto(record);
+        return record == null ? null : ToDto(record, await IsPayrollSyncedAsync(id));
     }
 
     public async Task<ExpenseRecordDto> CreateExpenseAsync(UpsertExpenseRequest request, string encodedBy)
     {
+        var record = CreateRecord(request, encodedBy, DateTime.UtcNow);
+        _context.Expenses.Add(record);
+        await _context.SaveChangesAsync();
+        return ToDto(record);
+    }
+
+    internal static ExpenseRecord CreateRecord(UpsertExpenseRequest request, string encodedBy, DateTime createdAt)
+    {
         var normalized = NormalizeRequest(request);
-        var record = new ExpenseRecord
+        return new ExpenseRecord
         {
             ExpenseDate = normalized.ExpenseDate,
             Category = normalized.Category,
@@ -103,18 +116,15 @@ public sealed class ExpenseService : IExpenseService
             PaymentMethod = normalized.PaymentMethod,
             Remarks = normalized.Remarks,
             EncodedBy = NormalizeEncodedBy(encodedBy),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = createdAt
         };
-
-        _context.Expenses.Add(record);
-        await _context.SaveChangesAsync();
-        return ToDto(record);
     }
 
     public async Task<ExpenseRecordDto> UpdateExpenseAsync(int id, UpsertExpenseRequest request, string encodedBy)
     {
         var record = await _context.Expenses.FirstOrDefaultAsync(expense => expense.Id == id)
             ?? throw new KeyNotFoundException($"Expense with ID {id} was not found.");
+        await EnsureExpenseIsEditableAsync(id);
         var normalized = NormalizeRequest(request);
 
         record.ExpenseDate = normalized.ExpenseDate;
@@ -137,8 +147,18 @@ public sealed class ExpenseService : IExpenseService
     {
         var record = await _context.Expenses.FirstOrDefaultAsync(expense => expense.Id == id)
             ?? throw new KeyNotFoundException($"Expense with ID {id} was not found.");
+        await EnsureExpenseIsEditableAsync(id);
         _context.Expenses.Remove(record);
         await _context.SaveChangesAsync();
+    }
+
+    private Task<bool> IsPayrollSyncedAsync(int id) =>
+        _context.PayrollPeriods.AnyAsync(period => period.SyncedExpenseId == id);
+
+    private async Task EnsureExpenseIsEditableAsync(int id)
+    {
+        if (await IsPayrollSyncedAsync(id))
+            throw new PayrollConflictException("This labor expense belongs to a finalized payroll and is read-only.");
     }
 
     public async Task<ExpenseSummaryDto> GetSummaryAsync(int year, int month, bool includeRevenueAndProfit)
@@ -240,7 +260,8 @@ public sealed class ExpenseService : IExpenseService
     {
         var (start, end) = GetMonthRange(year, month);
         var records = await _context.Expenses
-            .Where(expense => expense.ExpenseDate >= start && expense.ExpenseDate < end)
+            .Where(expense => expense.ExpenseDate >= start && expense.ExpenseDate < end &&
+                !_context.PayrollPeriods.Any(period => period.SyncedExpenseId == expense.Id))
             .ToListAsync();
         var updated = new List<ExpenseRecord>();
 
@@ -264,11 +285,11 @@ public sealed class ExpenseService : IExpenseService
         {
             InspectedCount = records.Count,
             UpdatedCount = updated.Count,
-            UpdatedRecords = updated.Select(ToDto).ToList()
+            UpdatedRecords = updated.Select(record => ToDto(record)).ToList()
         };
     }
 
-    private static ExpenseRecordDto ToDto(ExpenseRecord record)
+    internal static ExpenseRecordDto ToDto(ExpenseRecord record, bool isPayrollSynced = false)
     {
         var computedUnitCost = record.UnitCost;
         if (!computedUnitCost.HasValue && record.Quantity is > 0)
@@ -291,7 +312,8 @@ public sealed class ExpenseService : IExpenseService
             PaymentMethod = record.PaymentMethod,
             Remarks = record.Remarks,
             EncodedBy = record.EncodedBy,
-            CreatedAt = record.CreatedAt
+            CreatedAt = record.CreatedAt,
+            IsPayrollSynced = isPayrollSynced,
         };
     }
 

@@ -561,3 +561,34 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
 * **POS completion state:** Successful Web/Mobile creation keeps the success reference visible but clears Messenger paste state, cart, and all fields. Exact customer name + phone + event date + item-summary matches use `⚠️ ORDER ALREADY SAVED IN SYSTEM (#ref)` and explain that resubmission is only for a separate booking.
 * **October ledger:** `October2026ExpenseSeed` contains exactly 341 rows with COGS `₱245,677.00`, OPEX `₱395,543.00`, and total `₱641,220.00`. Paper Plate row 89 maps quantity/unit to `15` / `by 24 pcs`; Dalandan row 112 defaults blank payment to Cash. November remains unseeded.
 * **Development fixtures:** `November15QaDataSeed` is Development-only and idempotently creates `111526-901`, `111526-902`, and the 3:30 PM Staff Meryenda request. Never run these fixtures in Production.
+
+### 2026-11-23 Owner payroll and biometrics
+
+- `/payroll` is the Owner web route. `PayrollController` applies `Authorize(Roles = "Owner")` to all `/api/payroll` endpoints for `employees`, `settings`, `attendance`, `roast-production`, `vale`, and `periods`.
+- `DeliAttendanceParser` uses `ExcelReaderFactory.CreateBinaryReader` and `GetValue` for the Deli ES151 BIFF8 raw export. Check the `Employee Attendance Record` sheet or title and scan the first five rows for the attendance period. Read `User ID:`, `Name:`, day-number columns, and all `HH:mm` punches. Keep Philippine wall-clock values as `DateOnly` and timezone-free `DateTime`.
+- `BiometricImportBatches` provides import audit history and `RawAttendancePunches` enforces unique Deli ID/timestamp pairs. `Employees` links the Deli IDs. `AttendanceDays` preserves Owner overrides and assigns stitched shifts to their evening work date. Keep raw and superseded rows for traceability.
+- `DailyRoastProduction` snapshots the daily policy and splits the pool by eligible attendance credits. `PayrollPeriods` and `PayrollItems` freeze amounts at finalization. `CashAdvanceLedger` retains original transaction amounts and finalization can append at most one deduction per employee per period. Every ledger write records the JWT username.
+- Startup and the EF migration share the guarded SQL in `PayrollSchema.cs`. Use additive schema changes and seed missing payroll keys by name. Run `dotnet test`, `dotnet build LechonSystem.Api`, and `npm --prefix lechon-system-web run build`. Restart the local API on port `5199` with destructive QA seeders disabled.
+- The complete contract is maintained in the architecture map. [Payroll architecture](docs/ARCHITECTURE_MAP.md#14-deli-es151-attendance-and-weekly-payroll)
+
+### 2026-11-24 Owner payroll Phase 2 and Cashier USB drop-box
+
+- Keep `/payroll` and every `/api/payroll` endpoint Owner-only. `/biometrics-upload`, `POST /api/biometrics/upload`, and `GET /api/biometrics/recent-uploads` authorize Owner and Cashier. The two biometrics endpoints expose batch metadata only and use the existing raw BIFF8 import service.
+- `PayrollPhase2Schema.cs` is shared by the additive migration and guarded startup upgrade. `DailyRoastAllocations` stores daily roaster payouts and overrides, and `PayrollHolidays` stores the editable calendar. The upgrade adds policy snapshots to production, roster weights and shift defaults, attendance premiums and lateness, and payroll breakdowns and expense links.
+- Apply Partihan by effective weight, then add a separate milestone amount per eligible worker. Preserve manual roaster overrides on recalculation. Use Philippine wall time for attendance and calendar policies. Holiday pay and late deductions start disabled. Store authorized OT hours and preserve explicit OT pay overrides.
+- Calculate Vale capacity from credited base wages through the transaction date and advances taken in that week. The Owner can bypass day and cap checks for a new advance while Vale is enabled. A draft auto-deducts up to available pay and preserves manually saved deductions. Finalization atomically posts one Labor expense when selected, for cash payout plus Vale settled.
+- Keep Phase 1 regression coverage. Run `dotnet test`, `dotnet build LechonSystem.Api`, and `npm --prefix lechon-system-web run build`. Verify Cashier role isolation and Labor sync against isolated data. [Phase 2 architecture and endpoints](docs/ARCHITECTURE_MAP.md#15-deli-payroll-phase-2)
+
+### Payroll Phase 2.1
+
+- `DailyRoastTeams` and `DailyRoastTeamMembers` are additive. Keep team assignments and manual overrides auditable. Team Partihan uses the team net roaster pool plus tagged helper distributions. Unassigned Tiktik cuts remain external. Leave dates with no teams on the previous allocation path.
+- Daily milestones follow `DailyRoastProduction.EquivalentLechons` once per qualified employee. Team weights default to 8, 5, and 3 for new tier assignments. Team enrollment and payouts require positive attendance credit on the date.
+- `PUT /api/payroll/roast-production/{date}/teams` and `POST /api/payroll/attendance/{id}/overtime-decision` remain Owner-only. The Cashier upload surface still returns batch metadata.
+- Late deductions use the configurable 10/30/60-minute brackets and honor excuses. Auto OT uses the regular shift, unpaid buffer, and 11-hour default threshold. Payroll includes only approved OT. The manual attendance editor and inline controls support `1.5` Peak credit.
+- The migration and `Program.cs` share `PayrollPhase21Schema.cs`. Preserve finalized payroll and validate the Nov 28 two-team scenario, late brackets, and approved OT against isolated data. [Phase 2.1 schema and endpoints](docs/ARCHITECTURE_MAP.md#16-payroll-phase-21)
+
+### Payroll QA attendance and Vale audit
+
+- Overnight shifts with a scheduled start before noon skip lateness and penalties. A noon or later schedule still uses the configured late brackets. Attendance updates clear the generated double-tap note when the shift reaches 15 minutes, including inline credit saves.
+- `POST /api/payroll/vale/{id}/void` is Owner-only and accepts an optional reason. It retains the original row and stamps the voiding user and Philippine local time. Apply `IsVoided` to balance and earned-cap calculations and retain voided rows in the history. Reject repeated voids and entries linked to payroll with `400`. Use `PayrollValeVoidSchema.cs` for additive migration and startup guards.
+- `GET /api/payroll/roast-production/last-teams?beforeDate=YYYY-MM-DD` reads the latest strictly earlier active configuration. Keep production counts date-specific and use target-date attendance when copying assignments. [Attendance and Vale endpoint contracts](docs/ARCHITECTURE_MAP.md#17-payroll-attendance-team-setup-and-vale-audit)

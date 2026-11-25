@@ -849,3 +849,105 @@ Expense form / preset
 
 - Live API endpoints verified: `GET /api/promos/for-date?date=2026-12-05` (9 options: Option 1 (4), Option 2 (4), Option 3 (1)), `GET /api/promos/for-date?date=2026-12-24` (2 Peak options: `DEC_PEAK_DINUGUAN`, `DEC_PEAK_BOPIS`), and `GET /api/schedules/freebies-prep` for 2026-12-05 and 2026-12-24 with 100% AM/PM count accuracy.
 
+## 14. Deli ES151 attendance and weekly payroll
+
+### Storage and startup
+
+| SQL Server table | Responsibility |
+| --- | --- |
+| `Employees` | Workforce roster with a unique Deli ID, role, rate, and incentive eligibility |
+| `BiometricImportBatches` | Export filename, reported date range, import counts, and JWT actor |
+| `RawAttendancePunches` | Immutable timestamp and name snapshot, unique on `(BiometricUserId, PunchTime)` |
+| `AttendanceDays` | One effective row per employee/work date, with derived shift and Owner override fields |
+| `DailyRoastProduction` | Daily counts, conversion and bonus policy snapshots, equivalent lechons, and pool |
+| `CashAdvanceLedger` | Retained Vale disbursements, cash repayments, payroll deductions, and void audit details |
+| `PayrollPeriods` | Unique cutoff range, payday, lifecycle, net total, and finalizing actor |
+| `PayrollItems` | Employee-name and rate snapshots with the complete pay and Vale breakdown |
+
+`AddPayrollBiometrics` and `Program.cs` both run the guarded additive SQL in `Data/PayrollSchema.cs`. It creates missing tables and indexes and inserts missing settings into `SystemSettings` by key. The defaults are quota `4`, bonus per excess `50`, bellies per whole `3`, and split mode `SharedTeam`. The migration is forward-only. Payroll writes use a transaction-scoped SQL Server application lock so linking, import, draft calculation, and ledger posting see consistent state.
+
+### API contract
+
+`PayrollController` requires the `Owner` role on every endpoint. The paths below are relative to `/api/payroll`.
+
+| Endpoints | Contract |
+| --- | --- |
+| `GET /employees`, `POST /employees`, `PUT /employees/{id}`, `PATCH /employees/{id}/status` | Roster with live unpaid Vale. Linking a Deli ID builds attendance from existing punches. |
+| `GET /settings`, `PUT /settings` | Shared Team quota, excess bonus, and belly ratio. |
+| `POST /attendance/import` | Multipart `files` field with one or two `.xls` files. Returns per-file batches, import totals, and unmapped IDs with Deli names. |
+| `GET /attendance`, `PUT /attendance/{id}`, `POST /attendance/manual` | Read by `startDate` and `endDate`, protect Owner-reviewed changes, or add a missed work date. |
+| `GET /roast-production`, `PUT /roast-production`, `POST /roast-production/prefill` | Read daily counts and shares, save a bulk array of counts, or suggest counts by date using non-cancelled, non-draft orders and their fulfilled category where applicable. |
+| `GET /vale`, `POST /vale` | Employee balances and chronological ledger. The recording action accepts disbursements and cash repayments. |
+| `GET /periods`, `POST /periods/preview`, `PUT /periods/{id}/items/{itemId}`, `POST /periods/{id}/finalize` | List cutoffs, calculate a live draft while preserving adjustments, edit one pay row, or lock and post Vale deductions atomically. A repeated finalize returns the locked period. |
+
+### Parser and shift pairing
+
+`Services/DeliAttendanceParser.cs` uses `ExcelReaderFactory.CreateBinaryReader` and raw cell values with the registered code-page provider. It recognizes `Employee Attendance Record` in the sheet name or the first five rows and reads `Attendance date:YYYY-MM-DD~YYYY-MM-DD` within those rows. Each `User ID:` / `Name:` block has a following day-number row and one or more rows of timestamp cells. Each cell can contain several `HH:mm` values. The parser reconstructs calendar dates from the period's starting month and year. Attendance Report, Abnormal Report, Shift Setting Table, and Attendance Statistic Table exports return a guidance error.
+
+Punches and attendance use Philippine wall-clock values. The pairing service processes the affected employees' stored timelines across USB export boundaries. A qualifying next-morning checkout is consumed by its evening work date. An earlier generated row that loses its only punch is marked superseded and omitted from effective attendance and payroll. Owner overrides retain their values on later imports.
+
+### Web
+
+The Owner-only `/payroll` route and sidebar link open `PayrollPage.tsx`. The four tabs share a Monday–Sunday selector with custom ranges of up to 31 days. The page supports USB import and ID linking, attendance review, order-based production suggestions, the Vale ledger, employee and policy edits, and draft or finalized payslips with PNG and print. `usePayroll.ts` scopes TanStack Query state by API environment and signed-in username.
+
+## 15. Deli payroll Phase 2
+
+### Storage and upgrade
+
+| Table | Phase 2 additions |
+| --- | --- |
+| `Employees` | Incentive tier, weight, milestone eligibility, and optional default shift start |
+| `AttendanceDays` | OT hours and manual peso override, holiday classification and premium, scheduled start, lateness and excuse |
+| `DailyRoastProduction` | Dual incentive mode and snapshots of Partihan and milestone terms |
+| `DailyRoastAllocations` | Per-roaster snapshots and payouts, unique by production day and employee, with Owner override and supersession flags |
+| `PayrollHolidays` | Unique calendar date, name, premium type, and active status |
+| `PayrollPeriods` | Cutoff cycle, labor expense total, and unique nullable link to `Expenses` |
+| `PayrollItems` | Holiday and late amounts, incentive breakdown, and manual Vale deduction flag |
+
+`AddPayrollPhase2` and the startup transaction in `Program.cs` share `PayrollPhase2Schema.cs`. SQL table and column guards support existing installations and repeated startup. During the first upgrade, the untouched default belly ratio of three becomes two. Store-edited values and policy snapshots stay in use. Five starter holidays cover December 24, 25, 30, and 31, 2026 and January 1, 2027. Historic finalized periods are preserved and acquire no new expense rows during upgrade.
+
+### API and routes
+
+`/payroll` and the entire `/api/payroll` controller require `Owner`. The separate `/biometrics-upload` browser route accepts Owner and Cashier. `POST /api/biometrics/upload` and `GET /api/biometrics/recent-uploads` use the same roles and expose only the filename, report dates, import counts, and actor and time. The upload uses the original binary reader and deduplication transaction.
+
+| Owner endpoint | Phase 2 behavior |
+| --- | --- |
+| `GET /api/payroll/settings`, `PUT /api/payroll/settings` | Read and update dual incentives, OT, holiday, lateness, Vale, and expense-sync policy |
+| `GET /api/payroll/holidays`, `PUT /api/payroll/holidays` | List dates and upsert a holiday's name, type, and active status |
+| `PUT /api/payroll/attendance/{id}`, `POST /api/payroll/attendance/manual` | Edit authorized OT hours, optional custom OT pay, holiday classification, schedule, and late excuse |
+| `PUT /api/payroll/roast-production/{date}/allocations` | Set per-roaster peso overrides or reset allocations on the date |
+| `GET /api/payroll/vale`, `POST /api/payroll/vale` | Report current-week earned pay and remaining advance capacity, or validate an advance against policy |
+| `POST /api/payroll/periods/preview` | Calculate a Weekly, SemiMonthly, or Custom draft with live deductions and preserved manual adjustments |
+| `POST /api/payroll/periods/{id}/finalize` | Lock the period and append Vale deductions, with optional posting of one `Labor` expense in the same transaction |
+
+## 16. Payroll Phase 2.1
+
+| Storage | Additions |
+| --- | --- |
+| `DailyRoastTeams` | Team name, whole and belly counts, equivalent count, gross pool, Tiktik rate and cut, net pool, and supersession flag |
+| `DailyRoastTeamMembers` | Unique `(DailyRoastTeamId, EmployeeId)`, role, assignment weight, peso share, override, and supersession flag |
+| `AttendanceDays` | `SuggestedOvertimeHours`, `OvertimeStatus`, `OvertimeApprovedBy`, `OvertimeApprovedAt`, and the pending custom peso proposal |
+| `SystemSettings` | Daily Tiktik rate, late bracket thresholds and amounts, regular shift duration, unpaid OT buffer, and paid OT threshold |
+
+The `AlignPayrollPhase21` migration and `Program.cs` share the guarded upgrade in `PayrollPhase21Schema.cs`. The upgrade changes the untouched six-minute grace default to ten and carries forward previously payable OT as approved. Existing roster weights and finalized payroll figures are preserved. The Leader, Assistant, and Newbie presets for new tier assignments are 8, 5, and 3.
+
+| Owner endpoint | Contract |
+| --- | --- |
+| `GET /api/payroll/roast-production` | Returns each day's active teams, eligible attendance for assignment, team pools, member amounts, external Tiktik cuts, and the store-wide milestone |
+| `PUT /api/payroll/roast-production/{date}/teams` | Saves the complete `{ teams }` list. Each team accepts its ID, name, whole and belly counts, members, and optional custom Tiktik cut. Members accept `employeeId`, `memberRole`, `allocatedAmountOverride`, and `resetOverride`. Omitting a team or member supersedes the assignment. An empty team list restores the single-pool path. |
+| `POST /api/payroll/attendance/{id}/overtime-decision` | Accepts `decision` (`Approve`, `Reject`, or `Pending`), optional `overtimeHours` and `overtimePayOverride`, and `useCalculatedPay` to clear a custom proposal when approving. Approvals stamp the Owner and the approval time. |
+| `PUT /api/payroll/attendance/{id}`, `POST /api/payroll/attendance/manual` | Accepts `DayCredit = 1.5` for a peak day. Numeric OT changes supplied by earlier clients file a pending request. |
+
+The first team save can initialize an unsaved production day from the team counts. After that, store counts are edited independently for the daily milestone and cross-checked against the sum of team equivalents. A team reserves manual member overrides, then distributes the remaining roaster pool by assignment weight × current day credit and the helper cut by helper day credit. An assigned employee needs positive attendance credit to receive a share. The highest effective weight absorbs the centavo difference. The store milestone is calculated once per day and credited once per eligible employee, including workers outside the teams. Dates with no teams continue through the earlier allocation path.
+
+## 17. Payroll attendance, team setup, and Vale audit
+
+`AddPayrollValeVoid` and the startup transaction in `Program.cs` share the additive `IF COL_LENGTH` guards in `PayrollValeVoidSchema.cs`. `CashAdvanceLedger` stores `IsVoided`, `VoidedBy`, `VoidedAt`, and `VoidReason`. Existing rows start active. Balances, weekly cap checks, and payroll drafts use active entries. If active repayments and deductions exceed advances, the unpaid balance and automatic payroll deduction are zero. The full ledger includes voided entries with the original amounts and audit details.
+
+| Owner endpoint | Contract |
+| --- | --- |
+| `POST /api/payroll/vale/{id}/void` | Accepts optional `reason` up to 250 characters. Stamps the JWT user and the Philippine local time, then returns the updated `employee` summary and `entry`. A repeat request or a payroll-linked entry returns `400`. |
+| `GET /api/payroll/roast-production/last-teams?beforeDate=YYYY-MM-DD` | Returns `productionDate` and the latest active team names, default Tiktik rates, and employee ID and role assignments from a strictly earlier date. With no earlier teams, the date is `null` and the list is empty. The editor skips assignments that lack attendance credit on the target date. |
+
+The attendance service sets late minutes and deductions to zero for an overnight shift with a scheduled start before noon. Overnight shifts with a noon or later schedule use the normal late brackets. Attendance updates, including inline credit changes, clear the generated double-tap note on shifts of at least 15 minutes. The web editor anchors minute-precision clocks to the work date and anchors overnight checkout to the next day. The editor and table preview base pay from the selected day credit.
+

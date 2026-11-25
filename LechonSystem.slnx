@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="LechonSystem.Api.Tests/LechonSystem.Api.Tests.csproj" />
+  <Project Path="LechonSystem.Api/LechonSystem.Api.csproj" />
+</Solution>

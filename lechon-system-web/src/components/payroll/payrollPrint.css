@@ -1,0 +1,23 @@
+.payroll-print-sheet {
+  display: none;
+}
+
+@media print {
+  html:has(.payroll-print-sheet),
+  body:has(.payroll-print-sheet) {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  body:has(.payroll-print-sheet) > :not(.payroll-print-sheet) {
+    display: none !important;
+  }
+
+  .payroll-print-sheet {
+    display: block;
+    width: min(100%, 160mm);
+    margin: 0 auto;
+    break-inside: avoid;
+  }
+}

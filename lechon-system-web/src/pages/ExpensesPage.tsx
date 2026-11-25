@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -139,17 +140,27 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
   const { user } = useAuth();
   const isOwner = user?.role === "Owner";
   const ledgerVisible = showLedger ?? !embedded;
-  const [monthKey, setMonthKey] = useState("2026-11");
-  const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | "All">("All");
+  const [searchParams] = useSearchParams();
+  const linkedId = searchParams.get("expenseId") ?? "";
+  const linkedMonth = searchParams.get("month") ?? "";
+  const linkedYear = Number(linkedMonth.slice(0, 4));
+  const requestedMonth = ledgerVisible && !embedded && /^\d{4}-(0[1-9]|1[0-2])$/.test(linkedMonth) &&
+    linkedYear >= 2000 && linkedYear <= 2200 ? linkedMonth : null;
+  const linkedExpenseId = requestedMonth && /^\d+$/.test(linkedId) && Number(linkedId) > 0 && Number(linkedId) <= 2147483647
+    ? Number(linkedId) : null;
+  const initialMonth = requestedMonth ?? "2026-11";
+  const [monthKey, setMonthKey] = useState(initialMonth);
+  const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | "All">(linkedExpenseId ? "Labor" : "All");
   const [costTypeFilter, setCostTypeFilter] = useState<ExpenseCostType | "All">("All");
   const [paymentFilter, setPaymentFilter] = useState<ExpensePaymentMethod | "All">("All");
   const [search, setSearch] = useState("");
-  const [draft, setDraft] = useState<EntryDraft>(() => makeBlankDraft("2026-11"));
+  const [draft, setDraft] = useState<EntryDraft>(() => makeBlankDraft(initialMonth));
   const [categoryWasOverridden, setCategoryWasOverridden] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<EntryDraft | null>(null);
   const quantityRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
+  const linkedExpenseRef = useRef<HTMLTableRowElement>(null);
 
   const [year, month] = monthKey.split("-").map(Number);
   const filters = useMemo(
@@ -172,12 +183,31 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
   const autoReclassify = useAutoReclassifyExpenses();
 
   useEffect(() => {
+    if (requestedMonth) setMonthKey(requestedMonth);
+    if (linkedExpenseId != null) {
+      setCategoryFilter("Labor");
+      setCostTypeFilter("All");
+      setPaymentFilter("All");
+      setSearch("");
+    }
+  }, [requestedMonth, linkedExpenseId]);
+
+  useEffect(() => {
     setDraft((current) => ({ ...current, expenseDate: firstDateOfMonth(monthKey) }));
     setEditingId(null);
     setEditDraft(null);
   }, [monthKey]);
 
   const records = recordsQuery.data ?? [];
+  const linkedExpenseVisible = records.some((record) => record.id === linkedExpenseId);
+  const ledgerLoading = recordsQuery.isLoading || (linkedExpenseId != null && !linkedExpenseVisible && recordsQuery.isFetching);
+  useEffect(() => {
+    if (linkedExpenseVisible) {
+      linkedExpenseRef.current?.scrollIntoView({ block: "center" });
+      linkedExpenseRef.current?.focus({ preventScroll: true });
+    }
+  }, [linkedExpenseId, linkedExpenseVisible]);
+
   const summary = summaryQuery.data;
   const detectedCategory = categorizeExpense(draft.itemDescription);
   const displayedGrandTotal = summary?.grandTotalOutflow ?? 0;
@@ -699,7 +729,7 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
-                  {recordsQuery.isLoading ? (
+                  {ledgerLoading ? (
                     <tr><td colSpan={10} className="px-4 py-10 text-center text-stone-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading ledger…</td></tr>
                   ) : recordsQuery.isError ? (
                     <tr><td colSpan={10} className="px-4 py-10 text-center font-medium text-rose-700">The expense ledger could not be loaded.</td></tr>
@@ -715,7 +745,12 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
                       onCancel={() => { setEditingId(null); setEditDraft(null); }}
                     />
                   ) : (
-                    <tr key={record.id} className="hover:bg-amber-50/30">
+                    <tr
+                      key={record.id}
+                      ref={linkedExpenseId === record.id ? linkedExpenseRef : undefined}
+                      tabIndex={linkedExpenseId === record.id ? -1 : undefined}
+                      className={linkedExpenseId === record.id ? "bg-amber-50 outline-2 -outline-offset-2 outline-amber-400" : "hover:bg-amber-50/30"}
+                    >
                       <td className="px-3 py-3 font-mono text-stone-600">{dateOnly(record.expenseDate)}</td>
                       <td className="px-3 py-3 font-semibold text-stone-900">{record.itemDescription}</td>
                       <td className="px-3 py-3"><div className="space-y-1"><span>{record.category}</span><br /><CostTypeBadge type={record.costType} /></div></td>
@@ -726,10 +761,12 @@ export default function ExpensesPage({ embedded = false, showLedger }: ExpensesP
                       <td className="px-3 py-3"><Badge variant="outline" className="text-[10px]">{record.paymentMethod}</Badge></td>
                       <td className="px-3 py-3"><p className="text-stone-700">{record.remarks || "—"}</p><p className="mt-0.5 text-[9px] text-stone-400">Encoded by {record.encodedBy}</p></td>
                       <td className="px-3 py-3">
-                        <div className="flex justify-end gap-1">
+                        {record.isPayrollSynced ? (
+                          <div className="text-right"><Badge variant="outline" className="text-[10px]">Finalized payroll</Badge></div>
+                        ) : <div className="flex justify-end gap-1">
                           <Button type="button" variant="outline" size="icon" aria-label={`Edit ${record.itemDescription}`} onClick={() => { setEditingId(record.id); setEditDraft(recordToDraft(record)); }} className="h-8 w-8"><Pencil className="h-3.5 w-3.5" /></Button>
                           <Button type="button" variant="outline" size="icon" aria-label={`Delete ${record.itemDescription}`} onClick={() => removeExpense(record)} disabled={deleteExpense.isPending} className="h-8 w-8 border-rose-200 text-rose-700 hover:bg-rose-50"><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </div>
+                        </div>}
                       </td>
                     </tr>
                   ))}

@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration
@@ -61,6 +63,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IExpenseService, ExpenseService>();
+builder.Services.AddSingleton<DeliAttendanceParser>();
+builder.Services.AddScoped<PayrollService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]!;
 builder.Services.AddAuthentication(options =>
@@ -100,6 +104,13 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<LechonDbContext>();
+
+    // Use the same IF OBJECT_ID guards and seed checks as the EF payroll migration.
+    await using (var payrollSchemaTransaction = await context.Database.BeginTransactionAsync())
+    {
+        await context.Database.ExecuteSqlRawAsync(PayrollSchema.CreateAndSeed);
+        await payrollSchemaTransaction.CommitAsync();
+    }
 
     // Additive expense-ledger schema. Every guard is idempotent so startup can
     // safely upgrade an existing database without deleting or replacing records.
@@ -170,6 +181,15 @@ using (var scope = app.Services.CreateScope())
               AND object_id = OBJECT_ID(N'Expenses'))
             CREATE INDEX IX_Expenses_ExpenseDate ON Expenses (ExpenseDate);
     ");
+
+    // Payroll upgrades share their guarded SQL with the EF migrations.
+    await using (var payrollPhase2Transaction = await context.Database.BeginTransactionAsync())
+    {
+        await context.Database.ExecuteSqlRawAsync(PayrollPhase2Schema.UpgradeAndSeed);
+        await context.Database.ExecuteSqlRawAsync(PayrollPhase21Schema.UpgradeAndSeed);
+        await context.Database.ExecuteSqlRawAsync(PayrollValeVoidSchema.AddAuditColumns);
+        await payrollPhase2Transaction.CommitAsync();
+    }
 
     // Additive seasonal-promo schema. No existing order, customer, inventory,
     // expense, or CMS data is deleted or overwritten by this startup upgrade.
@@ -366,14 +386,13 @@ using (var scope = app.Services.CreateScope())
           AND (o.DpRemittedAt IS NULL OR p.CreatedAt <= o.DpRemittedAt);
     ");
 
-    // Fixed-date QA fixtures are intentionally Development-only. Unlike the
-    // opt-in legacy QA seeder below, this routine never deletes or recreates an
-    // order; it only upserts the two reserved QA references and one Paluto row.
+    // Fixed-date QA fixtures upsert reserved records in Development only.
     if (app.Environment.IsDevelopment())
     {
         await November15QaDataSeed.SeedAsync(context);
         await December2026PromoQaSeed.SeedAsync(context);
         await November23QaDataSeed.SeedAsync(context);
+        await PayrollNov2026QaSeed.SeedAsync(context);
     }
 
     // Idempotent text repair only: correct known historical UTF-8/Windows-1252

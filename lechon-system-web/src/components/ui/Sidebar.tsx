@@ -5,6 +5,7 @@ import {
   BarChart3,
   ClipboardList,
   FileSpreadsheet,
+  Fingerprint,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -12,6 +13,7 @@ import {
   Truck,
   X,
   ReceiptText,
+  WalletCards,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -37,9 +39,13 @@ export default function Sidebar() {
         { name: "Logistics", href: "/logistics", icon: Truck },
         { name: "Manifest", href: "/manifest", icon: FileSpreadsheet },
         { name: "Inventory", href: "/inventory", icon: Boxes },
+        ...(user?.role === "Owner" || user?.role === "Cashier"
+          ? [{ name: "Biometrics Upload", href: "/biometrics-upload", icon: Fingerprint }]
+          : []),
         ...(user?.role === "Owner"
           ? [
               { name: "Expenses Ledger", href: "/expenses", icon: ReceiptText },
+              { name: "Payroll & Attendance", href: "/payroll", icon: WalletCards },
               { name: "Reports", href: "/reports", icon: BarChart3 },
               { name: "Settings", href: "/cms", icon: Settings },
             ]

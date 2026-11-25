@@ -29,6 +29,7 @@ public class ExpenseRecordDto
     public string? Remarks { get; set; }
     public string EncodedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public bool IsPayrollSynced { get; set; }
 }
 
 public class ExpenseCategoryBreakdownDto
