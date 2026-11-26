@@ -40,8 +40,9 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { canLogSupportRiderExpense, peso, type SplitMotoAssignment } from "@/utils/splitMoto";
 
-export interface QrSettlementModalProps {
+export interface QrSettlementModalProps extends SplitMotoAssignment {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orderId: number;
@@ -70,6 +71,9 @@ export function QrSettlementModal({
   totalCollected,
   deliveryFee,
   riderName,
+  supportRiderName,
+  supportRiderFee,
+  supportRiderExpenseLogged,
   hopStage,
   heldByStaffName,
   heldPaymentMethod,
@@ -81,6 +85,8 @@ export function QrSettlementModal({
   onSuccess,
 }: QrSettlementModalProps) {
   const { user, isOwner } = useAuth();
+  const canLogBackupFee = hopStage === "RiderToStaff" && canLogSupportRiderExpense({ supportRiderName, supportRiderFee, supportRiderExpenseLogged });
+  const [logSupportRiderExpense, setLogSupportRiderExpense] = useState(true);
   const isUnassignedRider =
     !riderName?.trim() || riderName.trim().toLowerCase() === "unassigned";
   const isDigitalHop2 =
@@ -250,6 +256,7 @@ export function QrSettlementModal({
           paymentMethod === "Split"
             ? digitalReference.trim() || undefined
             : isDigitalPayment ? directGcashRef.trim() || undefined : undefined,
+        logSupportRiderExpense: canLogBackupFee ? logSupportRiderExpense : undefined,
       },
       {
         onSuccess: (res) => {
@@ -472,6 +479,13 @@ export function QrSettlementModal({
                 </SelectContent>
               </Select>
             </div>
+
+            {canLogBackupFee && (
+              <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-950">
+                <input type="checkbox" className="mt-0.5 shrink-0" checked={logSupportRiderExpense} onChange={(event) => setLogSupportRiderExpense(event.target.checked)} />
+                Auto-log {peso(supportRiderFee)} store-shouldered fee for {supportRiderName} to Expenses Ledger
+              </label>
+            )}
 
             {paymentMethod === "Split" && (
               <div className="grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 sm:grid-cols-2">

@@ -17,6 +17,8 @@ namespace LechonSystem.Api.Services
     {
         private readonly LechonDbContext _context;
         private readonly ISchedulingService _schedulingService;
+        private readonly KitchenCapacityService _kitchenCapacity;
+        private readonly SplitRiderService _splitRiders;
         private readonly IInventoryService _inventoryService;
         private readonly INotificationSender _notificationSender;
         private readonly IHttpContextAccessor _httpContextAccessor;
@@ -69,12 +71,16 @@ namespace LechonSystem.Api.Services
         public OrderService(
             LechonDbContext context,
             ISchedulingService schedulingService,
+            KitchenCapacityService kitchenCapacity,
+            SplitRiderService splitRiders,
             IInventoryService inventoryService,
             INotificationSender notificationSender,
             IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _schedulingService = schedulingService;
+            _kitchenCapacity = kitchenCapacity;
+            _splitRiders = splitRiders;
             _inventoryService = inventoryService;
             _notificationSender = notificationSender;
             _httpContextAccessor = httpContextAccessor;
@@ -83,7 +89,12 @@ namespace LechonSystem.Api.Services
         private static DateTime AsStoreLocal(DateTime value) =>
             DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
 
-        private static DateTime ResolveDepartureTime(
+        internal static bool IsPriorDayDeparture(DateTime target, DateTime departure, FulfillmentType fulfillment) =>
+            departure.Date == target.Date.AddDays(-1) &&
+            (fulfillment == FulfillmentType.Lalamove ||
+             (fulfillment == FulfillmentType.Delivery && departure == target.AddHours(-1)));
+
+        internal static DateTime ResolveDepartureTime(
             DateTime targetDeliveryTime,
             DateTime? requestedDepartureTime,
             FulfillmentType fulfillment)
@@ -93,11 +104,8 @@ namespace LechonSystem.Api.Services
             if (requestedDepartureTime.HasValue)
             {
                 var requested = AsStoreLocal(requestedDepartureTime.Value);
-                // An explicit previous-day Lalamove collection is intentional. All other
-                // departure clocks belong to the customer event date, including edits that
-                // arrive with a stale YYYY-MM-DD portion.
-                if (fulfillment == FulfillmentType.Lalamove
-                    && requested.Date == target.Date.AddDays(-1))
+                // Keep genuine overnight departures and normalize stale dates from edits.
+                if (IsPriorDayDeparture(target, requested, fulfillment))
                 {
                     return requested;
                 }
@@ -113,15 +121,11 @@ namespace LechonSystem.Api.Services
             return target.AddHours(-1);
         }
 
-        private static DateTime AnchorScheduleClock(
-            DateTime value,
-            DateTime targetDeliveryTime)
-        {
-            return AsStoreLocal(targetDeliveryTime.Date.Add(value.TimeOfDay));
-        }
-
         public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await KitchenCapacitySchema.LockAsync(_context);
+
             var isDraft = request.IsDraft || !request.TargetDeliveryTime.HasValue;
             var effectiveTargetDeliveryTime = request.IsTimeTbd && request.TargetDeliveryTime.HasValue
                 ? request.TargetDeliveryTime.Value.Date.AddHours(12)
@@ -159,6 +163,15 @@ namespace LechonSystem.Api.Services
                 effectiveDepartureTime = request.RiderDepartureTime;
             }
 
+            var bookingItems = request.Items.Select(item =>
+                new KitchenCapacityItem(item.ItemCategoryId, item.Quantity)).ToList();
+            var capacity = !isDraft && effectiveTargetDeliveryTime.HasValue
+                ? await _kitchenCapacity.EvaluateAsync(effectiveTargetDeliveryTime.Value, effectiveDepartureTime,
+                    request.Fulfillment, request.KitchenBranch, request.KitchenBatchCode, bookingItems, null)
+                : null;
+            RequireCapacityApproval(capacity, isOwner && request.CapacityOverrideApproved);
+            var kitchenBranch = capacity?.BranchCode ?? (await _kitchenCapacity.ResolveBranchAsync(request.KitchenBranch)).Code;
+
             var rawContactNumber = !string.IsNullOrWhiteSpace(request.ContactNumber)
                 ? request.ContactNumber.Trim()
                 : (request.CustomerPhone ?? string.Empty).Trim();
@@ -179,6 +192,12 @@ namespace LechonSystem.Api.Services
                 FacebookName = request.FacebookName,
                 TargetDeliveryTime = effectiveTargetDeliveryTime,
                 RiderDepartureTime = effectiveDepartureTime,
+                KitchenBranch = kitchenBranch,
+                KitchenBatchCode = capacity is { IncomingPits: > 0 } ? capacity.BatchCode : null,
+                CapacityOverrideApproved = capacity?.RequiresOwnerOverride == true,
+                CapacityOverrideReason = capacity?.RequiresOwnerOverride == true
+                    ? NormalizeCapacityReason(request.CapacityOverrideReason)
+                    : null,
                 Fulfillment = request.Fulfillment,
                 IsDeliveryDetailsConfirmed = false,
 
@@ -312,19 +331,12 @@ namespace LechonSystem.Api.Services
             {
                 foreach (var savedItem in order.OrderItems)
                 {
-                    if (categories.TryGetValue(savedItem.ItemCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    if (!categories.TryGetValue(savedItem.ItemCategoryId, out var cat) || cat.MinimumWeightKg <= 0)
                     {
                         continue; // Exclude add-ons from kitchen schedules and freezer reservations
                     }
 
-                    var calculatedSchedule = await _schedulingService.CalculateScheduleAsync(
-                        savedItem.Id,
-                        order.TargetDeliveryTime.Value,
-                        savedItem.ItemCategoryId,
-                        order.RiderDepartureTime
-                    );
-
-                    _context.OrderItemSchedules.Add(calculatedSchedule);
+                    await _schedulingService.SynchronizeItemSchedulesAsync(savedItem, order, cat);
 
                     await _inventoryService.CreatePendingReservationAsync(
                         order.Id,
@@ -347,13 +359,40 @@ namespace LechonSystem.Api.Services
                 Timestamp = DateTime.UtcNow
             };
             _context.OrderAuditLogs.Add(auditLog);
+            if (capacity?.RequiresOwnerOverride == true)
+                RecordCapacityOverride(order, capacity);
 
             await _context.SaveChangesAsync();
             if (!order.IsTimeTbd && order.TargetDeliveryTime.HasValue)
             {
                 await _schedulingService.RealignOrderScheduleDatesAsync(order.Id);
             }
+            await transaction.CommitAsync();
             return order;
+        }
+
+        private static string? NormalizeCapacityReason(string? reason) =>
+            string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+
+        private static void RequireCapacityApproval(KitchenCapacityEvaluation? capacity, bool approved)
+        {
+            if (capacity?.RequiresOwnerOverride == true && !approved)
+                throw new KitchenCapacityExceededException(capacity);
+        }
+
+        private void RecordCapacityOverride(Order order, KitchenCapacityEvaluation capacity)
+        {
+            var result = capacity.CanFitWithOwnerSqueeze ? "belly squeeze" : "force-book";
+            var note = order.CapacityOverrideReason is null ? string.Empty : $" Reason: {order.CapacityOverrideReason}";
+            _context.OrderAuditLogs.Add(new OrderAuditLog
+            {
+                OrderId = order.Id,
+                ActionType = "Kitchen Capacity Override",
+                Changes = $"Owner approved pit capacity override / {result} ({capacity.ProjectedPits}/{capacity.MaxPits} pits). " +
+                    $"Squeezed projection: {capacity.SqueezedProjectedPits}/{capacity.MaxPits} pits.{note}",
+                ChangedBy = CurrentUser,
+                Timestamp = DateTime.UtcNow
+            });
         }
 
         public async Task<bool> ConfirmPaymentAsync(int orderId)
@@ -634,7 +673,8 @@ namespace LechonSystem.Api.Services
                         MaximumWeightKg = i.ItemCategory != null ? i.ItemCategory.MaximumWeightKg : 0,
                         FulfilledCategoryName = i.FulfilledItemCategory != null ? i.FulfilledItemCategory.Name : null,
                         IsRoastItem = i.ItemCategory != null && i.ItemCategory.MinimumWeightKg > 0,
-                        CustomWeightDisplay = i.OrderItemSchedule != null ? i.OrderItemSchedule.CustomWeightDisplay : null
+                        CustomWeightDisplay = i.OrderItemSchedules.Where(schedule => schedule.UnitIndex == 1)
+                            .Select(schedule => schedule.CustomWeightDisplay).FirstOrDefault()
                     }).ToList()
                 })
                 .ToListAsync();
@@ -681,11 +721,17 @@ namespace LechonSystem.Api.Services
 
         public async Task UpdateOrderAsync(int id, UpdateOrderDto request)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await KitchenCapacitySchema.LockAsync(_context);
+            await SplitRiderSchema.LockOrderAsync(_context, id);
+
             var order = await _context.Orders
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.ItemCategory)
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.FulfilledItemCategory)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(i => i.OrderItemSchedules)
                 .Include(o => o.DeliveryTrip)
                 .FirstOrDefaultAsync(o => o.Id == id);
 
@@ -812,6 +858,57 @@ namespace LechonSystem.Api.Services
                         request.Fulfillment);
             }
 
+            if (!requestedDraft && !order.IsCancelled && effectiveTargetDeliveryTime.HasValue)
+            {
+                var branch = string.IsNullOrWhiteSpace(request.KitchenBranch) ? order.KitchenBranch : request.KitchenBranch;
+                var sameSchedule = !wasDraft && order.TargetDeliveryTime == effectiveTargetDeliveryTime &&
+                    order.RiderDepartureTime == effectiveRiderDepartureTime && order.Fulfillment == request.Fulfillment &&
+                    order.IsTimeTbd == request.IsTimeTbd &&
+                    string.Equals(order.KitchenBranch, branch.Trim(), StringComparison.OrdinalIgnoreCase);
+                var batchCode = request.KitchenBatchCodeSpecified
+                    ? request.KitchenBatchCode
+                    : sameSchedule ? order.KitchenBatchCode : null;
+                var bookingItems = request.Items.Select(item => new KitchenCapacityItem(
+                    item.ItemCategoryId, item.Quantity, item.FulfilledItemCategoryId, item.Id)).ToList();
+                var capacity = await _kitchenCapacity.EvaluateAsync(effectiveTargetDeliveryTime.Value, effectiveRiderDepartureTime,
+                    request.Fulfillment, branch, batchCode, bookingItems, order.Id);
+                var sameBatch = string.Equals(order.KitchenBatchCode, capacity.BatchCode, StringComparison.OrdinalIgnoreCase) ||
+                    (order.KitchenBatchCode is null && string.IsNullOrWhiteSpace(batchCode));
+                var previousRoasts = order.OrderItems
+                    .Where(item => (item.FulfilledItemCategory ?? item.ItemCategory)?.MinimumWeightKg > 0)
+                    .Select(item => (item.Id, Category: item.FulfilledItemCategoryId ?? item.ItemCategoryId, item.Quantity))
+                    .OrderBy(item => item.Id);
+                var requestedRoasts = request.Items
+                    .Where(item => requestedCategories.GetValueOrDefault(item.FulfilledItemCategoryId ?? item.ItemCategoryId)?.MinimumWeightKg > 0)
+                    .Select(item => (item.Id, Category: item.FulfilledItemCategoryId ?? item.ItemCategoryId, item.Quantity))
+                    .OrderBy(item => item.Id);
+                var unchangedReservation = sameSchedule && sameBatch && previousRoasts.SequenceEqual(requestedRoasts);
+                var explicitlyApproved = isOwner && request.CapacityOverrideApproved;
+                RequireCapacityApproval(capacity, explicitlyApproved || unchangedReservation);
+
+                order.KitchenBranch = capacity.BranchCode;
+                order.KitchenBatchCode = capacity.IncomingPits > 0 ? capacity.BatchCode : null;
+                if (!capacity.RequiresOwnerOverride)
+                {
+                    order.CapacityOverrideApproved = false;
+                    order.CapacityOverrideReason = null;
+                }
+                else if (explicitlyApproved)
+                {
+                    order.CapacityOverrideApproved = true;
+                    order.CapacityOverrideReason = NormalizeCapacityReason(request.CapacityOverrideReason);
+                    RecordCapacityOverride(order, capacity);
+                }
+            }
+            else if (!order.IsCancelled)
+            {
+                if (!string.IsNullOrWhiteSpace(request.KitchenBranch))
+                    order.KitchenBranch = (await _kitchenCapacity.ResolveBranchAsync(request.KitchenBranch)).Code;
+                order.KitchenBatchCode = null;
+                order.CapacityOverrideApproved = false;
+                order.CapacityOverrideReason = null;
+            }
+
             // --- Tracking ALL Master Order Fields ---
             if (order.CustomerName != request.CustomerName)
                 auditChanges.Add($"Customer Name changed from '{order.CustomerName}' to '{request.CustomerName}'");
@@ -888,71 +985,29 @@ namespace LechonSystem.Api.Services
             if (order.Price != request.Price)
                 auditChanges.Add($"Lechon Subtotal changed from ₱{order.Price} to ₱{request.Price}");
 
-            if (request.AssignedRiderName != null)
+            if (order.SupportRiderName is not null)
             {
-                var cleanRider = request.AssignedRiderName.Trim();
-                var oldRider = order.DeliveryTrip?.RiderName?.Trim() ?? "";
-
-                if (string.IsNullOrWhiteSpace(cleanRider) || cleanRider.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (order.DeliveryTripId.HasValue)
-                    {
-                        var oldTripId = order.DeliveryTripId.Value;
-                        order.DeliveryTripId = null;
-                        order.RoutingStatus = DeliveryStatus.Unassigned;
-
-                        var hasOtherOrders = await _context.Orders.AnyAsync(o => o.DeliveryTripId == oldTripId && o.Id != order.Id);
-                        if (!hasOtherOrders)
-                        {
-                            var trip = await _context.DeliveryTrips.FindAsync(oldTripId);
-                            if (trip != null)
-                            {
-                                _context.DeliveryTrips.Remove(trip);
-                            }
-                        }
-
-                        if (!string.IsNullOrEmpty(oldRider))
-                        {
-                            auditChanges.Add($"Rider unassigned (previously '{oldRider}')");
-                        }
-                    }
-                }
-                else
-                {
-                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRider);
-
-                    if (!string.Equals(oldRider, cleanRider, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var trip = order.DeliveryTrip
-                            ?? await _context.DeliveryTrips.Include(t => t.Orders)
-                                .FirstOrDefaultAsync(t => t.Orders.Any(o => o.Id == order.Id));
-
-                        if (trip != null)
-                        {
-                            trip.RiderName = cleanRider;
-                        }
-                        else
-                        {
-                            trip = new DeliveryTrip
-                            {
-                                RiderName = cleanRider,
-                                VehicleType = "Motorcycle",
-                                Status = DeliveryStatus.Assigned,
-                                DispatchTime = DateTime.UtcNow
-                            };
-                            trip.Orders.Add(order);
-                            order.RoutingStatus = DeliveryStatus.Assigned;
-                            _context.DeliveryTrips.Add(trip);
-                        }
-
-                        string auditMsg = string.IsNullOrEmpty(oldRider)
-                            ? $"Rider assigned: '{cleanRider}'"
-                            : $"Rider changed from '{oldRider}' to '{cleanRider}'";
-
-                        auditChanges.Add(auditMsg);
-                    }
-                }
+                var wholeHeads = request.Items.Where(item => SplitRiderService.IsWholeLechon(
+                    requestedCategories.GetValueOrDefault(item.FulfilledItemCategoryId ?? item.ItemCategoryId)))
+                    .Sum(item => item.Quantity);
+                if (request.Fulfillment != FulfillmentType.Delivery || requestedDraft || wholeHeads <= 2)
+                    _splitRiders.SetSupport(order, null, 0, 0, CurrentUser);
+                else if (order.SupportRiderHeads >= wholeHeads)
+                    _splitRiders.SetSupport(order, order.SupportRiderName, order.SupportRiderFee, wholeHeads - 1, CurrentUser);
             }
+
+            if (request.AssignedRiderName != null || request.Fulfillment != FulfillmentType.Delivery || requestedDraft)
+            {
+                var rider = request.Fulfillment == FulfillmentType.Delivery && !requestedDraft
+                    ? SplitRiderService.NormalizeName(request.AssignedRiderName)
+                    : null;
+                if (rider is not null && !SplitRiderService.SameName(rider, order.DeliveryTrip?.RiderName))
+                {
+                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, rider);
+                }
+                _splitRiders.SetLead(order, rider, CurrentUser);
+            }
+            SplitRiderService.ReconcileHeadAssignments(order, order.DeliveryTrip?.RiderName);
 
             bool requiresRescheduling = false;
             if (!order.IsDraft && !isFinalizing)
@@ -1205,7 +1260,8 @@ namespace LechonSystem.Api.Services
             }
 
             // Handle finalization or rescheduling
-            if (isFinalizing && !order.IsTimeTbd && order.TargetDeliveryTime.HasValue)
+            if (!order.IsDraft && !isNonLechonOrder && !order.IsTimeTbd && order.TargetDeliveryTime.HasValue &&
+                (isFinalizing || requiresRescheduling))
             {
                 var itemCatIds = order.OrderItems.Select(i => i.FulfilledItemCategoryId ?? i.ItemCategoryId).Distinct().ToList();
                 var itemCategories = await _context.ItemCategories
@@ -1215,81 +1271,23 @@ namespace LechonSystem.Api.Services
                 foreach (var item in order.OrderItems)
                 {
                     var effectiveCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
-                    if (itemCategories.TryGetValue(effectiveCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    if (!itemCategories.TryGetValue(effectiveCategoryId, out var cat))
                     {
                         continue; // Exclude add-ons
                     }
 
-                    var newSchedule = await _schedulingService.CalculateScheduleAsync(
-                        item.Id,
-                        order.TargetDeliveryTime.Value,
-                        effectiveCategoryId,
-                        order.RiderDepartureTime);
-
-                    _context.OrderItemSchedules.Add(newSchedule);
-
-                    await _inventoryService.CreatePendingReservationAsync(
-                        order.Id,
-                        effectiveCategoryId,
-                        order.TargetDeliveryTime.Value,
-                        order.IsTrustedCustomer,
-                        order.Downpayment
-                    );
-                }
-            }
-            else if (!order.IsDraft && !order.IsTimeTbd && requiresRescheduling && order.TargetDeliveryTime.HasValue)
-            {
-                var itemCatIds = order.OrderItems.Select(i => i.FulfilledItemCategoryId ?? i.ItemCategoryId).Distinct().ToList();
-                var itemCategories = await _context.ItemCategories
-                    .Where(c => itemCatIds.Contains(c.Id))
-                    .ToDictionaryAsync(c => c.Id, c => c);
-
-                foreach (var item in order.OrderItems)
-                {
-                    var oldSchedule = await _context.OrderItemSchedules
-                        .FirstOrDefaultAsync(s => s.OrderItemId == item.Id);
-                    var customWeightDisplay = oldSchedule?.CustomWeightDisplay;
-
-                    var effectiveCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
-                    if (itemCategories.TryGetValue(effectiveCategoryId, out var cat) && cat.MinimumWeightKg <= 0)
+                    await _schedulingService.SynchronizeItemSchedulesAsync(item, order, cat);
+                    if (isFinalizing && cat.MinimumWeightKg > 0)
                     {
-                        if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
-                        continue;
+                        await _inventoryService.CreatePendingReservationAsync(
+                            order.Id,
+                            effectiveCategoryId,
+                            order.TargetDeliveryTime.Value,
+                            order.IsTrustedCustomer,
+                            order.Downpayment);
                     }
-
-                    // A master-order time edit must not silently erase production times that
-                    // the kitchen explicitly overrode. Re-anchor those clock values to the
-                    // order's target date while preserving genuine previous-day early jobs.
-                    if (oldSchedule?.IsManualOverride == true)
-                    {
-                        var target = AsStoreLocal(order.TargetDeliveryTime.Value);
-                        var intentionalPriorDayLalamove = order.Fulfillment == FulfillmentType.Lalamove
-                                                          && order.RiderDepartureTime.HasValue
-                                                          && order.RiderDepartureTime.Value.Date == target.Date.AddDays(-1);
-                        if (intentionalPriorDayLalamove)
-                        {
-                            continue;
-                        }
-                        oldSchedule.TargetDeliveryTime = target;
-                        oldSchedule.TahiStartTime = AnchorScheduleClock(oldSchedule.TahiStartTime, target);
-                        oldSchedule.SalangStartTime = AnchorScheduleClock(oldSchedule.SalangStartTime, target);
-                        oldSchedule.PackagingStartTime = AnchorScheduleClock(oldSchedule.PackagingStartTime, target);
-                        oldSchedule.CustomWeightDisplay = customWeightDisplay;
-                        continue;
-                    }
-
-                    if (oldSchedule != null) _context.OrderItemSchedules.Remove(oldSchedule);
-
-                    var newSchedule = await _schedulingService.CalculateScheduleAsync(
-                        item.Id,
-                        order.TargetDeliveryTime.Value,
-                        effectiveCategoryId,
-                        order.RiderDepartureTime);
-
-                    newSchedule.IsManualOverride = false;
-                    newSchedule.CustomWeightDisplay = customWeightDisplay;
-                    _context.OrderItemSchedules.Add(newSchedule);
                 }
+                SplitRiderService.ReconcileHeadAssignments(order, order.DeliveryTrip?.RiderName, fillSupport: true);
             }
 
             // Save the highly-detailed Black Box record!
@@ -1312,6 +1310,7 @@ namespace LechonSystem.Api.Services
             {
                 await _schedulingService.RealignOrderScheduleDatesAsync(order.Id);
             }
+            await transaction.CommitAsync();
         }
 
         public async Task<List<OrderAuditLog>> GetOrderAuditLogsAsync(int orderId)
@@ -1377,6 +1376,10 @@ namespace LechonSystem.Api.Services
                 IsTrustedCustomer = order.IsTrustedCustomer,
                 TargetDeliveryTime = order.TargetDeliveryTime,
                 RiderDepartureTime = order.RiderDepartureTime,
+                KitchenBranch = order.KitchenBranch,
+                KitchenBatchCode = order.KitchenBatchCode,
+                CapacityOverrideApproved = order.CapacityOverrideApproved,
+                CapacityOverrideReason = order.CapacityOverrideReason,
                 IsDeliveryDetailsConfirmed = order.IsDeliveryDetailsConfirmed,
                 IsCancelled = order.IsCancelled,
                 CancellationReason = order.CancellationReason,
@@ -1389,6 +1392,10 @@ namespace LechonSystem.Api.Services
                 RoutingStatus = order.RoutingStatus.ToString(),
                 DeliveryTripId = order.DeliveryTripId,
                 AssignedRiderName = order.DeliveryTrip?.RiderName ?? order.RiderSignedBy,
+                SupportRiderName = order.SupportRiderName,
+                SupportRiderFee = order.SupportRiderFee,
+                SupportRiderHeads = order.SupportRiderHeads,
+                SupportRiderExpenseLogged = order.SupportRiderExpenseId.HasValue,
                 SettlementCustodyStatus = order.SettlementCustodyStatus ?? "Uncollected",
                 HeldByStaffAmount = order.HeldByStaffAmount,
                 HeldPaymentMethod = order.HeldByStaffMethod,

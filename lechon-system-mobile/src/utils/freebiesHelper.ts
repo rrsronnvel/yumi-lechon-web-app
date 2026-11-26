@@ -306,6 +306,41 @@ export const sanitizeFreebiesSummary = (
     .trim();
 };
 
+interface ManifestPromoInput {
+  summary?: string | null;
+  promoCode?: string | null;
+  promoLabel?: string | null;
+  configJson?: string | null;
+  includedItems?: Record<string, number>;
+  wholePigCount: number;
+}
+
+const formatPromoItems = (counts: Record<string, number>): string[] =>
+  PROMO_KITCHEN_ITEMS.flatMap((item) => {
+    const quantity = Math.floor(Number(counts[item]));
+    return Number.isFinite(quantity) && quantity > 0 ? [`${quantity}x ${item}`] : [];
+  });
+
+export function formatManifestFreebiesSummary({
+  summary, promoCode, promoLabel, configJson, includedItems, wholePigCount,
+}: ManifestPromoInput): string | null {
+  const legacySummary = sanitizeFreebiesSummary(summary);
+  if (!promoCode) return legacySummary;
+
+  const config = parseFreebiesConfig(configJson, wholePigCount);
+  const recordedCounts = config.promoCounts ?? (config.promoCustomized ? config.counts : undefined);
+  const counts = recordedCounts ?? createPromoPackageCounts(includedItems, wholePigCount);
+  const items = formatPromoItems({ ...counts, ...(config.rawInnards ? { Dinuguan: 0 } : {}) });
+  if (!items.length && !config.promoCustomized) return legacySummary ?? promoLabel ?? null;
+
+  const details = [items.join(', ') || 'No included dishes'];
+  if (config.rawInnards) details.push('🥩 Raw Innards');
+  if (config.customizationNote) details.push(`Request: ${config.customizationNote}`);
+  const bellySummary = legacySummary?.split(' • ').find((part) => /Belly Freebies/i.test(part));
+  const heading = promoLabel || 'Promo Freebies';
+  return [`🎁 ${heading}: ${details.join(' | ')}`, bellySummary].filter(Boolean).join(' • ');
+}
+
 const createCounts = (wholePigCount: number): Record<string, number> => {
   const perItemCount = Math.max(0, Math.floor(wholePigCount));
   return Object.fromEntries(
@@ -609,7 +644,14 @@ export const formatFreebiesSummary = (
     });
 
     const details: string[] = [];
-    if (isStandard && config.rawInnards) {
+    if (config.promoCounts) {
+      const selected = formatPromoItems({
+        ...config.promoCounts,
+        ...(config.rawInnards ? { Dinuguan: 0 } : {}),
+      });
+      if (selected.length > 0) details.push(selected.join(", "));
+      if (config.rawInnards) details.push("🥩 Raw Innards");
+    } else if (isStandard && config.rawInnards) {
       details.push("🥩 Raw Innards / Walang Dinuguan");
     } else if (!isStandard) {
       const selected = FREEBIE_ITEMS.filter((item) => (config.counts[item] ?? 0) > 0)

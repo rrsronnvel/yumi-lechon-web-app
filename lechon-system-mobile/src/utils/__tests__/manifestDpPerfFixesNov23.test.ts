@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import path from 'node:path';
 import fs from 'node:fs';
 import { getPaymentChannelBadgeText } from '../paymentChannelHelper.ts';
-import { DownpaymentTrackerItem } from '../../hooks/useManifest.ts';
+import type { DownpaymentTrackerItem } from '../../hooks/useManifest.ts';
 
 describe('November 23 Mobile Verification — DP Windowing, Split Badges & Net Remittance', () => {
   // Test 1: Windowed pagination slicing for 319+ downpayments

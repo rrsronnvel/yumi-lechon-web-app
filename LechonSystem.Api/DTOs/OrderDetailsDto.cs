@@ -35,6 +35,10 @@ public class OrderDetailsDto
     public bool IsTrustedCustomer { get; set; }
     public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
+    public string KitchenBranch { get; set; } = "CARMONA";
+    public string? KitchenBatchCode { get; set; }
+    public bool CapacityOverrideApproved { get; set; }
+    public string? CapacityOverrideReason { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; }
 
     public bool IsCancelled { get; set; }
@@ -51,6 +55,10 @@ public class OrderDetailsDto
     public int? DeliveryTripId { get; set; }
     public string? AssignedRiderName { get; set; }
     public string? AssignedRiderPhone { get; set; }
+    public string? SupportRiderName { get; set; }
+    public decimal SupportRiderFee { get; set; }
+    public int SupportRiderHeads { get; set; }
+    public bool SupportRiderExpenseLogged { get; set; }
 
     public int? CustomerProfileId { get; set; }
     public int CustomerTotalOrdersCount { get; set; }

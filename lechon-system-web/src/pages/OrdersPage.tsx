@@ -46,8 +46,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useConfirmOwnerOrderMutation } from "@/hooks/useDashboard";
-import { useAssignRider } from "@/hooks/useLogistics";
-import { useRidersQuery } from "@/hooks/useRiders";
+import { RiderAssignmentDialog } from "@/components/ui/orders/RiderAssignmentDialog";
+import { backupRiderLabel } from "@/utils/splitMoto";
 import {
   generateBookingConfirmation,
   TemplateOrderData,
@@ -130,8 +130,6 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { isOwner, user } = useAuth();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
-  const assignRiderMutation = useAssignRider();
-  const { data: registeredRiders = [] } = useRidersQuery();
   const { data: deliveryPricing } = useDeliveryPricing();
   const [filterTab, setFilterTab] = useState("upcoming");
   const [balanceSubFilter, setBalanceSubFilter] = useState<'due-today' | 'drawer' | 'future' | 'all'>('due-today');
@@ -259,8 +257,6 @@ export default function OrdersPage() {
   const [cancellationReason, setCancellationReason] = useState("");
   const [isNotesEditorOpen, setIsNotesEditorOpen] = useState(false);
   const [isRiderAssignmentOpen, setIsRiderAssignmentOpen] = useState(false);
-  const [selectedRiderName, setSelectedRiderName] = useState("");
-  const [customRiderName, setCustomRiderName] = useState("");
   const [draftPreferences, setDraftPreferences] = useState("");
   const [draftComplaints, setDraftComplaints] = useState("");
   const paymentMutation = useLogPayment();
@@ -275,26 +271,7 @@ export default function OrdersPage() {
     selectedOrder?.id || null
   );
   const orderDetails = data as any;
-  const handleAssignRider = () => {
-    if (!selectedOrder?.id) return;
-    const riderName = (customRiderName || selectedRiderName).trim();
-    if (!riderName) {
-      toast.error("Select a rider or enter a custom rider name.");
-      return;
-    }
-    assignRiderMutation.mutate(
-      { orderIds: [selectedOrder.id], riderName, vehicleType: "Motorcycle" },
-      {
-        onSuccess: async () => {
-          await queryClient.invalidateQueries({ queryKey: ["order", selectedOrder.id] });
-          setIsRiderAssignmentOpen(false);
-          setCustomRiderName("");
-          toast.success(`${riderName} assigned to this delivery.`);
-        },
-        onError: () => toast.error("Could not assign this rider."),
-      },
-    );
-  };
+  const backupLabel = orderDetails ? backupRiderLabel(orderDetails, "settlement") : null;
   const displayedFreebiesSummary = useMemo(() => {
     if (!orderDetails?.freebiesConfigJson) {
       return sanitizeFreebiesSummary(orderDetails?.freebiesSummary);
@@ -335,6 +312,9 @@ export default function OrdersPage() {
       setIsCancelDialogOpen(false);
       setCancellationReason("");
       toast.success(`Order #${variables.orderId} has been cancelled.`);
+      queryClient.invalidateQueries({ queryKey: ["kitchen-capacity"] });
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["manifest", "downpayments"] });
       queryClient.invalidateQueries({ queryKey: ["orders", "directory"] });
       queryClient.invalidateQueries({
         queryKey: ["orders", variables.orderId],
@@ -1402,7 +1382,10 @@ export default function OrdersPage() {
       </Tabs>
 
       {/* The Slide-Out Safety Drawer */}
-      <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+      <Sheet open={isSheetOpen} onOpenChange={(open) => {
+        setIsSheetOpen(open);
+        if (!open) setIsRiderAssignmentOpen(false);
+      }}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto overflow-x-hidden bg-[#FAF6F4] p-4 sm:p-6">
           <SheetHeader className="mb-4 p-0">
             <div className="flex flex-col gap-3 pb-3 border-b border-stone-200">
@@ -1712,8 +1695,9 @@ export default function OrdersPage() {
                                 )}
                               </p>
                               <p className="text-xs text-stone-500">
-                                Freelance Delivery Courier
+                                {backupLabel ? "Lead Rider · Collects Cash" : "Freelance Delivery Courier"}
                               </p>
+                              {backupLabel && <p className="text-xs font-bold text-amber-900">{backupLabel}</p>}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                               {orderDetails.assignedRiderName ? (
@@ -1741,58 +1725,17 @@ export default function OrdersPage() {
                                   ⚪ Pending Rider Assignment
                                 </Badge>
                               )}
-                              <Button
+                              {(isOwner || user?.role === "Cashier") && !orderDetails.isCancelled && !orderDetails.isDraft && !orderDetails.isTimeTbd && <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
                                 className="h-8 border-blue-300 bg-white text-xs font-bold text-blue-800 hover:bg-blue-50"
-                                onClick={() => {
-                                  setSelectedRiderName(orderDetails.assignedRiderName || "");
-                                  setCustomRiderName("");
-                                  setIsRiderAssignmentOpen((open) => !open);
-                                }}
+                                onClick={() => setIsRiderAssignmentOpen(true)}
                               >
                                 🛵 Assign / Change Rider
-                              </Button>
+                              </Button>}
                             </div>
                           </div>
-                          {isRiderAssignmentOpen && (
-                            <div className="grid gap-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3 sm:grid-cols-[1fr_1fr_auto]">
-                              <select
-                                value={selectedRiderName}
-                                onChange={(event) => {
-                                  setSelectedRiderName(event.target.value);
-                                  if (event.target.value) setCustomRiderName("");
-                                }}
-                                className="h-9 rounded-md border border-stone-300 bg-white px-2 text-xs"
-                              >
-                                <option value="">Select registered rider</option>
-                                {registeredRiders.filter((rider) => rider.isActive).map((rider) => (
-                                  <option key={rider.id} value={rider.fullName}>
-                                    {rider.fullName} {rider.phoneNumber ? `• ${rider.phoneNumber}` : ""}
-                                  </option>
-                                ))}
-                              </select>
-                              <Input
-                                value={customRiderName}
-                                onChange={(event) => {
-                                  setCustomRiderName(event.target.value);
-                                  if (event.target.value) setSelectedRiderName("");
-                                }}
-                                placeholder="Or enter custom rider name"
-                                className="h-9 bg-white text-xs"
-                              />
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={assignRiderMutation.isPending}
-                                onClick={handleAssignRider}
-                                className="h-9 bg-blue-700 text-white hover:bg-blue-800"
-                              >
-                                {assignRiderMutation.isPending ? "Assigning…" : "Save Rider"}
-                              </Button>
-                            </div>
-                          )}
                           </div>
                         ) : Number(orderDetails.fulfillment) === 2 ? (
                           <div className="flex items-center justify-between p-3 bg-amber-50/60 rounded-lg border border-amber-200">
@@ -2433,6 +2376,7 @@ export default function OrdersPage() {
           )}
         </SheetContent>
       </Sheet>
+      {isSheetOpen && isRiderAssignmentOpen && selectedOrder && <RiderAssignmentDialog orderId={selectedOrder.id} onClose={() => setIsRiderAssignmentOpen(false)} />}
 
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
         <DialogContent className="overflow-x-hidden max-w-md w-full p-6 rounded-xl border-stone-200 bg-white">

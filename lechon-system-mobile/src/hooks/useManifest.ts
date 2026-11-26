@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../services/apiClient';
+import type { SupportRiderPlan } from '../utils/riderAssignment';
 
-export interface PendingSettlementDrop {
+export interface PendingSettlementDrop extends SupportRiderPlan {
   id: number;
   orderId: number;
   orderReference: string;
@@ -94,6 +95,7 @@ export interface DownpaymentTrackerItem {
   paidAt?: string | null;
   referenceNumber?: string | null;
   isDateTbd?: boolean;
+  isDraft?: boolean;
   createdAt: string;
   encodedBy?: string | null;
   installmentIndex?: number | null;
@@ -151,6 +153,7 @@ export interface StaffValidatePayload {
   digitalAmount?: number;
   digitalMethod?: string;
   digitalReferenceNumber?: string;
+  logSupportRiderExpense?: boolean;
 }
 
 export interface OwnerApprovePayload {
@@ -259,6 +262,7 @@ const invalidateAllSettlementCaches = async (
     queryClient.invalidateQueries({ queryKey: ['orders'] }),
     queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
     queryClient.invalidateQueries({ queryKey: ['logistics'] }),
+    queryClient.invalidateQueries({ queryKey: ['expenses'] }),
   ]);
 };
 
@@ -294,6 +298,7 @@ export const useStaffValidateQrMutation = () => {
           digitalAmount: payload.digitalAmount,
           digitalMethod: payload.digitalMethod,
           digitalReferenceNumber: payload.digitalReferenceNumber,
+          logSupportRiderExpense: payload.logSupportRiderExpense,
         }
       );
       return response.data;

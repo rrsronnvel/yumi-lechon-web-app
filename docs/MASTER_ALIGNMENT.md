@@ -1256,8 +1256,8 @@ Section 2 provides a chronological kitchen checklist merging customer orders and
 
 ### 23.1 DP Remittance Ordering and Zero-Value Exclusion
 
-* `GET /api/logistics/downpayments`, Web `DownpaymentTrackerTab`, the Manifest badge count, and Mobile `DrawerScreen` include only active orders with `Downpayment > 0`. A zero-value Walk-In is never actionable remittance work.
-* Every layer sorts scheduled rows by `TargetDeliveryTime` ascending, then `OrderId` ascending. `IsDateTbd` or missing-date rows sort after every dated event, preventing future bookings from obscuring urgent work.
+* `GET /api/logistics/downpayments`, Web `DownpaymentTrackerTab`, the Manifest badge count, and Mobile `DrawerScreen` use successful, non-voided advance-payment installments. Confirmed legacy orders with a positive cached downpayment can still use the order-level fallback. Drafts require a positive advance-payment installment.
+* Scheduled rows sort by event time. Draft and date-TBD rows appear below scheduled events and retain their actual payment channels and remittance state.
 
 ### 23.2 Shift-Split Prep Board and Tablet-Safe Time Columns
 
@@ -1270,7 +1270,7 @@ Section 2 provides a chronological kitchen checklist merging customer orders and
 * `InventoryService.DeductOrderStockIfCompletedAsync` aggregates each order's effective carcass category (`FulfilledItemCategoryId ?? ItemCategoryId`) and posts at most one `StockOut` per order/category. Serializable idempotency, `ReferenceId = Order.Id`, and the `Order #reference` reason prevent double deductions.
 * Delivered, Settled, completed handover/release, and strictly past-date paid-in-full orders qualify. Physical stock displays never fall below zero. `Locked (14D)` excludes cancelled, delivered, settled, and already-posted orders.
 * Startup reconciles qualifying non-cancelled orders since `2026-10-27`. Completion paths for rider QR, counter pickup, Lalamove release, and Owner verification invoke the same idempotent service.
-* Order create/update and startup repair align `RiderDepartureTime` and every schedule clock's date with `TargetDeliveryTime.Date` while preserving time-of-day. A Lalamove departure explicitly stored on the preceding calendar day remains untouched.
+* Order create/update and startup repair align the schedule target with the event date and preserve manual clock values. Cooking that crosses midnight and explicitly preceding-day Lalamove departures retain their calendar offsets.
 
 ### 23.4 POS Submission Reset and Exact-Duplicate Language
 
@@ -1282,4 +1282,25 @@ Section 2 provides a chronological kitchen checklist merging customer orders and
 * `October2026ExpenseSeed` embeds spreadsheet rows 6-346 from `October Expense log.xlsx`, so Development and Production do not depend on the workbook at runtime. Occurrence-aware matching preserves legitimate duplicate rows while remaining restart-safe.
 * The locked October 2026 totals are 341 rows, COGS `₱245,677.00`, OPEX `₱395,543.00`, and grand outflow `₱641,220.00`. The Paper Plate text quantity becomes `Quantity = 15`, `Unit = "by 24 pcs"`; the blank Dalandan Juice Tang channel becomes `Cash`.
 * Development only seeds `#111526-901` (10:00 AM delivered/settled M StockOut), `#111526-902` (2:00 PM departure Belly 5kg plus paid Sarsa), and the 3:30 PM Staff Meryenda Store Paluto. Production receives none of these QA fixtures.
+
+## 24. November 25, 2026 Kitchen Capacity and Paid Drafts
+
+### Dispatch and booking
+
+* Each whole lechon head has an `OrderItemSchedule` with a unique `(OrderItemId, UnitIndex)`. Kitchen rows show `Head 1/2`, `Head 2/2`, individual clocks, and separate roast and order totals in the screen and 4K PNG. A belly line retains its booked quantity on one row. The Rider Sheet groups by order and counts the balance and delivery fee once.
+* The default Carmona kitchen has 14 pits. Silang starts inactive. An active branch uses one pit per whole head and rounds belly quantities up at three per pit. December 24 and 31 use five configured batches. Saturday and Sunday use four configured slots. Other dates use concurrent Salang-to-departure occupancy, including any configured post-departure buffer. December 25 uses continuous mode and shows the noon closing notice.
+* The Web Dispatch Planner shows current usage by date and branch. The Web and Mobile POS and edit forms evaluate the cart, show alternate openings when available, and allow one-tap holiday batch selection. Saving over the standard limit requires an explicit Owner approval, recorded as an order audit entry. Approval can either fit four bellies per pit or force-book the excess load.
+
+### Payments, promos and development checks
+
+* Web and Mobile show paid tentative drafts with a purple `📝 Tentative Draft` badge. Their successful advance installments remain actionable in the Owner remittance flow. Drafts consume zero capacity. Both order dossiers show the saved seasonal promo allocation or resolve it by package code. Fried Chicken, Shanghai, and Bopis appear when included in that allocation.
+* `November25QaDataSeed` inserts only the reserved Development references. `#112626-901` has two Jumbo heads and a single ₱30,430 balance. `#112626-902` has an unremitted ₱1,000 Cash draft installment. `#122426-910` and `#122426-911` contribute 13 pits to December 24 Batch 2. Existing orders also count against the batch. The earlier December promo QA order `#122426-901` brings a database with both sets of fixtures to 14 pits.
+
+## 25. November 26, 2026 Web Sign-In and Split Moto Deliveries
+
+* Web validates the stored shift token and expiry synchronously. Missing, expired, or malformed sessions go directly to `/login` on a protected URL. Authenticated pages load on demand and protected dashboard, inventory, capacity, and Manifest queries wait for sign-in. Public rider QR links retain their token-based flow.
+* Kitchen and Rider Sheets wrap Departure / Pickup onto two lines. Kitchen head labels through `Head 12/12` and the assigned rider fit within their table cells in the live view and 4K export.
+* A delivery with more than two whole lechons can have a Lead Rider and one Backup Moto Rider. The order retains one customer bill and one collection. The lead collects the full balance and remits the balance less the usual delivery fee. The backup collects ₱0. Individual kitchen heads show the rider carrying them.
+* Hop 1 offers a checked option to post the store-shouldered backup fee to the Expenses Ledger under Labor. The expense follows the order's expense link across custody reversals and re-settlement. The posting creates its own audit entry and leaves the lead's collection, fee, and net remittance intact.
+* Development fixture `#112626-903` assigns the first two M heads to Adrianne and the third to Randy. The customer balance is ₱33,600, the lead delivery fee is ₱500, and net remittance is ₱33,100. The backup fee is a separate ₱500 store expense when posted.
 

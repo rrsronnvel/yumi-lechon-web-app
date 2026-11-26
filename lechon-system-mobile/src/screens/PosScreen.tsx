@@ -51,6 +51,10 @@ import {
   isPastDeliveryDate,
 } from '../utils/deliveryDateWarnings';
 import PaymentChannelPills from '../components/orders/PaymentChannelPills';
+import KitchenCapacityField from '../components/orders/KitchenCapacityField';
+import { useAuth } from '../context/AuthContext';
+import { useKitchenCapacity, type KitchenBatch } from '../hooks/useKitchenCapacity';
+import { getKitchenTiming, type CapacitySlot } from '../utils/kitchenCapacity';
 import {
   FreebiesConfig,
   arePromoCountsEqual,
@@ -139,6 +143,7 @@ const normalizeItemsSummary = (value?: string | null): string =>
     .join('|');
 
 export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
+  const { isOwner } = useAuth();
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
   const { data: balances = [] } = useInventoryBalances();
   const { data: deliveryPricing } = useDeliveryPricingQuery();
@@ -209,6 +214,39 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const [createdReceiptOrder, setCreatedReceiptOrder] =
     useState<TemplateOrderData | null>(null);
   const [receiptCopied, setReceiptCopied] = useState(false);
+  const isEffectiveDraft = isDraft || isTimeTbd;
+  const capacityDate = normalizeDateInput(targetDate);
+  const capacityTiming = getKitchenTiming(
+    capacityDate, to24HourTime(targetTime, targetPeriod),
+    to24HourTime(riderDepartureTimeStr, riderDeparturePeriod), fulfillment,
+  );
+  const capacityEnabled = !isEffectiveDraft && !isNonLechonMode;
+  const capacity = useKitchenCapacity({
+    enabled: capacityEnabled, isOwner, date: capacityDate, timing: capacityTiming,
+    fulfillment, items: cartItems,
+  });
+  const selectedCapacityTiming = useRef<string | null>(null);
+
+  const applyCapacitySlot = (slot: CapacitySlot) => {
+    const nextTarget = to12HourParts(slot.targetTime.slice(11, 16));
+    const nextDeparture = to12HourParts(slot.riderDepartureTime.slice(11, 16));
+    selectedCapacityTiming.current = `${slot.targetTime.slice(0, 16)}|${fulfillment}|${distanceKm}`;
+    setTargetDate(slot.date);
+    setTargetTime(nextTarget.time);
+    setTargetPeriod(nextTarget.period);
+    setRiderDepartureTimeStr(nextDeparture.time);
+    setRiderDeparturePeriod(nextDeparture.period);
+    capacity.selectBatch(slot.batchCode, slot.date);
+  };
+
+  const pickCapacityBatch = (batch: KitchenBatch) => {
+    const targetTime = `${capacityDate}T${batch.anchorTime}`;
+    const departure = calculateRiderDepartureTime(new Date(targetTime), parseFloat(distanceKm) || 0, fulfillment);
+    applyCapacitySlot({
+      date: capacityDate, targetTime, label: batch.label, batchCode: batch.batchCode,
+      riderDepartureTime: `${formatLocalYMD(departure)}T${formatLocalHM(departure)}:00`,
+    });
+  };
 
   // Auto-compute riderDepartureTime whenever targetDate, targetTime, distanceKm, or fulfillment changes
   useEffect(() => {
@@ -298,7 +336,9 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       return;
     }
     if (!targetTime24) return;
-    const isoTarget = `${targetDate.trim()}T${targetTime24}:00`;
+    const isoTarget = `${normalizeDateInput(targetDate)}T${targetTime24}:00`;
+    if (selectedCapacityTiming.current === `${isoTarget.slice(0, 16)}|${fulfillment}|${distanceKm}`) return;
+    selectedCapacityTiming.current = null;
     const parsedTarget = new Date(isoTarget);
     if (!isNaN(parsedTarget.getTime())) {
       const km = parseFloat(distanceKm) || 0;
@@ -827,6 +867,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const applyDraftToForm = (draft: ParsedOrderDraftDto) => {
     setValidationError(null);
     setMathMismatch(null);
+    capacity.selectBatch(null);
+    selectedCapacityTiming.current = null;
     setPromoPackageCode(draft.promoPackageCode || null);
     setPromoPackageLabel(draft.promoPackageLabel || null);
 
@@ -1062,6 +1104,8 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     setTargetDate('');
     setTargetTime('');
     setTargetPeriod('AM');
+    capacity.resetSelection();
+    selectedCapacityTiming.current = null;
     setRiderDepartureTimeStr('');
     setRiderDeparturePeriod('AM');
     setRemarks('');
@@ -1194,37 +1238,14 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
   const setRelativeDate = (daysFromNow: number) => {
     const d = new Date();
     d.setDate(d.getDate() + daysFromNow);
+    capacity.selectBatch(null);
     setTargetDate(formatLocalYMD(d));
-  };
-
-  // Resolve full ISO RiderDepartureTime from targetDate + riderDepartureTimeStr
-  const resolveRiderDepartureIso = (isoTargetTime: string): string => {
-    if (fulfillment === 0) {
-      return isoTargetTime;
-    }
-    const cleanTime = to24HourTime(riderDepartureTimeStr, riderDeparturePeriod);
-    if (!cleanTime) return isoTargetTime;
-    const candidateIso = `${normalizeDateInput(targetDate)}T${cleanTime}:00`;
-    const parsedCandidate = new Date(candidateIso);
-    const parsedTarget = new Date(isoTargetTime);
-
-    if (!isNaN(parsedCandidate.getTime())) {
-      // If departure time wraps into previous day (e.g. target 00:30, departure 23:00), adjust by -1 day
-      if (
-        !isNaN(parsedTarget.getTime()) &&
-        parsedCandidate.getTime() > parsedTarget.getTime()
-      ) {
-        const prevDay = new Date(parsedCandidate.getTime() - 24 * 60 * 60 * 1000);
-        return `${formatLocalYMD(prevDay)}T${formatLocalHM(prevDay)}:00`;
-      }
-      return candidateIso;
-    }
-    return isoTargetTime;
   };
 
   // Submit Order Handler
   const handleSubmitOrder = async () => {
     setValidationError(null);
+    if (capacity.isBlocked || capacity.isChecking) return;
 
     const trimmedName = customerName.trim();
     const trimmedFbName = facebookName.trim();
@@ -1309,25 +1330,11 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     let isoTargetTime: string | null = null;
     let isoDepartureTime: string | null = null;
 
-    const targetTime24 = isTimeTbd
-      ? '12:00'
-      : to24HourTime(targetTime, targetPeriod);
-
-    const normalizedTargetDate = normalizeDateInput(targetDate);
-    if (normalizedTargetDate && targetTime24) {
-      const candidateIso = `${normalizedTargetDate}T${targetTime24}:00`;
-      const parsedTarget = new Date(candidateIso);
-      if (!isNaN(parsedTarget.getTime())) {
-        isoTargetTime = candidateIso;
-        isoDepartureTime = isTimeTbd || isNonLechonMode
-          ? null
-          : resolveRiderDepartureIso(candidateIso);
-      } else if (!effectiveDraft) {
-        setValidationError(
-          'Invalid Schedule Date/Time. Use YYYY-MM-DD and a 12-hour time such as 03:30 PM.'
-        );
-        return;
-      }
+    const normalizedTargetDate = capacityDate;
+    const schedule = isTimeTbd ? getKitchenTiming(normalizedTargetDate, '12:00', null, fulfillment) : capacityTiming;
+    if (schedule) {
+      isoTargetTime = schedule.targetTime;
+      isoDepartureTime = isTimeTbd || isNonLechonMode ? null : schedule.riderDepartureTime;
     } else if (!effectiveDraft || isTimeTbd) {
       setValidationError(
         isTimeTbd
@@ -1389,6 +1396,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
 
     try {
       const savedOrder = await createOrderMutation.mutateAsync({
+        ...capacity.orderFields,
         isDraft: effectiveDraft,
         isTimeTbd,
         customerName: trimmedName || trimmedFbName,
@@ -1460,9 +1468,12 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
       handleClearForm();
     } catch (err: unknown) {
       const axiosErr = err as {
-        response?: { data?: { message?: string; Message?: string; title?: string } | string };
+        response?: { data?: { message?: string; Message?: string; title?: string; code?: string } | string };
         message?: string;
       };
+      if (typeof axiosErr.response?.data === 'object' && axiosErr.response.data?.code === 'KitchenCapacityExceeded') {
+        capacity.refresh();
+      }
       const msg =
         typeof axiosErr.response?.data === 'string'
           ? axiosErr.response.data
@@ -1505,7 +1516,6 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
     );
   };
 
-  const isEffectiveDraft = isDraft || isTimeTbd;
 
   return (
     <View style={styles.screenContainer}>
@@ -2070,7 +2080,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                   placeholder="2026-10-25"
                   placeholderTextColor="#A8A29E"
                   value={targetDate}
-                  onChangeText={setTargetDate}
+                  onChangeText={(value) => {
+                    capacity.selectBatch(null);
+                    setTargetDate(value);
+                  }}
                   onEndEditing={() => setTargetDate(normalizeDateInput(targetDate))}
                 />
               </View>
@@ -2082,7 +2095,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                   placeholder={isTimeTbd ? 'TBD' : '11:30'}
                   placeholderTextColor="#A8A29E"
                   value={isTimeTbd ? '' : targetTime}
-                  onChangeText={setTargetTime}
+                  onChangeText={(value) => {
+                    capacity.selectBatch(null);
+                    setTargetTime(value);
+                  }}
                 />
                 {!isTimeTbd && (
                   <View style={styles.meridiemRow}>
@@ -2090,7 +2106,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                       <Pressable
                         key={period}
                         style={[styles.meridiemButton, targetPeriod === period && styles.meridiemButtonActive]}
-                        onPress={() => setTargetPeriod(period)}
+                        onPress={() => {
+                          capacity.selectBatch(null);
+                          setTargetPeriod(period);
+                        }}
                       >
                         <Text style={[styles.meridiemButtonText, targetPeriod === period && styles.meridiemButtonTextActive]}>
                           {period}
@@ -2149,6 +2168,7 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
                       active && styles.timeSlotChipActive,
                     ]}
                     onPress={() => {
+                      capacity.selectBatch(null);
                       setTargetTime(slot.time);
                       setTargetPeriod(slot.period);
                     }}
@@ -2224,6 +2244,13 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
               </View>
             )}
           </View>}
+
+          {capacityEnabled && <KitchenCapacityField
+            capacity={capacity}
+            isOwner={isOwner}
+            onPickBatch={pickCapacityBatch}
+            onPickSuggestion={applyCapacitySlot}
+          />}
 
           {/* Remarks Input */}
           <View style={styles.fieldGroup}>
@@ -2719,10 +2746,10 @@ export default function PosScreen({ onNavigateToOrders }: PosScreenProps) {
           style={({ pressed }) => [
             styles.submitOrderBtn,
             isEffectiveDraft && styles.submitDraftBtn,
-            createOrderMutation.isPending && styles.disabledBtn,
+            (createOrderMutation.isPending || capacity.isBlocked || capacity.isChecking) && styles.disabledBtn,
             pressed && styles.btnPressed,
           ]}
-          disabled={createOrderMutation.isPending}
+          disabled={createOrderMutation.isPending || capacity.isBlocked || capacity.isChecking}
           onPress={handleSubmitOrder}
         >
           {createOrderMutation.isPending ? (

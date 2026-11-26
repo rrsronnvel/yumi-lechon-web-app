@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using LechonSystem.Api.Models; 
 
 namespace LechonSystem.Api.DTOs
@@ -16,6 +17,13 @@ namespace LechonSystem.Api.DTOs
         public string? EventType { get; set; }
         public DateTime? TargetDeliveryTime { get; set; }
         public DateTime? RiderDepartureTime { get; set; }
+        [MaxLength(50)]
+        public string? KitchenBranch { get; set; }
+        [MaxLength(50)]
+        public string? KitchenBatchCode { get; set; }
+        public bool CapacityOverrideApproved { get; set; }
+        [MaxLength(250)]
+        public string? CapacityOverrideReason { get; set; }
         
         // -- 🚀 NEW POS FIELDS ADDED HERE --
         public string? Address { get; set; }

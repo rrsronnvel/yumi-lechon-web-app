@@ -41,6 +41,10 @@ export interface CreateOrderPayload {
   assistedByAdmin?: string;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  kitchenBranch?: string;
+  kitchenBatchCode?: string | null;
+  capacityOverrideApproved?: boolean;
+  capacityOverrideReason?: string | null;
   assignedRiderName?: string | null;
   fulfillment: number; // 0 = Pickup, 1 = Delivery, 2 = Lalamove
   address?: string | null;
@@ -86,6 +90,10 @@ export interface UpdateOrderPayload {
   updatedBy?: string;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  kitchenBranch?: string;
+  kitchenBatchCode?: string | null;
+  capacityOverrideApproved?: boolean;
+  capacityOverrideReason?: string | null;
   assignedRiderName?: string | null;
   fulfillment: number;
   price: number;
@@ -328,6 +336,7 @@ export const useCreateOrderMutation = () => {
         queryClient.invalidateQueries({ queryKey: ['schedules'] }),
         queryClient.invalidateQueries({ queryKey: ['daily-sheets'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+        queryClient.invalidateQueries({ queryKey: ['kitchen-capacity'] }),
       ]);
     },
   });
@@ -347,8 +356,10 @@ export const useUpdateOrderMutation = () => {
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['schedules'] }),
+        queryClient.invalidateQueries({ queryKey: ['manifest'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory', 'balances'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+        queryClient.invalidateQueries({ queryKey: ['kitchen-capacity'] }),
       ]);
     },
   });

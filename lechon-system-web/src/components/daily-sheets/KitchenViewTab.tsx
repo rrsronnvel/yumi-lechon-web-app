@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
+import { useAssignHeadRider, useDailySheets, type RoastingScheduleItem } from "@/hooks/useSchedules";
+import { useRidersQuery } from "@/hooks/useRiders";
+import { useUpdateOrderRiders } from "@/hooks/useLogistics";
+import { RiderAssignmentDialog } from "@/components/ui/orders/RiderAssignmentDialog";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
+import { InlineRiderSelect, SplitRiderButton } from "./InlineRiderSelect";
 import { Pencil } from "lucide-react";
 import {
   sanitizeFreebiesSummary,
@@ -11,11 +15,15 @@ import {
 import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
+import { countKitchenRoster, filterKitchenBranch, groupRiderRoster } from "@/utils/dispatchRoster";
+import { getHeadRider, namedRider, sameRider } from "@/utils/splitMoto";
 
 interface KitchenViewTabProps {
   mode?: "edit" | "clean";
   selectedDate?: string;
   canEdit?: boolean;
+  canAssignRiders?: boolean;
+  branch?: string;
 }
 
 // Bulletproof Time Formatter
@@ -49,19 +57,29 @@ const formatWeightDisplay = (weight?: string | null): string => {
     .trim() || "-";
 };
 
-export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: KitchenViewTabProps) {
+export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true, canAssignRiders = canEdit, branch }: KitchenViewTabProps) {
   const { data: dailySheets, isLoading, isError } = useDailySheets(selectedDate);
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [riderOrderId, setRiderOrderId] = useState<number | null>(null);
+  const { data: registeredRiders = [] } = useRidersQuery(mode === "edit" && canAssignRiders);
+  const updateOrderRiders = useUpdateOrderRiders();
+  const updateHeadRider = useAssignHeadRider();
 
   if (isLoading)
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading roasting schedule...</div>;
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load roasting schedule.</div>;
 
-  const rawRoster = dailySheets?.items || [];
+  const rawRoster = filterKitchenBranch(dailySheets?.items ?? [], branch);
   if (rawRoster.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No orders scheduled for the selected date.</div>;
+  const totals = countKitchenRoster(rawRoster);
+  const wholeHeadsByOrder = new Map(groupRiderRoster(rawRoster).map(({ orderId, wholeLechonQty }) => [orderId, wholeLechonQty]));
+  const registeredOptions = [
+    { name: "", label: "Unassigned" },
+    ...registeredRiders.filter((rider) => rider.isActive).map((rider) => ({ name: rider.fullName })),
+  ];
 
   // Split confirmed scheduled items and Time TBD items:
   const scheduledOrders = rawRoster.filter((item) => !item.isTimeTbd);
@@ -139,6 +157,24 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
       item.deliveryMethod === "Lalamove" ||
       item.riderName === "Lalamove" ||
       item.riderName === "Lalamove Courier";
+    const orderId = item.orderId;
+    const reference = item.orderReference || String(orderId ?? item.id);
+    const lead = namedRider(item.riderName);
+    const support = namedRider(item.supportRiderName);
+    const headRider = getHeadRider(item);
+    const editRiders = mode === "edit" && canAssignRiders && !isStorePickup && !isLalamove;
+    const isWholeHead = hasTahi && !isTimeTbd && minW > 0 && !item.isBelly && !/belly/i.test(item.categoryName || item.size || "");
+    const editHead = Boolean(lead && support && isWholeHead);
+    const showSplit = editRiders && Boolean(support || (wholeHeadsByOrder.get(orderId) ?? 0) > 2);
+    const openOrderRiders = () => setRiderOrderId(orderId ?? null);
+    const riderDisplay = (
+      <>
+        <span className={headRider.name ? "break-words text-blue-800 font-bold" : "text-slate-500 italic font-normal"}>{headRider.name || "Unassigned"}</span>
+        {support && headRider.role && (
+          <span className={`rounded border px-1.5 py-0.5 text-[9px] font-black ${headRider.role === "Backup" ? "border-amber-300 bg-amber-100 text-amber-950" : "border-blue-200 bg-blue-50 text-blue-900"}`}>{headRider.role}</span>
+        )}
+      </>
+    );
 
     return (
       <tr
@@ -200,8 +236,11 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         </td>
 
         {/* 5. Size */}
-        <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 max-w-[85px] overflow-hidden break-words whitespace-normal leading-tight text-xs">
+        <td className="px-1 py-2 text-center font-bold text-slate-800 border-r border-slate-300 break-words whitespace-normal leading-tight text-xs">
           <div>
+            {item.isBelly && (item.quantity ?? 1) > 1 && (
+              <span className="mr-1 rounded bg-amber-100 px-1 font-black text-amber-950">{item.quantity}x</span>
+            )}
             {(item.size || item.categoryName || "-").toLowerCase().includes("lamang-loob") || (item.size || item.categoryName || "").toLowerCase().includes("raw innards") ? (
               <span className="leading-tight block">
                 Raw Innards
@@ -211,6 +250,11 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
               item.size || item.categoryName || "-"
             )}
           </div>
+          {(item.unitTotal ?? 1) > 1 && (
+            <span className="mt-0.5 inline-block whitespace-nowrap rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-black text-indigo-900">
+              Head {item.unitIndex ?? 1}/{item.unitTotal}
+            </span>
+          )}
           {item.bookedSizeName && mode !== "clean" && (
             <div className="text-[8px] font-semibold text-indigo-700">🔄 booked {item.bookedSizeName}</div>
           )}
@@ -355,12 +399,8 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         </td>
 
         {/* 13. Rider Name */}
-        <td
-          onClick={() => !isStorePickup && !isLalamove && hasTahi && !isTimeTbd && handleCellClick(item)}
-          className={`px-1 py-2 text-center text-[11px] font-bold border-r border-slate-300 ${!isStorePickup && !isLalamove ? editableCellClass : ""}`}
-          title={!isStorePickup && !isLalamove && isEdit && hasTahi && !isTimeTbd ? "Click to assign or change rider" : undefined}
-        >
-          <div className="flex items-center justify-center gap-1">
+        <td className="px-1 py-2 text-center text-[11px] font-bold border-r border-slate-300">
+          <div className="flex min-w-0 flex-col items-center gap-1">
             {isStorePickup ? (
               <span className="bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
                 🏪 Store Pickup
@@ -369,22 +409,20 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
               <span className="bg-orange-50 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
                 📦 Lalamove
               </span>
-            ) : (
-              <>
-                <span
-                  className={
-                    item.riderName && item.riderName !== "Unassigned"
-                      ? "text-blue-700 font-bold"
-                      : "text-slate-400 italic font-normal"
-                  }
-                >
-                  {item.riderName || "Unassigned"}
-                </span>
-                {isEdit && hasTahi && !isTimeTbd && (
-                  <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
-                )}
-              </>
-            )}
+            ) : editRiders && orderId && (!support || editHead) ? (
+              <InlineRiderSelect
+                label={`Assign rider for order ${reference}, head ${item.unitIndex ?? 1}`}
+                current={editHead ? headRider.name : lead}
+                options={editHead ? [{ name: lead, label: `${lead} (Lead)` }, { name: support, label: `${support} (Backup)` }] : registeredOptions}
+                disabled={editHead ? updateHeadRider.isPending : updateOrderRiders.isPending && updateOrderRiders.variables?.orderId === orderId}
+                editLabel={editHead ? "⚙️ Edit Order Riders / Split..." : "⚙️ Split / Custom Rider..."}
+                onEditOrder={openOrderRiders}
+                onSelect={(name) => editHead
+                  ? updateHeadRider.mutateAsync({ scheduleId: item.id, assignedRiderName: sameRider(name, lead) ? null : name })
+                  : updateOrderRiders.mutateAsync({ orderId, riderName: name })}
+              />
+            ) : <div className="flex min-w-0 flex-wrap items-center justify-center gap-1">{riderDisplay}</div>}
+            {showSplit && orderId && <SplitRiderButton hasSupport={Boolean(support)} reference={reference} onClick={openOrderRiders} />}
           </div>
         </td>
       </tr>
@@ -395,22 +433,22 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
       <div className={`w-full overflow-x-auto rounded-md border-2 border-black ${mode === "clean" ? "no-scrollbar" : ""} print:overflow-visible bg-white shadow-xs`}>
-        <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
+        <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "min-w-[960px]" : "min-w-[1100px]"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
-            <col className="w-[8%] min-w-[115px]" />  {/* 1. No. */}
-            <col className="w-[5.5%] min-w-[96px]" /> {/* 2. Tahi */}
-            <col className="w-[5.5%] min-w-[96px]" /> {/* 3. Salang */}
-            <col className="w-[5%]" />                {/* 4. Priority */}
-            <col className="w-[4.5%]" />              {/* 5. Size (Compact: fits "S. Jumbo") */}
-            <col className="w-[4.5%]" />              {/* 6. Weight */}
-            <col className="w-[8.5%] min-w-[96px]" /> {/* 7. Departure / Pickup */}
-            <col className="w-[9%]" />                {/* 8. Customer Name */}
-            <col className="w-[15%]" />               {/* 9. Remarks (Expanded) */}
-            <col className="w-[14.5%]" />             {/* 10. Location (Expanded) */}
-            <col className="w-[4%]" />                {/* 11. Add-ons */}
-            <col className="w-[5.5%] min-w-[96px]" /> {/* 12. Delivery Time */}
-            <col className="w-[11%]" />               {/* 13. Rider Name */}
+            <col className="w-[8%] min-w-[115px]" />{/* 1. No. */}
+            <col className="w-[5.5%] min-w-[96px]" />{/* 2. Tahi */}
+            <col className="w-[5.5%] min-w-[96px]" />{/* 3. Salang */}
+            <col className="w-[5%]" />{/* 4. Priority */}
+            <col className="w-[8%]" />{/* 5. Size and head badge */}
+            <col className="w-[4.5%]" />{/* 6. Weight */}
+            <col className="w-[10%] min-w-[104px]" />{/* 7. Departure / Pickup */}
+            <col className="w-[9%]" />{/* 8. Customer Name */}
+            <col className="w-[11%]" />{/* 9. Remarks */}
+            <col className="w-[10.5%]" />{/* 10. Location */}
+            <col className="w-[4%]" />{/* 11. Add-ons */}
+            <col className="w-[5.5%] min-w-[96px]" />{/* 12. Delivery Time */}
+            <col className="w-[14%] min-w-[123px]" />{/* 13. Rider Name */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}
@@ -422,7 +460,7 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Priority</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 whitespace-nowrap">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
-              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-amber-950 text-amber-300">Departure / Pickup</th>
+              <th scope="col" className="min-w-[104px] whitespace-normal px-1.5 py-2.5 text-center font-black uppercase leading-tight text-[11px] border-r border-slate-700 bg-amber-950 text-amber-300">Departure /<br />Pickup</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Remarks</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Location</th>
@@ -486,7 +524,8 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
           <tfoot className="bg-slate-100 border-t-2 border-black font-semibold text-slate-900 text-[11px]">
             <tr>
               <td colSpan={4} className="px-3 py-2.5 text-left font-black uppercase tracking-wider border-r border-slate-300">
-                Total Orders: {rawRoster.length}
+                <div>Total Roasts / Heads: {totals.heads}</div>
+                <div>Orders: {totals.orders}</div>
               </td>
               <td colSpan={6} className="px-3 py-2.5 text-left font-bold border-r border-slate-300">
                 First Tahi: <span className="text-red-700 font-black">{formatTime(sortedScheduledOrders.find((r) => !!r.tahiStartTime)?.tahiStartTime)}</span>
@@ -506,7 +545,9 @@ export function KitchenViewTab({ mode = "edit", selectedDate, canEdit = true }: 
         item={selectedItem}
         open={isEditorOpen}
         onOpenChange={setIsEditorOpen}
+        editHead
       />
+      {riderOrderId && <RiderAssignmentDialog orderId={riderOrderId} onClose={() => setRiderOrderId(null)} />}
     </div>
   );
 }

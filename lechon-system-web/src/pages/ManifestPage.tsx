@@ -24,6 +24,8 @@ import { DownpaymentTrackerTab } from "@/components/manifest/DownpaymentTrackerT
 import { QrSettlementModal } from "@/components/manifest/QrSettlementModal";
 import { VerifyDigitalDepositModal } from "@/components/manifest/VerifyDigitalDepositModal";
 import OrderDetailsModal from "@/components/ui/orders/OrderDetailsModal";
+import { RiderAssignmentDialog } from "@/components/ui/orders/RiderAssignmentDialog";
+import { backupRiderLabel, type SplitMotoAssignment } from "@/utils/splitMoto";
 import { toast } from "sonner";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
@@ -194,6 +196,7 @@ export default function ManifestPage() {
   // Real-time search query and dossier modal states
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDossierOrderId, setSelectedDossierOrderId] = useState<number | null>(null);
+  const [riderAssignmentOrderId, setRiderAssignmentOrderId] = useState<number | null>(null);
 
   const filteredDrops = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -207,6 +210,7 @@ export default function ManifestPage() {
             .replace(/^#/, "");
           const customer = (drop.customerName || "").toLowerCase();
           const rider = (drop.riderName || "").toLowerCase();
+          const backupRider = (drop.supportRiderName || "").toLowerCase();
           const address = (drop.deliveryAddress || "").toLowerCase();
           const isNoRider =
             !drop.riderName?.trim() ||
@@ -217,6 +221,7 @@ export default function ManifestPage() {
             orderReference.includes(cleanQ) ||
             customer.includes(q) ||
             rider.includes(q) ||
+            backupRider.includes(q) ||
             address.includes(q) ||
             (isNoRider && (q.includes("no rider") || q.includes("unassigned")))
           );
@@ -237,7 +242,7 @@ export default function ManifestPage() {
   };
 
   // QR Modal State for Tab 1 & Tab 2
-  const [qrModalData, setQrModalData] = useState<{
+  const [qrModalData, setQrModalData] = useState<SplitMotoAssignment & {
     open: boolean;
     orderId: number;
     customerName: string;
@@ -273,6 +278,9 @@ export default function ManifestPage() {
       totalCollected: drop.totalCollected,
       deliveryFee: drop.riderDeliveryFee,
       riderName: drop.riderName,
+      supportRiderName: drop.supportRiderName,
+      supportRiderFee: drop.supportRiderFee,
+      supportRiderExpenseLogged: drop.supportRiderExpenseLogged,
       hopStage: "RiderToStaff",
       heldByStaffName: drop.heldByStaffName,
       heldPaymentMethod: drop.heldPaymentMethod,
@@ -722,6 +730,7 @@ export default function ManifestPage() {
                         const schedule = formatSchedule(
                           drop.targetDeliveryTime ?? drop.riderDepartureTime,
                         );
+                        const backupLabel = backupRiderLabel(drop, "settlement");
 
                         return (
                           <tr
@@ -754,6 +763,12 @@ export default function ManifestPage() {
                                 <span className="font-semibold text-stone-900 block truncate" title={drop.riderName}>
                                   {drop.riderName}
                                 </span>
+                              )}
+                              {backupLabel && <span className="mt-1 block break-words font-bold text-amber-900">{backupLabel}</span>}
+                              {custodyStatus === "Uncollected" && !isAwaitingOwner && (isOwner || user?.role === "Cashier") && (
+                                <button type="button" className="mt-1 rounded text-[11px] font-semibold text-blue-800 underline-offset-2 hover:underline" onClick={() => setRiderAssignmentOrderId(drop.orderId || drop.id)}>
+                                  Assign / Change Rider
+                                </button>
                               )}
                             </td>
                             <td className="px-3 py-2.5">
@@ -1011,6 +1026,9 @@ export default function ManifestPage() {
           totalCollected={qrModalData.totalCollected}
           deliveryFee={qrModalData.deliveryFee}
           riderName={qrModalData.riderName}
+          supportRiderName={qrModalData.supportRiderName}
+          supportRiderFee={qrModalData.supportRiderFee}
+          supportRiderExpenseLogged={qrModalData.supportRiderExpenseLogged}
           hopStage={qrModalData.hopStage}
           heldByStaffName={qrModalData.heldByStaffName}
           heldPaymentMethod={qrModalData.heldPaymentMethod}
@@ -1031,6 +1049,7 @@ export default function ManifestPage() {
         isOpen={selectedDossierOrderId !== null}
         onClose={() => setSelectedDossierOrderId(null)}
       />
+      {riderAssignmentOrderId && <RiderAssignmentDialog orderId={riderAssignmentOrderId} onClose={() => setRiderAssignmentOrderId(null)} />}
     </div>
   );
 }

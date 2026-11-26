@@ -4,18 +4,11 @@ import {
   getApiEnvironment,
   getApiBaseUrl,
   setApiEnvironment,
-  TOKEN_STORAGE_KEY,
-  USER_STORAGE_KEY,
   ENV_STORAGE_KEY,
   LEGACY_ENV_STORAGE_KEY,
 } from "@/services/apiClient";
-
-export interface UserProfile {
-  id?: number;
-  username: string;
-  fullName: string;
-  role: "Owner" | "Cashier" | "Accountant" | string;
-}
+import { clearAuthSession, readAuthSession, TOKEN_STORAGE_KEY, USER_STORAGE_KEY, type UserProfile } from "@/services/authSession";
+export type { UserProfile } from "@/services/authSession";
 
 export interface AuthContextType {
   token: string | null;
@@ -32,21 +25,7 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  });
-
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    const savedUser = localStorage.getItem(USER_STORAGE_KEY);
-    if (!savedUser) return null;
-    try {
-      return JSON.parse(savedUser) as UserProfile;
-    } catch {
-      localStorage.removeItem(USER_STORAGE_KEY);
-      return null;
-    }
-  });
-
+  const [session, setSession] = useState(() => readAuthSession());
   const [apiEnv, setApiEnv] = useState<ApiEnvironment>(() => getApiEnvironment());
 
   const switchApiEnv = useCallback((env: ApiEnvironment) => {
@@ -55,35 +34,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = useCallback((newToken: string, newUser: UserProfile) => {
-    setToken(newToken);
-    setUser(newUser);
     localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
+    const authenticatedSession = readAuthSession();
+    setSession(authenticatedSession);
+    if (!authenticatedSession) throw new Error("The server returned an invalid shift session.");
   }, []);
 
   const logout = useCallback(() => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY);
+    clearAuthSession();
+    setSession(null);
     window.location.href = "/login";
   }, []);
 
   // Sync state if localStorage changes in other tabs
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === TOKEN_STORAGE_KEY) {
-        setToken(e.newValue);
-      } else if (e.key === USER_STORAGE_KEY) {
-        if (e.newValue) {
-          try {
-            setUser(JSON.parse(e.newValue));
-          } catch {
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
+      if (e.key === TOKEN_STORAGE_KEY || e.key === USER_STORAGE_KEY || e.key === null) {
+        setSession(readAuthSession());
       } else if (e.key === ENV_STORAGE_KEY || e.key === LEGACY_ENV_STORAGE_KEY) {
         if (e.newValue === "local" || e.newValue === "cloud") {
           setApiEnv(e.newValue);
@@ -95,7 +63,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  const isAuthenticated = Boolean(token && user);
+  useEffect(() => {
+    if (!session) return;
+    const remaining = session.expiresAt - Date.now();
+    if (remaining > 2_147_483_647) return;
+    const timeout = window.setTimeout(() => setSession(readAuthSession()), Math.max(0, remaining));
+    return () => window.clearTimeout(timeout);
+  }, [session]);
+
+  const currentSession = session && Date.now() < session.expiresAt ? session : null;
+  const token = currentSession?.token ?? null;
+  const user = currentSession?.user ?? null;
+  const isAuthenticated = currentSession !== null;
   const isOwner = user?.role === "Owner";
 
   return (

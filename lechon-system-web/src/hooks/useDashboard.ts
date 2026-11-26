@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/apiClient';
+import { useAuth } from '@/context/AuthContext';
 
 // 1. TypeScript Contracts (Matching your .NET DTO models)
 export interface PendingConfirmationDto {
@@ -75,7 +76,9 @@ export interface PendingOwnerConfirmationDto {
 
 // 2. Hook #1: The Downpayment Chase List
 export function usePendingConfirmations() {
+  const { isAuthenticated } = useAuth();
   return useQuery<PendingConfirmationDto[]>({
+    enabled: isAuthenticated,
     queryKey: ['dashboard', 'pending-confirmations'],
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/tasks/pending-confirmations');
@@ -86,7 +89,9 @@ export function usePendingConfirmations() {
 
 // 3. Hook #2: The Human-Error Double-Check List
 export function useDeliveryVerifications() {
+  const { isAuthenticated } = useAuth();
   return useQuery<DeliveryVerificationDto[]>({
+    enabled: isAuthenticated,
     queryKey: ['dashboard', 'delivery-verifications'],
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/tasks/delivery-verifications');
@@ -97,7 +102,9 @@ export function useDeliveryVerifications() {
 
 // 4. Hook #3: The Tonight's Freezer Roster
 export function useDefrostRoster() {
+  const { isAuthenticated } = useAuth();
   return useQuery<DefrostRosterDto[]>({
+    enabled: isAuthenticated,
     queryKey: ['dashboard', 'defrost-roster'],
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/tasks/defrost-roster');
@@ -107,7 +114,9 @@ export function useDefrostRoster() {
 }
 
 export function usePendingOwnerConfirmations() {
+  const { isAuthenticated, isOwner } = useAuth();
   return useQuery<PendingOwnerConfirmationDto[]>({
+    enabled: isAuthenticated && isOwner,
     queryKey: ['dashboard', 'pending-owner-confirmations'],
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/pending-owner-confirmations');
@@ -145,7 +154,9 @@ export interface RenegotiationTask {
 }
 
 export const useRenegotiationTasks = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<RenegotiationTask[]>({
+    enabled: isAuthenticated,
     queryKey: ['dashboard', 'renegotiations'],
     queryFn: async () => {
       const response = await apiClient.get('/dashboard/tasks/renegotiations');

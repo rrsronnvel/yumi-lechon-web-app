@@ -29,10 +29,11 @@ export const promoQueryKeys = {
   forDate: (date?: string) => ["promos", "for-date", date] as const,
 };
 
-export function usePromos() {
+export function usePromos(enabled = true) {
   return useQuery<PromoPackage[]>({
     queryKey: promoQueryKeys.all,
     queryFn: async () => (await apiClient.get<PromoPackage[]>("/promos")).data,
+    enabled,
     staleTime: 60_000,
   });
 }

@@ -263,8 +263,9 @@ namespace LechonSystem.Api.Services
                 .OrderBy(s => s.TahiStartTime)
                 .ToListAsync();
 
-            return schedules.Select(s =>
+            return schedules.GroupBy(schedule => schedule.OrderItemId).Select(itemSchedules =>
             {
+                var s = itemSchedules.First();
                 var order = s.OrderItem!.Order!;
                 var effectiveCategory = s.OrderItem.FulfilledItemCategory ?? s.OrderItem.ItemCategory;
                 var catName = effectiveCategory?.Name ?? "Lechon";
@@ -300,7 +301,7 @@ namespace LechonSystem.Api.Services
                     CustomWeightDisplay = string.IsNullOrWhiteSpace(s.CustomWeightDisplay) ? null : s.CustomWeightDisplay.Trim(),
                     MinimumWeightKg = minWeight,
                     MaximumWeightKg = maxWeight,
-                    Quantity = s.OrderItem.Quantity,
+                    Quantity = s.UnitTotal > 1 ? itemSchedules.Count() : s.OrderItem.Quantity,
                     TahiStartTime = s.TahiStartTime,
                     CustomerName = order.CustomerName,
                     FacebookName = order.FacebookName,

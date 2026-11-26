@@ -9,6 +9,7 @@ import {
 } from "@/hooks/useManifest";
 import { toast } from "sonner";
 import { isWalkInOrder } from "@/utils/walkIn";
+import { compareDownpaymentsByEventDate, getDownpaymentEventDate, getDownpaymentPaidAt, isTentativeDownpayment } from "@/utils/downpaymentEvents";
 import { Search } from "lucide-react";
 
 type DownpaymentFilter =
@@ -69,45 +70,6 @@ const getRemittedAt = (item: DownpaymentTrackerItem): string | null | undefined 
 
 const getRemittedBy = (item: DownpaymentTrackerItem): string | null | undefined =>
   item.remittedBy ?? item.dpRemittedBy;
-
-const getEventDate = (item: DownpaymentTrackerItem): string | null | undefined =>
-  item.eventDate ?? item.targetDeliveryTime;
-
-const getPaidAt = (item: DownpaymentTrackerItem): string | null | undefined =>
-  item.paidAt ?? item.createdAt;
-
-const sortByEventDate = (
-  a: DownpaymentTrackerItem,
-  b: DownpaymentTrackerItem,
-) => {
-  const aDate = getEventDate(a);
-  const bDate = getEventDate(b);
-  const aIsTbd = Boolean(a.isDateTbd || !aDate);
-  const bIsTbd = Boolean(b.isDateTbd || !bDate);
-  if (aIsTbd !== bIsTbd) return aIsTbd ? 1 : -1;
-
-  const aTime = aIsTbd
-    ? Number.POSITIVE_INFINITY
-    : new Date(aDate!).getTime();
-  const bTime = bIsTbd
-    ? Number.POSITIVE_INFINITY
-    : new Date(bDate!).getTime();
-  const safeATime = Number.isNaN(aTime) ? Number.POSITIVE_INFINITY : aTime;
-  const safeBTime = Number.isNaN(bTime) ? Number.POSITIVE_INFINITY : bTime;
-  if (safeATime !== safeBTime) return safeATime - safeBTime;
-
-  const aPaid = getPaidAt(a);
-  const bPaid = getPaidAt(b);
-  const aPaidTime = aPaid ? new Date(aPaid).getTime() : 0;
-  const bPaidTime = bPaid ? new Date(bPaid).getTime() : 0;
-  if (aPaidTime !== bPaidTime) return aPaidTime - bPaidTime;
-
-  const aLogId = a.paymentLogId ?? 0;
-  const bLogId = b.paymentLogId ?? 0;
-  if (aLogId !== bLogId) return aLogId - bLogId;
-
-  return Number(a.orderId) - Number(b.orderId);
-};
 
 const formatDate = (value?: string | null) => {
   if (!value) return "Date TBD";
@@ -248,7 +210,7 @@ export function DownpaymentTrackerTab({
             return true;
         }
       })
-      .sort(sortByEventDate);
+      .sort(compareDownpaymentsByEventDate);
   }, [filter, payableItems, searchQuery]);
 
   const visibleItems = useMemo(
@@ -424,8 +386,8 @@ export function DownpaymentTrackerTab({
                     : `order-${item.orderId}`;
                   const amount = getDpAmount(item);
                   const isRemitted = getIsRemitted(item);
-                  const paidAt = getPaidAt(item);
-                  const eventDate = getEventDate(item);
+                  const paidAt = getDownpaymentPaidAt(item);
+                  const eventDate = getDownpaymentEventDate(item);
                   const remittedAt = getRemittedAt(item);
                   const remittedBy = getRemittedBy(item);
                   const isMultiInstallment = (item.installmentCount ?? 1) > 1;
@@ -463,6 +425,11 @@ export function DownpaymentTrackerTab({
                                 className="border-stone-300 bg-stone-100 text-stone-800 text-[10px] font-bold px-1.5 py-0"
                               >
                                 Payment {item.installmentIndex}/{item.installmentCount}
+                              </Badge>
+                            )}
+                            {item.isDraft && (
+                              <Badge variant="outline" className="border-violet-300 bg-violet-50 font-bold text-violet-900">
+                                📝 Tentative Draft
                               </Badge>
                             )}
                           </div>
@@ -505,7 +472,7 @@ export function DownpaymentTrackerTab({
                         {money(amount)}
                       </td>
                       <td className="px-4 py-3 font-semibold text-stone-800">
-                        {formatDate(eventDate)}
+                        {isTentativeDownpayment(item) ? "TBD / Tentative" : formatDate(eventDate)}
                       </td>
                       <td className="px-4 py-3">
                         {isRemitted ? (

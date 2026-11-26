@@ -6,11 +6,13 @@ import { toast } from "sonner";
 import PrintLayout from "@/components/daily-sheets/PrintLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KitchenViewTab } from "@/components/daily-sheets/KitchenViewTab";
+import { KitchenCapacityMonitor } from "@/components/daily-sheets/KitchenCapacityMonitor";
 import { RiderViewTab } from "@/components/daily-sheets/RiderViewTab";
 import { FreebiesPrepViewTab } from "@/components/daily-sheets/FreebiesPrepViewTab";
 import { StorePalutoModal } from "@/components/daily-sheets/StorePalutoModal";
 import { Button } from "@/components/ui/button";
 import { useDailySheets } from "@/hooks/useSchedules";
+import { useKitchenCapacityDay } from "@/hooks/useKitchenCapacity";
 import { useAuth } from "@/context/AuthContext";
 import {
   CalendarDays,
@@ -55,10 +57,12 @@ function formatIsoDate(isoDate: string): string {
 export default function DailySheetsPage() {
   const { user } = useAuth();
   const isOwner = user?.role === "Owner";
+  const canAssignRiders = isOwner || user?.role === "Cashier";
   const [mode, setMode] = useState<"edit" | "clean">("edit");
   const [activeTab, setActiveTab] = useState<string>("kitchen");
   const [isStorePalutoOpen, setIsStorePalutoOpen] = useState(false);
   const [isSavingImage, setIsSavingImage] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string>();
   const exportSheetRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const philippineToday = useMemo(() => getPhilippineDate(), []);
@@ -66,6 +70,12 @@ export default function DailySheetsPage() {
   const selectedDate = isValidIsoDate(requestedDate) ? requestedDate : philippineToday;
   const tomorrow = addDays(philippineToday, 1);
   const { data: dailySheets } = useDailySheets(selectedDate);
+  const defaultCapacity = useKitchenCapacityDay(selectedDate, undefined, activeTab === "kitchen");
+  const activeBranches = defaultCapacity.data?.activeBranches ?? [];
+  const alternateBranch = activeBranches.find((branch) => branch.code === selectedBranch && !branch.isDefault)?.code;
+  const branchCapacity = useKitchenCapacityDay(selectedDate, alternateBranch, activeTab === "kitchen" && Boolean(alternateBranch));
+  const capacity = alternateBranch ? branchCapacity : defaultCapacity;
+  const kitchenBranch = alternateBranch ?? defaultCapacity.data?.branch.code;
   const formattedDate =
     dailySheets?.targetDate === selectedDate
       ? dailySheets.formattedDate
@@ -402,11 +412,18 @@ export default function DailySheetsPage() {
           )}
 
           <TabsContent value="kitchen" className="mt-0 focus-visible:outline-none">
-            <KitchenViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} />
+            <KitchenCapacityMonitor
+              day={capacity.data}
+              branches={activeBranches}
+              selectedBranch={kitchenBranch}
+              onBranchChange={setSelectedBranch}
+              isError={capacity.isError}
+            />
+            <KitchenViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} canAssignRiders={canAssignRiders} branch={kitchenBranch} />
           </TabsContent>
 
           <TabsContent value="rider" className="mt-0 focus-visible:outline-none">
-            <RiderViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} />
+            <RiderViewTab mode={mode} selectedDate={selectedDate} canEdit={isOwner} canAssignRiders={canAssignRiders} />
           </TabsContent>
 
           <TabsContent value="freebies" className="mt-0 focus-visible:outline-none">
@@ -457,7 +474,7 @@ export default function DailySheetsPage() {
             </span>
           </div>
           {activeTab === "kitchen" ? (
-            <KitchenViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
+            <KitchenViewTab mode="clean" selectedDate={selectedDate} canEdit={false} branch={kitchenBranch} />
           ) : activeTab === "rider" ? (
             <RiderViewTab mode="clean" selectedDate={selectedDate} canEdit={false} />
           ) : (

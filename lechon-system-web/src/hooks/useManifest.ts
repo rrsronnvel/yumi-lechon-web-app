@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/apiClient";
+import type { SplitMotoAssignment } from "@/utils/splitMoto";
+import { useAuth } from "@/context/AuthContext";
 
-export interface PendingSettlementDrop {
+export interface PendingSettlementDrop extends SplitMotoAssignment {
   id: number;
   orderId: number;
   orderReference: string;
@@ -111,6 +113,7 @@ export interface DownpaymentTrackerItem {
   targetDeliveryTime?: string | null;
   eventDate?: string | null;
   isDateTbd?: boolean;
+  isDraft?: boolean;
   createdAt?: string;
   paidAt?: string | null;
   referenceNumber?: string | null;
@@ -202,6 +205,7 @@ export interface StaffValidatePayload {
   digitalAmount?: number;
   digitalMethod?: string;
   digitalReferenceNumber?: string;
+  logSupportRiderExpense?: boolean;
 }
 
 export interface OwnerApprovePayload {
@@ -231,7 +235,9 @@ export interface DirectGcashPayload {
 
 // Tab 1: Freelance Rider Settlements
 export const usePendingSettlements = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<PendingSettlementDrop[]>({
+    enabled: isAuthenticated,
     queryKey: ["manifest", "pending-settlement"],
     queryFn: async () => {
       const response = await apiClient.get("/logistics/trips/pending-settlement");
@@ -267,7 +273,9 @@ export const useSettlePaymentMutation = () => {
 
 // Tab 2: Store Pickup Settlements
 export const usePendingPickupsQuery = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<PendingPickupSettlement[]>({
+    enabled: isAuthenticated,
     queryKey: ["manifest", "pickups"],
     queryFn: async () => {
       const response = await apiClient.get("/logistics/settlements/pickups");
@@ -304,7 +312,9 @@ export const useSettlePickupPaymentMutation = () => {
 
 // Tab 3: Lalamove Courier Gate Settlements & Dispatch Release
 export const usePendingLalamoveQuery = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<PendingLalamoveSettlement[]>({
+    enabled: isAuthenticated,
     queryKey: ["manifest", "lalamove"],
     queryFn: async () => {
       const response = await apiClient.get("/logistics/settlements/lalamove");
@@ -336,7 +346,9 @@ export const useReleaseLalamoveMutation = () => {
 
 // Tab 4: Downpayment & Walk-In Remittance Tracker
 export const useDownpaymentsQuery = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<DownpaymentTrackerItem[]>({
+    enabled: isAuthenticated,
     queryKey: ["manifest", "downpayments"],
     queryFn: async () => {
       const response = await apiClient.get("/logistics/downpayments");
@@ -479,6 +491,7 @@ export const useStaffValidateQrMutation = () => {
           digitalAmount: payload.digitalAmount,
           digitalMethod: payload.digitalMethod,
           digitalReferenceNumber: payload.digitalReferenceNumber,
+          logSupportRiderExpense: payload.logSupportRiderExpense,
         }
       );
       return response.data;
@@ -493,6 +506,8 @@ export const useStaffValidateQrMutation = () => {
           queryKey: ["manifest", "pending-settlement"],
         }),
         queryClient.invalidateQueries({ queryKey: ["manifest", "pickups"] }),
+        queryClient.invalidateQueries({ queryKey: ["expenses"] }),
+        queryClient.invalidateQueries({ queryKey: ["order", data.orderId] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);

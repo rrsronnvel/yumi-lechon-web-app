@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../services/apiClient';
+import type { OrderDetailsDto } from './useOrders';
 
 export interface Rider {
   id: number;
@@ -40,6 +41,31 @@ export const useAssignRiderMutation = () => {
         queryClient.invalidateQueries({ queryKey: ['schedules'] }),
         queryClient.invalidateQueries({ queryKey: ['daily-sheets'] }),
         queryClient.invalidateQueries({ queryKey: ['logistics'] }),
+      ]);
+    },
+  });
+};
+
+export const useAssignOrderRidersMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, ...payload }: {
+      orderId: number;
+      riderName: string;
+      supportRiderName: string | null;
+      supportRiderFee?: number;
+      supportRiderHeads?: number;
+    }) => (await apiClient.put<OrderDetailsDto>(`/orders/${orderId}/riders`, payload)).data,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['riders'] }),
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['order'] }),
+        queryClient.invalidateQueries({ queryKey: ['manifest'] }),
+        queryClient.invalidateQueries({ queryKey: ['schedules'] }),
+        queryClient.invalidateQueries({ queryKey: ['daily-sheets'] }),
+        queryClient.invalidateQueries({ queryKey: ['logistics'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ]);
     },
   });

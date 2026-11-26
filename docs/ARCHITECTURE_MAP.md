@@ -806,7 +806,7 @@ Expense form / preset
 
 - `FreebiesPrepDtos.cs` and `SchedulingService.cs`: Every one of the eight summary cards carries total/AM/PM counts. Customer and Store Paluto contributions use the effective needed time and the exact 12:31 PM boundary.
 - `InventoryService.cs`, `LogisticsService.cs`, and `Program.cs`: Completed orders post idempotent per-bracket StockOut ledger rows. Startup repairs missing rows from Oct 27 onward; 14-day locked reservations omit delivered, settled, cancelled, or already-posted orders.
-- `OrderService.cs`, `SchedulingService.cs`, and `Program.cs`: Order create/update and startup reconciliation anchor rider departure and schedule dates to the event date while preserving clock time. An explicitly preceding-day Lalamove pickup is the only exception.
+- `OrderService.cs`, `SchedulingService.cs`, and `Program.cs` keep the schedule target aligned with the event date. Cooking clocks keep their overnight offsets and explicitly preceding-day Lalamove departures retain their dates.
 - `October2026ExpenseSeed.cs` and `November15QaDataSeed.cs`: Production-safe compiled October expenses are separate from Development-only operational QA fixtures (`111526-901`, `111526-902`, and afternoon Store Paluto).
 
 ### Web and Mobile
@@ -848,4 +848,30 @@ Expense form / preset
 ### QA and Verification
 
 - Live API endpoints verified: `GET /api/promos/for-date?date=2026-12-05` (9 options: Option 1 (4), Option 2 (4), Option 3 (1)), `GET /api/promos/for-date?date=2026-12-24` (2 Peak options: `DEC_PEAK_DINUGUAN`, `DEC_PEAK_BOPIS`), and `GET /api/schedules/freebies-prep` for 2026-12-05 and 2026-12-24 with 100% AM/PM count accuracy.
+
+## 14. November 25, 2026 Kitchen Capacity, Dispatch and Deposits
+
+| Area | Implementation |
+| --- | --- |
+| Per-head projection | `OrderItem.OrderItemSchedules` and `SchedulingService.SynchronizeItemSchedulesAsync` maintain one whole-head row per unit on create, edit and draft finalization. `OrderScheduleStartupRepair` appends missing heads in all environments and carries forward the existing planned times. |
+| Dispatch contract | `GET /api/schedules/daily` and `GET /api/schedules/daily-sheets` return `unitIndex`, `unitTotal`, `isBelly` and `kitchenBranch`. `PUT /api/schedules/items/{orderItemId}/override` accepts `unitIndex` to edit a specific head. Web `dispatchRoster.ts` groups Rider Sheet rows by order and de-duplicates scheduled units by line item. |
+| Capacity contract | `GET /api/kitchen-capacity/day?date=YYYY-MM-DD&branch=CARMONA` returns the mode, branch config, active branches and batch or continuous load. `POST /api/kitchen-capacity/evaluate` accepts timing, branch, batch, category quantities and optional `excludeOrderId` and returns projected usage, squeeze fit and a suggested slot. |
+| Configuration | `KitchenCapacitySchema` adds `KitchenBranches`, `KitchenBatchPresets` and the order booking fields idempotently. `KitchenCapacityController` protects `/config`, `PUT /branches/{id}` and `POST`, `PUT` and `DELETE` batch routes with the Owner role. |
+| Capacity enforcement | `KitchenCapacityService` aggregates slot-based orders and sweeps overlapping continuous intervals. `OrderService` evaluates new or expanded bookings inside its transaction, returns a structured `KitchenCapacityExceeded` conflict when approval is required, and records Owner approval in `OrderAuditLog`. |
+| Clients | Web `KitchenCapacityMonitor`, `KitchenCapacityCms` and `KitchenCapacityGuard` and Mobile `KitchenCapacityField` consume the same API projections. The branch selector appears when multiple kitchens are active. |
+| Paid drafts and promos | `LogisticsService` projects the `IsDraft` flag from eligible advance installments. Web `DownpaymentTrackerTab` and Mobile `DrawerScreen` render the tentative status and sort undated work last. Both dossiers resolve seasonal freebies from saved counts or the catalog package. |
+
+The insert-only `November25QaDataSeed` runs in Development. Run `dotnet build LechonSystem.Api`, the Web build and unit tests, then Mobile typecheck, lint and unit tests. Exercise the December peak and half-day modes, a weekend, continuous turnaround, the paid draft, the two-head dispatch, and Cashier-versus-Owner write authorization against the local API on port 5199.
+
+## 15. November 26, 2026 Auth Bootstrap and Split Moto Riders
+
+| Area | Implementation |
+| --- | --- |
+| Web sign-in | `authSession.ts` reads and validates the stored JWT and profile before the first render. `AuthContext` exposes the result to the route guards and authenticated query hooks. `App.tsx` lazy-loads protected pages behind the route guard. `apiClient.ts` checks session freshness before sending protected requests. Vitest exercises the real route tree for an empty or stale browser session. |
+| Assignment | `PUT /api/orders/{id}/riders` saves the lead and optional backup rider, fee, and head count. `PATCH /api/schedules/{scheduleId}` saves an individual head's rider. `SplitRiderService` validates the split and records assignment changes. |
+| Schema and projections | Startup adds `SupportRiderName`, `SupportRiderFee`, `SupportRiderHeads`, and `SupportRiderExpenseId` to `Orders`, and `AssignedRiderName` to `OrderItemSchedules`. The daily sheet, order detail, and pending settlement responses expose the split for dispatch and custody. |
+| Hop 1 accounting | The freelance handover accepts `logSupportRiderExpense`, enabled by default. `LogisticsService` posts the Labor expense with the custody change, stores its ID on the order, and records an audit entry. Custody reversal preserves the expense link for retries and re-settlement. |
+| Clients | Web dispatch shows the per-head rider in Kitchen and one cash row in Rider. Both Web and Mobile provide editable split assignments, the pending backup fee, and the Hop 1 expense option. |
+
+`November25QaDataSeed` adds `112626-903` in Development. It provides three dispatch heads, one customer balance, and a single lead remittance with the backup fee displayed separately.
 

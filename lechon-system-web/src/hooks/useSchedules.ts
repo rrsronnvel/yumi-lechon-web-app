@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/apiClient';
+import type { SplitMotoAssignment } from '@/utils/splitMoto';
 
-export interface RoastingScheduleItem {
+export interface RoastingScheduleItem extends SplitMotoAssignment {
   id: number;
   orderItemId?: number;
   orderId?: number;
@@ -45,7 +46,12 @@ export interface RoastingScheduleItem {
   isTrustedCustomer?: boolean;
   fulfillment?: number;
   quantity?: number;
+  unitIndex?: number;
+  unitTotal?: number;
+  isBelly?: boolean;
+  kitchenBranch?: string;
   riderName?: string;
+  assignedRiderName?: string | null;
   status?: string;
   isManualOverride?: boolean;
   isTimeTbd?: boolean;
@@ -56,6 +62,7 @@ export interface RoastingScheduleItem {
 
 export interface OverrideSchedulePayload {
   orderItemId: number;
+  unitIndex?: number;
   tahiStartTime?: string;
   salangStartTime?: string;
   packagingStartTime?: string;
@@ -97,6 +104,22 @@ export function useRoastingRoster(date?: string) {
   });
 }
 
+export function useAssignHeadRider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ scheduleId, assignedRiderName }: { scheduleId: number; assignedRiderName: string | null }) =>
+      (await apiClient.patch(`/schedules/${scheduleId}`, { assignedRiderName })).data,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+        queryClient.invalidateQueries({ queryKey: ["roster"] }),
+        queryClient.invalidateQueries({ queryKey: ["order"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+    },
+  });
+}
+
 export const useOverrideScheduleMutation = () => {
   const queryClient = useQueryClient();
 
@@ -115,6 +138,7 @@ export const useOverrideScheduleMutation = () => {
       queryClient.invalidateQueries({ queryKey: ["order"] });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["daily-sheets"] });
+      queryClient.invalidateQueries({ queryKey: ["kitchen-capacity"] });
     },
   });
 };

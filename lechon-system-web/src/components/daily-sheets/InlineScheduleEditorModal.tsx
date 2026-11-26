@@ -13,8 +13,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useOverrideScheduleMutation, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { useMenuCategories } from "@/hooks/useCms";
-import { useRidersQuery, useCreateRiderMutation } from "@/hooks/useRiders";
-import { Clock, User, MapPin, Package, FileText, Calendar, Phone } from "lucide-react";
+import { useRidersQuery } from "@/hooks/useRiders";
+import { getHeadRider, namedRider, sameRider } from "@/utils/splitMoto";
+import { Clock, User, MapPin, Package, FileText, Calendar } from "lucide-react";
 
 import axios from "axios";
 
@@ -22,6 +23,7 @@ interface InlineScheduleEditorModalProps {
   item: RoastingScheduleItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editHead?: boolean;
 }
 
 const formatToHHMM = (timeString?: string | null): string => {
@@ -101,16 +103,14 @@ export function InlineScheduleEditorModal({
   item,
   open,
   onOpenChange,
+  editHead = false,
 }: InlineScheduleEditorModalProps) {
   const { data: registeredRiders = [] } = useRidersQuery();
-  const createRiderMutation = useCreateRiderMutation();
   const { data: menuCategories = [] } = useMenuCategories();
 
   const [tahiTime, setTahiTime] = useState("");
   const [salangTime, setSalangTime] = useState("");
   const [departureTime, setDepartureTime] = useState("");
-  const [riderName, setRiderName] = useState("");
-  const [riderPhone, setRiderPhone] = useState("");
   const [remarks, setRemarks] = useState("");
   const [customWeightDisplay, setCustomWeightDisplay] = useState("");
   const [fulfilledCategoryId, setFulfilledCategoryId] = useState<number | null>(null);
@@ -181,24 +181,17 @@ export function InlineScheduleEditorModal({
       setDepartureTime(
         formatToHHMM(item.riderDepartureTime ?? item.targetDeliveryTime)
       );
-      const currentRider =
-        item.riderName && item.riderName !== "Unassigned" ? item.riderName : "";
-      setRiderName(currentRider);
-
-      // Auto-fill phone from registry or item
-      const matched = registeredRiders.find(
-        (r) => r.fullName.toLowerCase() === currentRider.trim().toLowerCase()
-      );
-      setRiderPhone(matched ? matched.phoneNumber : item.riderPhone || "");
       setRemarks(item.remarks || "");
       setCustomWeightDisplay(item.customWeightDisplay || "");
       setFulfilledCategoryId(item.fulfilledItemCategoryId ?? null);
     }
-  }, [item, open, registeredRiders]);
+  }, [item, open]);
 
   if (!item) return null;
 
   const targetId = item.orderItemId || item.id;
+  const riderName = editHead ? getHeadRider(item).name : namedRider(item.riderName);
+  const riderPhone = registeredRiders.find((rider) => sameRider(rider.fullName, riderName))?.phoneNumber;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,34 +202,15 @@ export function InlineScheduleEditorModal({
 
       await overrideMutation.mutateAsync({
         orderItemId: targetId,
+        unitIndex: editHead ? item.unitIndex : undefined,
         tahiStartTime: buildIsoTime(refDate, tahiTime),
         salangStartTime: buildIsoTime(refDate, salangTime),
         riderDepartureTime: formattedDeparture,
         departureTime: formattedDeparture,
-        riderName: riderName.trim() || undefined,
         remarks: remarks.trim() || undefined,
         customWeightDisplay,
         fulfilledItemCategoryId: fulfilledCategoryId ?? 0,
       });
-
-      // Auto-save new ad-hoc rider to registry if phone and name are provided
-      const cleanName = riderName.trim();
-      const cleanPhone = riderPhone.trim();
-      if (cleanName && cleanPhone && cleanName !== "Unassigned") {
-        const alreadyRegistered = registeredRiders.some(
-          (r) => r.fullName.toLowerCase() === cleanName.toLowerCase()
-        );
-        if (!alreadyRegistered) {
-          try {
-            await createRiderMutation.mutateAsync({
-              fullName: cleanName,
-              phoneNumber: cleanPhone,
-            });
-          } catch {
-            // Ignore registry save error if duplicate
-          }
-        }
-      }
 
       toast.success(
         `Schedule overridden for ${item.customerName || `Order #${item.orderId || item.id}`}`
@@ -262,7 +236,7 @@ export function InlineScheduleEditorModal({
             <DialogTitle>Production & Logistics Override</DialogTitle>
           </div>
           <DialogDescription>
-            Manually level production timings or assign a delivery rider for Order #{item.orderReference || item.orderId || item.id}.
+            Adjust production timings or remarks for Order #{item.orderReference || item.orderId || item.id}{editHead && (item.unitTotal ?? 1) > 1 ? ` · Head ${item.unitIndex}/${item.unitTotal}` : ""}.
           </DialogDescription>
         </DialogHeader>
 
@@ -441,102 +415,10 @@ export function InlineScheduleEditorModal({
             );
           })()}
 
-          {/* Rider Selection & Ad-Hoc Entry */}
-          <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                <User className="w-3.5 h-3.5" /> Assigned Rider
-              </Label>
-              {riderName && riderName !== "Unassigned" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setRiderName("");
-                    setRiderPhone("");
-                    toast.info("Rider unassigned. Click Save Overrides to apply.");
-                  }}
-                  className="h-6 text-[11px] px-2 border-rose-300 text-rose-700 hover:bg-rose-50"
-                >
-                  Unassign Rider
-                </Button>
-              )}
-            </div>
-
-            {item.fulfillment === 0 && (
-              <div className="p-2 rounded-md bg-stone-100 border border-stone-200 text-xs text-stone-700 font-medium">
-                🏪 Store Pickup — Non-delivery order. Freelance rider assignment is disabled.
-              </div>
-            )}
-
-            {item.fulfillment === 2 && (
-              <div className="p-2 rounded-md bg-stone-100 border border-stone-200 text-xs text-stone-700 font-medium">
-                📦 Lalamove Courier — Customer-booked courier. Freelance rider assignment is disabled.
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <select
-                disabled={item.fulfillment === 0 || item.fulfillment === 2}
-                className="w-full h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:bg-stone-100"
-                value={
-                  registeredRiders.find(
-                    (r) => r.fullName.toLowerCase() === riderName.trim().toLowerCase()
-                  )?.id || ""
-                }
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (!val) {
-                    return;
-                  }
-                  const selected = registeredRiders.find((r) => r.id === Number(val));
-                  if (selected) {
-                    setRiderName(selected.fullName);
-                    setRiderPhone(selected.phoneNumber);
-                  }
-                }}
-              >
-                <option value="">-- Select from Rider Registry --</option>
-                {registeredRiders.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.fullName} ({r.phoneNumber})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="space-y-1">
-                <Label htmlFor="riderName" className="text-[11px] font-medium text-slate-600">
-                  Rider Name
-                </Label>
-                <Input
-                  id="riderName"
-                  type="text"
-                  placeholder="e.g., Kuya Boy"
-                  value={riderName}
-                  onChange={(e) => setRiderName(e.target.value)}
-                  disabled={item.fulfillment === 0 || item.fulfillment === 2}
-                  className="h-8 text-xs bg-white disabled:opacity-50 disabled:bg-stone-100"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="riderPhone" className="text-[11px] font-medium text-slate-600 flex items-center gap-1">
-                  <Phone className="w-3 h-3" /> Contact Phone
-                </Label>
-                <Input
-                  id="riderPhone"
-                  type="text"
-                  placeholder="e.g., 09171234567"
-                  value={riderPhone}
-                  onChange={(e) => setRiderPhone(e.target.value)}
-                  disabled={item.fulfillment === 0 || item.fulfillment === 2}
-                  className="h-8 text-xs font-mono bg-white disabled:opacity-50 disabled:bg-stone-100"
-                />
-              </div>
-            </div>
+          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs font-semibold text-slate-700">
+            <User className="h-3.5 w-3.5" />
+            {item.fulfillment === 0 ? "Store Pickup" : item.fulfillment === 2 ? "Lalamove Courier" : riderName || "Unassigned Rider"}
+            {riderPhone && <span className="font-mono font-normal">· {riderPhone}</span>}
           </div>
 
           <div className="space-y-1.5">

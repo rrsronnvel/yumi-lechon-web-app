@@ -19,6 +19,7 @@ public class DownpaymentTrackerItemDto
     public DateTime? EventDate { get => TargetDeliveryTime; set => TargetDeliveryTime = value; }
 
     public bool IsDateTbd { get; set; }
+    public bool IsDraft { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? PaidAt { get; set; }
     public string? ReferenceNumber { get; set; }

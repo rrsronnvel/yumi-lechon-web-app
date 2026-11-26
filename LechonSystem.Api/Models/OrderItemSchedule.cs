@@ -8,6 +8,8 @@ namespace LechonSystem.Api.Models
         public int Id { get; set; }
 
         public int OrderItemId { get; set; }
+        public int UnitIndex { get; set; } = 1;
+        public int UnitTotal { get; set; } = 1;
         
         // Navigation property linking back to the specific item
         [JsonIgnore]
@@ -18,6 +20,8 @@ namespace LechonSystem.Api.Models
         public DateTime SalangStartTime { get; set; }
         public DateTime TahiStartTime { get; set; }
         public string? CustomWeightDisplay { get; set; }
+        [System.ComponentModel.DataAnnotations.MaxLength(150)]
+        public string? AssignedRiderName { get; set; }
 
 
         public bool IsManualOverride { get; set; } = false;

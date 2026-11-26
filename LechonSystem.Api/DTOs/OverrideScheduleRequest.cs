@@ -4,6 +4,7 @@ namespace LechonSystem.Api.DTOs;
 
 public class OverrideScheduleRequest
 {
+    public int? UnitIndex { get; set; }
     public DateTime? TahiStartTime { get; set; }
     public DateTime? SalangStartTime { get; set; }
     public DateTime? PackagingStartTime { get; set; }

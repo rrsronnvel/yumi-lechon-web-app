@@ -29,6 +29,13 @@ export const parsePromoItems = (promo?: PromoPackageDto | null): Record<string, 
   }
 };
 
+export const usePromoCatalog = (enabled: boolean) => useQuery<PromoPackageDto[]>({
+  queryKey: ['promos', 'catalog'],
+  queryFn: async ({ signal }) => (await apiClient.get<PromoPackageDto[]>('/promos', { signal })).data,
+  enabled,
+  staleTime: 60_000,
+});
+
 export const usePromosForDate = (date: string, enabled = true) => {
   const normalizedDate = /^\d{4}-\d{2}-\d{2}$/.test(date.trim())
     ? date.trim()

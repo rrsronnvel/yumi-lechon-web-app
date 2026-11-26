@@ -6,18 +6,19 @@ import { useOrderDetails } from "@/hooks/useOrderDetails";
 import { useOrderAuditLogs } from "@/hooks/useOrderAuditLogs";
 import { useLogPayment } from "@/hooks/useLogPayment";
 import { useVoidPaymentMutation } from "@/hooks/useVoidPayment";
-import { useAssignRider } from "@/hooks/useLogistics";
-import { useRidersQuery } from "@/hooks/useRiders";
+import { usePromos } from "@/hooks/usePromos";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { generateBookingConfirmation } from "@/utils/messengerTemplates";
 import {
   formatPromoBadge,
+  getOrderPromoItems,
   parsePromoCustomization,
-  PROMO_FREEBIE_ITEMS,
   sanitizeFreebiesSummary,
 } from "@/utils/freebiesHelper";
 import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import EditOrderForm from "@/components/ui/orders/EditOrderForm";
+import { RiderAssignmentDialog } from "@/components/ui/orders/RiderAssignmentDialog";
+import { backupRiderLabel } from "@/utils/splitMoto";
 import apiClient from "@/services/apiClient";
 import { toast } from "sonner";
 import {
@@ -81,21 +82,18 @@ export default function OrderDetailsModal({
   const [referenceNumber2, setReferenceNumber2] = useState("");
 
   const [isRiderAssignmentOpen, setIsRiderAssignmentOpen] = useState(false);
-  const [selectedRiderName, setSelectedRiderName] = useState("");
-  const [customRiderName, setCustomRiderName] = useState("");
 
   const [paymentToVoid, setPaymentToVoid] = useState<any | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
   // Data fetching
   const { data: orderDetails, isLoading: isDetailsLoading } = useOrderDetails(orderId);
+  const { data: promos } = usePromos(isOpen && Boolean(orderDetails?.promoPackageCode));
   const { data: auditLogs, isLoading: isAuditLoading } = useOrderAuditLogs(orderId);
-  const { data: registeredRiders = [] } = useRidersQuery();
 
   // Mutations
   const paymentMutation = useLogPayment();
   const voidPaymentMutation = useVoidPaymentMutation();
-  const assignRiderMutation = useAssignRider();
 
   const confirmOwnerMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -170,27 +168,6 @@ export default function OrderDetailsModal({
       displayMethod: single,
     };
   }, [orderDetails]);
-
-  const handleAssignRider = () => {
-    if (!orderId) return;
-    const riderName = (customRiderName || selectedRiderName).trim();
-    if (!riderName) {
-      toast.error("Please select or enter a rider name.");
-      return;
-    }
-    assignRiderMutation.mutate(
-      { orderIds: [orderId], riderName, vehicleType: "Motorcycle" },
-      {
-        onSuccess: async () => {
-          await invalidateAll();
-          setIsRiderAssignmentOpen(false);
-          setCustomRiderName("");
-          toast.success(`${riderName} assigned to this delivery.`);
-        },
-        onError: () => toast.error("Could not assign this rider."),
-      }
-    );
-  };
 
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,6 +265,14 @@ export default function OrderDetailsModal({
     orderDetails?.promoPackageLabel,
     promoCustomization.customized,
   );
+  const promoPackage = promos?.find((promo) => promo.code === orderDetails?.promoPackageCode);
+  const wholePigCount = orderDetails?.orderItems?.reduce((total: number, item: any) => (
+    item.itemCategory?.minimumWeightKg >= 13 ? total + Number(item.quantity || 0) : total
+  ), 0) ?? 0;
+  const promoItems = orderDetails?.promoPackageCode
+    ? getOrderPromoItems(orderDetails.freebiesConfigJson, promoPackage?.includedItemsJson, wholePigCount)
+    : [];
+  const backupLabel = orderDetails ? backupRiderLabel(orderDetails, "settlement") : null;
   const sanitizedRemarks = sanitizeMojibake(orderDetails?.remarks);
   const heldByStaffAmount = Number(orderDetails?.heldByStaffAmount || 0);
   const heldPaymentMethod = String(orderDetails?.heldPaymentMethod || "")
@@ -300,7 +285,7 @@ export default function OrderDetailsModal({
 
   return (
     <>
-      <Sheet open={isOpen} onOpenChange={(open) => { if (!open) { setIsEditing(false); onClose(); } }}>
+      <Sheet open={isOpen} onOpenChange={(open) => { if (!open) { setIsEditing(false); setIsRiderAssignmentOpen(false); onClose(); } }}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl lg:max-w-3xl overflow-y-auto overflow-x-hidden bg-[#FAF6F4] p-4 sm:p-6">
           <SheetHeader className="mb-4 p-0">
             <div className="flex flex-col gap-3 pb-3 border-b border-stone-200">
@@ -482,7 +467,7 @@ export default function OrderDetailsModal({
                         <Bike className="w-3.5 h-3.5 text-amber-700" />
                         <span>
                           {orderDetails.assignedRiderName
-                            ? `Rider: ${orderDetails.assignedRiderName}`
+                            ? `${backupLabel ? "Lead Rider" : "Rider"}: ${orderDetails.assignedRiderName}`
                             : Number(orderDetails.fulfillment) === 0
                               ? "🏪 Store Counter Pickup"
                               : Number(orderDetails.fulfillment) === 2
@@ -490,63 +475,21 @@ export default function OrderDetailsModal({
                                 : "Unassigned Rider"}
                         </span>
                       </p>
+                      {backupLabel && <p className="mt-1 text-xs font-bold text-amber-900">{backupLabel}</p>}
                     </div>
-                    {Number(orderDetails.fulfillment) === 1 && (
+                    {Number(orderDetails.fulfillment) === 1 && (isOwner || user?.role === "Cashier") && !orderDetails.isCancelled && !orderDetails.isDraft && !orderDetails.isTimeTbd && (
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs border-blue-300 text-blue-800 hover:bg-blue-50 font-semibold cursor-pointer"
-                        onClick={() => {
-                          setSelectedRiderName(orderDetails.assignedRiderName || "");
-                          setIsRiderAssignmentOpen(!isRiderAssignmentOpen);
-                        }}
+                        onClick={() => setIsRiderAssignmentOpen(true)}
                       >
-                        {isRiderAssignmentOpen ? "Cancel" : "Assign / Change Rider"}
+                        Assign / Change Rider
                       </Button>
                     )}
                   </div>
 
-                  {isRiderAssignmentOpen && (
-                    <div className="mt-2 p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-2">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <select
-                          value={selectedRiderName}
-                          onChange={(e) => {
-                            setSelectedRiderName(e.target.value);
-                            if (e.target.value) setCustomRiderName("");
-                          }}
-                          className="h-8 rounded-md border border-stone-300 bg-white px-2 text-xs"
-                        >
-                          <option value="">Select registered rider</option>
-                          {registeredRiders.filter((r) => r.isActive).map((r) => (
-                            <option key={r.id} value={r.fullName}>
-                              {r.fullName}
-                            </option>
-                          ))}
-                        </select>
-                        <Input
-                          value={customRiderName}
-                          onChange={(e) => {
-                            setCustomRiderName(e.target.value);
-                            if (e.target.value) setSelectedRiderName("");
-                          }}
-                          placeholder="Or type custom rider name"
-                          className="h-8 bg-white text-xs"
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <Button
-                          size="sm"
-                          disabled={assignRiderMutation.isPending}
-                          onClick={handleAssignRider}
-                          className="h-7 text-xs bg-blue-700 hover:bg-blue-800 text-white font-bold"
-                        >
-                          {assignRiderMutation.isPending ? "Assigning..." : "Save Rider"}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {sanitizedRemarks && (
@@ -566,29 +509,16 @@ export default function OrderDetailsModal({
 
                 <div className="flex flex-wrap gap-1.5">
                   {promoBadge && (
-                    <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
-                      {promoBadge}
+                    <Badge variant="outline" className="h-auto max-w-full whitespace-normal bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
+                      {promoItems.length ? `${promoBadge.replace(/ • 1x Sarsa Only$/, "")} • ${promoItems.join(", ")}` : promoBadge}
                     </Badge>
                   )}
-                  {freebiesSummary && freebiesSummary !== promoBadge && (
+                  {freebiesSummary && freebiesSummary !== promoBadge && (promoItems.length === 0 || freebiesSummary.includes("Belly Freebies")) && (
                     <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-semibold py-1">
                       {freebiesSummary}
                     </Badge>
                   )}
                 </div>
-
-                {promoCustomization.customized && (
-                  <div className="rounded-lg border border-violet-200 bg-violet-50 p-2.5">
-                    <p className="text-[10px] font-black uppercase tracking-wide text-violet-900">Actual Custom Package Items</p>
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {PROMO_FREEBIE_ITEMS.filter((item) => (promoCustomization.counts[item] ?? 0) > 0).map((item) => (
-                        <span key={item} className="rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-violet-900">
-                          {promoCustomization.counts[item]}x {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <div className="space-y-2">
                   {orderDetails.orderItems?.map((item: any, idx: number) => {
@@ -802,6 +732,7 @@ export default function OrderDetailsModal({
           )}
         </SheetContent>
       </Sheet>
+      {isOpen && isRiderAssignmentOpen && orderId && <RiderAssignmentDialog orderId={orderId} onClose={() => setIsRiderAssignmentOpen(false)} />}
 
       {/* LOG PAYMENT DIALOG */}
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>

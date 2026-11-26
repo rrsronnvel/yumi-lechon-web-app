@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
 namespace LechonSystem.Api.Models.DTOs
 {
     public class UpdateOrderDto
@@ -21,6 +24,24 @@ namespace LechonSystem.Api.Models.DTOs
         public string? AssistedByAdmin { get; set; }
         public DateTime? TargetDeliveryTime { get; set; }
         public DateTime? RiderDepartureTime { get; set; }
+        [MaxLength(50)]
+        public string? KitchenBranch { get; set; }
+        [JsonIgnore]
+        public bool KitchenBatchCodeSpecified { get; private set; }
+        private string? _kitchenBatchCode;
+        [MaxLength(50)]
+        public string? KitchenBatchCode
+        {
+            get => _kitchenBatchCode;
+            set
+            {
+                KitchenBatchCodeSpecified = true;
+                _kitchenBatchCode = value;
+            }
+        }
+        public bool CapacityOverrideApproved { get; set; }
+        [MaxLength(250)]
+        public string? CapacityOverrideReason { get; set; }
         public FulfillmentType Fulfillment { get; set; }
 
         // 3. Financials

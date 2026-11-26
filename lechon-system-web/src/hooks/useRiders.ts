@@ -8,9 +8,10 @@ export interface Rider {
   isActive: boolean;
 }
 
-export const useRidersQuery = () => {
+export const useRidersQuery = (enabled = true) => {
   return useQuery<Rider[]>({
     queryKey: ["riders"],
+    enabled,
     queryFn: async () => {
       const response = await apiClient.get("/riders");
       return response.data;

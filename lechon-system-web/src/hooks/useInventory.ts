@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../services/apiClient';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
 
 export interface InventoryBalance {
   categoryId: number;
@@ -69,7 +70,9 @@ export const useButcherPlan = (startDate?: string, endDate?: string) => {
 
 // 1. The Camera: Fetches current stock and low-stock warnings
 export const useInventoryAlerts = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<InventoryAlert[]>({
+    enabled: isAuthenticated,
     queryKey: ['procurement', 'alerts'],
     queryFn: async () => {
       const response = await apiClient.get('/procurement/alerts');
@@ -80,7 +83,9 @@ export const useInventoryAlerts = () => {
 
 // 2. Fetch Live Balances calculated via Dual-Stock Forecasting Engine
 export const useInventoryBalances = () => {
+  const { isAuthenticated } = useAuth();
   return useQuery<InventoryBalance[]>({
+    enabled: isAuthenticated,
     queryKey: ['inventory', 'balances'], 
     queryFn: async () => {
       const response = await apiClient.get('/inventory/balances'); 

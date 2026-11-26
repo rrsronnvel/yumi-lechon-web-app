@@ -32,6 +32,8 @@ public class LechonDbContext : DbContext
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<CustomerProfile> CustomerProfiles => Set<CustomerProfile>();
     public DbSet<KitchenPrepRequest> KitchenPrepRequests => Set<KitchenPrepRequest>();
+    public DbSet<KitchenBranch> KitchenBranches => Set<KitchenBranch>();
+    public DbSet<KitchenBatchPreset> KitchenBatchPresets => Set<KitchenBatchPreset>();
     public DbSet<ExpenseRecord> Expenses => Set<ExpenseRecord>();
     public DbSet<PromoPackage> PromoPackages => Set<PromoPackage>();
 
@@ -44,6 +46,10 @@ public class LechonDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<KitchenBranch>().HasIndex(branch => branch.Code).IsUnique();
+        modelBuilder.Entity<KitchenBatchPreset>()
+            .HasIndex(batch => new { batch.BranchCode, batch.BatchCode }).IsUnique();
 
         modelBuilder.Entity<OrderItem>()
             .HasOne(item => item.ItemCategory)
@@ -156,6 +162,11 @@ public class LechonDbContext : DbContext
             new SystemSetting { Id = 1, SettingKey = "DeliveryFeeBaseFare", SettingValue = "100.00", UpdatedBy = "System", UpdatedAt = seedDate },
             new SystemSetting { Id = 2, SettingKey = "DeliveryFeeRatePerKm", SettingValue = "15.00", UpdatedBy = "System", UpdatedAt = seedDate }
         );
+
+        modelBuilder.Entity<OrderItemSchedule>()
+            .HasIndex(schedule => new { schedule.OrderItemId, schedule.UnitIndex })
+            .HasDatabaseName("IX_OrderItemSchedules_OrderItemId")
+            .IsUnique();
 
         modelBuilder.Entity<PaymentLog>()
                 .HasIndex(p => p.GatewayReferenceId)

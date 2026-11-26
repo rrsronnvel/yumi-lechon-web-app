@@ -16,6 +16,5 @@ public class OrderItem : BaseEntity
     public decimal Price { get; set; }
     public decimal TotalPrice { get; set; }
 
-    // Add this line so the item knows about its schedule!
-    public OrderItemSchedule? OrderItemSchedule { get; set; }
+    public List<OrderItemSchedule> OrderItemSchedules { get; set; } = new();
 }

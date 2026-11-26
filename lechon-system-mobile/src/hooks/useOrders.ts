@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../services/apiClient';
+import type { SupportRiderPlan } from '../utils/riderAssignment';
 
-export interface OrderDirectoryDto {
+export interface OrderDirectoryDto extends SupportRiderPlan {
   id: number;
   orderReference?: string;
   isDraft?: boolean;
@@ -78,7 +79,7 @@ export interface OrderDetailItemDto {
   fulfilledItemCategory?: OrderDetailCategoryDto | null;
 }
 
-export interface OrderDetailsDto {
+export interface OrderDetailsDto extends SupportRiderPlan {
   id: number;
   orderReference?: string;
   isDraft?: boolean;
@@ -107,6 +108,10 @@ export interface OrderDetailsDto {
   isTrustedCustomer: boolean;
   targetDeliveryTime?: string | null;
   riderDepartureTime?: string | null;
+  kitchenBranch?: string | null;
+  kitchenBatchCode?: string | null;
+  capacityOverrideApproved?: boolean;
+  capacityOverrideReason?: string | null;
   isDeliveryDetailsConfirmed: boolean;
   isCancelled: boolean;
   cancellationReason?: string | null;
@@ -302,6 +307,8 @@ export const useCancelOrderMutation = () => {
       await queryClient.invalidateQueries({ queryKey: ['orders', 'directory'] });
       await queryClient.invalidateQueries({ queryKey: ['orders', 'details'] });
       await queryClient.invalidateQueries({ queryKey: ['orders', 'audit-logs'] });
+      await queryClient.invalidateQueries({ queryKey: ['kitchen-capacity'] });
+      await queryClient.invalidateQueries({ queryKey: ['manifest'] });
     },
   });
 };

@@ -3,6 +3,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { useEditOrder } from "@/hooks/useEditOrder";
+import { useKitchenCapacityBooking } from "@/hooks/useKitchenCapacityBooking";
+import { getCapacityDepartureTime } from "@/utils/kitchenCapacity";
 import { useDeliveryPricing } from "@/hooks/useCms";
 import {
   calculateRiderDepartureTime,
@@ -41,6 +43,7 @@ import {
 import FreebiesSelector from "./FreebiesSelector";
 import PromoPackageSelector from "./PromoPackageSelector";
 import type { PromoPackage } from "@/hooks/usePromos";
+import { KitchenCapacityGuard } from "./KitchenCapacityGuard";
 import type { PaymentChannel } from "./PaymentChannelPills";
 import {
   createDefaultFreebiesConfig,
@@ -78,7 +81,7 @@ export default function EditOrderForm({
   order: any;
   onClose: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, isOwner } = useAuth();
   const editMutation = useEditOrder();
   const assignRiderMutation = useAssignRider();
   const { data: registeredRiders = [] } = useRidersQuery();
@@ -451,6 +454,36 @@ export default function EditOrderForm({
     "eventType",
   ]);
 
+  const capacityItems = (watchedItems ?? []).flatMap((item) => {
+    const itemCategoryId = Number(item.itemCategoryId);
+    const quantity = Number(item.quantity);
+    return quantity > 0 && lechonOptions.some((category: { id: number }) => category.id === itemCategoryId)
+      ? [{ itemCategoryId, quantity, orderItemId: Number(item.id) || 0, fulfilledItemCategoryId: Number(item.fulfilledItemCategoryId) || null }]
+      : [];
+  });
+  const capacity = useKitchenCapacityBooking({
+    targetTime: targetDeliveryTime ?? "",
+    riderDepartureTime: form.watch("riderDepartureTime"),
+    fulfillment: Number(fulfillment),
+    items: capacityItems,
+    isDraft: Boolean(form.watch("isDraft") || watchedIsTimeTbd),
+    isOwner,
+    disabled: isNonLechonMode || Boolean(order?.isCancelled),
+    excludeOrderId: Number(order?.id) || undefined,
+    initialBranch: order?.kitchenBranch,
+    initialBatch: order?.kitchenBatchCode ? {
+      code: order.kitchenBatchCode,
+      branch: order.kitchenBranch,
+      targetTime: formatLocalDateTimeInput(order.targetDeliveryTime),
+      riderDepartureTime: formatLocalDateTimeInput(Number(order.fulfillment) === 0
+        ? order.targetDeliveryTime : order.riderDepartureTime || order.targetDeliveryTime),
+    } : undefined,
+  });
+  const applyCapacitySlot = (targetTime: string, departureTime: string) => {
+    form.setValue("targetDeliveryTime", targetTime, { shouldDirty: true, shouldValidate: true });
+    form.setValue("riderDepartureTime", departureTime, { shouldDirty: true, shouldValidate: true });
+  };
+
   const duplicateEvaluation = useMemo(() => {
     return evaluateDuplicateOrders(
       {
@@ -772,6 +805,7 @@ export default function EditOrderForm({
   const remainingBalance = dynamicGrandTotal - downpaymentReceived;
 
   function onSubmit(data: any) {
+    if (capacity.blocked) return;
     const normalizedTargetDeliveryTime = data.targetDeliveryTime
       ? normalizeLocalDateTimeInput(data.targetDeliveryTime)
       : "";
@@ -942,9 +976,7 @@ export default function EditOrderForm({
     const effectiveRiderDeparture =
       data.isTimeTbd || isNonLechonMode
         ? null
-        : fulfillmentNum === 0
-          ? data.targetDeliveryTime || null
-          : data.riderDepartureTime || data.targetDeliveryTime || null;
+        : getCapacityDepartureTime(data.targetDeliveryTime ?? "", data.riderDepartureTime, fulfillmentNum) || null;
 
     const primaryPhone = (data.contactNumber || "").split(",")[0].trim();
     const secondaryPhone =
@@ -953,6 +985,7 @@ export default function EditOrderForm({
 
     const payload = {
       ...data,
+      ...capacity.orderFields,
       contactNumber: secondaryPhone
         ? `${primaryPhone},${secondaryPhone}`
         : primaryPhone,
@@ -1000,6 +1033,7 @@ export default function EditOrderForm({
     delete payload.contactNumber2;
 
     editMutation.mutate(payload, {
+      onError: capacity.reportConflict,
       onSuccess: () => {
         const nextRiderName = assignedRiderName.trim();
         const previousRiderName = (order?.assignedRiderName || order?.riderName || "").trim();
@@ -1552,6 +1586,10 @@ export default function EditOrderForm({
                 </FormItem>
               )}
             />}
+
+            {capacity.enabled && <div className="sm:col-span-2">
+              <KitchenCapacityGuard capacity={capacity} onScheduleChange={applyCapacitySlot} />
+            </div>}
 
             <FormField
               control={form.control}
@@ -2227,7 +2265,7 @@ export default function EditOrderForm({
 
             <Button
               type="submit"
-              disabled={editMutation.isPending}
+              disabled={editMutation.isPending || capacity.blocked}
               className={cn(
                 "w-1/2 h-11 text-white font-semibold shadow-sm cursor-pointer",
                 order?.isDraft && !form.watch("isDraft")

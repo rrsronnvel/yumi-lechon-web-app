@@ -86,6 +86,9 @@ export default function DashboardPage() {
       toast.success("Order Cancelled", {
         description: "The order has been voided and inventory released.",
       });
+      queryClient.invalidateQueries({ queryKey: ["kitchen-capacity"] });
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["manifest", "downpayments"] });
       queryClient.invalidateQueries({
         queryKey: ["dashboard", "pending-confirmations"],
       });

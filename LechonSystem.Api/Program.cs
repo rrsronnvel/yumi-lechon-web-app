@@ -25,6 +25,8 @@ builder.Services.AddDbContext<LechonDbContext>(options =>
 
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
+builder.Services.AddScoped<SplitRiderService>();
+builder.Services.AddScoped<KitchenCapacityService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IRoastingService, RoastingService>();
@@ -100,6 +102,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<LechonDbContext>();
+    await KitchenCapacitySchema.InitializeAsync(context);
+    await SplitRiderSchema.InitializeAsync(context);
 
     // Additive expense-ledger schema. Every guard is idempotent so startup can
     // safely upgrade an existing database without deleting or replacing records.
@@ -321,6 +325,14 @@ using (var scope = app.Services.CreateScope())
         IF COL_LENGTH('OrderItemSchedules', 'CustomWeightDisplay') IS NULL
             ALTER TABLE OrderItemSchedules ADD CustomWeightDisplay nvarchar(32) NULL;
 
+        IF COL_LENGTH('OrderItemSchedules', 'UnitIndex') IS NULL
+            ALTER TABLE OrderItemSchedules ADD UnitIndex int NOT NULL
+                CONSTRAINT DF_OrderItemSchedules_UnitIndex DEFAULT (1);
+
+        IF COL_LENGTH('OrderItemSchedules', 'UnitTotal') IS NULL
+            ALTER TABLE OrderItemSchedules ADD UnitTotal int NOT NULL
+                CONSTRAINT DF_OrderItemSchedules_UnitTotal DEFAULT (1);
+
         IF COL_LENGTH('OrderItems', 'FulfilledItemCategoryId') IS NULL
             ALTER TABLE OrderItems ADD FulfilledItemCategoryId int NULL;
 
@@ -353,6 +365,24 @@ using (var scope = app.Services.CreateScope())
         END
     ");
 
+    // Replace the legacy one-row-per-item index in place. The table and schedule rows are preserved.
+    await context.Database.ExecuteSqlRawAsync(@"
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes
+            WHERE [name] = N'IX_OrderItemSchedules_OrderItemId'
+              AND object_id = OBJECT_ID(N'OrderItemSchedules'))
+            CREATE UNIQUE INDEX IX_OrderItemSchedules_OrderItemId ON OrderItemSchedules (OrderItemId, UnitIndex);
+        ELSE IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes i
+            JOIN sys.index_columns c ON c.object_id = i.object_id AND c.index_id = i.index_id
+            WHERE i.[name] = N'IX_OrderItemSchedules_OrderItemId'
+              AND i.object_id = OBJECT_ID(N'OrderItemSchedules')
+              AND c.key_ordinal = 2
+              AND c.column_id = COLUMNPROPERTY(i.object_id, 'UnitIndex', 'ColumnId'))
+            CREATE UNIQUE INDEX IX_OrderItemSchedules_OrderItemId ON OrderItemSchedules (OrderItemId, UnitIndex)
+                WITH (DROP_EXISTING = ON);
+    ");
+
     // Idempotent Data Carryover Migration: carry over order-level remittance to individual payment logs
     await context.Database.ExecuteSqlRawAsync(@"
         UPDATE p
@@ -366,14 +396,13 @@ using (var scope = app.Services.CreateScope())
           AND (o.DpRemittedAt IS NULL OR p.CreatedAt <= o.DpRemittedAt);
     ");
 
-    // Fixed-date QA fixtures are intentionally Development-only. Unlike the
-    // opt-in legacy QA seeder below, this routine never deletes or recreates an
-    // order; it only upserts the two reserved QA references and one Paluto row.
+    // Fixed-date QA fixtures are intentionally Development-only and scoped to reserved QA records.
     if (app.Environment.IsDevelopment())
     {
         await November15QaDataSeed.SeedAsync(context);
         await December2026PromoQaSeed.SeedAsync(context);
         await November23QaDataSeed.SeedAsync(context);
+        await November25QaDataSeed.SeedAsync(context, scope.ServiceProvider.GetRequiredService<ISchedulingService>());
     }
 
     // Idempotent text repair only: correct known historical UTF-8/Windows-1252
@@ -590,20 +619,17 @@ using (var scope = app.Services.CreateScope())
 
         foreach (var schedule in schedules)
         {
-            var hasImpossibleAfternoonDrift = target.Hour > 5 &&
-                (schedule.TahiStartTime.TimeOfDay > target.TimeOfDay ||
-                 schedule.SalangStartTime.TimeOfDay > target.TimeOfDay ||
-                 schedule.PackagingStartTime.TimeOfDay > target.TimeOfDay);
+            if (schedule.IsManualOverride) continue;
+            var hasInconsistentTimeline = schedule.PackagingStartTime > target ||
+                schedule.SalangStartTime > schedule.PackagingStartTime || schedule.TahiStartTime > schedule.SalangStartTime;
             var item = order.OrderItems.First(orderItem => orderItem.Id == schedule.OrderItemId);
             var categoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
             cookingProfiles.TryGetValue(categoryId, out var profile);
             var packagingMinutes = profile?.PackagingDurationMinutes ?? 30;
             var salangMinutes = profile?.SalangDurationMinutes ?? 180;
             var tahiMinutes = profile?.TahiDurationMinutes ?? 60;
-            var isNotDepartureAnchored = !schedule.IsManualOverride &&
-                schedule.PackagingStartTime != departure.AddMinutes(-packagingMinutes);
-            if (!departureWasCorrupt && !hasImpossibleAfternoonDrift && !isNotDepartureAnchored) continue;
-            if (schedule.IsManualOverride && !hasImpossibleAfternoonDrift) continue;
+            var isNotDepartureAnchored = schedule.PackagingStartTime != departure.AddMinutes(-packagingMinutes);
+            if (!departureWasCorrupt && !hasInconsistentTimeline && !isNotDepartureAnchored) continue;
 
             schedule.TargetDeliveryTime = target;
             schedule.PackagingStartTime = departure.AddMinutes(-packagingMinutes);
@@ -641,14 +667,14 @@ using (var scope = app.Services.CreateScope())
     }
 
     // Realign schedules stranded on an old date after an order delivery-date edit.
-    // A deliberate prior-day Lalamove pickup is the sole exception because that
-    // date difference represents an explicit courier handoff plan.
+    // Preserve genuine overnight departures and cooking intervals.
     static DateTime AlignDatePreservingClock(DateTime value, DateTime targetDate) =>
         DateTime.SpecifyKind(targetDate.Date.Add(value.TimeOfDay), DateTimeKind.Unspecified);
 
     var scheduleDateRepairOrders = await context.Orders
+        .AsSplitQuery()
         .Include(order => order.OrderItems)
-            .ThenInclude(item => item.OrderItemSchedule)
+            .ThenInclude(item => item.OrderItemSchedules)
         .Where(order => !order.IsCancelled &&
                         !order.IsDraft &&
                         !order.IsTimeTbd &&
@@ -659,36 +685,30 @@ using (var scope = app.Services.CreateScope())
     foreach (var order in scheduleDateRepairOrders)
     {
         var target = DateTime.SpecifyKind(order.TargetDeliveryTime!.Value, DateTimeKind.Unspecified);
-        var schedules = order.OrderItems
-            .Select(item => item.OrderItemSchedule)
-            .Where(schedule => schedule != null)
-            .Cast<OrderItemSchedule>()
-            .ToList();
-        var intentionalPriorDayLalamove = order.Fulfillment == FulfillmentType.Lalamove &&
-            order.RiderDepartureTime.HasValue &&
-            order.RiderDepartureTime.Value.Date == target.Date.AddDays(-1);
-        if (intentionalPriorDayLalamove)
-        {
-            continue;
-        }
-
+        var schedules = order.OrderItems.SelectMany(item => item.OrderItemSchedules).ToList();
         var scheduleDateMismatch = schedules.Any(schedule => schedule.TargetDeliveryTime.Date != target.Date);
         var departureDateMismatch = order.RiderDepartureTime.HasValue &&
-                                    order.RiderDepartureTime.Value.Date != target.Date;
+                                    order.RiderDepartureTime.Value.Date != target.Date &&
+                                    !OrderService.IsPriorDayDeparture(target, order.RiderDepartureTime.Value, order.Fulfillment);
         if (!scheduleDateMismatch && !departureDateMismatch)
         {
             continue;
         }
 
-        order.RiderDepartureTime = order.RiderDepartureTime.HasValue
-            ? AlignDatePreservingClock(order.RiderDepartureTime.Value, target)
-            : target;
+        if (departureDateMismatch || !order.RiderDepartureTime.HasValue)
+        {
+            order.RiderDepartureTime = order.RiderDepartureTime.HasValue
+                ? AlignDatePreservingClock(order.RiderDepartureTime.Value, target)
+                : target;
+        }
         foreach (var schedule in schedules)
         {
-            schedule.TargetDeliveryTime = AlignDatePreservingClock(schedule.TargetDeliveryTime, target);
-            schedule.TahiStartTime = AlignDatePreservingClock(schedule.TahiStartTime, target);
-            schedule.SalangStartTime = AlignDatePreservingClock(schedule.SalangStartTime, target);
-            schedule.PackagingStartTime = AlignDatePreservingClock(schedule.PackagingStartTime, target);
+            if (schedule.TargetDeliveryTime.Date == target.Date) continue;
+            var shift = target.Date - schedule.TargetDeliveryTime.Date;
+            schedule.TargetDeliveryTime += shift;
+            schedule.TahiStartTime += shift;
+            schedule.SalangStartTime += shift;
+            schedule.PackagingStartTime += shift;
         }
 
         context.OrderAuditLogs.Add(new OrderAuditLog
@@ -707,6 +727,8 @@ using (var scope = app.Services.CreateScope())
     {
         await context.SaveChangesAsync();
     }
+
+    await OrderScheduleStartupRepair.BackfillWholeHeadsAsync(context, scope.ServiceProvider.GetRequiredService<ISchedulingService>());
 
     // Retroactively create missing StockOut ledger entries for completed orders.
     // The inventory service performs the bracket-level idempotency check, so this

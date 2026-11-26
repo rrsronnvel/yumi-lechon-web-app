@@ -16,10 +16,12 @@ namespace LechonSystem.Api.Controllers;
 public class SchedulesController : ControllerBase
 {
     private readonly ISchedulingService _schedulingService;
+    private readonly SplitRiderService _splitRiders;
 
-    public SchedulesController(ISchedulingService schedulingService)
+    public SchedulesController(ISchedulingService schedulingService, SplitRiderService splitRiders)
     {
         _schedulingService = schedulingService;
+        _splitRiders = splitRiders;
     }
 
     [HttpGet("roster")]
@@ -31,6 +33,7 @@ public class SchedulesController : ControllerBase
     }
 
     [HttpGet("daily-sheets")]
+    [HttpGet("daily")]
     public async Task<ActionResult<DailySheetsResponseDto>> GetDailySheetsAsync([FromQuery] DateTime? date = null)
     {
         var dailySheets = await _schedulingService.GetDailySheetsAsync(date);
@@ -160,6 +163,25 @@ public class SchedulesController : ControllerBase
             return NotFound(new { message = ex.Message });
         }
         catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPatch("{scheduleId:int}")]
+    public async Task<IActionResult> AssignHeadRider(int scheduleId, AssignScheduleRiderRequest request)
+    {
+        try
+        {
+            var schedule = await _splitRiders.AssignHeadAsync(
+                scheduleId, request.AssignedRiderName, UserIdentityHelper.ResolveDisplayName(User));
+            return Ok(schedule);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
         {
             return BadRequest(new { message = ex.Message });
         }

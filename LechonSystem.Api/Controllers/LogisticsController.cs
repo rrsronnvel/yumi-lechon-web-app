@@ -328,12 +328,12 @@ namespace LechonSystem.Api.Controllers
 
         // 5. Store Counter Collection (Tab 2: Walk-in Store Pickups)
         [HttpPost("settlements/qr-session/{token}/counter-collect")]
-        public async Task<IActionResult> CounterCollectQr(string token)
+        public async Task<IActionResult> CounterCollectQr(string token, [FromQuery] bool? logSupportRiderExpense = null)
         {
             try
             {
                 var staffUsername = UserIdentityHelper.ResolveDisplayName(User);
-                var session = await _logisticsService.CounterCollectQrSessionAsync(token, staffUsername);
+                var session = await _logisticsService.CounterCollectQrSessionAsync(token, staffUsername, logSupportRiderExpense);
                 return Ok(session);
             }
             catch (ArgumentException ex)
@@ -362,7 +362,8 @@ namespace LechonSystem.Api.Controllers
                     request.CashAmount,
                     request.DigitalAmount,
                     request.DigitalMethod,
-                    request.DigitalReferenceNumber);
+                    request.DigitalReferenceNumber,
+                    request.LogSupportRiderExpense);
                 return Ok(new { success = result, message = $"Order #{request.OrderId} placed into staff drawer custody." });
             }
             catch (ArgumentException ex)
@@ -422,7 +423,8 @@ namespace LechonSystem.Api.Controllers
                     request.OrderId,
                     request.Amount,
                     request.ReferenceNumber,
-                    staffUsername);
+                    staffUsername,
+                    request.LogSupportRiderExpense);
                 return Ok(new { success = result, message = $"Order #{request.OrderId} settled via Direct Store GCash." });
             }
             catch (ArgumentException ex)

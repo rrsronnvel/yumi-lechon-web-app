@@ -24,6 +24,8 @@ import {
 import { OrderDetailsDto } from '../../hooks/useOrders';
 import { useAssignRiderMutation, useRiders } from '../../hooks/useRiders';
 import { useAuth } from '../../context/AuthContext';
+import { useKitchenCapacity, type KitchenBatch } from '../../hooks/useKitchenCapacity';
+import { getKitchenTiming, type CapacitySlot } from '../../utils/kitchenCapacity';
 import {
   calculateRiderDepartureTime,
   SOURCE_PILLS,
@@ -32,6 +34,7 @@ import {
 } from '../../utils/messengerTemplates';
 import FreebiesSelector from './FreebiesSelector';
 import PromoPackageSelector from './PromoPackageSelector';
+import KitchenCapacityField from './KitchenCapacityField';
 import { parsePromoItems, PromoPackageDto, usePromosForDate } from '../../hooks/usePromos';
 import { evaluateDuplicateOrders, formatCalendarDateLabel } from '../../utils/similarityHelper';
 import { normalizeDateInput } from '../../utils/dateNormalizer';
@@ -123,7 +126,7 @@ export default function EditOrderModal({
   onClose,
   onSaved,
 }: EditOrderModalProps) {
-  const { user } = useAuth();
+  const { user, isOwner } = useAuth();
   const { categories, isLoading: isCatalogLoading } = useCatalogCategories();
   const { data: balances = [] } = useInventoryBalances();
   const { data: deliveryPricing } = useDeliveryPricingQuery();
@@ -182,6 +185,38 @@ export default function EditOrderModal({
   const [isTimeTbd, setIsTimeTbd] = useState(false);
   const [isNonLechonMode, setIsNonLechonMode] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const isEffectiveDraft = isDraft || isTimeTbd;
+  const capacityDate = normalizeDateInput(targetDate);
+  const capacityTiming = getKitchenTiming(
+    capacityDate, to24HourTime(targetTime, targetPeriod),
+    to24HourTime(riderDepartureTimeStr, riderDeparturePeriod), fulfillment,
+  );
+  const capacityEnabled = visible && Boolean(order) && !isEffectiveDraft && !isNonLechonMode;
+  const capacity = useKitchenCapacity({
+    enabled: capacityEnabled, isOwner, date: capacityDate, timing: capacityTiming,
+    fulfillment, items: cartItems, excludeOrderId: order?.id,
+  });
+  const { resetSelection: resetCapacitySelection } = capacity;
+
+  const applyCapacitySlot = (slot: CapacitySlot) => {
+    const nextTarget = to12HourParts(slot.targetTime.slice(11, 16));
+    const nextDeparture = to12HourParts(slot.riderDepartureTime.slice(11, 16));
+    setTargetDate(slot.date);
+    setTargetTime(nextTarget.time);
+    setTargetPeriod(nextTarget.period);
+    setRiderDepartureTimeStr(nextDeparture.time);
+    setRiderDeparturePeriod(nextDeparture.period);
+    capacity.selectBatch(slot.batchCode, slot.date);
+  };
+
+  const pickCapacityBatch = (batch: KitchenBatch) => {
+    const targetTime = `${capacityDate}T${batch.anchorTime}`;
+    const departure = calculateRiderDepartureTime(new Date(targetTime), parseFloat(distanceKm) || 0, fulfillment);
+    applyCapacitySlot({
+      date: capacityDate, targetTime, label: batch.label, batchCode: batch.batchCode,
+      riderDepartureTime: `${formatLocalYMD(departure)}T${formatLocalHM(departure)}:00`,
+    });
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -278,6 +313,7 @@ export default function EditOrderModal({
     setActiveCategoryFilter(null);
     setRiderDepartureTimeStr('11:15');
     setRiderDeparturePeriod('AM');
+    resetCapacitySelection(order.kitchenBranch, order.kitchenBatchCode, order.targetDeliveryTime?.slice(0, 10));
 
     if (order.targetDeliveryTime) {
       const parsedTarget = new Date(order.targetDeliveryTime);
@@ -402,7 +438,7 @@ export default function EditOrderModal({
     setIsNonLechonMode(
       mappedItems.length > 0 && mappedItems.every((item) => item.minimumWeightKg === 0)
     );
-  }, [visible, order, categories, noFreebiesDiscountPerPig]);
+  }, [visible, order, categories, noFreebiesDiscountPerPig, resetCapacitySelection]);
 
   const handleApplyNudgeOffset = (offsetMinutes: number) => {
     if (fulfillment === 0 || isTimeTbd) return;
@@ -932,35 +968,11 @@ export default function EditOrderModal({
   );
   const smartBalance = grandTotal - lockedDownpayment;
 
-  const resolveRiderDepartureIso = (isoTargetTime: string): string => {
-    if (fulfillment === 0) {
-      return isoTargetTime;
-    }
-    const cleanTime = to24HourTime(riderDepartureTimeStr, riderDeparturePeriod);
-    if (!cleanTime) return isoTargetTime;
-    const candidateIso = `${normalizeDateInput(targetDate)}T${cleanTime}:00`;
-    const parsedCandidate = new Date(candidateIso);
-    const parsedTarget = new Date(isoTargetTime);
-
-    if (!isNaN(parsedCandidate.getTime())) {
-      if (
-        !isNaN(parsedTarget.getTime()) &&
-        parsedCandidate.getTime() > parsedTarget.getTime()
-      ) {
-        const prevDay = new Date(parsedCandidate.getTime() - 24 * 60 * 60 * 1000);
-        return `${formatLocalYMD(prevDay)}T${formatLocalHM(prevDay)}:00`;
-      }
-      return candidateIso;
-    }
-    return isoTargetTime;
-  };
-
   const wasDraft = Boolean(order?.isDraft);
-  const isEffectiveDraft = isDraft || isTimeTbd;
   const isFinalizing = wasDraft && !isEffectiveDraft;
 
   const handleSaveChanges = async () => {
-    if (!order) return;
+    if (!order || capacity.isBlocked || capacity.isChecking) return;
     setValidationError(null);
 
     const validCartItems = cartItems.filter(
@@ -1035,22 +1047,11 @@ export default function EditOrderModal({
     let isoTargetTime: string | null = null;
     let isoDepartureTime: string | null = null;
 
-    const targetTime24 = isTimeTbd
-      ? '12:00'
-      : to24HourTime(targetTime, targetPeriod);
-    const normalizedTargetDate = normalizeDateInput(targetDate);
-    if (normalizedTargetDate && targetTime24) {
-      const candidateIso = `${normalizedTargetDate}T${targetTime24}:00`;
-      const parsedTarget = new Date(candidateIso);
-      if (!isNaN(parsedTarget.getTime())) {
-        isoTargetTime = candidateIso;
-        isoDepartureTime = isTimeTbd || isNonLechonMode
-          ? null
-          : resolveRiderDepartureIso(candidateIso);
-      } else if (!isEffectiveDraft) {
-        setValidationError('Invalid Date or Time format.');
-        return;
-      }
+    const normalizedTargetDate = capacityDate;
+    const schedule = isTimeTbd ? getKitchenTiming(normalizedTargetDate, '12:00', null, fulfillment) : capacityTiming;
+    if (schedule) {
+      isoTargetTime = schedule.targetTime;
+      isoDepartureTime = isTimeTbd || isNonLechonMode ? null : schedule.riderDepartureTime;
     } else if (!isEffectiveDraft || isTimeTbd) {
       setValidationError(
         isTimeTbd
@@ -1106,6 +1107,7 @@ export default function EditOrderModal({
 
     try {
       await updateOrderMutation.mutateAsync({
+        ...capacity.orderFields,
         id: order.id,
         isDraft: isEffectiveDraft,
         isTimeTbd,
@@ -1164,9 +1166,12 @@ export default function EditOrderModal({
       onClose();
     } catch (err: unknown) {
       const axiosErr = err as {
-        response?: { data?: { message?: string; title?: string } | string };
+        response?: { data?: { message?: string; title?: string; code?: string } | string };
         message?: string;
       };
+      if (typeof axiosErr.response?.data === 'object' && axiosErr.response.data?.code === 'KitchenCapacityExceeded') {
+        capacity.refresh();
+      }
       const msg =
         typeof axiosErr.response?.data === 'string'
           ? axiosErr.response.data
@@ -1603,7 +1608,10 @@ export default function EditOrderModal({
                 <TextInput
                   style={styles.textInput}
                   value={targetDate}
-                  onChangeText={setTargetDate}
+                  onChangeText={(value) => {
+                    capacity.selectBatch(null);
+                    setTargetDate(value);
+                  }}
                   onEndEditing={() => setTargetDate(normalizeDateInput(targetDate))}
                   placeholder="2026-10-25"
                   placeholderTextColor="#A8A29E"
@@ -1616,7 +1624,10 @@ export default function EditOrderModal({
                     style={[styles.textInput, styles.riderTimeInput, isTimeTbd && styles.lockedInput]}
                     editable={!isTimeTbd}
                     value={isTimeTbd ? '' : targetTime}
-                    onChangeText={setTargetTime}
+                    onChangeText={(value) => {
+                      capacity.selectBatch(null);
+                      setTargetTime(value);
+                    }}
                     placeholder={isTimeTbd ? 'TBD' : '11:30'}
                     placeholderTextColor="#A8A29E"
                   />
@@ -1625,7 +1636,10 @@ export default function EditOrderModal({
                       <Pressable
                         key={period}
                         style={[styles.meridiemButton, targetPeriod === period && styles.meridiemButtonActive]}
-                        onPress={() => setTargetPeriod(period)}
+                        onPress={() => {
+                          capacity.selectBatch(null);
+                          setTargetPeriod(period);
+                        }}
                       >
                         <Text style={[styles.meridiemButtonText, targetPeriod === period && styles.meridiemButtonTextActive]}>{period}</Text>
                       </Pressable>
@@ -1673,6 +1687,7 @@ export default function EditOrderModal({
                     key={slot.label}
                     style={[styles.timeSlotChip, active && styles.timeSlotChipActive]}
                     onPress={() => {
+                      capacity.selectBatch(null);
                       setTargetTime(slot.time);
                       setTargetPeriod(slot.period);
                       if (fulfillment === 1 && targetDate.trim()) {
@@ -1747,6 +1762,13 @@ export default function EditOrderModal({
                 </View>
               )}
             </View>}
+
+            {capacityEnabled && <KitchenCapacityField
+              capacity={capacity}
+              isOwner={isOwner}
+              onPickBatch={pickCapacityBatch}
+              onPickSuggestion={applyCapacitySlot}
+            />}
 
             {/* Kitchen & Prep Instructions */}
             <View style={styles.fieldGroup}>
@@ -2230,9 +2252,9 @@ export default function EditOrderModal({
               styles.saveBtn,
               isEffectiveDraft && styles.saveDraftBtn,
               isFinalizing && styles.saveFinalizeBtn,
-              updateOrderMutation.isPending && styles.disabledBtn,
+              (updateOrderMutation.isPending || capacity.isBlocked || capacity.isChecking) && styles.disabledBtn,
             ]}
-            disabled={updateOrderMutation.isPending}
+            disabled={updateOrderMutation.isPending || capacity.isBlocked || capacity.isChecking}
             onPress={handleSaveChanges}
           >
             {updateOrderMutation.isPending ? (

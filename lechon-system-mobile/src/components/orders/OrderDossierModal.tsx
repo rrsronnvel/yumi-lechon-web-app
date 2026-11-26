@@ -25,13 +25,15 @@ import {
   PaymentLogDto,
 } from '../../hooks/useOrders';
 import { useUpdateCustomerNotesMutation } from '../../hooks/usePos';
+import { parsePromoItems, usePromoCatalog } from '../../hooks/usePromos';
 import { generateBookingConfirmation } from '../../utils/messengerTemplates';
 import EditOrderModal from './EditOrderModal';
 import { useAuth } from '../../context/AuthContext';
-import { sanitizeFreebiesSummary } from '../../utils/freebiesHelper';
+import { formatManifestFreebiesSummary } from '../../utils/freebiesHelper';
 import { sanitizeMojibake } from '../../utils/sanitizeDisplayText';
+import { describeSupportRider } from '../../utils/riderAssignment';
 import WalkInBadge from './WalkInBadge';
-import { useAssignRiderMutation, useRiders } from '../../hooks/useRiders';
+import RiderAssignmentPanel from './RiderAssignmentPanel';
 import { getPaymentChannelBadgeText } from '../../utils/paymentChannelHelper';
 
 export { getPaymentChannelBadgeText };
@@ -77,8 +79,6 @@ export default function OrderDossierModal({
   const cancelMutation = useCancelOrderMutation();
   const confirmOwnerMutation = useConfirmOwnerOrderMutation();
   const updateCustomerNotesMutation = useUpdateCustomerNotesMutation();
-  const { data: registeredRiders = [] } = useRiders();
-  const assignRiderMutation = useAssignRiderMutation();
 
   // Clipboard banner state
   const [copiedBannerVisible, setCopiedBannerVisible] = useState(false);
@@ -86,7 +86,6 @@ export default function OrderDossierModal({
   // Edit Order Modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRiderAssignmentOpen, setIsRiderAssignmentOpen] = useState(false);
-  const [assignedRiderInput, setAssignedRiderInput] = useState('');
 
   // Customer Notes Editor state
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
@@ -119,7 +118,6 @@ export default function OrderDossierModal({
     setCopiedBannerVisible(false);
     setIsEditModalOpen(false);
     setIsRiderAssignmentOpen(false);
-    setAssignedRiderInput('');
     setIsNotesExpanded(false);
     setDraftPreferences('');
     setDraftComplaints('');
@@ -141,12 +139,21 @@ export default function OrderDossierModal({
   }, [orderId]);
 
   const activeOrder = orderDetails || fallbackOrder;
+  const supportRider = activeOrder && describeSupportRider(activeOrder);
+  const promoCode = activeOrder?.promoPackageCode;
+  const { data: promoCatalog } = usePromoCatalog(orderId !== null && Boolean(promoCode));
+  const promo = promoCatalog?.find((entry) => entry.code.toUpperCase() === promoCode?.toUpperCase());
+  const wholePigCount = orderDetails?.orderItems?.reduce((count, item) =>
+    (item.itemCategory?.minimumWeightKg ?? 0) >= 13 ? count + item.quantity : count, 0) ?? 0;
   const sanitizedRemarks = sanitizeMojibake(orderDetails?.remarks || fallbackOrder?.remarks);
-  const sanitizedFreebiesSummary = sanitizeMojibake(
-    sanitizeFreebiesSummary(
-      orderDetails?.freebiesSummary || fallbackOrder?.freebiesSummary
-    )
-  );
+  const sanitizedFreebiesSummary = sanitizeMojibake(formatManifestFreebiesSummary({
+    summary: activeOrder?.freebiesSummary,
+    promoCode,
+    promoLabel: activeOrder?.promoPackageLabel || promo?.name,
+    configJson: activeOrder?.freebiesConfigJson,
+    includedItems: parsePromoItems(promo),
+    wholePigCount,
+  }));
   const isVisible = orderId !== null;
   const contactPhones = (activeOrder?.contactNumber || '')
     .split(',')
@@ -202,25 +209,6 @@ export default function OrderDossierModal({
     isDigitalCustodyActive &&
     heldByStaffAmount <= 0 &&
     Number(orderDetails?.deliveryFee ?? fallbackOrder?.deliveryFee ?? 0) > 0;
-
-  const handleAssignRider = async () => {
-    if (!orderId || !assignedRiderInput.trim()) {
-      Alert.alert('Rider Required', 'Select a registered rider or enter a custom rider name.');
-      return;
-    }
-    try {
-      await assignRiderMutation.mutateAsync({
-        orderIds: [orderId],
-        riderName: assignedRiderInput.trim(),
-        vehicleType: 'Motorcycle',
-      });
-      await refetchDetails();
-      setIsRiderAssignmentOpen(false);
-      Alert.alert('Rider Assigned', `${assignedRiderInput.trim()} is now assigned to this order.`);
-    } catch {
-      Alert.alert('Assignment Failed', 'Could not assign this rider. Please try again.');
-    }
-  };
 
   const dialNumber = async (phone: string) => {
     const cleanPhone = phone.replace(/[^\d+]/g, '');
@@ -906,49 +894,25 @@ export default function OrderDossierModal({
                       </View>
                     )}
                   </View>
-                  <Pressable
-                    style={styles.assignRiderButton}
-                    onPress={() => {
-                      setAssignedRiderInput(orderDetails?.assignedRiderName || '');
-                      setIsRiderAssignmentOpen((open) => !open);
-                    }}
-                  >
-                    <Text style={styles.assignRiderButtonText}>🛵 Assign / Change Rider</Text>
-                  </Pressable>
-                  {isRiderAssignmentOpen && (
-                    <View style={styles.riderAssignmentPanel}>
-                      <Text style={styles.riderAssignmentLabel}>Registered Riders</Text>
-                      <View style={styles.riderChoiceWrap}>
-                        {registeredRiders.filter((rider) => rider.isActive).map((rider) => (
-                          <Pressable
-                            key={rider.id}
-                            style={[
-                              styles.riderChoice,
-                              assignedRiderInput === rider.fullName && styles.riderChoiceActive,
-                            ]}
-                            onPress={() => setAssignedRiderInput(rider.fullName)}
-                          >
-                            <Text style={styles.riderChoiceText}>{rider.fullName}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                      <TextInput
-                        style={styles.riderCustomInput}
-                        value={assignedRiderInput}
-                        onChangeText={setAssignedRiderInput}
-                        placeholder="Or enter custom rider name"
-                        placeholderTextColor="#A8A29E"
-                      />
+                  {supportRider && (
+                    <Text style={styles.courierSecondaryText}>
+                      {supportRider}{activeOrder?.supportRiderHeads ? ` • ${activeOrder.supportRiderHeads} ${activeOrder.supportRiderHeads === 1 ? 'head' : 'heads'}` : ''}
+                    </Text>
+                  )}
+                  {!isCancelled && !isDraft && orderId !== null && (
+                    <>
                       <Pressable
-                        style={[styles.riderSaveButton, assignRiderMutation.isPending && styles.disabledButton]}
-                        disabled={assignRiderMutation.isPending}
-                        onPress={() => void handleAssignRider()}
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: isRiderAssignmentOpen }}
+                        style={styles.assignRiderButton}
+                        onPress={() => setIsRiderAssignmentOpen((open) => !open)}
                       >
-                        <Text style={styles.riderSaveButtonText}>
-                          {assignRiderMutation.isPending ? 'Assigning…' : 'Save Rider Assignment'}
-                        </Text>
+                        <Text style={styles.assignRiderButtonText}>🛵 Assign / Change Riders</Text>
                       </Pressable>
-                    </View>
+                      {isRiderAssignmentOpen && (
+                        <RiderAssignmentPanel orderId={orderId} onSaved={() => setIsRiderAssignmentOpen(false)} />
+                      )}
+                    </>
                   )}
                   </>
                 ) : fulfillmentCode === 2 ? (
@@ -2466,43 +2430,6 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   assignRiderButtonText: { color: '#1E40AF', fontSize: 12, fontWeight: '800' },
-  riderAssignmentPanel: {
-    marginTop: 8,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#EFF6FF',
-    borderRadius: 10,
-    padding: 10,
-  },
-  riderAssignmentLabel: { color: '#1E3A8A', fontSize: 11, fontWeight: '800' },
-  riderChoiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  riderChoice: {
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  riderChoiceActive: { borderColor: '#2563EB', backgroundColor: '#DBEAFE' },
-  riderChoiceText: { color: '#1E40AF', fontSize: 10, fontWeight: '700' },
-  riderCustomInput: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: '#93C5FD',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: '#1C1917',
-  },
-  riderSaveButton: {
-    alignItems: 'center',
-    backgroundColor: '#1D4ED8',
-    borderRadius: 8,
-    paddingVertical: 10,
-  },
-  riderSaveButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   disabledButton: { opacity: 0.5 },
   courierBoxLalamove: {
     flexDirection: 'row',

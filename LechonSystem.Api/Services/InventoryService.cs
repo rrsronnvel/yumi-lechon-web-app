@@ -398,7 +398,7 @@ namespace LechonSystem.Api.Services
             var orders = await _context.Orders
                 .AsNoTracking()
                 .Include(o => o.OrderItems)
-                    .ThenInclude(i => i.OrderItemSchedule)
+                    .ThenInclude(i => i.OrderItemSchedules)
                 .Include(o => o.OrderItems)
                     .ThenInclude(i => i.ItemCategory)
                 .Where(o => !o.IsCancelled && !o.IsDraft
@@ -421,9 +421,10 @@ namespace LechonSystem.Api.Services
 
                     upcomingCountMap[effectiveCatId] = upcomingCountMap.GetValueOrDefault(effectiveCatId, 0) + item.Quantity;
 
-                    var customWeight = item.OrderItemSchedule?.CustomWeightDisplay?.Trim();
-                    if (!string.IsNullOrWhiteSpace(customWeight))
+                    foreach (var schedule in item.OrderItemSchedules)
                     {
+                        var customWeight = schedule.CustomWeightDisplay?.Trim();
+                        if (string.IsNullOrWhiteSpace(customWeight)) continue;
                         if (!customWeightsMap.ContainsKey(effectiveCatId))
                             customWeightsMap[effectiveCatId] = new List<string>();
 

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 namespace LechonSystem.Api.Models;
@@ -51,6 +52,13 @@ public class Order : BaseEntity
 
     public DateTime? TargetDeliveryTime { get; set; }
     public DateTime? RiderDepartureTime { get; set; }
+    [MaxLength(50)]
+    public string KitchenBranch { get; set; } = "CARMONA";
+    [MaxLength(50)]
+    public string? KitchenBatchCode { get; set; }
+    public bool CapacityOverrideApproved { get; set; }
+    [MaxLength(250)]
+    public string? CapacityOverrideReason { get; set; }
     public bool IsDeliveryDetailsConfirmed { get; set; } = false;
 
     public bool IsCancelled { get; set; } = false;
@@ -68,6 +76,13 @@ public class Order : BaseEntity
 
     public int? DeliveryTripId { get; set; }
     public DeliveryTrip? DeliveryTrip { get; set; }
+    [MaxLength(150)]
+    public string? SupportRiderName { get; set; }
+    public decimal SupportRiderFee { get; set; }
+    public int SupportRiderHeads { get; set; }
+    public int? SupportRiderExpenseId { get; set; }
+    [JsonIgnore]
+    public ExpenseRecord? SupportRiderExpense { get; set; }
 
     public string SettlementCustodyStatus { get; set; } = "Uncollected"; // "Uncollected" | "InStaffDrawer" | "AwaitingOwnerDigitalVerification" | "Settled"
     public string? HeldByStaffMethod { get; set; } // Physical custody method, or the full-digital channel while awaiting owner verification

@@ -2,6 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/apiClient';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
 
 export interface ItemCategory {
     id: number;
@@ -49,7 +50,9 @@ export interface DeliveryPricingDto {
 
 // 1. Fetch the live menu categories
 export function useMenuCategories() {
+    const { isAuthenticated } = useAuth();
     return useQuery<ItemCategory[]>({
+        enabled: isAuthenticated,
         queryKey: ['inventory', 'categories'],
         queryFn: async () => {
             const response = await apiClient.get<ItemCategory[]>('/inventory/categories');

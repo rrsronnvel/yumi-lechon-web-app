@@ -553,11 +553,27 @@ Push-Location lechon-system-mobile; npx tsc --noEmit; Pop-Location
 
 ### 2026-11-15 Daily Operations Integrity Contract
 
-* **DP tracker truth:** Only `Downpayment > 0` orders may appear or contribute to unremitted counts. Sort by `IsDateTbd` last, then `TargetDeliveryTime` ascending and `OrderId` ascending across API, Web, and Mobile.
+* **DP tracker truth:** Successful, non-voided advance installments with positive amounts contribute to remittance counts, including paid drafts. Confirmed legacy orders can use the positive cached DP fallback. Draft or date-TBD rows appear after scheduled events.
 * **Prep shifts:** The eight Freebies/Prep cards expose `TotalCount`, `MorningCount`, and `AfternoonCount`. Effective needed times before `12:31:00` are AM; all later or unscheduled contributions are PM; the two shift counts must always sum to total. Both pills must remain visible in clean 4K export.
 * **Inventory completion:** `DeductOrderStockIfCompletedAsync` is the single idempotent StockOut path. Aggregate `FulfilledItemCategoryId ?? ItemCategoryId`, identify rows by order/category, exclude completed/posted orders from Locked (14D), and never display negative physical stock. Startup reconciles qualifying orders since `2026-10-27` without deleting orders, customers, reservations, or ledger history.
-* **Schedule anchoring:** Every non-TBD create/update and startup repair anchors rider departure plus Target/Tahi/Salang/Packaging dates to the event date while retaining time-of-day. Preserve a Lalamove pickup explicitly stored on the preceding date.
+* **Schedule anchoring:** Keep the schedule target aligned with the event date. Preserve manual hours and overnight cooking offsets, including a Lalamove pickup explicitly stored on the preceding date.
 * **Tablet clocks:** Kitchen, Rider, and Freebies time columns remain non-wrapping, padded, at least 96px wide, and enclosed in horizontal overflow containers.
 * **POS completion state:** Successful Web/Mobile creation keeps the success reference visible but clears Messenger paste state, cart, and all fields. Exact customer name + phone + event date + item-summary matches use `⚠️ ORDER ALREADY SAVED IN SYSTEM (#ref)` and explain that resubmission is only for a separate booking.
 * **October ledger:** `October2026ExpenseSeed` contains exactly 341 rows with COGS `₱245,677.00`, OPEX `₱395,543.00`, and total `₱641,220.00`. Paper Plate row 89 maps quantity/unit to `15` / `by 24 pcs`; Dalandan row 112 defaults blank payment to Cash. November remains unseeded.
 * **Development fixtures:** `November15QaDataSeed` is Development-only and idempotently creates `111526-901`, `111526-902`, and the 3:30 PM Staff Meryenda request. Never run these fixtures in Production.
+
+### 2026-11-25 Kitchen Capacity and Dispatch Contract
+
+* **Kitchen rows and Rider cash** Each whole head gets its own schedule row keyed by `(OrderItemId, UnitIndex)`. Preserve independent manual clocks during quantity and event edits. Belly remains a quantity-bearing line. Rider collection and delivery fees are grouped by `OrderId`, with ordered quantities counted once per item line.
+* **Pits and calendar** Carmona defaults to 14 pits and Silang starts inactive. Use one pit per whole head and round up after grouping bellies at three per pit. Dec 24 and 31 use five preset batches. Weekends use four presets. Weekdays and Dec 25 use concurrent Salang-to-departure intervals. Dec 25 carries the half-day banner.
+* **Save authorization** Both clients display `/api/kitchen-capacity/evaluate` results. The API remains authoritative. Above the safe limit, an authenticated Owner must explicitly approve squeeze or force-book, and the save records the approval and reason in `OrderAuditLog`.
+* **Dossier promo totals** Show the saved promo allocation when available and fall back to the catalog by package code. Keep Fried Chicken, Shanghai, and Bopis visible whenever they are included in the allocation.
+* **Development QA** `November25QaDataSeed` inserts `112626-901`, `112626-902`, `122426-910`, and `122426-911` when absent. These fixtures add 13 pits to Dec 24 Batch 2. Existing bookings, including the older December promo fixture, also consume pits. Startup schedule repair runs in Development and Production and appends missing whole heads without changing their existing manual clocks.
+
+### 2026-11-26 Web Sign-In and Split Moto Rider Contract
+
+* **Web session bootstrap** Check the stored JWT and expiry before rendering protected routes. Clear stale credentials, route directly to `/login`, and defer authenticated modules and queries. Login and public QR actions remain available without a staff session.
+* **Dispatch layout and assignment** Departure / Pickup wraps within its column and whole-head badges retain a single line. For delivery orders with more than two whole heads, the order identifies the lead and backup while individual schedule rows identify the carrier for each head.
+* **Single collector** The lead rider collects the whole balance and remits the balance less `DeliveryFee`. Backup riders collect ₱0. Keep a single Rider Sheet and Manifest collection row per order.
+* **Backup ride expense** The backup fee is a store-shouldered Labor expense. Hop 1 posts it by default in the custody transaction and stores `SupportRiderExpenseId`. Leave that link intact for subsequent custody reversals and re-settlements.
+* **Development fixture** `112626-903` has three M heads with Adrianne as lead and Randy as backup. Verify ₱33,600 collected, ₱500 lead fee, ₱33,100 net remittance, and one ₱500 expense after Hop 1 and re-settlement of a QA clone.

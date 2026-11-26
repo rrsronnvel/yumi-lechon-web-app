@@ -15,17 +15,20 @@ namespace LechonSystem.Api.Controllers
     public class OrdersController : ControllerBase
     {
         private readonly IOrderService _orderService;
+        private readonly SplitRiderService _splitRiders;
         private readonly IAiIntakeParserService _aiParserService;
         private readonly PaymentService _paymentService;
         private readonly ILogger<OrdersController> _logger;
 
         public OrdersController(
             IOrderService orderService,
+            SplitRiderService splitRiders,
             IAiIntakeParserService aiParserService,
             PaymentService paymentService,
             ILogger<OrdersController> logger)
         {
             _orderService = orderService;
+            _splitRiders = splitRiders;
             _aiParserService = aiParserService;
             _paymentService = paymentService;
             _logger = logger;
@@ -56,9 +59,22 @@ namespace LechonSystem.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateOrder([FromBody] CreateOrderRequest request)
         {
-            var newOrder = await _orderService.CreateOrderAsync(request);
-            return Ok(newOrder);
+            try
+            {
+                return Ok(await _orderService.CreateOrderAsync(request));
+            }
+            catch (KitchenCapacityExceededException ex)
+            {
+                return CapacityConflict(ex);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
+
+        private ConflictObjectResult CapacityConflict(KitchenCapacityExceededException ex) =>
+            Conflict(new { message = ex.Message, code = "KitchenCapacityExceeded", capacity = ex.Capacity });
 
         [HttpPatch("{id}/confirm-payment")]
         public async Task<IActionResult> ConfirmPayment(int id)
@@ -176,6 +192,10 @@ namespace LechonSystem.Api.Controllers
                 // 3. The Green Light: Tell the React frontend everything worked perfectly
                 return Ok(new { message = "Order successfully updated." });
             }
+            catch (KitchenCapacityExceededException ex)
+            {
+                return CapacityConflict(ex);
+            }
             catch (KeyNotFoundException ex)
             {
                 // If the service can't find the order in the database, return a 404
@@ -203,6 +223,24 @@ namespace LechonSystem.Api.Controllers
             catch (Exception ex)
             {
                 return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpPut("{id:int}/riders")]
+        public async Task<IActionResult> AssignOrderRiders(int id, AssignOrderRidersRequest request)
+        {
+            try
+            {
+                await _splitRiders.AssignOrderRidersAsync(id, request, UserIdentityHelper.ResolveDisplayName(User));
+                return Ok(await _orderService.GetOrderDetailsAsync(id));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
         }
 

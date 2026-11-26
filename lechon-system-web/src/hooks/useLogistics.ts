@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "../services/apiClient";
+import type { RiderAssignmentOrder } from "../utils/splitMoto";
 
 export interface TodayDispatchOrder {
   id: number;
@@ -74,6 +75,31 @@ export const useAssignRider = () => {
       queryClient.invalidateQueries({ queryKey: ["daily-sheets"] });
       queryClient.invalidateQueries({ queryKey: ["logistics", "today"] });
       queryClient.invalidateQueries({ queryKey: ["logistics"] });
+    },
+  });
+};
+
+export const useUpdateOrderRiders = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, ...assignment }: {
+      orderId: number;
+      riderName: string;
+      supportRiderName?: string | null;
+      supportRiderHeads?: number;
+      supportRiderFee?: number;
+    }) => (await apiClient.put<RiderAssignmentOrder>(`/orders/${orderId}/riders`, assignment)).data,
+    onSuccess: async (order, { orderId }) => {
+      queryClient.setQueryData(["order", orderId], order);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["riders"] }),
+        queryClient.invalidateQueries({ queryKey: ["order", orderId] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+        queryClient.invalidateQueries({ queryKey: ["roster"] }),
+        queryClient.invalidateQueries({ queryKey: ["logistics"] }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "pending-settlement"] }),
+      ]);
     },
   });
 };

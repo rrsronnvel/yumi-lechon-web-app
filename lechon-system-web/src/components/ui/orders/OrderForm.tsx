@@ -9,6 +9,7 @@ import {
   ItemCategory,
 } from "@/hooks/useCms";
 import { useCustomerLookup } from "@/hooks/useCustomers";
+import { useKitchenCapacityBooking } from "@/hooks/useKitchenCapacityBooking";
 import {
   evaluateDuplicateOrders,
   formatCalendarDateLabel,
@@ -53,6 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import FreebiesSelector from "./FreebiesSelector";
 import PromoPackageSelector from "./PromoPackageSelector";
+import { KitchenCapacityGuard } from "./KitchenCapacityGuard";
 import type { PromoPackage } from "@/hooks/usePromos";
 import PaymentChannelPills, {
   PaymentChannel,
@@ -83,6 +85,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getCapacityDepartureTime } from "@/utils/kitchenCapacity";
 import {
   ShoppingCart,
   ReceiptText,
@@ -136,7 +139,7 @@ export default function OrderForm({
   onOpenChange,
   orderId: currentOrderId,
 }: OrderFormProps) {
-  const { user } = useAuth();
+  const { user, isOwner } = useAuth();
   const queryClient = useQueryClient();
   const [savedOrderForModal, setSavedOrderForModal] =
     useState<TemplateOrderData | null>(null);
@@ -155,6 +158,7 @@ export default function OrderForm({
     chatBalance: number;
   } | null>(null);
   const previousWholePigCount = useRef(0);
+  const selectedSlotTarget = useRef<string | null>(null);
   const pendingParsedFreebies = useRef<{
     optOut: boolean;
     rawInnards: boolean;
@@ -262,6 +266,28 @@ export default function OrderForm({
   const watchedFacebookName = form.watch("facebookName");
   const watchedDeliveryAddress = form.watch("address");
   const watchedPromoPackageCode = form.watch("promoPackageCode");
+  const watchedDepartureTime = form.watch("riderDepartureTime");
+  const capacityItems = (watchedItems ?? []).flatMap((item) => {
+    const itemCategoryId = Number(item.itemCategoryId);
+    const quantity = Number(item.quantity);
+    return quantity > 0 && roastCategories.some((category) => category.id === itemCategoryId)
+      ? [{ itemCategoryId, quantity }]
+      : [];
+  });
+  const capacity = useKitchenCapacityBooking({
+    targetTime: watchedTargetTime ?? "",
+    riderDepartureTime: watchedDepartureTime,
+    fulfillment: Number(watchedFulfillment),
+    items: capacityItems,
+    isDraft: Boolean(form.watch("isDraft") || watchedIsTimeTbd),
+    isOwner,
+    disabled: _open === false || isNonLechonMode,
+  });
+  const applyCapacitySlot = (targetTime: string, departureTime: string) => {
+    if (targetTime !== watchedTargetTime) selectedSlotTarget.current = targetTime;
+    form.setValue("targetDeliveryTime", targetTime, { shouldDirty: true, shouldValidate: true });
+    form.setValue("riderDepartureTime", departureTime, { shouldDirty: true, shouldValidate: true });
+  };
 
   const { data: customerProfile } = useCustomerLookup(
     watchedCustomerPhone || "",
@@ -310,6 +336,9 @@ export default function OrderForm({
 
   // 4. Auto-Calculate Rider Departure Time from 6-Tier Distance Ladder
   useEffect(() => {
+    const chosenSlot = selectedSlotTarget.current;
+    selectedSlotTarget.current = null;
+    if (chosenSlot && chosenSlot === watchedTargetTime) return;
     if (watchedIsTimeTbd || isNonLechonMode) {
       form.setValue("riderDepartureTime", "", { shouldValidate: true });
       return;
@@ -646,6 +675,8 @@ export default function OrderForm({
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
         queryClient.invalidateQueries({ queryKey: ["customers"] }),
         queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+        queryClient.invalidateQueries({ queryKey: ["kitchen-capacity"] }),
+        queryClient.invalidateQueries({ queryKey: ["manifest", "downpayments"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory", "balances"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory"] }),
@@ -691,6 +722,7 @@ export default function OrderForm({
       await invalidations;
     },
     onError: (err: any) => {
+      capacity.reportConflict(err);
       const msg =
         err.response?.data?.message ||
         err.response?.data?.Message ||
@@ -829,6 +861,7 @@ export default function OrderForm({
       : duplicateEvaluation.repeatCustomerMatches[0];
 
   function onSubmit(data: OrderFormData) {
+    if (capacity.blocked) return;
     if (!data.isDraft && !data.targetDeliveryTime?.trim()) {
       toast.error("⚠️ Please select a Delivery / Pickup Date before submitting.");
       return;
@@ -912,9 +945,7 @@ export default function OrderForm({
     const effectiveRiderDeparture =
       data.isTimeTbd || isNonLechonMode
         ? null
-        : fulfillmentNum === 0
-          ? data.targetDeliveryTime || null
-          : data.riderDepartureTime || data.targetDeliveryTime || null;
+        : getCapacityDepartureTime(data.targetDeliveryTime ?? "", data.riderDepartureTime, fulfillmentNum) || null;
 
     const primaryPhone = (data.customerPhone || "").split(",")[0].trim();
     const secondaryPhone =
@@ -925,6 +956,7 @@ export default function OrderForm({
       : primaryPhone;
 
     const payload = {
+      ...capacity.orderFields,
       isDraft: Boolean(data.isDraft || data.isTimeTbd),
       isTimeTbd: Boolean(data.isTimeTbd),
       customerName: data.customerName,
@@ -1884,7 +1916,7 @@ export default function OrderForm({
                   <FormControl>
                     <Input
                       type={watchedIsTimeTbd ? "date" : "datetime-local"}
-                      step={900}
+                      step={60}
                       className="h-10 text-xs border-stone-300"
                       value={watchedIsTimeTbd ? field.value?.slice(0, 10) : field.value}
                       onChange={(e) => {
@@ -2056,6 +2088,8 @@ export default function OrderForm({
               </FormItem>
             )}
           />}
+
+          <KitchenCapacityGuard capacity={capacity} onScheduleChange={applyCapacitySlot} />
 
           {/* Delivery Address & Landmark */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -2651,6 +2685,7 @@ export default function OrderForm({
               type="submit"
               disabled={
                 createOrderMutation.isPending ||
+                capacity.blocked ||
                 (!form.watch("isDraft") && (watchedItems?.length ?? 0) === 0)
               }
               className={`w-full font-medium h-11 shadow-sm transition-colors text-sm flex items-center justify-center gap-2 mt-2 cursor-pointer ${

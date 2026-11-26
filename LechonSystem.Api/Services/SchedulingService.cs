@@ -18,17 +18,20 @@ namespace LechonSystem.Api.Services
         private readonly LechonDbContext _context;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IInventoryService _inventoryService;
+        private readonly SplitRiderService _splitRiders;
         private static readonly string[] PromoKitchenItemNames =
         [
             "Sarsa", "Pancit", "Palabok", "Spaghetti", "Dinuguan",
             "Bopis", "Fried Chicken", "Shanghai", "Puto", "1.5L Coke"
         ];
 
-        public SchedulingService(LechonDbContext context, IHttpContextAccessor httpContextAccessor, IInventoryService inventoryService)
+        public SchedulingService(LechonDbContext context, IHttpContextAccessor httpContextAccessor,
+            IInventoryService inventoryService, SplitRiderService splitRiders)
         {
             _context = context;
             _httpContextAccessor = httpContextAccessor;
             _inventoryService = inventoryService;
+            _splitRiders = splitRiders;
         }
 
         private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
@@ -63,7 +66,8 @@ namespace LechonSystem.Api.Services
                 }
             }
 
-            var profile = await _context.ProductCookingProfiles
+            var profile = _context.ProductCookingProfiles.Local.FirstOrDefault(p => p.ItemCategoryId == itemCategoryId)
+                ?? await _context.ProductCookingProfiles
                 .FirstOrDefaultAsync(p => p.ItemCategoryId == itemCategoryId);
 
             int tahiDuration = profile?.TahiDurationMinutes ?? 60;
@@ -72,15 +76,14 @@ namespace LechonSystem.Api.Services
 
             var target = NormalizeToLocalStoreTime(targetDeliveryTime);
             DateTime anchorTime;
-            var intentionalPriorDayLalamove = false;
             if (riderDepartureTime.HasValue)
             {
                 // RiderDepartureTime is the kitchen zero-hour whenever it is present.
                 // TargetDeliveryTime remains the independent customer serving time.
                 var requestedDeparture = NormalizeToLocalStoreTime(riderDepartureTime.Value);
-                intentionalPriorDayLalamove = fulfillment == FulfillmentType.Lalamove
-                                              && requestedDeparture.Date == target.Date.AddDays(-1);
-                anchorTime = intentionalPriorDayLalamove
+                var priorDayDeparture = fulfillment.HasValue &&
+                    OrderService.IsPriorDayDeparture(target, requestedDeparture, fulfillment.Value);
+                anchorTime = priorDayDeparture
                     ? requestedDeparture
                     : target.Date.Add(requestedDeparture.TimeOfDay);
             }
@@ -99,15 +102,6 @@ namespace LechonSystem.Api.Services
             DateTime salangStart = packagingStart.AddMinutes(-salangDuration);
             DateTime tahiStart = salangStart.AddMinutes(-tahiDuration);
 
-            if (!intentionalPriorDayLalamove)
-            {
-                // Daily sheets are keyed by the event date. Preserve each calculated clock
-                // value while preventing an edit from stranding a schedule on another date.
-                packagingStart = target.Date.Add(packagingStart.TimeOfDay);
-                salangStart = target.Date.Add(salangStart.TimeOfDay);
-                tahiStart = target.Date.Add(tahiStart.TimeOfDay);
-            }
-
             var schedule = new OrderItemSchedule
             {
                 OrderItemId = orderItemId,
@@ -120,11 +114,56 @@ namespace LechonSystem.Api.Services
             return schedule;
         }
 
+        internal static bool IsBellyCategory(string name) => name.Contains("Belly", StringComparison.OrdinalIgnoreCase);
+
+        public async Task SynchronizeItemSchedulesAsync(OrderItem item, Order order, ItemCategory category)
+        {
+            var unitTotal = category.MinimumWeightKg <= 0 || item.Quantity <= 0
+                ? 0
+                : IsBellyCategory(category.Name) ? 1 : item.Quantity;
+            var schedules = item.OrderItemSchedules.ToDictionary(schedule => schedule.UnitIndex);
+            _context.OrderItemSchedules.RemoveRange(schedules.Values.Where(schedule => schedule.UnitIndex > unitTotal));
+            if (unitTotal == 0 || !order.TargetDeliveryTime.HasValue)
+            {
+                return;
+            }
+
+            var target = NormalizeToLocalStoreTime(order.TargetDeliveryTime.Value);
+            var automatic = await CalculateScheduleAsync(item.Id, target, category.Id, order.RiderDepartureTime);
+            for (var index = 1; index <= unitTotal; index++)
+            {
+                if (!schedules.TryGetValue(index, out var schedule))
+                {
+                    schedule = new OrderItemSchedule { OrderItem = item, UnitIndex = index };
+                    _context.OrderItemSchedules.Add(schedule);
+                }
+
+                schedule.UnitTotal = unitTotal;
+                if (IsBellyCategory(category.Name))
+                    schedule.AssignedRiderName = null;
+                if (schedule.IsManualOverride)
+                {
+                    var dateShift = target.Date - schedule.TargetDeliveryTime.Date;
+                    schedule.TargetDeliveryTime = target;
+                    schedule.TahiStartTime += dateShift;
+                    schedule.SalangStartTime += dateShift;
+                    schedule.PackagingStartTime += dateShift;
+                    continue;
+                }
+
+                schedule.TargetDeliveryTime = automatic.TargetDeliveryTime;
+                schedule.TahiStartTime = automatic.TahiStartTime;
+                schedule.SalangStartTime = automatic.SalangStartTime;
+                schedule.PackagingStartTime = automatic.PackagingStartTime;
+            }
+        }
+
         public async Task<bool> RealignOrderScheduleDatesAsync(int orderId)
         {
             var order = await _context.Orders
+                .AsSplitQuery()
                 .Include(o => o.OrderItems)
-                    .ThenInclude(item => item.OrderItemSchedule)
+                    .ThenInclude(item => item.OrderItemSchedules)
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             if (order == null || order.IsCancelled || order.IsTimeTbd || !order.TargetDeliveryTime.HasValue)
@@ -133,42 +172,23 @@ namespace LechonSystem.Api.Services
             }
 
             var target = NormalizeToLocalStoreTime(order.TargetDeliveryTime.Value);
-            var intentionalPriorDayLalamove = order.Fulfillment == FulfillmentType.Lalamove
-                                              && order.RiderDepartureTime.HasValue
-                                              && order.RiderDepartureTime.Value.Date == target.Date.AddDays(-1);
-            if (intentionalPriorDayLalamove)
-            {
-                return false;
-            }
-
             var changed = false;
-            if (order.RiderDepartureTime.HasValue && order.RiderDepartureTime.Value.Date != target.Date)
+            if (order.RiderDepartureTime.HasValue && order.RiderDepartureTime.Value.Date != target.Date &&
+                !OrderService.IsPriorDayDeparture(target, order.RiderDepartureTime.Value, order.Fulfillment))
             {
                 order.RiderDepartureTime = target.Date.Add(order.RiderDepartureTime.Value.TimeOfDay);
                 changed = true;
             }
 
-            foreach (var schedule in order.OrderItems
-                         .Select(item => item.OrderItemSchedule)
-                         .Where(schedule => schedule != null)
-                         .Cast<OrderItemSchedule>())
+            foreach (var schedule in order.OrderItems.SelectMany(item => item.OrderItemSchedules))
             {
-                var targetClock = target.Date.Add(schedule.TargetDeliveryTime.TimeOfDay);
-                var packagingClock = target.Date.Add(schedule.PackagingStartTime.TimeOfDay);
-                var salangClock = target.Date.Add(schedule.SalangStartTime.TimeOfDay);
-                var tahiClock = target.Date.Add(schedule.TahiStartTime.TimeOfDay);
-
-                if (schedule.TargetDeliveryTime != targetClock
-                    || schedule.PackagingStartTime != packagingClock
-                    || schedule.SalangStartTime != salangClock
-                    || schedule.TahiStartTime != tahiClock)
-                {
-                    schedule.TargetDeliveryTime = targetClock;
-                    schedule.PackagingStartTime = packagingClock;
-                    schedule.SalangStartTime = salangClock;
-                    schedule.TahiStartTime = tahiClock;
-                    changed = true;
-                }
+                if (schedule.TargetDeliveryTime.Date == target.Date) continue;
+                var shift = target.Date - schedule.TargetDeliveryTime.Date;
+                schedule.TargetDeliveryTime += shift;
+                schedule.PackagingStartTime += shift;
+                schedule.SalangStartTime += shift;
+                schedule.TahiStartTime += shift;
+                changed = true;
             }
 
             if (changed)
@@ -207,11 +227,15 @@ namespace LechonSystem.Api.Services
                          && !s.OrderItem.Order.IsCancelled
                          && s.OrderItem.Order.TargetDeliveryTime.HasValue
                          && s.OrderItem.Order.TargetDeliveryTime.Value.Date == targetDate)
+                .OrderBy(s => s.OrderItemId).ThenBy(s => s.UnitIndex)
                 .Select(s => new
                 {
                     id = s.Id,
                     orderItemId = s.OrderItemId,
                     orderId = s.OrderItem!.OrderId,
+                    kitchenBranch = s.OrderItem.Order!.KitchenBranch,
+                    unitIndex = s.UnitIndex,
+                    unitTotal = s.UnitTotal,
                     orderReference = s.OrderItem!.Order!.OrderReference,
                     customerName = s.OrderItem!.Order!.CustomerName,
                     facebookName = s.OrderItem!.Order!.FacebookName,
@@ -238,6 +262,11 @@ namespace LechonSystem.Api.Services
                         ? s.OrderItem.FulfilledItemCategory.MaximumWeightKg
                         : s.OrderItem.ItemCategory!.MaximumWeightKg,
                     customWeightDisplay = s.CustomWeightDisplay,
+                    assignedRiderName = s.AssignedRiderName,
+                    supportRiderName = s.OrderItem!.Order!.SupportRiderName,
+                    supportRiderFee = s.OrderItem.Order.SupportRiderFee,
+                    supportRiderHeads = s.OrderItem.Order.SupportRiderHeads,
+                    supportRiderExpenseLogged = s.OrderItem.Order.SupportRiderExpenseId.HasValue,
 
                     // TIMINGS
                     targetDeliveryTime = (DateTime?)s.TargetDeliveryTime,
@@ -298,6 +327,10 @@ namespace LechonSystem.Api.Services
                     Id = s.id,
                     OrderItemId = s.orderItemId,
                     OrderId = s.orderId,
+                    KitchenBranch = s.kitchenBranch,
+                    UnitIndex = s.unitIndex,
+                    UnitTotal = s.unitTotal,
+                    IsBelly = IsBellyCategory(s.categoryName),
                     OrderReference = s.orderReference,
                     CustomerName = s.customerName,
                     FacebookName = s.facebookName,
@@ -347,6 +380,11 @@ namespace LechonSystem.Api.Services
                     Fulfillment = s.fulfillment,
                     Quantity = s.quantity,
                     RiderName = s.riderName,
+                    AssignedRiderName = s.assignedRiderName,
+                    SupportRiderName = s.supportRiderName,
+                    SupportRiderFee = s.supportRiderFee,
+                    SupportRiderHeads = s.supportRiderHeads,
+                    SupportRiderExpenseLogged = s.supportRiderExpenseLogged,
                     Status = s.status,
                     IsManualOverride = s.isManualOverride,
                     IsTimeTbd = false
@@ -361,8 +399,6 @@ namespace LechonSystem.Api.Services
                     .ThenInclude(oi => oi.ItemCategory)
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.FulfilledItemCategory)
-                .Include(o => o.OrderItems)
-                    .ThenInclude(oi => oi.OrderItemSchedule)
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
                          && !o.IsTimeTbd
@@ -388,6 +424,7 @@ namespace LechonSystem.Api.Services
                         Id = order.Id,
                         OrderItemId = order.Id,
                         OrderId = order.Id,
+                        KitchenBranch = order.KitchenBranch,
                         OrderReference = order.OrderReference,
                         CustomerName = order.CustomerName,
                         FacebookName = order.FacebookName,
@@ -431,6 +468,10 @@ namespace LechonSystem.Api.Services
                         Fulfillment = (int)order.Fulfillment,
                         Quantity = 1,
                         RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                        SupportRiderName = order.SupportRiderName,
+                        SupportRiderFee = order.SupportRiderFee,
+                        SupportRiderHeads = order.SupportRiderHeads,
+                        SupportRiderExpenseLogged = order.SupportRiderExpenseId.HasValue,
                         Status = "Confirmed",
                         IsManualOverride = false,
                         IsTimeTbd = false
@@ -446,6 +487,7 @@ namespace LechonSystem.Api.Services
                             Id = item.Id,
                             OrderItemId = item.Id,
                             OrderId = order.Id,
+                            KitchenBranch = order.KitchenBranch,
                             OrderReference = order.OrderReference,
                             CustomerName = order.CustomerName,
                             FacebookName = order.FacebookName,
@@ -489,6 +531,10 @@ namespace LechonSystem.Api.Services
                             Fulfillment = (int)order.Fulfillment,
                             Quantity = item.Quantity,
                             RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                            SupportRiderName = order.SupportRiderName,
+                            SupportRiderFee = order.SupportRiderFee,
+                            SupportRiderHeads = order.SupportRiderHeads,
+                            SupportRiderExpenseLogged = order.SupportRiderExpenseId.HasValue,
                             Status = "Confirmed",
                             IsManualOverride = false,
                             IsTimeTbd = false
@@ -506,7 +552,7 @@ namespace LechonSystem.Api.Services
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.FulfilledItemCategory)
                 .Include(o => o.OrderItems)
-                    .ThenInclude(oi => oi.OrderItemSchedule)
+                    .ThenInclude(oi => oi.OrderItemSchedules)
                 .Where(o => !o.IsDraft
                          && !o.IsCancelled
                          && o.IsTimeTbd
@@ -534,6 +580,7 @@ namespace LechonSystem.Api.Services
                         Id = order.Id,
                         OrderItemId = order.Id,
                         OrderId = order.Id,
+                        KitchenBranch = order.KitchenBranch,
                         OrderReference = order.OrderReference,
                         CustomerName = order.CustomerName,
                         FacebookName = order.FacebookName,
@@ -577,6 +624,10 @@ namespace LechonSystem.Api.Services
                         Fulfillment = (int)order.Fulfillment,
                         Quantity = 1,
                         RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                        SupportRiderName = order.SupportRiderName,
+                        SupportRiderFee = order.SupportRiderFee,
+                        SupportRiderHeads = order.SupportRiderHeads,
+                        SupportRiderExpenseLogged = order.SupportRiderExpenseId.HasValue,
                         Status = "Time TBD",
                         IsManualOverride = false,
                         IsTimeTbd = true
@@ -592,7 +643,7 @@ namespace LechonSystem.Api.Services
                         var formattedWeight = (minW > 0 || maxW > 0)
                             ? (minW == maxW ? minW.ToString("0.##") : $"{minW:0.##}-{maxW:0.##}")
                             : "-";
-                        var customWeightDisplay = item.OrderItemSchedule?.CustomWeightDisplay;
+                        var customWeightDisplay = item.OrderItemSchedules.FirstOrDefault(schedule => schedule.UnitIndex == 1)?.CustomWeightDisplay;
                         var displayWeight = string.IsNullOrWhiteSpace(customWeightDisplay)
                             ? formattedWeight
                             : customWeightDisplay.Trim();
@@ -602,6 +653,8 @@ namespace LechonSystem.Api.Services
                             Id = item.Id,
                             OrderItemId = item.Id,
                             OrderId = order.Id,
+                            KitchenBranch = order.KitchenBranch,
+                            IsBelly = IsBellyCategory(cookingCategory?.Name ?? ""),
                             OrderReference = order.OrderReference,
                             CustomerName = order.CustomerName,
                             FacebookName = order.FacebookName,
@@ -652,6 +705,10 @@ namespace LechonSystem.Api.Services
                             Fulfillment = (int)order.Fulfillment,
                             Quantity = item.Quantity,
                             RiderName = order.DeliveryTrip?.RiderName ?? "Unassigned",
+                            SupportRiderName = order.SupportRiderName,
+                            SupportRiderFee = order.SupportRiderFee,
+                            SupportRiderHeads = order.SupportRiderHeads,
+                            SupportRiderExpenseLogged = order.SupportRiderExpenseId.HasValue,
                             Status = "Time TBD",
                             IsManualOverride = false,
                             IsTimeTbd = true
@@ -693,32 +750,48 @@ namespace LechonSystem.Api.Services
 
         public async Task<OrderItemSchedule> OverrideScheduleItemAsync(int orderItemId, OverrideScheduleRequest request)
         {
-            var schedule = await _context.OrderItemSchedules
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await KitchenCapacitySchema.LockAsync(_context);
+            var unitIndex = request.UnitIndex ?? 1;
+            var riderOrderId = await _context.OrderItemSchedules
+                .Where(candidate => (candidate.OrderItemId == orderItemId && candidate.UnitIndex == unitIndex)
+                    || (!request.UnitIndex.HasValue && candidate.Id == orderItemId))
+                .OrderByDescending(candidate => candidate.OrderItemId == orderItemId && candidate.UnitIndex == unitIndex)
+                .Select(candidate => (int?)candidate.OrderItem!.OrderId).FirstOrDefaultAsync()
+                ?? await _context.OrderItems.Where(item => item.Id == orderItemId).Select(item => (int?)item.OrderId).FirstOrDefaultAsync();
+            if (riderOrderId.HasValue)
+                await SplitRiderSchema.LockOrderAsync(_context, riderOrderId.Value);
+            var scheduleQuery = _context.OrderItemSchedules
                 .Include(s => s.OrderItem)
                     .ThenInclude(oi => oi!.Order)
-                        .ThenInclude(o => o!.DeliveryTrip)
-                .FirstOrDefaultAsync(s => s.OrderItemId == orderItemId)
-                ?? await _context.OrderItemSchedules
-                    .Include(s => s.OrderItem)
-                        .ThenInclude(oi => oi!.Order)
-                            .ThenInclude(o => o!.DeliveryTrip)
-                    .FirstOrDefaultAsync(s => s.Id == orderItemId);
+                        .ThenInclude(o => o!.DeliveryTrip);
+            var schedule = await scheduleQuery.FirstOrDefaultAsync(s => s.OrderItemId == orderItemId && s.UnitIndex == unitIndex);
+            if (schedule == null && !request.UnitIndex.HasValue)
+            {
+                schedule = await scheduleQuery.FirstOrDefaultAsync(s => s.Id == orderItemId);
+            }
 
             if (schedule == null)
             {
                 var item = await _context.OrderItems
                     .Include(orderItem => orderItem.Order)
+                    .Include(orderItem => orderItem.OrderItemSchedules)
+                    .Include(orderItem => orderItem.ItemCategory)
+                    .Include(orderItem => orderItem.FulfilledItemCategory)
                     .FirstOrDefaultAsync(orderItem => orderItem.Id == orderItemId);
-                if (item?.Order?.TargetDeliveryTime != null)
+                var category = item?.FulfilledItemCategory ?? item?.ItemCategory;
+                if (item?.Order?.TargetDeliveryTime != null && category != null && item.OrderItemSchedules.Count == 0)
                 {
-                    var cookingCategoryId = item.FulfilledItemCategoryId ?? item.ItemCategoryId;
-                    schedule = await CalculateScheduleAsync(
-                        item.Id,
-                        item.Order.TargetDeliveryTime.Value,
-                        cookingCategoryId,
-                        item.Order.RiderDepartureTime);
-                    schedule.OrderItem = item;
-                    _context.OrderItemSchedules.Add(schedule);
+                    if (category.MinimumWeightKg > 0)
+                    {
+                        await SynchronizeItemSchedulesAsync(item, item.Order, category);
+                        schedule = item.OrderItemSchedules.FirstOrDefault(candidate => candidate.UnitIndex == unitIndex);
+                    }
+                    else if (!request.UnitIndex.HasValue)
+                    {
+                        schedule = await CalculateScheduleAsync(item.Id, item.Order.TargetDeliveryTime.Value, category.Id, item.Order.RiderDepartureTime);
+                        _context.OrderItemSchedules.Add(schedule);
+                    }
                 }
             }
 
@@ -766,42 +839,69 @@ namespace LechonSystem.Api.Services
                     // If item has Quantity > 1 and is being upgraded, split 1 unit off into a sibling OrderItem!
                     if (schedule.OrderItem.Quantity > 1 && targetFulfilledCatId.HasValue)
                     {
-                        schedule.OrderItem.Quantity -= 1;
-                        schedule.OrderItem.TotalPrice = schedule.OrderItem.Price * schedule.OrderItem.Quantity;
+                        var originalItem = schedule.OrderItem;
+                        originalItem.Quantity -= 1;
+                        originalItem.TotalPrice = originalItem.Price * originalItem.Quantity;
 
                         var splitItem = new OrderItem
                         {
-                            OrderId = schedule.OrderItem.OrderId,
-                            ItemCategoryId = schedule.OrderItem.ItemCategoryId,
+                            Order = scheduleOrder,
+                            ItemCategoryId = originalItem.ItemCategoryId,
                             FulfilledItemCategoryId = targetFulfilledCatId,
                             Quantity = 1,
-                            Price = schedule.OrderItem.Price,
-                            TotalPrice = schedule.OrderItem.Price,
+                            Price = originalItem.Price,
+                            TotalPrice = originalItem.Price,
                             CreatedAt = DateTime.UtcNow
                         };
                         _context.OrderItems.Add(splitItem);
+                        var originalSchedules = _context.Entry(originalItem).Collection(item => item.OrderItemSchedules);
+                        await originalSchedules.LoadAsync();
+                        var remainingSchedules = originalItem.OrderItemSchedules
+                            .Where(sibling => sibling != schedule)
+                            .OrderBy(sibling => sibling.UnitIndex)
+                            .ToList();
+                        for (var index = 0; index < remainingSchedules.Count; index++)
+                        {
+                            remainingSchedules[index].UnitTotal = remainingSchedules.Count;
+                            // Free the final index values before reassigning them under the unique index.
+                            remainingSchedules[index].UnitIndex = -(index + 1);
+                        }
+
+                        schedule.OrderItem = splitItem;
+                        schedule.UnitIndex = 1;
+                        schedule.UnitTotal = 1;
                         await _context.SaveChangesAsync();
+                        if (remainingSchedules.Count == 0 && fromCat != null)
+                        {
+                            await SynchronizeItemSchedulesAsync(originalItem, scheduleOrder, fromCat);
+                        }
+                        for (var index = 0; index < remainingSchedules.Count; index++)
+                        {
+                            remainingSchedules[index].UnitIndex = index + 1;
+                        }
 
                         var anchorTime = normalizedRequestedDeparture
-                            ?? schedule.OrderItem.Order?.RiderDepartureTime
+                            ?? scheduleOrder.RiderDepartureTime
                             ?? targetDeliveryTime;
 
                         var splitSchedule = await CalculateScheduleAsync(
                             splitItem.Id,
-                            schedule.OrderItem.Order?.TargetDeliveryTime ?? schedule.TargetDeliveryTime,
+                            targetDeliveryTime,
                             toCatId,
                             anchorTime);
 
-                        splitSchedule.CustomWeightDisplay = schedule.CustomWeightDisplay;
-                        splitSchedule.IsManualOverride = true;
-                        splitSchedule.OrderItem = splitItem;
-                        _context.OrderItemSchedules.Add(splitSchedule);
+                        if (!request.TahiStartTime.HasValue && !request.SalangStartTime.HasValue)
+                        {
+                            schedule.TahiStartTime = splitSchedule.TahiStartTime;
+                            schedule.SalangStartTime = splitSchedule.SalangStartTime;
+                            schedule.PackagingStartTime = splitSchedule.PackagingStartTime;
+                        }
 
                         _context.InventoryReservations.Add(new InventoryReservation
                         {
-                            OrderId = schedule.OrderItem.OrderId,
+                            OrderId = scheduleOrder.Id,
                             ItemCategoryId = toCatId,
-                            ReservationDate = schedule.OrderItem.Order?.TargetDeliveryTime?.Date ?? DateTime.UtcNow.Date,
+                            ReservationDate = targetDeliveryTime.Date,
                             Status = ReservationStatus.Committed,
                             ReservationStatus = ReservationStatus.Committed,
                             CreatedAt = DateTime.UtcNow
@@ -809,15 +909,13 @@ namespace LechonSystem.Api.Services
 
                         _context.OrderAuditLogs.Add(new OrderAuditLog
                         {
-                            OrderId = schedule.OrderItem.OrderId,
+                            OrderId = scheduleOrder.Id,
                             ActionType = "Stock Substitution Updated",
-                            Changes = $"Freezer stock partial upgrade: 1x '{fromName}' of {schedule.OrderItem.Quantity + 1}x order split and fulfilled using '{toName}' stock (Complimentary upgrade).",
+                            Changes = $"Freezer stock partial upgrade: 1x '{fromName}' of {originalItem.Quantity + 1}x order split and fulfilled using '{toName}' stock (Complimentary upgrade).",
                             ChangedBy = CurrentUser,
                             Timestamp = DateTime.UtcNow
                         });
 
-                        await _context.SaveChangesAsync();
-                        return splitSchedule;
                     }
                     else
                     {
@@ -888,101 +986,29 @@ namespace LechonSystem.Api.Services
                 scheduleOrder.RiderDepartureTime = normalizedRequestedDeparture.Value;
             }
 
-            schedule.IsManualOverride = true;
+            if (request.TahiStartTime.HasValue || request.SalangStartTime.HasValue || request.PackagingStartTime.HasValue ||
+                request.FulfilledItemCategoryId.HasValue)
+            {
+                schedule.IsManualOverride = true;
+            }
 
             if (!string.IsNullOrWhiteSpace(request.Remarks) && schedule.OrderItem?.Order != null)
                 schedule.OrderItem.Order.Remarks = request.Remarks;
 
-            if (request.RiderName != null && schedule.OrderItem?.Order != null)
+            if (request.RiderName != null)
             {
-                var cleanRider = request.RiderName.Trim();
-                var oldRider = schedule.OrderItem.Order.DeliveryTrip?.RiderName?.Trim() ?? "";
-
-                if (string.IsNullOrWhiteSpace(cleanRider) || cleanRider.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Detach / Unassign rider
-                    var oldTripId = schedule.OrderItem.Order.DeliveryTripId;
-                    schedule.OrderItem.Order.DeliveryTripId = null;
-                    schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Unassigned;
-
-                    if (oldTripId.HasValue)
-                    {
-                        var hasOtherOrders = await _context.Orders.AnyAsync(o => o.DeliveryTripId == oldTripId.Value && o.Id != schedule.OrderItem.OrderId);
-                        if (!hasOtherOrders)
-                        {
-                            var trip = await _context.DeliveryTrips.FindAsync(oldTripId.Value);
-                            if (trip != null)
-                            {
-                                _context.DeliveryTrips.Remove(trip);
-                            }
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(oldRider))
-                    {
-                        _context.OrderAuditLogs.Add(new OrderAuditLog
-                        {
-                            OrderId = schedule.OrderItem.OrderId,
-                            ActionType = "Rider Updated",
-                            Changes = $"Rider unassigned (previously '{oldRider}')",
-                            ChangedBy = CurrentUser,
-                            Timestamp = DateTime.UtcNow
-                        });
-                    }
-                }
-                else
-                {
-                    if (schedule.OrderItem.Order.Fulfillment != FulfillmentType.Delivery)
-                    {
-                        throw new InvalidOperationException("Only Delivery orders can be assigned to freelance riders.");
-                    }
-
-                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRider);
-
-                    // Update assigned rider on active DeliveryTrip if present
-                    var trip = schedule.OrderItem.Order.DeliveryTrip
-                        ?? await _context.DeliveryTrips.Include(t => t.Orders)
-                            .FirstOrDefaultAsync(t => t.Orders.Any(o => o.Id == schedule.OrderItem.OrderId));
-
-                    if (trip != null)
-                    {
-                        trip.RiderName = cleanRider;
-                    }
-                    else
-                    {
-                        trip = new DeliveryTrip
-                        {
-                            RiderName = cleanRider,
-                            VehicleType = "Motorcycle",
-                            Status = DeliveryStatus.Assigned,
-                            DispatchTime = DateTime.UtcNow
-                        };
-                        trip.Orders.Add(schedule.OrderItem.Order);
-                        schedule.OrderItem.Order.RoutingStatus = DeliveryStatus.Assigned;
-                        _context.DeliveryTrips.Add(trip);
-                    }
-
-                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRider);
-
-                    if (!string.Equals(oldRider, cleanRider, StringComparison.OrdinalIgnoreCase))
-                    {
-                        string auditMsg = string.IsNullOrEmpty(oldRider)
-                            ? $"Rider assigned: '{cleanRider}'"
-                            : $"Rider changed from '{oldRider}' to '{cleanRider}'";
-
-                        _context.OrderAuditLogs.Add(new OrderAuditLog
-                        {
-                            OrderId = schedule.OrderItem.OrderId,
-                            ActionType = "Rider Updated",
-                            Changes = auditMsg,
-                            ChangedBy = CurrentUser,
-                            Timestamp = DateTime.UtcNow
-                        });
-                    }
-                }
+                var rider = SplitRiderService.NormalizeName(request.RiderName);
+                if (rider is not null && scheduleOrder.Fulfillment != FulfillmentType.Delivery)
+                    throw new InvalidOperationException("Only Delivery orders can be assigned to freelance riders.");
+                if (rider is not null && !SplitRiderService.SameName(rider, scheduleOrder.DeliveryTrip?.RiderName))
+                    await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, rider);
+                await _context.Entry(scheduleOrder).Collection(order => order.OrderItems)
+                    .Query().Include(item => item.OrderItemSchedules).LoadAsync();
+                _splitRiders.SetLead(scheduleOrder, rider, CurrentUser);
             }
 
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return schedule;
         }
 

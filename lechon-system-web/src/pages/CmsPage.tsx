@@ -44,6 +44,7 @@ import { CreateUserModal } from "@/components/cms/CreateUserModal";
 import { ResetPasswordModal } from "@/components/cms/ResetPasswordModal";
 import { EditUserModal } from "@/components/cms/EditUserModal";
 import PromoPackagesCms from "@/components/cms/PromoPackagesCms";
+import KitchenCapacityCms from "@/components/cms/KitchenCapacityCms";
 import {
   useUsersQuery,
   useToggleUserStatusMutation,
@@ -75,7 +76,7 @@ type FilterStatus = "all" | "active" | "hidden";
 
 export default function CmsPage() {
   const { isOwner, user: currentUser } = useAuth();
-  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "promos" | "riders" | "staff">("catalog");
+  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "promos" | "kitchen" | "riders" | "staff">("catalog");
   const { data: users = [], isLoading: isLoadingUsers } = useUsersQuery();
   const toggleUserStatusMutation = useToggleUserStatusMutation();
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
@@ -337,6 +338,20 @@ export default function CmsPage() {
           >
             <Gift className="w-4 h-4" />
             <span>🎁 Promo Packages CMS</span>
+          </button>
+        )}
+
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => setActiveMainTab("kitchen")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+              activeMainTab === "kitchen"
+                ? "bg-[#181312] text-amber-400 shadow-sm"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+            }`}
+          >
+            🔥 Kitchen Pits &amp; Batches
           </button>
         )}
 
@@ -898,6 +913,7 @@ export default function CmsPage() {
       )}
 
       {activeMainTab === "promos" && isOwner && <PromoPackagesCms />}
+      {activeMainTab === "kitchen" && isOwner && <KitchenCapacityCms />}
 
       {activeMainTab === "riders" && isOwner && (
         <Card className="overflow-hidden rounded-xl border-stone-200/90 bg-white shadow-sm">

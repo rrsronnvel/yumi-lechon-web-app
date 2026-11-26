@@ -115,6 +115,37 @@ export const parsePromoCustomization = (
   }
 };
 
+export function getOrderPromoItems(
+  configJson: string | null | undefined,
+  includedItemsJson: string | null | undefined,
+  wholePigCount: number,
+): string[] {
+  try {
+    const config = JSON.parse(configJson || "{}") as Record<string, unknown>;
+    const saved = config.promoCounts;
+    if (saved && typeof saved === "object") {
+      const items = formatPromoIncludedItems(parsePromoIncludedItems(JSON.stringify(saved)));
+      if (items.length || config.promoCustomized === true) return items;
+    }
+    if (config.promoCustomized === true) {
+      for (const key of ["wholeLechonFreebies", "wholeLechonFreebiesJson", "counts"]) {
+        const value = config[key];
+        if (value) {
+          return formatPromoIncludedItems(parsePromoIncludedItems(
+            typeof value === "string" ? value : JSON.stringify(value),
+          ));
+        }
+      }
+    }
+  } catch {
+    // Orders without a readable allocation can use the selected package.
+  }
+  return formatPromoIncludedItems(Object.fromEntries(
+    Object.entries(parsePromoIncludedItems(includedItemsJson))
+      .map(([item, quantity]) => [item, quantity * Math.max(0, wholePigCount)]),
+  ));
+}
+
 export const formatPromoOrderFreebiesSummary = (
   promoCode: string | null | undefined,
   promoLabel: string | null | undefined,

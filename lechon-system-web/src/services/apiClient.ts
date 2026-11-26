@@ -1,5 +1,7 @@
 import axios from 'axios';
-import { ParsedOrderDraftDto } from '@/schemas/orderSchema';
+import type { ParsedOrderDraftDto } from '@/schemas/orderSchema';
+import { clearAuthSession, readAuthSession } from './authSession';
+export { TOKEN_STORAGE_KEY, USER_STORAGE_KEY } from './authSession';
 
 export type ApiEnvironment = 'cloud' | 'local';
 
@@ -8,8 +10,6 @@ export const LOCAL_API_URL = 'http://localhost:5199/api';
 
 export const ENV_STORAGE_KEY = 'lechon_api_env';
 export const LEGACY_ENV_STORAGE_KEY = 'lechon_api_environment';
-export const TOKEN_STORAGE_KEY = 'lechon_auth_token';
-export const USER_STORAGE_KEY = 'lechon_auth_user';
 
 export const getApiEnvironment = (): ApiEnvironment => {
   if (typeof window === 'undefined') return 'cloud';
@@ -31,8 +31,7 @@ export const getApiBaseUrl = (): string => {
 export const setApiEnvironment = (env: ApiEnvironment): void => {
   localStorage.setItem(ENV_STORAGE_KEY, env);
   localStorage.setItem(LEGACY_ENV_STORAGE_KEY, env);
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-  localStorage.removeItem(USER_STORAGE_KEY);
+  clearAuthSession();
   window.location.reload();
 };
 
@@ -43,15 +42,24 @@ const apiClient = axios.create({
   },
 });
 
+function isPublicAuthRoute(method: string | undefined, url: string | undefined) {
+  const path = url?.split('?')[0];
+  if (method === 'get') return /^\/logistics\/settlements\/qr-session\/[^/]+$/.test(path ?? '');
+  return method === 'post' && (path === '/auth/login' ||
+    /^\/logistics\/settlements\/qr-session\/[^/]+\/(rider-sign|owner-approve)$/.test(path ?? ''));
+}
+
 apiClient.interceptors.request.use((config) => {
   config.baseURL = getApiBaseUrl();
   // Strip redundant leading /api if present to prevent double-prefixing
   if (config.url?.startsWith('/api/')) {
     config.url = config.url.replace(/^\/api/, '');
   }
-  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const session = readAuthSession();
+  if (session) {
+    config.headers.Authorization = `Bearer ${session.token}`;
+  } else if (!isPublicAuthRoute(config.method, config.url)) {
+    throw new axios.CanceledError('Sign in to access this endpoint.');
   }
   return config;
 });
@@ -59,9 +67,8 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      localStorage.removeItem(USER_STORAGE_KEY);
+    if (error.response?.status === 401 && !isPublicAuthRoute(error.config?.method, error.config?.url)) {
+      clearAuthSession();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }

@@ -15,6 +15,10 @@ public class DailySheetItemDto
     public int Id { get; set; }
     public int OrderItemId { get; set; }
     public int OrderId { get; set; }
+    public string KitchenBranch { get; set; } = "CARMONA";
+    public int UnitIndex { get; set; } = 1;
+    public int UnitTotal { get; set; } = 1;
+    public bool IsBelly { get; set; }
     public int BookedItemCategoryId { get; set; }
     public int? FulfilledItemCategoryId { get; set; }
     public string OrderReference { get; set; } = string.Empty;
@@ -63,6 +67,11 @@ public class DailySheetItemDto
     public int Fulfillment { get; set; }
     public int Quantity { get; set; }
     public string RiderName { get; set; } = "Unassigned";
+    public string? AssignedRiderName { get; set; }
+    public string? SupportRiderName { get; set; }
+    public decimal SupportRiderFee { get; set; }
+    public int SupportRiderHeads { get; set; }
+    public bool SupportRiderExpenseLogged { get; set; }
     public string Status { get; set; } = string.Empty;
     public bool IsManualOverride { get; set; }
     public bool IsTimeTbd { get; set; } = false;

@@ -82,6 +82,8 @@ namespace LechonSystem.Api.Services
 
         public async Task<bool> UpdateCookingProfileAsync(int categoryId, int tahiMinutes, int salangMinutes)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await KitchenCapacitySchema.LockAsync(_context);
             var profile = await _context.ProductCookingProfiles.FirstOrDefaultAsync(p => p.ItemCategoryId == categoryId);
 
             // Safety Net: If a clock doesn't exist yet, create one!
@@ -102,10 +104,12 @@ namespace LechonSystem.Api.Services
             var upcomingItems = await _context.OrderItems
                 .Include(i => i.Order)
                 .Include(i => i.ItemCategory)
-                .Include(i => i.OrderItemSchedule)
-                .Where(i => i.ItemCategoryId == profile!.ItemCategoryId
+                .Include(i => i.FulfilledItemCategory)
+                .Include(i => i.OrderItemSchedules)
+                .Where(i => (i.FulfilledItemCategoryId ?? i.ItemCategoryId) == categoryId
                          && i.Order != null
                          && !i.Order.IsDraft
+                         && !i.Order.IsTimeTbd
                          && i.Order.TargetDeliveryTime != null
                          && i.Order.TargetDeliveryTime.Value > DateTime.UtcNow
                          && !i.Order.IsCancelled)
@@ -114,33 +118,16 @@ namespace LechonSystem.Api.Services
             // 4. Force a recalculation for each affected item using the injected engine
             foreach (var item in upcomingItems)
             {
-                if (item.Order != null)
+                var category = item.FulfilledItemCategory ?? item.ItemCategory;
+                if (item.Order != null && category != null)
                 {
-                    if (item.OrderItemSchedule != null && item.OrderItemSchedule.IsManualOverride)
-                        continue;
-
-                    var recalc = await _schedulingService.CalculateScheduleAsync(
-                        item.Id,
-                        item.Order.TargetDeliveryTime!.Value,
-                        item.ItemCategoryId,
-                        item.Order.RiderDepartureTime);
-
-                    if (item.OrderItemSchedule != null)
-                    {
-                        item.OrderItemSchedule.PackagingStartTime = recalc.PackagingStartTime;
-                        item.OrderItemSchedule.SalangStartTime = recalc.SalangStartTime;
-                        item.OrderItemSchedule.TahiStartTime = recalc.TahiStartTime;
-                        item.OrderItemSchedule.TargetDeliveryTime = recalc.TargetDeliveryTime;
-                    }
-                    else
-                    {
-                        _context.OrderItemSchedules.Add(recalc);
-                    }
+                    await _schedulingService.SynchronizeItemSchedulesAsync(item, item.Order, category);
                 }
             }
 
             // 5. THE ATOMIC SAVE 🚀
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return true;
         }

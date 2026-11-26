@@ -18,17 +18,20 @@ namespace LechonSystem.Api.Services
         private readonly INotificationSender _notificationSender;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IInventoryService _inventoryService;
+        private readonly SplitRiderService _splitRiders;
 
         public LogisticsService(
             LechonDbContext context,
             INotificationSender notificationSender,
             IHttpContextAccessor httpContextAccessor,
-            IInventoryService inventoryService)
+            IInventoryService inventoryService,
+            SplitRiderService splitRiders)
         {
             _context = context;
             _notificationSender = notificationSender;
             _httpContextAccessor = httpContextAccessor;
             _inventoryService = inventoryService;
+            _splitRiders = splitRiders;
         }
 
         private string CurrentUser => UserIdentityHelper.ResolveDisplayName(_httpContextAccessor?.HttpContext?.User, "Owner");
@@ -46,7 +49,7 @@ namespace LechonSystem.Api.Services
         {
             return await _context.Orders
                 .Include(o => o.OrderItems)
-                    .ThenInclude(i => i.OrderItemSchedule)
+                    .ThenInclude(i => i.OrderItemSchedules)
                 .Where(o => !o.IsDraft && o.RoutingStatus == DeliveryStatus.Unassigned
                          && !o.IsDraft && !o.IsCancelled
                          && o.TargetDeliveryTime != null && o.TargetDeliveryTime.Value.Date == PhilippineTime.Tomorrow)
@@ -62,9 +65,13 @@ namespace LechonSystem.Api.Services
                 throw new ArgumentException("You must provide at least one order ID to assign a rider.");
             }
 
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            foreach (var orderId in orderIds.Distinct().Order())
+                await SplitRiderSchema.LockOrderAsync(_context, orderId);
+
             var ordersToAssign = await _context.Orders
                 .Include(o => o.OrderItems)
-                    .ThenInclude(i => i.OrderItemSchedule)
+                    .ThenInclude(i => i.OrderItemSchedules)
                 .Include(o => o.DeliveryTrip)
                 .Where(o => orderIds.Contains(o.Id))
                 .ToListAsync();
@@ -83,6 +90,11 @@ namespace LechonSystem.Api.Services
             }
 
             var cleanRiderName = string.IsNullOrWhiteSpace(riderName) ? "" : riderName.Trim();
+            if (ordersToAssign.Any(order => order.SupportRiderName is not null &&
+                (SplitRiderService.NormalizeName(cleanRiderName) is null ||
+                 SplitRiderService.SameName(order.SupportRiderName, cleanRiderName) ||
+                 !SplitRiderService.IsMotorcycle(vehicleType))))
+                throw new ArgumentException("A split delivery needs a motorcycle lead who is different from the support rider.");
             await RiderRegistrationHelper.EnsureRiderRegisteredAsync(_context, cleanRiderName);
 
             var newTrip = new DeliveryTrip
@@ -105,6 +117,7 @@ namespace LechonSystem.Api.Services
                     order.RiderSignedBy = null;
                 }
                 newTrip.Orders.Add(order);
+                SplitRiderService.ReconcileHeadAssignments(order, cleanRiderName);
 
                 string message = $"Internal Log: Rider {cleanRiderName} assigned for tomorrow's delivery route.";
                 bool dispatchSuccess = true;
@@ -142,6 +155,7 @@ namespace LechonSystem.Api.Services
 
             _context.DeliveryTrips.Add(newTrip);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return newTrip;
         }
@@ -151,8 +165,11 @@ namespace LechonSystem.Api.Services
 
         public async Task<bool> UnassignRiderAsync(int orderId)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var order = await _context.Orders
                 .Include(o => o.DeliveryTrip)
+                .Include(o => o.OrderItems).ThenInclude(item => item.OrderItemSchedules)
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             if (order == null)
@@ -160,37 +177,10 @@ namespace LechonSystem.Api.Services
                 throw new ArgumentException($"Order #{orderId} not found.");
             }
 
-            var oldRider = order.DeliveryTrip?.RiderName?.Trim() ?? "";
-            var oldTripId = order.DeliveryTripId;
-            order.DeliveryTripId = null;
-            order.RoutingStatus = DeliveryStatus.Unassigned;
-
-            if (oldTripId.HasValue)
-            {
-                var hasOtherOrders = await _context.Orders.AnyAsync(o => o.DeliveryTripId == oldTripId.Value && o.Id != orderId);
-                if (!hasOtherOrders)
-                {
-                    var trip = await _context.DeliveryTrips.FindAsync(oldTripId.Value);
-                    if (trip != null)
-                    {
-                        _context.DeliveryTrips.Remove(trip);
-                    }
-                }
-            }
-
-            if (!string.IsNullOrEmpty(oldRider))
-            {
-                _context.OrderAuditLogs.Add(new OrderAuditLog
-                {
-                    OrderId = order.Id,
-                    ActionType = "Rider Updated",
-                    Changes = $"Rider unassigned (previously '{oldRider}')",
-                    ChangedBy = CurrentUser,
-                    Timestamp = DateTime.UtcNow
-                });
-            }
+            _splitRiders.SetLead(order, null, CurrentUser);
 
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 
@@ -216,6 +206,10 @@ namespace LechonSystem.Api.Services
                     targetDeliveryTime = o.TargetDeliveryTime,
                     riderDepartureTime = o.RiderDepartureTime,
                     riderName = o.DeliveryTrip != null ? o.DeliveryTrip.RiderName : null,
+                    supportRiderName = o.SupportRiderName,
+                    supportRiderFee = o.SupportRiderFee,
+                    supportRiderHeads = o.SupportRiderHeads,
+                    supportRiderExpenseLogged = o.SupportRiderExpenseId.HasValue,
                     vehicleType = o.DeliveryTrip != null ? o.DeliveryTrip.VehicleType : null,
                     isDeliveryDetailsConfirmed = o.IsDeliveryDetailsConfirmed,
                     routingStatus = o.RoutingStatus.ToString(),
@@ -253,6 +247,10 @@ namespace LechonSystem.Api.Services
                         && o.DeliveryTrip.RiderName != "Unassigned"
                             ? o.DeliveryTrip.RiderName
                             : (o.RiderSignedBy ?? "Unassigned"),
+                    SupportRiderName = o.SupportRiderName,
+                    SupportRiderFee = o.SupportRiderFee,
+                    SupportRiderHeads = o.SupportRiderHeads,
+                    SupportRiderExpenseLogged = o.SupportRiderExpenseId.HasValue,
                     CustomerName = o.CustomerName,
                     FacebookName = o.FacebookName,
                     Source = o.Source,
@@ -403,21 +401,19 @@ namespace LechonSystem.Api.Services
             return true;
         }
 
+        private IQueryable<PaymentLog> ActiveAdvancePayments() => _context.PaymentLogs
+            .Where(payment => !payment.IsVoided && payment.Amount > 0m && payment.Status == PaymentStatus.Success
+                && !payment.GatewayReferenceId.StartsWith("OWNER_")
+                && !payment.GatewayReferenceId.StartsWith("QR_SETTLE_")
+                && !payment.GatewayReferenceId.StartsWith("SETTLE_")
+                && !payment.GatewayReferenceId.Contains("_ORDER_"));
+
         public async Task<IEnumerable<DownpaymentTrackerItemDto>> GetDownpaymentsAsync()
         {
-            // Query non-voided advance PaymentLog records
-            var advanceLogs = await _context.PaymentLogs
+            var advanceLogs = await ActiveAdvancePayments()
                 .AsNoTracking()
                 .Include(p => p.Order)
-                .Where(p => !p.IsVoided && p.Amount > 0m
-                         && p.Status == PaymentStatus.Success
-                         && p.Order != null
-                         && !p.Order.IsDraft
-                         && !p.Order.IsCancelled
-                         && !p.GatewayReferenceId.StartsWith("OWNER_")
-                         && !p.GatewayReferenceId.StartsWith("QR_SETTLE_")
-                         && !p.GatewayReferenceId.StartsWith("SETTLE_")
-                         && !p.GatewayReferenceId.Contains("_ORDER_"))
+                .Where(p => p.Order != null && !p.Order.IsCancelled)
                 .ToListAsync();
 
             var logsByOrder = advanceLogs
@@ -453,6 +449,7 @@ namespace LechonSystem.Api.Services
                         DownpaymentMethod = PaymentChannels.Normalize(log.PaymentMethod, "Cash"),
                         TargetDeliveryTime = order.TargetDeliveryTime,
                         IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
+                        IsDraft = order.IsDraft,
                         CreatedAt = order.CreatedAt,
                         PaidAt = log.CreatedAt,
                         ReferenceNumber = log.GatewayReferenceId,
@@ -501,9 +498,8 @@ namespace LechonSystem.Api.Services
                 });
             }
 
-            // Sorting: chronological by EventDate (IsDateTbd at bottom), then PaidAt asc, then PaymentLogId asc, then OrderId asc
             return items
-                .OrderBy(item => item.IsDateTbd ? 1 : 0)
+                .OrderBy(item => item.IsDraft || item.IsDateTbd)
                 .ThenBy(item => item.TargetDeliveryTime)
                 .ThenBy(item => item.PaidAt ?? item.CreatedAt)
                 .ThenBy(item => item.PaymentLogId ?? 0)
@@ -517,13 +513,13 @@ namespace LechonSystem.Api.Services
                 .Include(p => p.Order)
                 .FirstOrDefaultAsync(p => p.Id == paymentLogId);
 
-            if (payment == null || payment.Order == null || payment.Order.IsDraft || payment.Order.IsCancelled)
+            if (payment == null || payment.Order == null || payment.Order.IsCancelled)
             {
                 throw new KeyNotFoundException($"Payment log #{paymentLogId} was not found.");
             }
-            if (payment.IsVoided || payment.Amount <= 0m)
+            if (!await ActiveAdvancePayments().AnyAsync(log => log.Id == paymentLogId))
             {
-                throw new InvalidOperationException($"Payment log #{paymentLogId} is voided or invalid.");
+                throw new InvalidOperationException($"Payment log #{paymentLogId} is not an active advance payment.");
             }
 
             payment.IsRemittedToOwner = !payment.IsRemittedToOwner;
@@ -535,12 +531,8 @@ namespace LechonSystem.Api.Services
             var orderId = order.Id;
 
             // Check all active advance payment logs for this order to synchronize order-level flag
-            var allAdvanceLogs = await _context.PaymentLogs
-                .Where(p => p.OrderId == orderId && !p.IsVoided && p.Amount > 0m
-                            && !p.GatewayReferenceId.StartsWith("OWNER_")
-                            && !p.GatewayReferenceId.StartsWith("QR_SETTLE_")
-                            && !p.GatewayReferenceId.StartsWith("SETTLE_")
-                            && !p.GatewayReferenceId.Contains("_ORDER_"))
+            var allAdvanceLogs = await ActiveAdvancePayments()
+                .Where(p => p.OrderId == orderId)
                 .OrderBy(p => p.CreatedAt)
                 .ThenBy(p => p.Id)
                 .ToListAsync();
@@ -580,6 +572,7 @@ namespace LechonSystem.Api.Services
                 DownpaymentMethod = PaymentChannels.Normalize(payment.PaymentMethod, "Cash"),
                 TargetDeliveryTime = order.TargetDeliveryTime,
                 IsDateTbd = order.IsTimeTbd || !order.TargetDeliveryTime.HasValue,
+                IsDraft = order.IsDraft,
                 CreatedAt = order.CreatedAt,
                 PaidAt = payment.CreatedAt,
                 ReferenceNumber = payment.GatewayReferenceId,
@@ -610,12 +603,8 @@ namespace LechonSystem.Api.Services
             order.UpdatedAt = DateTime.UtcNow;
 
             // Synchronize all advance payment logs
-            var advanceLogs = await _context.PaymentLogs
-                .Where(p => p.OrderId == order.Id && !p.IsVoided && p.Amount > 0m
-                            && !p.GatewayReferenceId.StartsWith("OWNER_")
-                            && !p.GatewayReferenceId.StartsWith("QR_SETTLE_")
-                            && !p.GatewayReferenceId.StartsWith("SETTLE_")
-                            && !p.GatewayReferenceId.Contains("_ORDER_"))
+            var advanceLogs = await ActiveAdvancePayments()
+                .Where(p => p.OrderId == order.Id)
                 .ToListAsync();
 
             foreach (var log in advanceLogs)
@@ -799,6 +788,9 @@ namespace LechonSystem.Api.Services
         // 3. Rider Digital Signature
         public async Task<QrSessionStatusDto> RiderSignQrSessionAsync(string token, RiderSignRequest request)
         {
+            var orderId = await GetQrOrderIdAsync(token);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var session = await _context.SettlementQrSessions
                 .Include(s => s.Order)
                     .ThenInclude(o => o.DeliveryTrip)
@@ -830,6 +822,7 @@ namespace LechonSystem.Api.Services
             {
                 throw new ArgumentException("Rider name is required.");
             }
+            SplitRiderService.RequireLeadCollector(session.Order, request.RiderName.Trim());
 
             if (request.RemittedAmount < 0)
             {
@@ -843,6 +836,7 @@ namespace LechonSystem.Api.Services
             session.Status = "SignedByRider";
 
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return MapToStatusDto(session, session.Order);
         }
 
@@ -879,6 +873,9 @@ namespace LechonSystem.Api.Services
         // 4. Staff Validates Cash into Drawer
         public async Task<QrSessionStatusDto> StaffValidateQrSessionAsync(string token, StaffValidateRequest? request, string staffUsername)
         {
+            var orderId = await GetQrOrderIdAsync(token);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var session = await _context.SettlementQrSessions
                 .Include(s => s.Order)
                     .ThenInclude(o => o.DeliveryTrip)
@@ -891,6 +888,9 @@ namespace LechonSystem.Api.Services
 
             if (session.IsUsed)
             {
+                if (session.Status == "ValidatedByStaff" &&
+                    session.Order.SettlementCustodyStatus is "InStaffDrawer" or "AwaitingOwnerDigitalVerification")
+                    return MapToStatusDto(session, session.Order);
                 throw new InvalidOperationException("This QR session has already been processed.");
             }
 
@@ -932,6 +932,7 @@ namespace LechonSystem.Api.Services
                 throw new InvalidOperationException("Cannot validate: Rider has not yet submitted digital signature.");
             }
 
+            SplitRiderService.RequireLeadCollector(session.Order, session.RiderSignedBy);
             session.StaffValidatedBy = staffUsername;
             session.StaffValidatedAt = DateTime.UtcNow;
             session.Status = "ValidatedByStaff";
@@ -1008,14 +1009,23 @@ namespace LechonSystem.Api.Services
                 Timestamp = DateTime.UtcNow
             });
 
+            if (session.HopStage == "RiderToStaff")
+                _splitRiders.AddSettlementExpense(order, staffUsername, request?.LogSupportRiderExpense);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return MapToStatusDto(session, order);
         }
 
+        private async Task<int> GetQrOrderIdAsync(string token) => await _context.SettlementQrSessions
+            .Where(session => session.Token == token).Select(session => (int?)session.OrderId).FirstOrDefaultAsync()
+            ?? throw new ArgumentException("QR session not found.");
+
         // 5. Store Counter Collection (Tab 2: Walk-in Store Pickups)
-        public async Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null, decimal? cashAmount = null, decimal? digitalAmount = null, string? digitalMethod = null, string? digitalReferenceNumber = null)
+        public async Task<bool> CounterCollectPickupAsync(int orderId, string paymentMethod, string staffUsername, decimal? amount = null, string? referenceNumber = null, decimal? cashAmount = null, decimal? digitalAmount = null, string? digitalMethod = null, string? digitalReferenceNumber = null, bool? logSupportRiderExpense = null)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
             if (order == null)
             {
@@ -1115,13 +1125,18 @@ namespace LechonSystem.Api.Services
                 Timestamp = DateTime.UtcNow
             });
 
+            _splitRiders.AddSettlementExpense(order, staffUsername, logSupportRiderExpense);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return true;
         }
 
-        public async Task<QrSessionStatusDto> CounterCollectQrSessionAsync(string token, string staffUsername)
+        public async Task<QrSessionStatusDto> CounterCollectQrSessionAsync(string token, string staffUsername, bool? logSupportRiderExpense = null)
         {
+            var orderId = await GetQrOrderIdAsync(token);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var session = await _context.SettlementQrSessions
                 .Include(s => s.Order)
                     .ThenInclude(o => o.DeliveryTrip)
@@ -1185,7 +1200,10 @@ namespace LechonSystem.Api.Services
                 Timestamp = DateTime.UtcNow
             });
 
+            if (session.HopStage == "RiderToStaff")
+                _splitRiders.AddSettlementExpense(order, staffUsername, logSupportRiderExpense);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return MapToStatusDto(session, order);
         }
@@ -1193,6 +1211,8 @@ namespace LechonSystem.Api.Services
         // 5b. Safeguard 3 — Staff Custody Undo
         public async Task<bool> RevertCustodyAsync(int orderId, string currentUser, bool isOwner)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
             if (order == null)
             {
@@ -1245,6 +1265,7 @@ namespace LechonSystem.Api.Services
             });
 
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 
@@ -1476,8 +1497,11 @@ namespace LechonSystem.Api.Services
         }
 
         // 7. Legacy Direct Store GCash endpoint: log Hop 1 only; Owner still performs Hop 2.
-        public async Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername)
+        public async Task<bool> SettleDirectStoreGcashAsync(int orderId, decimal amount, string referenceNumber, string staffUsername,
+            bool? logSupportRiderExpense = null)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SplitRiderSchema.LockOrderAsync(_context, orderId);
             var order = await _context.Orders
                 .Include(o => o.DeliveryTrip)
                 .FirstOrDefaultAsync(o => o.Id == orderId);
@@ -1512,7 +1536,9 @@ namespace LechonSystem.Api.Services
                 Timestamp = DateTime.UtcNow
             });
 
+            _splitRiders.AddSettlementExpense(order, staffUsername, logSupportRiderExpense);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             await _inventoryService.DeductOrderStockIfCompletedAsync(order.Id, staffUsername);
             return true;
         }
@@ -1666,6 +1692,10 @@ namespace LechonSystem.Api.Services
                 OrderId = session.OrderId,
                 CustomerName = order.CustomerName,
                 AssignedRiderName = order.DeliveryTrip?.RiderName ?? session.RiderSignedBy ?? order.RiderSignedBy ?? "Unassigned",
+                SupportRiderName = order.SupportRiderName,
+                SupportRiderFee = order.SupportRiderFee,
+                SupportRiderHeads = order.SupportRiderHeads,
+                SupportRiderExpenseLogged = order.SupportRiderExpenseId.HasValue,
                 HopStage = session.HopStage,
                 PaymentMethod = session.PaymentMethod,
                 ExpectedAmount = session.ExpectedAmount,

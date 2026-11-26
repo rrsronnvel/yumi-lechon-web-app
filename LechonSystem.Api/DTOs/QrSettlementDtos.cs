@@ -15,6 +15,10 @@ public class QrSessionStatusDto
     public int OrderId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string AssignedRiderName { get; set; } = string.Empty;
+    public string? SupportRiderName { get; set; }
+    public decimal SupportRiderFee { get; set; }
+    public int SupportRiderHeads { get; set; }
+    public bool SupportRiderExpenseLogged { get; set; }
     public string HopStage { get; set; } = string.Empty;
     public string PaymentMethod { get; set; } = string.Empty;
     public decimal ExpectedAmount { get; set; }
@@ -40,6 +44,7 @@ public class RiderSignRequest
 
 public class StaffValidateRequest
 {
+    public bool? LogSupportRiderExpense { get; set; }
     public string? ManualOverrideRiderName { get; set; }
     public decimal? ManualOverrideAmount { get; set; }
     public string? StaffName { get; set; }
@@ -58,6 +63,7 @@ public class OwnerApproveRequest
 
 public class CounterCollectRequest
 {
+    public bool? LogSupportRiderExpense { get; set; }
     public int OrderId { get; set; }
     public string PaymentMethod { get; set; } = "Cash";
     public decimal? Amount { get; set; }
@@ -71,6 +77,7 @@ public class CounterCollectRequest
 
 public class SettleDirectGcashRequest
 {
+    public bool? LogSupportRiderExpense { get; set; }
     public int OrderId { get; set; }
     public decimal Amount { get; set; }
     public string ReferenceNumber { get; set; } = string.Empty;

@@ -36,7 +36,10 @@ import {
 } from '../hooks/useManifest';
 import WalkInBadge from '../components/orders/WalkInBadge';
 import OrderDossierModal from '../components/orders/OrderDossierModal';
+import RiderAssignmentPanel from '../components/orders/RiderAssignmentPanel';
 import { isWalkInOrder } from '../utils/walkIn';
+import { isTentativeEvent, sortManifestItemsByDateAscending, type ManifestListItem } from '../utils/manifestDates';
+import { describeSupportRider, supportRiderExpenseLabel, type SupportRiderPlan } from '../utils/riderAssignment';
 
 type DrawerTabKey = 'hop2' | 'riders' | 'pickups' | 'downpayments' | 'lalamove';
 type DpFilterKey = 'all' | 'cash' | 'digital' | 'walkin' | 'unremitted' | 'remitted';
@@ -116,57 +119,11 @@ function formatTrackerDateTime(value?: string | null): string {
   });
 }
 
-interface ManifestListItem {
-  orderId?: number | null;
-  id?: number | null;
-  orderReference?: string | null;
-  targetDeliveryTime?: string | null;
-  isDateTbd?: boolean;
-}
-
-function sortManifestItemsByDateAscending<T extends ManifestListItem>(items: readonly T[]) {
-  return [...items].sort((a, b) => {
-    const aIsTbd = Boolean(a.isDateTbd || (!a.targetDeliveryTime && !(a as any).targetDate));
-    const bIsTbd = Boolean(b.isDateTbd || (!b.targetDeliveryTime && !(b as any).targetDate));
-    if (aIsTbd !== bIsTbd) return aIsTbd ? 1 : -1;
-
-    const aTimestamp = a.targetDeliveryTime || (a as any).targetDate
-      ? new Date((a.targetDeliveryTime || (a as any).targetDate)!).getTime()
-      : Number.POSITIVE_INFINITY;
-    const bTimestamp = b.targetDeliveryTime || (b as any).targetDate
-      ? new Date((b.targetDeliveryTime || (b as any).targetDate)!).getTime()
-      : Number.POSITIVE_INFINITY;
-    const safeATimestamp = Number.isNaN(aTimestamp)
-      ? Number.POSITIVE_INFINITY
-      : aTimestamp;
-    const safeBTimestamp = Number.isNaN(bTimestamp)
-      ? Number.POSITIVE_INFINITY
-      : bTimestamp;
-
-    if (safeATimestamp !== safeBTimestamp) {
-      return safeATimestamp - safeBTimestamp; // Ascending: earliest first
-    }
-
-    const aPaid = (a as any).paidAt ? new Date((a as any).paidAt).getTime() : 0;
-    const bPaid = (b as any).paidAt ? new Date((b as any).paidAt).getTime() : 0;
-    if (aPaid !== bPaid) {
-      return aPaid - bPaid;
-    }
-
-    const aLogId = (a as any).paymentLogId ?? 0;
-    const bLogId = (b as any).paymentLogId ?? 0;
-    if (aLogId !== bLogId) {
-      return aLogId - bLogId;
-    }
-
-    return Number(a.orderId ?? a.id ?? 0) - Number(b.orderId ?? b.id ?? 0);
-  });
-}
-
 function matchesManifestSearch(
   item: ManifestListItem & {
     customerName?: string | null;
     riderName?: string | null;
+    supportRiderName?: string | null;
     riderSignedBy?: string | null;
     deliveryAddress?: string | null;
     address?: string | null;
@@ -186,6 +143,7 @@ function matchesManifestSearch(
   const textValues = [
     item.customerName,
     item.riderName,
+    item.supportRiderName,
     item.riderSignedBy,
     item.deliveryAddress,
     item.address,
@@ -202,7 +160,7 @@ function matchesManifestSearch(
   );
 }
 
-interface ActiveModalState {
+interface ActiveModalState extends SupportRiderPlan {
   workflow: 'hop2_owner' | 'hop1_rider' | 'pickup_collect' | 'lalamove_pay';
   orderId: number;
   customerName: string;
@@ -316,7 +274,9 @@ const DownpaymentRowCard = React.memo(function DownpaymentRowCard({
     : '@unknown';
 
   const paidDateStr = formatTrackerDate(item.paidAt ?? item.createdAt);
-  const eventDateStr = formatTrackerDate(item.eventDate ?? item.targetDeliveryTime);
+  const eventDateStr = isTentativeEvent(item)
+    ? 'TBD / Tentative'
+    : formatTrackerDate(item.eventDate ?? item.targetDeliveryTime);
 
   const installmentLabel =
     item.installmentCount && item.installmentCount > 1
@@ -336,6 +296,11 @@ const DownpaymentRowCard = React.memo(function DownpaymentRowCard({
           {isWalkIn && (
             <View style={styles.dpWalkInBadge}>
               <Text style={styles.dpWalkInBadgeText}>🚶 Walk-in</Text>
+            </View>
+          )}
+          {item.isDraft && (
+            <View style={styles.dpWalkInBadge}>
+              <Text style={styles.dpWalkInBadgeText}>📝 Tentative Draft</Text>
             </View>
           )}
           <View style={styles.dpInstallmentPill}>
@@ -491,6 +456,7 @@ export default function DrawerScreen() {
   const [selectedDossierOrderId, setSelectedDossierOrderId] = useState<number | null>(
     null
   );
+  const [riderAssignmentOrderId, setRiderAssignmentOrderId] = useState<number | null>(null);
 
   // Workflow A (Hop 2 Owner Envelope Speed Bump) State
   const [countedAmount, setCountedAmount] = useState('');
@@ -505,6 +471,8 @@ export default function DrawerScreen() {
   const [showManualOverride, setShowManualOverride] = useState(false);
   const [overrideRiderName, setOverrideRiderName] = useState('');
   const [overrideAmount, setOverrideAmount] = useState('');
+  const [logSupportRiderExpense, setLogSupportRiderExpense] = useState(true);
+  const supportExpenseLabel = modalState?.workflow === 'hop1_rider' ? supportRiderExpenseLabel(modalState) : null;
 
   // Workflow C & D (Pickup Counter & Lalamove Gate) State
   const [counterMethod, setCounterMethod] = useState<'Cash' | 'GCash' | 'Split'>('Cash');
@@ -822,6 +790,8 @@ export default function DrawerScreen() {
         item.bookingSource,
         item.paymentMethod ?? item.downpaymentMethod,
         item.encodedBy,
+        isTentativeEvent(item) ? 'TBD / Tentative' : null,
+        item.isDraft ? 'Draft' : null,
       ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch));
     }));
   }, [activeTab, downpaymentItems, dpFilter, searchQuery]);
@@ -844,7 +814,7 @@ export default function DrawerScreen() {
         : activeTab === 'pickups'
           ? custodianPickupDrops.length
           : activeTab === 'downpayments'
-            ? downpaymentItems.filter((item) => Number(item.downpaymentAmount || 0) > 0).length
+            ? downpaymentItems.filter((item) => Number(item.amount ?? item.downpaymentAmount ?? 0) > 0).length
             : sortedLalamoveDrops.length;
   const isSearching = searchQuery.trim().length > 0;
 
@@ -1093,6 +1063,7 @@ export default function DrawerScreen() {
           riderPayMethod === 'Split'
             ? splitDigitalRef.trim() || undefined
             : isDigitalHop1 ? directGcashRef.trim() || undefined : undefined,
+        logSupportRiderExpense: supportExpenseLabel ? logSupportRiderExpense : undefined,
       });
       const id = modalState.orderId;
       closeActiveModal();
@@ -1810,6 +1781,8 @@ export default function DrawerScreen() {
                   drop.custodyStatus === 'AwaitingOwnerDigitalVerification';
                 const isAwaitingOwner = isInDrawer || isAwaitingDigital;
                 const targetOrderId = drop.orderId || drop.id;
+                const backupRider = describeSupportRider(drop);
+                const assignmentOpen = riderAssignmentOrderId === targetOrderId;
                 const isUnassignedRider =
                   !drop.riderName?.trim() ||
                   drop.riderName.trim().toLowerCase() === 'unassigned';
@@ -1824,7 +1797,7 @@ export default function DrawerScreen() {
                   >
                     <View style={styles.cardHeaderRow}>
                       <View style={styles.rowCenterWrap}>
-                        <Text style={styles.monoOrderId}>#{targetOrderId}</Text>
+                        <Text style={styles.monoOrderId}>#{String(drop.orderReference || targetOrderId).replace(/^#/, '')}</Text>
                         {drop.isTrustedCustomer && (
                           <View style={styles.vipBadge}>
                             <Text style={styles.vipBadgeText}>👑 VIP</Text>
@@ -1866,6 +1839,7 @@ export default function DrawerScreen() {
                     </View>
 
                     <Text style={styles.customerNameText}>{drop.customerName}</Text>
+                    {backupRider && <Text style={styles.backupRiderBadgeText}>{backupRider}</Text>}
                     <WalkInBadge
                       source={drop.source}
                       customerName={drop.customerName}
@@ -1907,6 +1881,22 @@ export default function DrawerScreen() {
                         );
                       })()}
                     </View>
+
+                    {!isAwaitingOwner && (
+                      <View style={styles.riderAssignmentBox}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityState={{ expanded: assignmentOpen }}
+                          style={styles.riderAssignmentButton}
+                          onPress={() => setRiderAssignmentOrderId(assignmentOpen ? null : targetOrderId)}
+                        >
+                          <Text style={styles.riderBadgeText}>🛵 Assign / Change Riders</Text>
+                        </Pressable>
+                        {assignmentOpen && (
+                          <RiderAssignmentPanel orderId={targetOrderId} onSaved={() => setRiderAssignmentOrderId(null)} />
+                        )}
+                      </View>
+                    )}
 
                     {/* Action Row */}
                     <View style={styles.cardActionRow}>
@@ -1972,6 +1962,7 @@ export default function DrawerScreen() {
                           ]}
                           onPress={() => {
                             setRiderPayMethod('Cash');
+                            setLogSupportRiderExpense(true);
                             setDirectGcashRef('');
                             setShowManualOverride(isUnassignedRider);
                             setOverrideRiderName(isUnassignedRider ? '' : drop.riderName || '');
@@ -1991,6 +1982,9 @@ export default function DrawerScreen() {
                               riderName: drop.riderName,
                               totalCollected: drop.totalCollected,
                               deliveryFee: drop.riderDeliveryFee,
+                              supportRiderName: drop.supportRiderName,
+                              supportRiderFee: drop.supportRiderFee,
+                              supportRiderExpenseLogged: drop.supportRiderExpenseLogged,
                             });
                           }}
                         >
@@ -2771,7 +2765,7 @@ export default function DrawerScreen() {
               <View style={styles.workflowContainer}>
                 <View style={styles.custodyChainCard}>
                   <View style={styles.chainRow}>
-                    <Text style={styles.chainLabel}>Assigned Rider:</Text>
+                    <Text style={styles.chainLabel}>Lead Rider:</Text>
                     <Text style={styles.chainVal}>
                       🛵 {modalState.riderName || 'Freelance Rider'}
                     </Text>
@@ -2785,6 +2779,19 @@ export default function DrawerScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {supportExpenseLabel && (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: logSupportRiderExpense }}
+                    accessibilityLabel={supportExpenseLabel}
+                    style={styles.supportExpenseCheck}
+                    onPress={() => setLogSupportRiderExpense((enabled) => !enabled)}
+                  >
+                    <Text style={styles.supportExpenseIcon}>{logSupportRiderExpense ? '✓' : '□'}</Text>
+                    <Text style={styles.supportExpenseLabel}>{supportExpenseLabel}</Text>
+                  </Pressable>
+                )}
 
                 {/* Payment Method Selector */}
                 <Text style={styles.fieldLabel}>Select Remittance Channel</Text>
@@ -3777,6 +3784,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#44403C',
   },
+  backupRiderBadgeText: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    color: '#3730A3',
+    fontSize: 12,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 7,
+  },
+  riderAssignmentBox: { gap: 8 },
+  riderAssignmentButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F5F5F4',
+    borderColor: '#D6D3D1',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  supportExpenseCheck: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderWidth: 1,
+    borderRadius: 9,
+    padding: 10,
+  },
+  supportExpenseIcon: { color: '#3730A3', fontSize: 19, fontWeight: '800' },
+  supportExpenseLabel: { flex: 1, color: '#312E81', fontSize: 13, fontWeight: '700' },
   custodyPillDrawer: {
     backgroundColor: '#FEF3C7',
     borderWidth: 1,

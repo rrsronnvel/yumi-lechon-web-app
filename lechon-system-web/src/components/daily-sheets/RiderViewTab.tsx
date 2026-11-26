@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useDailySheets, RoastingScheduleItem } from "@/hooks/useSchedules";
 import { useRidersQuery } from "@/hooks/useRiders";
+import { useUpdateOrderRiders } from "@/hooks/useLogistics";
 import { InlineScheduleEditorModal } from "./InlineScheduleEditorModal";
+import { InlineRiderSelect, SplitRiderButton } from "./InlineRiderSelect";
+import { RiderAssignmentDialog } from "@/components/ui/orders/RiderAssignmentDialog";
 import { Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -12,11 +15,14 @@ import { sanitizeFreebiesSummary } from "@/utils/freebiesHelper";
 import { sanitizeMojibake } from "@/utils/sanitizeDisplayText";
 import { WalkInBadge } from "@/components/WalkInBadge";
 import { isWalkInOrder } from "@/utils/walkIn";
+import { groupRiderRoster } from "@/utils/dispatchRoster";
+import { backupRiderLabel, namedRider } from "@/utils/splitMoto";
 
 interface RiderViewTabProps {
   mode?: "edit" | "clean";
   selectedDate?: string;
   canEdit?: boolean;
+  canAssignRiders?: boolean;
 }
 
 // Bulletproof Time Formatter
@@ -60,17 +66,19 @@ const formatWeightDisplay = (weight?: string | null): string => {
     .trim() || "-";
 };
 
-export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: RiderViewTabProps) {
+export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true, canAssignRiders = canEdit }: RiderViewTabProps) {
   const { data: dailySheets, isLoading, isError } = useDailySheets(selectedDate);
   const [selectedItem, setSelectedItem] = useState<RoastingScheduleItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const { data: registeredRiders = [] } = useRidersQuery();
+  const [riderOrderId, setRiderOrderId] = useState<number | null>(null);
+  const { data: registeredRiders = [] } = useRidersQuery(mode === "edit");
+  const updateOrderRiders = useUpdateOrderRiders();
 
   if (isLoading)
     return <div className="p-8 text-center text-muted-foreground font-medium">Loading logistics schedule...</div>;
   if (isError)
     return <div className="p-8 text-center text-red-500 font-medium">Failed to load logistics schedule.</div>;
-  const allOrders = dailySheets?.items || [];
+  const allOrders = groupRiderRoster(dailySheets?.items ?? []);
 
   if (allOrders.length === 0)
     return <div className="p-8 text-center text-muted-foreground">No deliveries scheduled for the selected date.</div>;
@@ -90,8 +98,12 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
 
   const isCleanView = mode === "clean";
   const isEdit = !isCleanView && canEdit;
+  const registeredOptions = [
+    { name: "", label: "Unassigned" },
+    ...registeredRiders.filter((rider) => rider.isActive).map((rider) => ({ name: rider.fullName })),
+  ];
 
-  const handleCopyDispatch = (item: RoastingScheduleItem) => {
+  const handleCopyDispatch = (item: (typeof allOrders)[number]) => {
     const matchedRider = registeredRiders.find(
       (r) => r.fullName.toLowerCase() === item.riderName?.trim().toLowerCase()
     );
@@ -108,12 +120,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
       fulfillment: item.fulfillment ?? 1,
       deliveryAddress: item.location || "",
       landmark: item.landmark || undefined,
-      items: [
-        {
-          categoryName: item.size || "Lechon",
-          quantity: item.quantity || 1,
-        },
-      ],
+      items: item.lines,
       subtotal: price,
       deliveryFee: deliveryFee,
       grandTotal: item.grandTotal ?? (price + addOns + deliveryFee),
@@ -146,22 +153,22 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
     <div className="space-y-3 w-full">
       {/* 100% Zero-Scroll Table Container */}
       <div className={`w-full overflow-x-auto rounded-md border-2 border-black ${mode === "clean" ? "no-scrollbar" : ""} print:overflow-visible bg-white shadow-xs`}>
-        <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "w-full" : "min-w-[1100px] xl:min-w-full"}`}>
+        <table className={`w-full table-fixed border-collapse text-left text-xs ${mode === "clean" ? "min-w-[960px]" : "min-w-[1100px]"}`}>
           {/* Proportional Column Allocation: Total = 100%, No Horizontal Overflow */}
           <colgroup>
-            <col className="w-[8%] min-w-[115px]" />  {/* 1. No. */}
-            <col className="w-[4.5%]" />              {/* 2. Size (Compact: fits "S. Jumbo") */}
-            <col className="w-[4.5%]" />              {/* 3. Weight */}
-            <col className="w-[8.5%] min-w-[96px]" /> {/* 4. Departure / Pickup Time */}
-            <col className="w-[9.5%]" />              {/* 5. Customer Name */}
-            <col className="w-[15%]" />               {/* 6. Location (Expanded) */}
-            <col className="w-[11%]" />               {/* 7. Rider Name */}
-            <col className="w-[15%]" />               {/* 8. Remarks (Expanded) */}
-            <col className="w-[4.5%]" />              {/* 9. Price */}
-            <col className="w-[3.5%]" />              {/* 10. Add-ons */}
-            <col className="w-[4%]" />                {/* 11. Delivery Fee */}
-            <col className="w-[4.5%]" />              {/* 12. Down Payment */}
-            <col className="w-[8%]" />                {/* 13. Amount to Collect */}
+            <col className="w-[8%] min-w-[115px]" />{/* 1. No. */}
+            <col className="w-[4.5%]" />{/* 2. Size (Compact: fits "S. Jumbo") */}
+            <col className="w-[4.5%]" />{/* 3. Weight */}
+            <col className="w-[10%] min-w-[104px]" />{/* 4. Departure / Pickup Time */}
+            <col className="w-[9.5%]" />{/* 5. Customer Name */}
+            <col className="w-[13%]" />{/* 6. Location */}
+            <col className="w-[14%]" />{/* 7. Rider Name */}
+            <col className="w-[12.5%]" />{/* 8. Remarks */}
+            <col className="w-[4.5%]" />{/* 9. Price */}
+            <col className="w-[3.5%]" />{/* 10. Add-ons */}
+            <col className="w-[4%]" />{/* 11. Delivery Fee */}
+            <col className="w-[4.5%]" />{/* 12. Down Payment */}
+            <col className="w-[8%]" />{/* 13. Amount to Collect */}
           </colgroup>
 
           {/* High-Contrast Bold Table Header */}
@@ -170,7 +177,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
               <th className="px-2 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 min-w-[120px] whitespace-nowrap font-mono font-bold">No.</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 whitespace-nowrap">Size</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Weight</th>
-              <th className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Departure / Pickup</th>
+              <th scope="col" className="min-w-[104px] whitespace-normal px-1.5 py-2.5 text-center font-black uppercase leading-tight text-[11px] border-r border-slate-700 bg-red-950 text-red-300">Departure /<br />Pickup</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Customer</th>
               <th className="px-1.5 py-2.5 text-left font-black uppercase text-[11px] border-r border-slate-700">Location</th>
               <th className="px-1.5 py-2.5 text-center font-black uppercase text-[11px] border-r border-slate-700">Rider</th>
@@ -221,10 +228,16 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
               const editableCellClass = isEdit
                 ? "cursor-pointer transition-colors hover:bg-amber-100/70 group"
                 : "";
+              const lead = namedRider(item.riderName);
+              const backupLabel = backupRiderLabel(item);
+              const orderId = item.orderId;
+              const reference = item.orderReference || String(orderId ?? item.id);
+              const canEditAssignment = !isCleanView && canAssignRiders && !isStorePickup && !isLalamove;
+              const openOrderRiders = () => setRiderOrderId(orderId ?? null);
 
               return (
                 <tr
-                  key={item.id}
+                  key={item.orderId ?? item.orderReference ?? item.id}
                   className={`${needsDpConfirmation ? "bg-amber-50 border-l-4 border-l-amber-500" : isWalkIn && isEdit ? "bg-indigo-50/40" : "even:bg-slate-50 odd:bg-white"} text-slate-900 hover:bg-amber-50/40`}
                 >
                   {/* 1. No. */}
@@ -234,19 +247,19 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
 
                   {/* 2. Size (Compact & Centered: fits "S. Jumbo" without wrapping) */}
                   <td className="px-1.5 py-2 text-center font-bold text-slate-800 border-r border-slate-300 max-w-[85px] overflow-hidden break-words whitespace-normal leading-tight text-xs">
-                    {(item.size || "-").toLowerCase().includes("lamang-loob") || (item.size || "").toLowerCase().includes("raw innards") ? (
-                      <span className="leading-tight block">
-                        Raw Innards
-                        <span className="text-[10px] block text-stone-500 font-normal">(Lamang-Loob)</span>
-                      </span>
-                    ) : (
-                      item.size || "-"
-                    )}
+                    {item.lines.map((line, index) => (
+                      <div key={index}>
+                        {line.quantity > 1 && <span className="font-black">{line.quantity}x </span>}
+                        {/lamang-loob|raw innards/i.test(line.categoryName) ? (
+                          <>Raw Innards<span className="block text-[10px] font-normal text-stone-500">(Lamang-Loob)</span></>
+                        ) : line.categoryName}
+                      </div>
+                    ))}
                   </td>
 
                   {/* 3. Weight */}
                   <td className="px-1.5 py-2 text-center font-medium text-slate-700 border-r border-slate-300 whitespace-nowrap text-[11px]">
-                    {formatWeightDisplay(item.weight)}
+                    {item.lines.map((line, index) => <div key={index}>{formatWeightDisplay(line.weight)}</div>)}
                   </td>
 
                   {/* 4. Departure / Pickup Time (Anti-Complacency Guard: ONLY shows RiderDepartureTime ?? TargetDeliveryTime) */}
@@ -298,82 +311,32 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
                   </td>
 
                   {/* 7. Rider Name (Editable in edit mode) */}
-                  <td
-                    onClick={() => !isStorePickup && !isLalamove && handleCellClick(item)}
-                    className={`px-1 py-2 text-center text-[11px] font-bold border-r border-slate-300 ${!isStorePickup && !isLalamove ? editableCellClass : ""}`}
-                    title={!isStorePickup && !isLalamove && isEdit ? "Click to assign or change rider" : undefined}
-                  >
-                    <div className="flex flex-col items-center justify-center gap-0.5">
-                      {isCleanView ? (
-                        isStorePickup ? (
-                          <span className="bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
-                            🏪 Store Pickup
-                          </span>
-                        ) : isLalamove ? (
-                          <span className="bg-orange-50 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
-                            📦 Lalamove
-                          </span>
-                        ) : (
-                          <span
-                            className={
-                              item.fulfillment === 1 &&
-                              (!item.riderName || item.riderName === "Unassigned")
-                                ? "text-slate-400 italic font-normal"
-                                : "text-slate-900 font-bold"
-                            }
-                          >
-                            {item.riderName || "Unassigned"}
-                          </span>
-                        )
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-center gap-1">
-                            {isStorePickup ? (
-                              <span className="bg-amber-50 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
-                                🏪 Store Pickup
-                              </span>
-                            ) : isLalamove ? (
-                              <span className="bg-orange-50 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded text-[10.5px] font-bold whitespace-nowrap inline-flex items-center justify-center leading-none">
-                                📦 Lalamove
-                              </span>
-                            ) : (
-                              <span
-                                className={
-                                  item.riderName && item.riderName !== "Unassigned"
-                                    ? "text-blue-700 font-bold"
-                                    : "text-slate-400 italic font-normal"
-                                }
-                              >
-                                {item.riderName || "Unassigned"}
-                              </span>
-                            )}
-                            {!isStorePickup && !isLalamove && isEdit && (
-                              <Pencil className="w-2.5 h-2.5 text-amber-600 opacity-40 group-hover:opacity-100 shrink-0" />
-                            )}
-                          </div>
-                          {((item.riderName && item.riderName !== "Unassigned") ||
-                            isStorePickup ||
-                            isLalamove) && (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-[9px] font-semibold print:hidden shadow-2xs transition-colors mt-0.5"
-                              title="Copy Messenger Alert"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCopyDispatch(item);
-                              }}
-                            >
-                              <Copy className="w-2.5 h-2.5" />
-                              <span>
-                                {isStorePickup
-                                  ? "Pickup Alert"
-                                  : isLalamove
-                                    ? "Lalamove Alert"
-                                    : "Dispatch Alert"}
-                              </span>
-                            </button>
-                          )}
-                        </>
+                  <td className="px-1 py-2 text-center text-[11px] font-bold border-r border-slate-300">
+                    <div className="flex min-w-0 flex-col items-center gap-1">
+                      {isStorePickup ? (
+                        <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-900">🏪 Store Pickup</span>
+                      ) : isLalamove ? (
+                        <span className="rounded border border-orange-300 bg-orange-50 px-1.5 py-0.5 font-bold text-orange-900">📦 Lalamove</span>
+                      ) : canEditAssignment && orderId && !backupLabel ? (
+                        <InlineRiderSelect
+                          label={`Assign or change rider for order ${reference}`}
+                          current={lead}
+                          options={registeredOptions}
+                          disabled={updateOrderRiders.isPending && updateOrderRiders.variables?.orderId === orderId}
+                          editLabel="⚙️ Split / Custom Rider..."
+                          onEditOrder={openOrderRiders}
+                          onSelect={(name) => updateOrderRiders.mutateAsync({ orderId, riderName: name })}
+                        />
+                      ) : <span className={lead ? "break-words" : "font-normal italic text-slate-500"}>{lead || "Unassigned"}{backupLabel && lead ? " · Lead" : ""}</span>}
+                      {backupLabel && !isStorePickup && !isLalamove && <span className="rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] leading-tight text-amber-950">{backupLabel}</span>}
+                      {canEditAssignment && orderId && (backupLabel || item.wholeLechonQty > 2) && (
+                        <SplitRiderButton hasSupport={Boolean(backupLabel)} reference={reference} onClick={openOrderRiders} />
+                      )}
+                      {!isCleanView && (lead || isStorePickup || isLalamove) && (
+                        <button type="button" className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-semibold text-blue-700 hover:bg-blue-100 print:hidden" title="Copy Messenger Alert" onClick={() => handleCopyDispatch(item)}>
+                          <Copy className="h-2.5 w-2.5" />
+                          {isStorePickup ? "Pickup Alert" : isLalamove ? "Lalamove Alert" : "Dispatch Alert"}
+                        </button>
                       )}
                     </div>
                   </td>
@@ -460,6 +423,7 @@ export function RiderViewTab({ mode = "edit", selectedDate, canEdit = true }: Ri
         open={isEditorOpen}
         onOpenChange={setIsEditorOpen}
       />
+      {riderOrderId && <RiderAssignmentDialog orderId={riderOrderId} onClose={() => setRiderOrderId(null)} />}
     </div>
   );
 }
